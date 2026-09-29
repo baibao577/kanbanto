@@ -1,8 +1,21 @@
-import { CaretRight, CheckCircle, Circle, Crosshair, ListChecks, Plus, Prohibit, TextAlignLeft, Trash, X } from '@phosphor-icons/react'
+import {
+  ArrowSquareRight,
+  CaretRight,
+  CheckCircle,
+  Circle,
+  Crosshair,
+  ListChecks,
+  Plus,
+  Prohibit,
+  TextAlignLeft,
+  Trash,
+  X,
+} from '@phosphor-icons/react'
 import { formatMoment } from '@/lib/format'
+import { cn } from '@/lib/utils'
 import { useEffect, useMemo, useRef, type ReactNode } from 'react'
 import { useBoard } from '@/app/board-context'
-import { ColorSwatches, LabelChip, ProgressBar, StatusDot, StatusPill } from '@/components/common/bits'
+import { ColorSwatches, LabelChip, PriorityIcon, ProgressBar, StatusDot, StatusPill } from '@/components/common/bits'
 import { QuickAdd } from '@/components/board/QuickAdd'
 import {
   AlertDialog,
@@ -22,7 +35,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { ancestorsOf, descendantsOf, statusCol } from '@kanbanto/model/indexer'
 import { COLORS, tone } from '@kanbanto/model/colors'
 import type { TaskFields } from '@kanbanto/model/commands'
-import { EPOCH } from '@kanbanto/model/types'
+import { EPOCH, PRIORITIES, PRIORITY_LABEL, type Priority } from '@kanbanto/model/types'
 import { AttachmentsSection } from './Attachments'
 import { CommentsSection } from './Comments'
 import { Description } from './Description'
@@ -55,7 +68,7 @@ export function TaskDialog({ id, onClose }: { id: string | null; onClose: () => 
 }
 
 function TaskDetail({ id, onClose }: { id: string; onClose: () => void }) {
-  const { data, idx, run, openTask, createTask, focus, readOnly, onActivity } = useBoard()
+  const { data, idx, run, openTask, createTask, focus, readOnly, onActivity, moveToBoard } = useBoard()
   // The card's files, shared by the Files section, comments and the description (# references).
   const cardFiles = useCardFiles(data.board.id, id, onActivity)
   const t = data.tasks[id]
@@ -228,6 +241,28 @@ function TaskDetail({ id, onClose }: { id: string; onClose: () => void }) {
               <SideField label="Assignee">
                 <PersonPicker value={t.assigneeId} onChange={(assigneeId) => patch({ assigneeId })} />
               </SideField>
+
+              <SideField label="Priority">
+                <Select value={t.priority ?? 'none'} onValueChange={(v) => patch({ priority: v === 'none' ? null : (v as Priority) })}>
+                  <SelectTrigger
+                    size="sm"
+                    aria-label="Priority"
+                    className={cn('w-full border-transparent shadow-none hover:bg-accent', !t.priority && 'text-muted-foreground')}
+                  >
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {PRIORITIES.map((p) => (
+                      <SelectItem key={p} value={p}>
+                        <PriorityIcon priority={p} /> {PRIORITY_LABEL[p]}
+                      </SelectItem>
+                    ))}
+                    <SelectItem value="none" className="text-muted-foreground">
+                      No priority
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+              </SideField>
             </div>
             <div>
               <SideField label="Start">
@@ -306,6 +341,11 @@ function TaskDetail({ id, onClose }: { id: string; onClose: () => void }) {
                 }}
               >
                 <Crosshair /> Focus on its subtasks
+              </Button>
+            )}
+            {!readOnly && (
+              <Button variant="ghost" size="sm" className="w-full justify-start gap-2" onClick={() => moveToBoard(id)}>
+                <ArrowSquareRight /> Move to another board…
               </Button>
             )}
             {!readOnly && <DeleteTask id={id} title={t.title} onDeleted={onClose} />}

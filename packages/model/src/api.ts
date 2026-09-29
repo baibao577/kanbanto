@@ -20,6 +20,8 @@ export interface PublicUser {
   emailVerified: boolean
   /** Gets the daily email summary of @mentions. */
   mentionEmails: boolean
+  /** Their Inbox: the board where tasks go when an app (like Claude) adds one without saying where. */
+  inboxBoardId: string | null
 }
 
 /** GET /api/auth/me */
@@ -241,6 +243,8 @@ export interface MutationResult {
 export interface BoardSummary {
   id: string
   name: string
+  /** What it's for, in a sentence or two. */
+  description: string | null
   background: string | null
   visibility: Visibility
   publicLink: boolean

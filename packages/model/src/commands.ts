@@ -3,7 +3,7 @@ import { applyChanges, current } from './changes'
 import { isLeaf, wouldCycle, type TaskIndex } from './indexer'
 import { comparePositions, positionBetween, positionsBetween } from './position'
 import { stamp, type Change } from './records'
-import type { Board, BoardData, Category, LabelDef, StatusColumn, Task } from './types'
+import type { Board, BoardData, Category, LabelDef, Priority, StatusColumn, Task } from './types'
 import type { ColorName } from './colors'
 
 /**
@@ -42,7 +42,7 @@ export type Command =
   | { type: 'label.create'; id?: string; name: string; color: ColorName }
   | { type: 'label.update'; id: string; fields: { name?: string; color?: ColorName } }
   | { type: 'label.delete'; id: string }
-  | { type: 'board.update'; fields: { name?: string; mode?: Board['mode']; background?: ColorName | null } }
+  | { type: 'board.update'; fields: { name?: string; mode?: Board['mode']; background?: ColorName | null; description?: string } }
   /**
    * Puts records back the way they were (undo/redo). Each change says what the record should become
    * (`after`) and what it's expected to be now (`before`): if someone changed it since, the restore is refused.
@@ -53,6 +53,7 @@ export type Command =
 export type TaskFields = Partial<
   Pick<Task, 'title' | 'description' | 'status' | 'start' | 'due' | 'labels' | 'blockedBy'> & {
     assigneeId: string | null
+    priority: Priority | null
     color: ColorName | null
   }
 >
@@ -244,8 +245,9 @@ function run(data: BoardData, cmd: Command, ctx: Context): Change[] {
       if (cmd.fields.name !== undefined) next.name = cmd.fields.name.trim() || reject('A board needs a name.')
       if (cmd.fields.mode) next.mode = cmd.fields.mode
       if (cmd.fields.background !== undefined) next.background = cmd.fields.background ?? undefined
+      if (cmd.fields.description !== undefined) next.description = cmd.fields.description.trim() || undefined
       // Nothing different (e.g. the name field lost focus unchanged): not a change.
-      if (next.name === b.name && next.mode === b.mode && next.background === b.background) break
+      if (next.name === b.name && next.mode === b.mode && next.background === b.background && next.description === b.description) break
       out.push({ entity: 'board', id: b.id, before: b, after: stamp(b, next, now) })
       break
     }
@@ -324,6 +326,7 @@ function cleanFields(data: BoardData, id: string, f: TaskFields): Partial<Task> 
   }
   if (f.labels) out.labels = [...new Set(f.labels)].filter((l) => data.labels.some((x) => x.id === l))
   if (f.blockedBy) out.blockedBy = [...new Set(f.blockedBy)].filter((b) => b !== id && data.tasks[b])
+  if (f.priority !== undefined) out.priority = f.priority ?? undefined
   if (f.color !== undefined) out.color = f.color ?? undefined
   return out
 }

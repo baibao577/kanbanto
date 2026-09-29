@@ -7,6 +7,7 @@ import { hashPassword, verifyPassword } from '../auth/password'
 import { createSession, endAllSessions, endSession, SESSION_COOKIE, type SessionUser } from '../auth/sessions'
 import { acceptInvite, findAnyInvite, provesEmail } from '../boards/invites'
 import { createBoard } from '../boards/service'
+import { requireAccess } from '../boards/access'
 import { emailOutbox, users } from '../db/schema'
 import { env } from '../env'
 import { HttpError, parse, siteUrl } from '../http'
@@ -41,6 +42,7 @@ export const publicUser = (u: SessionUser) => ({
   isAdmin: u.isAdmin,
   emailVerified: u.emailVerified,
   mentionEmails: u.mentionEmails,
+  inboxBoardId: u.inboxBoardId,
 })
 
 export { loadSettings as getSettings } from '../settings'
@@ -141,7 +143,15 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
       // Arriving through an invite emailed to this address proves the address is theirs — unless the inviter was
       // shown the link (the email couldn't be sent), since then the inviter could be the one using it.
       const verified = provesEmail(invite, body.email)
-      const user = { id: newId(), email: body.email, name: body.name, isAdmin: false, emailVerified: verified, mentionEmails: true }
+      const user = {
+        id: newId(),
+        email: body.email,
+        name: body.name,
+        isAdmin: false,
+        emailVerified: verified,
+        mentionEmails: true,
+        inboxBoardId: null,
+      }
       await tx.insert(users).values({ id: user.id, email: user.email, name: user.name, passwordHash, emailVerifiedAt: verified ? new Date() : null })
       const joined = body.invite ? await acceptInvite(tx, { id: user.id, email: user.email }, body.invite) : null
       return { kind: 'created' as const, user, joined }
@@ -195,10 +205,12 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
     return { ok: true }
   })
 
-  /** Your name, and whether you get the daily email summary of @mentions. */
+  /** Your name, whether you get the daily email summary of @mentions, and your Inbox board. */
   app.patch('/me', async (req) => {
     const user = requireUser(req.user, { allowUnverified: true })
-    const body = parse(z.object({ name, mentionEmails: z.boolean() }).partial(), req.body)
+    const body = parse(z.object({ name, mentionEmails: z.boolean(), inboxBoardId: z.string().max(100).nullable() }).partial(), req.body)
+    // Your Inbox has to be a board you can add tasks to.
+    if (body.inboxBoardId) await requireAccess(app.db, user, body.inboxBoardId, 'editor')
     await app.db
       .update(users)
       .set({ ...body, updatedAt: new Date() })

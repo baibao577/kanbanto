@@ -7,6 +7,7 @@ import { eq, sql } from 'drizzle-orm'
 import type { FastifyPluginAsync } from 'fastify'
 import { z } from 'zod'
 import { accessFor, accessOf, requireAccess, type BoardRow } from '../boards/access'
+import { parseMoment, readActivity } from '../boards/activityLog'
 import { createBoard, importBoard } from '../boards/service'
 import { requireWorkspace } from '../boards/workspaces'
 import type { Db } from '../db'
@@ -41,6 +42,7 @@ export async function boardsFor(db: Db, userId: string): Promise<BoardSummary[]>
   const rows = await db.execute<{
     id: string
     name: string
+    description: string | null
     background: string | null
     visibility: BoardRow['visibility']
     public_link: boolean
@@ -53,7 +55,7 @@ export async function boardsFor(db: Db, userId: string): Promise<BoardSummary[]>
     created_at: Date
     activity_at: Date
   }>(sql`
-      select b.id, b.name, b.background, b.visibility, b.public_link, b.workspace_id, b.workspace_role, m.role,
+      select b.id, b.name, b.description, b.background, b.visibility, b.public_link, b.workspace_id, b.workspace_role, m.role,
         (w.user_id is not null) as in_workspace, b.created_at, b.activity_at,
         (select count(*)::int from tasks t where t.board_id = b.id) as task_count,
         (select count(*)::int from tasks t join lists l on l.board_id = t.board_id and l.id = t.status
@@ -77,6 +79,7 @@ export async function boardsFor(db: Db, userId: string): Promise<BoardSummary[]>
     summaries.push({
       id: r.id,
       name: r.name,
+      description: r.description,
       background: r.background,
       visibility: r.visibility,
       publicLink: r.public_link,
@@ -145,7 +148,56 @@ export const boardRoutes: FastifyPluginAsync = async (app) => {
     const me = requireUser(req.user)
     await requireAccess(app.db, me, id, 'editor')
     const body = parse(Mutation, req.body)
-    return app.engine.mutate(id, body.mutationId, body.command, me.id)
+    return app.engine.mutate(id, body.mutationId, body.command, me.id, req.apiToken?.app)
+  })
+
+  /**
+   * Moves a task, with its subtasks, comments and files, to another board you can edit. Lists and labels are matched by
+   * name; people who aren't on that board are unassigned. `list`: a list there for what isn't done yet.
+   */
+  app.post('/boards/:id/tasks/:taskId/move', async (req) => {
+    const { id, taskId } = parse(z.object({ id: z.string().max(100), taskId: z.string().max(100) }), req.params)
+    const me = requireUser(req.user)
+    const body = parse(
+      z.object({ boardId: z.string().max(100), list: z.string().max(100).optional(), parentId: z.string().max(100).nullable().optional() }),
+      req.body,
+    )
+    await requireAccess(app.db, me, id, 'editor')
+    await requireAccess(app.db, me, body.boardId, 'editor')
+    return app.engine.transfer(id, body.boardId, taskId, { status: body.list, parentId: body.parentId }, me.id, req.apiToken?.app)
+  })
+
+  /**
+   * What happened on the board in a stretch of time, newest first: its changes (in words) and comments. For its people
+   * (not public-link visitors). More: ask again with `until` set to `nextUntil`.
+   */
+  app.get('/boards/:id/activity', async (req) => {
+    const { id } = parse(Params, req.params)
+    const me = requireUser(req.user)
+    const { access } = await requireAccess(app.db, me, id, 'viewer')
+    if (access.via === 'public') throw new HttpError(403, 'Join this board to see its activity.')
+    const q = parse(
+      z.object({
+        since: z.string().max(40).optional(),
+        until: z.string().max(40).optional(),
+        limit: z.coerce.number().int().min(1).max(200).optional(),
+      }),
+      req.query,
+    )
+    const from = parseMoment(q.since, 'since', new Date(Date.now() - 86_400_000))!
+    const until = parseMoment(q.until, 'until', null)
+    const { entries, more } = await readActivity(app.db, { boardIds: [id], from, until, actors: null, limit: q.limit ?? 50 })
+    return {
+      activity: entries.map((e) => ({
+        at: e.at.toISOString(),
+        kind: e.kind,
+        actor: e.actorId ? { id: e.actorId, name: e.actorName } : null,
+        ...(e.kind === 'change'
+          ? { command: e.command, via: e.via, items: e.items }
+          : { taskId: e.taskId, task: e.task, body: e.body, mentions: e.mentions }),
+      })),
+      nextUntil: more ? entries[entries.length - 1].at.toISOString() : null,
+    }
   })
 
   /** Live changes for an open board. Anyone who can view it can listen. */

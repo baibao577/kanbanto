@@ -5,7 +5,7 @@ import { and, eq, gt, isNull, lt, notExists, or, sql } from 'drizzle-orm'
 import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from 'fastify'
 import { z } from 'zod'
 import type { TokenAccess } from './auth/apiTokens'
-import type { SessionUser } from './auth/sessions'
+import { sessionUser, type SessionUser } from './auth/sessions'
 import type { Db } from './db'
 import { oauthClients, oauthCodes, oauthGrants, users } from './db/schema'
 import { env } from './env'
@@ -75,18 +75,15 @@ export const resourceMetadataUrl = (req: FastifyRequest) => `${siteUrl(req)}/.we
 export async function userForOAuthToken(db: Db, token: string): Promise<{ user: SessionUser; token: TokenAccess }> {
   if ((await loadSettings(db)).oauthApps === 'off') throw new HttpError(401, 'Apps can’t connect with sign-in on this site.')
   const [row] = await db
-    .select({ g: oauthGrants, u: users })
+    .select({ g: oauthGrants, u: users, app: oauthClients.name })
     .from(oauthGrants)
     .innerJoin(users, eq(users.id, oauthGrants.userId))
+    .innerJoin(oauthClients, eq(oauthClients.id, oauthGrants.clientId))
     .where(and(eq(oauthGrants.accessHash, sha256(token)), gt(oauthGrants.accessExpiresAt, new Date()), isNull(users.disabledAt)))
   if (!row) throw new HttpError(401, 'That access token doesn’t work: it may have expired or been disconnected.')
   if (!row.g.lastUsedAt || Date.now() - row.g.lastUsedAt.getTime() > 60_000)
     await db.update(oauthGrants).set({ lastUsedAt: new Date() }).where(eq(oauthGrants.id, row.g.id))
-  const u = row.u
-  return {
-    user: { id: u.id, email: u.email, name: u.name, isAdmin: u.isAdmin, emailVerified: !!u.emailVerifiedAt, mentionEmails: u.mentionEmails },
-    token: { id: row.g.id, scope: row.g.scope },
-  }
+  return { user: sessionUser(row.u), token: { id: row.g.id, scope: row.g.scope, app: row.app } }
 }
 export const isOAuthToken = (token: string) => token.startsWith(ACCESS_PREFIX)
 

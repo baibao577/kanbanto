@@ -1,12 +1,14 @@
+import { describeChanges, type ActivityItem } from '@kanbanto/model/activity'
+import { planMove, type MovePlan, type MoveTarget } from '@kanbanto/model/moveBoard'
 import { applyChanges } from '@kanbanto/model/changes'
 import { execute, type Command } from '@kanbanto/model/commands'
 import { newId } from '@kanbanto/model/ids'
 import { indexFor } from '@kanbanto/model/indexer'
 import type { Change } from '@kanbanto/model/records'
 import type { BoardData } from '@kanbanto/model/types'
-import { eq, sql } from 'drizzle-orm'
+import { and, eq, lt, sql } from 'drizzle-orm'
 import type { Db } from '../db'
-import { boards } from '../db/schema'
+import { attachments, boardActivity, boards, comments, notifications } from '../db/schema'
 import { HttpError } from '../http'
 import type { LiveHub } from '../live'
 import { loadBoard, writeChanges } from './store'
@@ -63,8 +65,9 @@ export class BoardEngine {
   /**
    * Runs `command` for `userId`. A retry (same mutation id from the same person) gets the first answer back. A command
    * that trips over something unexpected is refused like any other (422), so the app doesn't retry it forever.
+   * `via`: the app it came through (logged with the activity).
    */
-  async mutate(boardId: string, mutationId: string, command: Command, userId: string): Promise<MutationResult> {
+  async mutate(boardId: string, mutationId: string, command: Command, userId: string, via?: string): Promise<MutationResult> {
     const key = `${boardId}:${userId}:${mutationId}`
     const prior = this.done.get(key)
     if (prior) return prior
@@ -83,6 +86,10 @@ export class BoardEngine {
       if ('error' in r) throw new HttpError(422, r.error)
       if (!r.changes.length) return { seq: row.seq, changes: [], data }
       await writeChanges(tx, boardId, r.changes)
+      // The activity log: what this change did, in words (reordering alone isn't logged).
+      const items = describeChanges(data, r.changes)
+      if (items.length)
+        await tx.insert(boardActivity).values({ id: newId(), boardId, actorId: userId, command: command.type, items, via: via ?? null })
       const seq = row.seq + 1
       await tx.update(boards).set({ seq, activityAt: new Date() }).where(eq(boards.id, boardId))
       return { seq, changes: r.changes, data: applyChanges(data, r.changes) }
@@ -98,6 +105,78 @@ export class BoardEngine {
       this.onChanged?.(boardId, { board, userId, command: command.type, seq: out.seq, changes: out.changes })
     }
     return out
+  }
+
+  /**
+   * Moves a task, with its subtasks, to another board (see model/moveBoard.ts): both boards change together, and its
+   * comments, files and mentions go with it. Not undoable from either board (undo there would only see half of it).
+   */
+  async transfer(
+    fromId: string,
+    toId: string,
+    taskId: string,
+    to: MoveTarget,
+    userId: string,
+    via?: string,
+  ): Promise<{ id: string; summary: MovePlan['summary']; board: { id: string; name: string } }> {
+    const result = await this.db.transaction(async (tx) => {
+      // Lock both boards, always in the same order, so two moves in opposite directions can't deadlock.
+      const locked = new Map<string, number>()
+      for (const id of [fromId, toId].sort()) {
+        const [row] = await tx.select({ seq: boards.seq }).from(boards).where(eq(boards.id, id)).for('update')
+        if (!row) throw new HttpError(404, 'This board no longer exists.')
+        locked.set(id, row.seq)
+      }
+      const load = async (id: string) => {
+        const hit = this.cache.get(id)
+        return hit && hit.seq === locked.get(id) ? hit.data : (await loadBoard(tx, id))!.data
+      }
+      const source = await load(fromId)
+      const target = await load(toId)
+      const plan = planMove(source, target, taskId, to, { now: new Date().toISOString(), newId })
+      if ('error' in plan) throw new HttpError(422, plan.error)
+      await writeChanges(tx, fromId, plan.source)
+      await writeChanges(tx, toId, plan.target)
+
+      // Its comments, files and mentions follow it (files stay where they're stored, and count where they did).
+      for (const [oldId, id] of plan.ids) {
+        const at = (t: typeof comments | typeof attachments | typeof notifications) => and(eq(t.boardId, fromId), eq(t.taskId, oldId))
+        await tx.update(comments).set({ boardId: toId, taskId: id }).where(at(comments))
+        await tx.update(attachments).set({ boardId: toId, taskId: id }).where(at(attachments))
+        await tx.update(notifications).set({ boardId: toId, taskId: id }).where(at(notifications))
+      }
+
+      // (Neither board's log names the other: people on one may not know the other exists.)
+      const more = plan.summary.subtasks ? ` with ${plan.summary.subtasks} subtask${plan.summary.subtasks === 1 ? '' : 's'}` : ''
+      const q = `“${plan.summary.title}”`
+      const log = (boardId: string, items: ActivityItem[]) =>
+        tx.insert(boardActivity).values({ id: newId(), boardId, actorId: userId, command: 'task.moveToBoard', items, via: via ?? null })
+      await log(fromId, [{ taskId, text: `moved ${q}${more} to another board` }])
+      await log(toId, [{ taskId: plan.ids.get(taskId)!, text: `moved ${q}${more} here from another board` }])
+      const bump = async (id: string) => {
+        const seq = locked.get(id)! + 1
+        await tx.update(boards).set({ seq, activityAt: new Date() }).where(eq(boards.id, id))
+        return seq
+      }
+      return {
+        plan,
+        from: { seq: await bump(fromId), data: applyChanges(source, plan.source) },
+        to: { seq: await bump(toId), data: applyChanges(target, plan.target) },
+      }
+    })
+
+    const { plan, from, to: dest } = result
+    for (const [id, side, changes] of [
+      [fromId, from, plan.source],
+      [toId, dest, plan.target],
+    ] as const) {
+      this.remember(id, side)
+      this.hub.broadcast(id, { type: 'changes', seq: side.seq, changes })
+      this.onChanged?.(id, { board: { id, name: side.data.board.name }, userId, command: 'task.moveToBoard', seq: side.seq, changes })
+    }
+    // The other board's comment and file counts changed too.
+    this.hub.broadcast(toId, { type: 'reload' })
+    return { id: plan.ids.get(taskId)!, summary: plan.summary, board: { id: toId, name: dest.data.board.name } }
   }
 
   /** Something changed outside commands (people, a new board): bump `seq` so every cached copy is refreshed. */
@@ -128,4 +207,9 @@ export class BoardEngine {
     this.cached += size
     while (this.cache.size > 1 && (this.cache.size > CACHE_BOARDS || this.cached > CACHE_RECORDS)) this.drop(this.cache.keys().next().value!)
   }
+}
+
+/** The activity log is kept 90 days. */
+export async function pruneActivity(db: Db) {
+  await db.delete(boardActivity).where(lt(boardActivity.at, new Date(Date.now() - 90 * 24 * 60 * 60 * 1000)))
 }

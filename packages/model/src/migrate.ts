@@ -10,6 +10,7 @@ import {
   type LabelDef,
   type Member,
   type Meta,
+  type Priority,
   type StatusColumn,
   type StatusMode,
   type Task,
@@ -35,6 +36,7 @@ export interface LegacyTask {
   start?: string
   due?: string
   description?: string
+  priority?: Priority
   color?: ColorName
 }
 interface LegacyColumn {
@@ -117,7 +119,8 @@ export function upgradeTasks(
     }
     const assigneeId = t.assigneeId ?? (t.assignee ? memberFor(t.assignee) : undefined)
     if (assigneeId) task.assigneeId = assigneeId
-    for (const key of ['start', 'due', 'description', 'color'] as const) if (t[key]) (task as unknown as Record<string, unknown>)[key] = t[key]
+    for (const key of ['start', 'due', 'description', 'priority', 'color'] as const)
+      if (t[key]) (task as unknown as Record<string, unknown>)[key] = t[key]
     tasks[t.id] = task
   }
 

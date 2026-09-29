@@ -14,7 +14,8 @@ import {
 } from '@phosphor-icons/react'
 import { useMemo, useState, type ReactNode } from 'react'
 import { useBoard } from '@/app/board-context'
-import { Avatar, DueChip, LabelChip, ProgressBar } from '@/components/common/bits'
+import { Avatar, DueChip, LabelChip, PriorityIcon, ProgressBar } from '@/components/common/bits'
+import { PRIORITY_LABEL } from '@kanbanto/model/types'
 import { Empty } from '@/components/common/Empty'
 import { StatusMenu } from '@/components/common/StatusMenu'
 import { QuickAdd } from '@/components/board/QuickAdd'
@@ -39,12 +40,13 @@ const COLUMNS: { key: SortKey; label: string }[] = [
   { key: 'status', label: 'Status' },
   { key: 'progress', label: 'Progress' },
   { key: 'assignee', label: 'Assignee' },
+  { key: 'priority', label: 'Priority' },
   { key: 'start', label: 'Start' },
   { key: 'due', label: 'Due' },
   { key: 'labels', label: 'Labels' },
 ]
-// Fixed columns add up to 51rem; with the 18rem minimum for Task, the table never gets narrower than 69rem.
-const GRID = 'grid grid-cols-[minmax(18rem,1fr)_8.5rem_9.5rem_9rem_6.5rem_6.5rem_11rem]'
+// Fixed columns add up to 57.5rem; with the 18rem minimum for Task, the table never gets narrower than 75.5rem.
+const GRID = 'grid grid-cols-[minmax(18rem,1fr)_8.5rem_9.5rem_9rem_6.5rem_6.5rem_6.5rem_11rem]'
 const INDENT = 20
 /** Width of the drag handle before the indent. */
 const HANDLE = 28
@@ -142,7 +144,7 @@ export function OutlineView({ search }: { search: string }) {
           ) : (
             // One scroll area (the page) for both directions, so the header and task column can both stay pinned.
             // overflow-clip rounds the corners without becoming a scroll container.
-            <div className="w-full min-w-[69rem] overflow-clip rounded-xl border bg-card">
+            <div className="w-full min-w-[75.5rem] overflow-clip rounded-xl border bg-card">
               <div role="table" aria-label="Tasks">
                 {/* Header row, pinned while you scroll. Click a column to sort by it. */}
                 <div role="row" className={cn(GRID, 'sticky top-0 z-20 border-b bg-muted')}>
@@ -269,6 +271,15 @@ export function OutlineView({ search }: { search: string }) {
                           <span className="flex min-w-0 items-center gap-2">
                             <Avatar name={memberName(t.assigneeId)} className="size-5 text-[9px]" />
                             <span className="truncate text-sm">{memberName(t.assigneeId)}</span>
+                          </span>
+                        ) : (
+                          <Blank />
+                        )}
+                      </Cell>
+                      <Cell>
+                        {t.priority ? (
+                          <span className="flex items-center gap-1.5 text-xs">
+                            <PriorityIcon priority={t.priority} /> {PRIORITY_LABEL[t.priority]}
                           </span>
                         ) : (
                           <Blank />

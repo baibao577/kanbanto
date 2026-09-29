@@ -23,8 +23,17 @@ Without MCP, use the REST API (see "REST fallback" below).
 
 - **Orient first.** `list_boards`, then `get_board` for the lists, labels and people you'll refer to. Refer to them by
   name; `"me"` is the token's owner.
-- **Search before creating.** `find_tasks` (by text, list, assignee, due date; leave out `board_id` to search every
-  board) so you don't add duplicates.
+- **Which board?** Boards live in places: the person's Personal boards, workspaces (a team's), or boards others shared.
+  `list_boards` says which, and what each board is for (`about`). "Work" and "personal" usually mean a workspace and
+  Personal. If it's still unclear, ask and name the likely boards: don't guess.
+- **Quick capture** ("remind me to…", "add: call the bank"): if no board clearly fits, `create_tasks` without `board_id`
+  puts it in their Inbox. Say where it went. No Inbox yet: ask, and mention they can pick one in a board's settings.
+- **Filing things away:** `move_to_board` moves a task (with its subtasks, comments and files) to another board, e.g.
+  Inbox items to where they belong. Tell the user what didn't fit (people not on that board, dropped links).
+- **Search before creating.** `find_tasks` (by text, list, label, assignee, priority, due date; leave out `board_id` to
+  search every board) so you don't add duplicates. Big results come in pages: pass `next_offset` back as `offset`.
+- **Big boards:** `get_board` shows the top two levels of open work; look inside one task with `parent_id`. Don't page
+  through everything: `team_overview` and `find_tasks` answer most questions directly.
 - **Breaking work down:** `create_tasks` with `parent_id` adds several subtasks in one call. Keep titles short and
   actionable; put detail in `description`.
 - **Status:** move a task between lists with `update_task` and `list`. With "follows its subtasks" boards, a parent's
@@ -47,11 +56,20 @@ Without MCP, use the REST API (see "REST fallback" below).
 
 ## Common requests
 
-- *"What's on my plate?"* → `find_tasks` with `assignee: "me"` (and `due_before` for "this week"); group by board and
-  list, and point out what's overdue.
+- *"What's on my plate?" / "what should I do first?"* → `find_tasks` with `assignee: "me"` and `sort: "priority"` (and
+  `due_before` for "this week"); group by board, and point out what's overdue or urgent.
+- *"How's the team doing?" / "what's stuck?"* → `team_overview` for the board or workspace: who has what, what's
+  overdue, blocked, urgent, or in progress but untouched for a week.
+- *Meeting notes → tasks* → propose the list first (titles, owners, due dates), then `create_tasks`: a parent task for
+  the meeting with the action items as subtasks, on the board the meeting was about.
+- *"What happened last week / in September?"* → `recent_activity` with `since` and `until` (kept 90 days); page with
+  `next_until`. For what was created or touched in a period, `find_tasks` with `created_after` / `changed_before` etc.
 - *"Plan X"* → find or create the parent task, then `create_tasks` with its subtasks; offer to set due dates and
   assignees.
-- *"Standup / status update"* → `find_tasks` for recently changed or in-progress tasks, and `get_task` for detail.
+- *"Catch me up" / "what's new"* → `recent_activity` (since the last day, or `since: "3d"`), per workspace; lead with
+  what mentions them and what's due soon.
+- *"Standup / status update"* → `recent_activity` for what changed, `find_tasks` for what's in progress, `get_task` for
+  detail.
 
 ## REST fallback
 

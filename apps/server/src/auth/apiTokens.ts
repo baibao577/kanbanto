@@ -4,7 +4,7 @@ import type { Db } from '../db'
 import { apiTokens, users } from '../db/schema'
 import { HttpError } from '../http'
 import { loadSettings } from '../settings'
-import type { SessionUser } from './sessions'
+import { sessionUser, type SessionUser } from './sessions'
 
 /**
  * Personal API tokens: `Authorization: Bearer kbt_…` acts as the token's person, with their access to boards. Only
@@ -27,6 +27,8 @@ export function newApiToken() {
 export interface TokenAccess {
   id: string
   scope: TokenScope
+  /** What changes made with it are marked with: the app's name ("Claude"), or "API" for an API token. */
+  app: string
 }
 
 /**
@@ -45,11 +47,7 @@ export async function userForApiToken(db: Db, token: string): Promise<{ user: Se
   // "Last used" to the minute is enough, and saves a write on every request.
   if (!row.t.lastUsedAt || Date.now() - row.t.lastUsedAt.getTime() > 60_000)
     await db.update(apiTokens).set({ lastUsedAt: new Date() }).where(eq(apiTokens.id, row.t.id))
-  const u = row.u
-  return {
-    user: { id: u.id, email: u.email, name: u.name, isAdmin: u.isAdmin, emailVerified: !!u.emailVerifiedAt, mentionEmails: u.mentionEmails },
-    token: { id: row.t.id, scope: row.t.scope },
-  }
+  return { user: sessionUser(row.u), token: { id: row.t.id, scope: row.t.scope, app: 'API' } }
 }
 
 /**

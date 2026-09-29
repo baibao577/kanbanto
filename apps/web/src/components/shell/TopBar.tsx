@@ -13,8 +13,8 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { useBoards } from '@/data/useBoards'
-import { BOARD_BACKGROUNDS, type ColorName } from '@kanbanto/model/colors'
-import { Kbd } from '@/components/common/bits'
+import type { ColorName } from '@kanbanto/model/colors'
+import { BoardDot, Kbd } from '@/components/common/bits'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
@@ -230,17 +230,6 @@ function SaveState({ connection, unsaved }: { connection: Connection; unsaved: n
           : 'Can’t reach the server. Reconnecting…'}
       </TooltipContent>
     </Tooltip>
-  )
-}
-
-/** A small swatch of a board's background (or the plain canvas). */
-function BoardDot({ background }: { background?: ColorName }) {
-  const bg = background ? BOARD_BACKGROUNDS[background] : null
-  return (
-    <span
-      className="size-4 shrink-0 rounded border"
-      style={bg ? { background: `linear-gradient(135deg, ${bg.from}, ${bg.to})`, borderColor: 'transparent' } : undefined}
-    />
   )
 }
 

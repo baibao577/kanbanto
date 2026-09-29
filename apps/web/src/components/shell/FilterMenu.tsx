@@ -1,7 +1,7 @@
 import { FunnelSimple } from '@phosphor-icons/react'
 import type { ReactNode } from 'react'
 import { useBoard } from '@/app/board-context'
-import { Avatar, LabelChip, StatusDot } from '@/components/common/bits'
+import { Avatar, LabelChip, PriorityIcon, StatusDot } from '@/components/common/bits'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
@@ -9,13 +9,14 @@ import { Separator } from '@/components/ui/separator'
 import { Switch } from '@/components/ui/switch'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { filterCount, type TableFilter } from '@kanbanto/model/table'
+import { PRIORITIES, PRIORITY_LABEL } from '@kanbanto/model/types'
 
 const toggleIn = (list: string[] | undefined, v: string) => {
   const next = list?.includes(v) ? list.filter((x) => x !== v) : [...(list ?? []), v]
   return next.length ? next : undefined
 }
 
-/** "Filter" popover, shared by every tab: status, people, labels, due date and "ready to start". */
+/** "Filter" popover, shared by every tab: status, people, priority, labels, due date and "ready to start". */
 export function FilterMenu() {
   const { data, prefs, setPrefs } = useBoard()
   const f = prefs.filter
@@ -63,6 +64,24 @@ export function FilterMenu() {
           ))}
           <CheckRow checked={!!f.assignees?.includes('')} onChange={() => set({ assignees: toggleIn(f.assignees, '') })}>
             <span className="text-muted-foreground">No one assigned</span>
+          </CheckRow>
+        </Section>
+
+        <Section title="Priority">
+          {PRIORITIES.map((p) => (
+            <CheckRow
+              key={p}
+              checked={!!f.priorities?.includes(p)}
+              onChange={() => set({ priorities: toggleIn(f.priorities, p) as TableFilter['priorities'] })}
+            >
+              <PriorityIcon priority={p} /> {PRIORITY_LABEL[p]}
+            </CheckRow>
+          ))}
+          <CheckRow
+            checked={!!f.priorities?.includes('')}
+            onChange={() => set({ priorities: toggleIn(f.priorities, '') as TableFilter['priorities'] })}
+          >
+            <span className="text-muted-foreground">No priority</span>
           </CheckRow>
         </Section>
 

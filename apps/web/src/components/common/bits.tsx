@@ -1,9 +1,9 @@
-import { CalendarBlank, Check, Prohibit } from '@phosphor-icons/react'
+import { CalendarBlank, CellSignalHigh, CellSignalLow, CellSignalMedium, Check, Prohibit, WarningCircle } from '@phosphor-icons/react'
 import { formatDay, initials } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { BOARD_BACKGROUNDS, COLORS, statusTone, tone, type ColorName } from '@kanbanto/model/colors'
 import { isPast } from '@kanbanto/model/dates'
-import type { Category, LabelDef, StatusColumn } from '@kanbanto/model/types'
+import { PRIORITY_LABEL, type Category, type LabelDef, type Priority, type StatusColumn } from '@kanbanto/model/types'
 
 /** A status dot. Backlog is a hollow ring: planned, not ready yet. */
 export function StatusDot({ category, color, className }: { category: Category; color?: ColorName; className?: string }) {
@@ -178,6 +178,50 @@ export function DueChip({ due, done }: { due: string; done: boolean }) {
       <CalendarBlank weight="bold" className="size-3" />
       {formatDay(due)}
     </span>
+  )
+}
+
+const PRIORITY_ICON = { urgent: WarningCircle, high: CellSignalHigh, medium: CellSignalMedium, low: CellSignalLow }
+
+/** A task's priority: a filled alert for urgent, signal bars for the rest (like Linear). */
+export function PriorityIcon({ priority, className }: { priority: Priority; className?: string }) {
+  const Icon = PRIORITY_ICON[priority]
+  return (
+    <Icon
+      weight={priority === 'urgent' ? 'fill' : 'bold'}
+      aria-label={`${PRIORITY_LABEL[priority]} priority`}
+      className={cn(
+        'size-3.5 shrink-0',
+        priority === 'urgent' ? 'text-destructive' : priority === 'high' ? 'text-foreground' : 'text-muted-foreground',
+        className,
+      )}
+    />
+  )
+}
+
+/** On a card: urgent says so; the others are just their icon. */
+export function PriorityChip({ priority }: { priority: Priority }) {
+  if (priority === 'urgent')
+    return (
+      <span className="inline-flex h-5 items-center gap-1 rounded bg-destructive/12 px-1.5 text-[11px] font-medium text-destructive">
+        <PriorityIcon priority="urgent" className="size-3" /> Urgent
+      </span>
+    )
+  return (
+    <span className="inline-flex h-5 items-center" title={`${PRIORITY_LABEL[priority]} priority`}>
+      <PriorityIcon priority={priority} />
+    </span>
+  )
+}
+
+/** A small swatch of a board's background (or the plain canvas). */
+export function BoardDot({ background }: { background?: ColorName }) {
+  const bg = background ? BOARD_BACKGROUNDS[background] : null
+  return (
+    <span
+      className="size-4 shrink-0 rounded border"
+      style={bg ? { background: `linear-gradient(135deg, ${bg.from}, ${bg.to})`, borderColor: 'transparent' } : undefined}
+    />
   )
 }
 

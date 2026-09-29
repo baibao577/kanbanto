@@ -1,9 +1,9 @@
 import { isPast, sortTime, todayDay, toDay } from './dates'
 import { isBlocked, isLeaf, type TaskIndex } from './indexer'
-import type { LabelDef, Member, StatusColumn } from './types'
+import { PRIORITIES, PRIORITY_LABEL, type LabelDef, type Member, type Priority, type StatusColumn } from './types'
 
 /** Columns the Outline table can sort by. */
-export type SortKey = 'title' | 'status' | 'progress' | 'assignee' | 'start' | 'due' | 'labels'
+export type SortKey = 'title' | 'status' | 'progress' | 'assignee' | 'priority' | 'start' | 'due' | 'labels'
 export interface Sort {
   key: SortKey
   dir: 'asc' | 'desc'
@@ -17,6 +17,8 @@ export interface TableFilter {
   assignees?: string[]
   /** Label ids (any of them). */
   labels?: string[]
+  /** '' means "no priority". */
+  priorities?: (Priority | '')[]
   due?: 'overdue' | 'week' | 'none'
   /** Only tasks that are ready to start ("up next"). */
   upNext?: boolean
@@ -29,7 +31,12 @@ export interface OutlineConfig {
 
 /** How many separate filters are on. */
 export const filterCount = (f: TableFilter) =>
-  (f.statuses?.length ? 1 : 0) + (f.assignees?.length ? 1 : 0) + (f.labels?.length ? 1 : 0) + (f.due ? 1 : 0) + (f.upNext ? 1 : 0)
+  (f.statuses?.length ? 1 : 0) +
+  (f.assignees?.length ? 1 : 0) +
+  (f.labels?.length ? 1 : 0) +
+  (f.priorities?.length ? 1 : 0) +
+  (f.due ? 1 : 0) +
+  (f.upNext ? 1 : 0)
 
 /** Does one task pass the filter (ignoring its parents and subtasks)? */
 export function matchesFilter(idx: TaskIndex, id: string, f: TableFilter): boolean {
@@ -37,6 +44,7 @@ export function matchesFilter(idx: TaskIndex, id: string, f: TableFilter): boole
   if (f.statuses?.length && !f.statuses.includes(idx.status.get(id)!)) return false
   if (f.assignees?.length && !f.assignees.includes(t.assigneeId ?? '')) return false
   if (f.labels?.length && !t.labels.some((l) => f.labels!.includes(l))) return false
+  if (f.priorities?.length && !f.priorities.includes(t.priority ?? '')) return false
   if (f.due) {
     const done = idx.category.get(id) === 'done'
     if (f.due === 'none' && t.due) return false
@@ -66,6 +74,9 @@ export function sortComparator(idx: TaskIndex, sort: Sort, labelById: Map<string
       }
       case 'assignee':
         return t.assigneeId ? idx.members.get(t.assigneeId)?.name.toLowerCase() : undefined
+      case 'priority':
+        // Ascending: most important first.
+        return t.priority ? PRIORITIES.indexOf(t.priority) : undefined
       case 'start':
         return t.start ? sortTime(t.start) : undefined
       case 'due':
@@ -100,6 +111,8 @@ export function filterChips(f: TableFilter, columns: StatusColumn[], labels: Lab
     chips.push({ key: 'assignees', label: 'Assignee:', value: names(f.assignees, (id) => (id ? members.find((m) => m.id === id)?.name : 'No one')) })
   if (f.labels?.length)
     chips.push({ key: 'labels', label: 'Labels:', value: names(f.labels, (id) => labels.find((l) => l.id === id)?.name || 'Unnamed') })
+  if (f.priorities?.length)
+    chips.push({ key: 'priorities', label: 'Priority:', value: names(f.priorities, (p) => (p ? PRIORITY_LABEL[p as Priority] : 'None')) })
   if (f.due) chips.push({ key: 'due', label: 'Due:', value: { overdue: 'overdue', week: 'this week', none: 'no date' }[f.due] })
   return chips
 }

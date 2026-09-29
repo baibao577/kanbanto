@@ -393,3 +393,42 @@ describe('attachments', () => {
     expect(existsSync(file)).toBe(false)
   })
 })
+
+describe('moving a task to another board', () => {
+  it('takes its subtasks, comments and files; both boards must be yours to edit', async () => {
+    const { ann, bob, vic, id } = await team()
+    const { id: home } = await ann.ok('POST', '/api/boards', { name: 'Home' })
+    await upload(bob, id, 'A2', 'plan.txt', Buffer.from('plan'), 'text/plain')
+    await bob.ok('POST', `/api/boards/${id}/tasks/A2a/comments`, { body: '@Ann first draft', mentions: [ann.user.id] })
+
+    // Bob can edit the first board but can't open Home; Vic only views the first one.
+    expect((await bob.request('POST', `/api/boards/${id}/tasks/A2/move`, { boardId: home })).status).toBe(404)
+    expect((await vic.request('POST', `/api/boards/${id}/tasks/A2/move`, { boardId: home })).status).toBe(403)
+
+    const moved = await ann.ok('POST', `/api/boards/${id}/tasks/A2/move`, { boardId: home })
+    expect(moved).toMatchObject({ board: { id: home, name: 'Home' }, summary: { subtasks: 2 } })
+    const before = (await ann.ok('GET', `/api/boards/${id}`)).data
+    expect(before.tasks.A2).toBeUndefined()
+    expect(before.tasks.A2a).toBeUndefined()
+
+    const after = await ann.ok('GET', `/api/boards/${home}`)
+    const root = after.data.tasks[moved.id]
+    expect(root.parentId).toBe(null)
+    expect(Object.values(after.data.tasks).filter((x) => (x as { parentId: string }).parentId === moved.id)).toHaveLength(2)
+    expect(after.counts.attachments).toEqual({ [moved.id]: 1 })
+    const kidId = Object.keys(after.counts.comments)[0]
+    expect(after.data.tasks[kidId].parentId).toBe(moved.id)
+    const { comments } = await ann.ok('GET', `/api/boards/${home}/tasks/${kidId}/comments`)
+    expect(comments.map((c: { body: string }) => c.body)).toEqual(['@Ann first draft'])
+    const [mention] = (await ann.ok('GET', '/api/notifications')).notifications
+    expect(mention).toMatchObject({ board: { id: home }, task: { id: kidId } })
+
+    // Both logs say it moved, without naming the other board.
+    const log = async (b: string) =>
+      (await ann.ok('GET', `/api/boards/${b}/activity`)).activity.map((e: { items?: { text: string }[] }) => e.items?.[0]?.text)
+    expect((await log(id))[0]).toMatch(/^moved “.+” with 2 subtasks to another board$/)
+    expect((await log(home))[0]).toMatch(/here from another board$/)
+    // A move to the same board is refused.
+    expect((await ann.request('POST', `/api/boards/${home}/tasks/${moved.id}/move`, { boardId: home })).status).toBe(422)
+  })
+})

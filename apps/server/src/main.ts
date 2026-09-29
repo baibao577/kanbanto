@@ -1,6 +1,7 @@
 import { buildApp } from './app'
 import { deleteExpiredTokens } from './auth/apiTokens'
 import { tidyOAuth } from './oauth'
+import { pruneActivity } from './boards/engine'
 import { deleteExpiredSessions } from './auth/sessions'
 import { loadMasterKey } from './crypto'
 import { createDb, migrateDb } from './db'
@@ -58,6 +59,7 @@ const cleanup = setInterval(
     void app.webhooks.prune().catch(() => {})
     void deleteExpiredTokens(db).catch(() => {})
     void tidyOAuth(db).catch(() => {})
+    void pruneActivity(db).catch(() => {})
     void tidyFiles(app).catch((e) => app.log.error({ err: loggable(e) }, 'tidying files'))
   },
   6 * 60 * 60 * 1000,

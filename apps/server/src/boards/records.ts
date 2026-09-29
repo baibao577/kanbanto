@@ -25,6 +25,7 @@ export const boardFromRow = (r: Row<typeof boards>): Board => ({
   name: r.name,
   mode: r.mode,
   ...(r.background ? { background: r.background as ColorName } : {}),
+  ...(r.description ? { description: r.description } : {}),
   ...toMeta(r),
 })
 
@@ -72,6 +73,7 @@ export function taskFromRow(r: Row<typeof tasks>): Task {
     ...toMeta(r),
   }
   if (r.description) t.description = r.description
+  if (r.priority) t.priority = r.priority
   if (r.rank) t.rank = r.rank
   if (r.start) t.start = r.start
   if (r.due) t.due = r.due
@@ -85,6 +87,7 @@ export const taskToRow = (boardId: string, t: Task): Row<typeof tasks> => ({
   parentId: t.parentId,
   title: t.title,
   description: t.description ?? null,
+  priority: t.priority ?? null,
   status: t.status,
   outlineOrder: t.order,
   rank: t.rank ?? null,
@@ -101,6 +104,7 @@ export const boardFields = (b: Board) => ({
   name: b.name,
   mode: b.mode,
   background: b.background ?? null,
+  description: b.description ?? null,
   ...fromMeta(b),
 })
 

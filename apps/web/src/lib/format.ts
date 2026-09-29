@@ -22,6 +22,16 @@ export function formatDay(iso: string, full = false) {
 /** A moment something happened: "Sat 3 Oct 2026, 14:30". */
 export const formatMoment = (iso: string) => format(parseISO(iso), 'EEE d MMM yyyy, HH:mm')
 
+/** How long ago, briefly: "just now", "5m ago", "3h ago", "2d ago", then the day ("3 Oct"). */
+export function formatAgo(iso: string, now = Date.now()) {
+  const min = Math.floor((now - Date.parse(iso)) / 60_000)
+  if (min < 1) return 'just now'
+  if (min < 60) return `${min}m ago`
+  if (min < 24 * 60) return `${Math.floor(min / 60)}h ago`
+  if (min < 7 * 24 * 60) return `${Math.floor(min / 1440)}d ago`
+  return formatDay(iso.slice(0, 10), false)
+}
+
 /** A file size in words: 812 B, 34 KB, 2.4 MB. */
 export const formatSize = (bytes: number) =>
   bytes < 1024 ? `${bytes} B` : bytes < 1024 * 1024 ? `${Math.round(bytes / 1024)} KB` : `${(bytes / 1024 / 1024).toFixed(1).replace(/\.0$/, '')} MB`

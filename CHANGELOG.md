@@ -19,7 +19,12 @@ then `git pull` (or download the new release) and `docker compose up -d --build`
 - **Integrations:** personal API tokens (once a platform admin turns them on), webhooks per board with signed
   deliveries and retries, an MCP endpoint for AI assistants, a Skill for Claude Code, and an API reference at
   `/api/docs` on every site. Claude on the web and in Claude Desktop (and ChatGPT) can connect by signing in (OAuth),
-  when a platform admin allows it.
+  when a platform admin allows it. For assistants: a 90-day activity log of who changed what (and through which app),
+  a team overview, searches by priority, label and time, and an Inbox for quick capture.
+- **Priorities** (urgent, high, medium, low) on tasks: shown on cards, and in the Outline, filters and sorting. Boards
+  can say **what they're for**.
+- **Move a task to another board**, with its subtasks, comments and files (from its menu, or the card's panel). You see
+  what fits before it moves: lists and labels are matched by name, and people who aren't on that board are named.
 - **Email** through any SMTP server or Resend, with limits to stay within a free plan. **File storage** on the server's
   disk or in an S3-compatible bucket (Cloudflare R2, Amazon S3, MinIO); people can bring their own.
 - **Self-hosting:** one Docker Compose file, an optional HTTPS add-on, backups and restores, a Platform console for

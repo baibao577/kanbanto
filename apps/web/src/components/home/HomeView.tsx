@@ -8,6 +8,7 @@ import {
   Plus,
   SignOut,
   Trash,
+  Tray,
   UploadSimple,
   UsersThree,
 } from '@phosphor-icons/react'
@@ -42,6 +43,7 @@ import { Input } from '@/components/ui/input'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { useBoards } from '@/data/useBoards'
 import { useWorkspaces } from '@/data/useWorkspaces'
+import { formatAgo } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { CreateBoardDialog } from './CreateBoardDialog'
 import { CreateWorkspaceDialog } from './CreateWorkspaceDialog'
@@ -132,6 +134,7 @@ export function HomeView() {
       <BoardTile
         key={b.id}
         board={b}
+        inbox={b.id === user?.inboxBoardId}
         onRename={b.role === 'owner' || b.role === 'editor' ? () => setRenaming(b) : undefined}
         onDelete={b.role === 'owner' ? () => askDelete(b) : undefined}
         onLeave={b.role !== 'owner' && b.via === 'member' ? () => askLeave(b) : undefined}
@@ -276,6 +279,8 @@ export function HomeView() {
 }
 
 const ROLE_LABEL = { owner: null, editor: 'Editor', viewer: 'Viewer' } as const
+/** Who can open it, in a word or two (the tooltip says it in full). */
+const WHO = { private: 'Private', invited: 'Invited only', workspace: 'Workspace' } as const
 
 function BoardSection({
   title,
@@ -305,12 +310,15 @@ function BoardSection({
 
 function BoardTile({
   board,
+  inbox,
   onRename,
   onDelete,
   onLeave,
   move,
 }: {
   board: BoardSummary
+  /** It's your Inbox. */
+  inbox?: boolean
   onRename?: () => void
   onDelete?: () => void
   onLeave?: () => void
@@ -324,11 +332,19 @@ function BoardTile({
   const hasMenu = onRename || onDelete || onLeave || move
   return (
     <div className="group relative overflow-hidden rounded-xl border bg-card shadow-xs transition-shadow hover:shadow-md">
-      <a href={hrefFor({ page: 'board', id: board.id })} className="block outline-none focus-visible:ring-2 focus-visible:ring-ring">
+      <a href={hrefFor({ page: 'board', id: board.id })} className="flex h-full flex-col outline-none focus-visible:ring-2 focus-visible:ring-ring">
         <div
-          className={cn('flex h-20 items-end px-4 pb-3', !bg && 'bg-lane')}
+          className={cn('relative flex h-20 items-end px-4 pb-3', !bg && 'bg-lane')}
           style={bg ? { background: `linear-gradient(135deg, ${bg.from}, ${bg.to})` } : undefined}
         >
+          {inbox && (
+            <span
+              className="absolute top-2 left-2 inline-flex items-center gap-1 rounded-md border border-white/30 bg-white/60 px-1.5 py-0.5 text-[10px] font-medium text-black/75 backdrop-blur-sm dark:bg-black/40 dark:text-white/90"
+              title="Your Inbox: tasks apps add without choosing a board go here"
+            >
+              <Tray weight="fill" className="size-3" /> Inbox
+            </span>
+          )}
           <span
             className={cn(
               'line-clamp-2 text-[15px] leading-snug font-semibold',
@@ -338,26 +354,41 @@ function BoardTile({
             {board.name}
           </span>
         </div>
-        <div className="space-y-2 px-4 py-3">
-          <div className="flex items-center gap-2">
-            <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-foreground/8">
+        <div className="flex flex-1 flex-col gap-3 px-4 pt-3 pb-3">
+          {board.description && <p className="line-clamp-2 text-xs leading-relaxed text-muted-foreground">{board.description}</p>}
+          <div className="mt-auto space-y-1.5">
+            <div className="flex items-baseline justify-between text-xs">
+              <span className="text-muted-foreground">
+                {board.taskCount ? (
+                  <>
+                    <span className="font-medium text-foreground tabular-nums">{board.doneCount.toLocaleString()}</span> of{' '}
+                    <span className="tabular-nums">{board.taskCount.toLocaleString()}</span> done
+                  </>
+                ) : (
+                  'No tasks yet'
+                )}
+              </span>
+              {board.taskCount > 0 && <span className="text-[11px] text-muted-foreground tabular-nums">{pct}%</span>}
+            </div>
+            <div className="h-1.5 overflow-hidden rounded-full bg-foreground/8">
               <div className="h-full rounded-full bg-status-done" style={{ width: `${pct}%` }} />
             </div>
-            <span className="text-[11px] text-muted-foreground tabular-nums">{pct}%</span>
           </div>
-          <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <vis.icon className="size-3.5 shrink-0" aria-label={vis.label} />
-              </TooltipTrigger>
-              <TooltipContent>{vis.label}</TooltipContent>
-            </Tooltip>
-            <span className="truncate">
-              {board.taskCount.toLocaleString()} {board.taskCount === 1 ? 'task' : 'tasks'} · updated{' '}
-              {formatDistanceToNow(parseISO(board.updatedAt), { addSuffix: true })}
-            </span>
-            {role && <span className="ml-auto shrink-0 rounded bg-secondary px-1.5 py-0.5 text-[10px] font-medium">{role}</span>}
-          </div>
+        </div>
+        <div className="flex items-center gap-2 border-t px-4 py-2 text-[11px] text-muted-foreground">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span className="inline-flex min-w-0 items-center gap-1">
+                <vis.icon className="size-3.5 shrink-0" aria-hidden />
+                <span className="truncate">{WHO[board.visibility as keyof typeof WHO] ?? WHO.invited}</span>
+              </span>
+            </TooltipTrigger>
+            <TooltipContent>{vis.label}</TooltipContent>
+          </Tooltip>
+          {role && <span className="shrink-0 rounded bg-secondary px-1.5 py-0.5 text-[10px] font-medium text-foreground/70">{role}</span>}
+          <span className="ml-auto shrink-0" title={`Updated ${formatDistanceToNow(parseISO(board.updatedAt), { addSuffix: true })}`}>
+            Updated {formatAgo(board.updatedAt)}
+          </span>
         </div>
       </a>
       {hasMenu && (

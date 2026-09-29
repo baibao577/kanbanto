@@ -85,6 +85,20 @@
       "when": 1790707978999,
       "tag": "0011_oauth_apps",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1790709722211,
+      "tag": "0012_board_activity",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1790710590727,
+      "tag": "0013_priority_inbox_about",
+      "breakpoints": true
     }
   ]
 }

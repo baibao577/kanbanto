@@ -16,6 +16,8 @@ export interface SessionUser {
   emailVerified: boolean
   /** Wants the daily email summary of @mentions. */
   mentionEmails: boolean
+  /** Their Inbox board (see users.inboxBoardId). */
+  inboxBoardId: string | null
   /** Has to confirm their email before using the app (set per request: only once the site can send email). */
   mustVerify?: boolean
 }
@@ -44,9 +46,19 @@ export async function userForToken(db: Db, token: string): Promise<SessionUser |
       .update(sessions)
       .set({ expiresAt: new Date(Date.now() + SESSION_DAYS * DAY) })
       .where(eq(sessions.id, id))
-  const { id: userId, email, name, isAdmin, emailVerifiedAt, mentionEmails } = row.user
-  return { id: userId, email, name, isAdmin, emailVerified: !!emailVerifiedAt, mentionEmails }
+  return sessionUser(row.user)
 }
+
+/** The signed-in person, from their row. */
+export const sessionUser = (u: typeof users.$inferSelect): SessionUser => ({
+  id: u.id,
+  email: u.email,
+  name: u.name,
+  isAdmin: u.isAdmin,
+  emailVerified: !!u.emailVerifiedAt,
+  mentionEmails: u.mentionEmails,
+  inboxBoardId: u.inboxBoardId,
+})
 
 export async function endSession(db: Db, token: string) {
   await db.delete(sessions).where(eq(sessions.id, hashToken(token)))

@@ -42,6 +42,8 @@ export interface Board extends Meta {
   mode: StatusMode
   /** Board background; unset = the default canvas. */
   background?: ColorName
+  /** What the board is for, in a sentence or two (also how assistants tell boards apart). */
+  description?: string
 }
 
 /** Someone tasks can be assigned to. Tasks point at members by id, so renaming a person is one change. */
@@ -81,6 +83,11 @@ export const EXAMPLE_COLUMNS: StatusColumn[] = [
   ...DEFAULT_COLUMNS,
 ]
 
+/** How important a task is, most first. Unset: no priority. */
+export const PRIORITIES = ['urgent', 'high', 'medium', 'low'] as const
+export type Priority = (typeof PRIORITIES)[number]
+export const PRIORITY_LABEL: Record<Priority, string> = { urgent: 'Urgent', high: 'High', medium: 'Medium', low: 'Low' }
+
 export interface Task extends Meta {
   id: string
   title: string
@@ -98,6 +105,7 @@ export interface Task extends Meta {
   labels: string[]
   blockedBy: string[]
   description?: string
+  priority?: Priority
   /** Timeline bar color; unset = its status color. */
   color?: ColorName
   /**

@@ -30,6 +30,8 @@ export interface BoardContextValue {
   onActivity: (listener: (m: TaskActivity) => void) => () => void
   /** Open the task detail dialog. */
   openTask: (id: string) => void
+  /** Asks where to move a task (with its subtasks) on another board. */
+  moveToBoard: (id: string) => void
   /** Create a task (defaults: under the focused task, first "not started" list). Returns its id, or null if refused. */
   createTask: (
     parentId: string | null | undefined,

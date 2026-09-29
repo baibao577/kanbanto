@@ -81,7 +81,7 @@ export function BoardView({ search }: { search: string }) {
 }
 
 function Board({ search }: { search: string }) {
-  const { data, prefs, setPrefs, idx, run, openTask, createTask, focus, readOnly, counts } = useBoard()
+  const { data, prefs, setPrefs, idx, run, openTask, createTask, focus, readOnly, counts, moveToBoard } = useBoard()
   const config = prefs.display.board
   // Filters (shared by every tab) narrow the cards, like search.
   const filter = prefs.filter
@@ -170,6 +170,7 @@ function Board({ search }: { search: string }) {
   const moveFrom = (row: string, col: string) => ({
     lists: columns,
     col,
+    toBoard: moveToBoard,
     to: (id: string, where: { col: string } | 'top' | 'bottom') => {
       const to = typeof where === 'object' ? where.col : col
       drop(id, row, to, where === 'top' ? 0 : (view.cells.get(cellKey(row, to))?.length ?? 0))

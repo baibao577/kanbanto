@@ -39,7 +39,16 @@ curl -X POST https://kanbanto.example.com/api/boards/<board id>/mutations \
   `task.delete`, and the ones for lists, labels and the board.
 
 `GET /api/boards/<id>` returns the whole board: its lists, labels, people and tasks (a task's `status` is its list's id;
-`parentId` makes the tree).
+`parentId` makes the tree; `priority` is `urgent`, `high`, `medium` or `low`).
+
+`POST /api/boards/<id>/tasks/<task id>/move` with `{"boardId": "<other board>"}` moves a task, with its subtasks,
+comments and files, to another board you can edit (optionally `"list": "<list id there>"`). It gets a new id there,
+which the answer gives. Lists and labels are matched by name; people who aren't on that board are unassigned.
+
+`GET /api/boards/<id>/activity?since=2026-09-01&until=2026-09-15` says what happened in a stretch of time, newest
+first: each change in words ("moved “Deploy” to Done"), who made it and through which app (`via`), and comments.
+`since` and `until` also take `24h`, `3d` or `2w` (back from now). Changes are kept for 90 days. For more, ask again
+with `until` set to the answer's `nextUntil`.
 
 **Dates.** A task's `start` and `due` are a whole day, `2026-10-15`, or with a time an exact moment in UTC,
 `2026-10-15T07:30:00Z`, which the app shows in each person's own time zone. Send a time with its time zone
@@ -105,16 +114,25 @@ claude mcp add --transport http kanbanto https://kanbanto.example.com/api/mcp --
 
 | Tool | What it does |
 |---|---|
-| `list_boards` | The boards you can open |
-| `get_board` | A board's lists, labels, people and task outline |
-| `find_tasks` | Search one board or all of them: text, list, assignee (`me`), due date |
+| `list_boards` | The boards you can open: where each lives (a workspace, "Personal" or "Shared with you"), what it's for, and which is your Inbox |
+| `get_board` | A board's lists, labels, people and its open tasks as an outline: the top levels, or the part under one task |
+| `find_tasks` | Search one board, one workspace or everything: text, list, label, assignee (`me`, `nobody`), priority, blocked, due, created or changed between two times; sorted and paged |
+| `team_overview` | How a board or workspace is doing: tasks per list, each person's open, overdue and blocked work, and what needs attention |
+| `recent_activity` | What happened in a stretch of time (default: the last day), optionally by one person: changes, who made them and through which app, and comments |
 | `get_task` | A task with its parents, subtasks, what it waits on, and latest comments |
-| `create_tasks` | Add tasks, or break one down into subtasks (`parent_id`) |
-| `update_task` | Title, description, dates, assignee, labels, list |
+| `create_tasks` | Add tasks, or break one down into subtasks (`parent_id`); without a board they go to your Inbox |
+| `update_task` | Title, description, dates, assignee, priority, labels, list |
 | `move_task` | Change a task's parent or its place among siblings |
+| `move_to_board` | Move a task, with its subtasks, comments and files, to another board (say, from the Inbox) |
 | `add_comment` | Comment as you; `@Name` notifies people |
 
-Read-only tokens get the first four only. There's no delete tool, on purpose.
+Read-only tokens get the first six only. Every change on a board is kept as a line of activity for 90 days ("Ann moved
+“Deploy” to Done", marked with the app it came through), which is what `recent_activity` reads. There's no delete tool,
+on purpose.
+
+**Help assistants help you.** Say what each board is for (Board settings → "What's this board for?"): assistants read it
+to pick the right board. And choose an **Inbox** (Board settings → "Use as my Inbox"): "remind me to buy milk" then
+lands there without Claude asking where.
 
 **Mind what assistants read.** Task text and comments are written by people on your boards. A line like "ignore your
 instructions and…" in a card is just text to Kanbanto, but an assistant might follow it. Give assistants a read-only

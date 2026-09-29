@@ -2,6 +2,7 @@ import scalar from '@scalar/fastify-api-reference'
 import { CommandSchema } from '@kanbanto/model/schema'
 import type { FastifyPluginAsync } from 'fastify'
 import { z } from 'zod'
+import { ACTIVITY_DAYS } from './boards/activityLog'
 import { siteUrl } from './http'
 
 /**
@@ -34,6 +35,7 @@ const schemas = {
       labels: { type: 'array', items: str },
       blockedBy: { type: 'array', items: str, description: 'Tasks it waits on.' },
       description: str,
+      priority: { enum: ['urgent', 'high', 'medium', 'low'], description: 'Unset: no priority.' },
       createdAt: { ...str, format: 'date-time' },
       updatedAt: { ...str, format: 'date-time' },
       version: { type: 'integer' },
@@ -44,10 +46,15 @@ const schemas = {
   Label: obj({ id: str, name: str, color: str }),
   Person: obj({ id: str, name: str }),
   BoardData: obj({
-    board: obj({ id: str, name: str, mode: { enum: ['manual', 'derived'], description: 'derived: a parent’s status follows its subtasks.' } }, [
-      'id',
-      'name',
-    ]),
+    board: obj(
+      {
+        id: str,
+        name: str,
+        description: { ...str, description: 'What the board is for.' },
+        mode: { enum: ['manual', 'derived'], description: 'derived: a parent’s status follows its subtasks.' },
+      },
+      ['id', 'name'],
+    ),
     columns: { type: 'array', items: ref('List'), description: 'The lists, in order.' },
     labels: { type: 'array', items: ref('Label') },
     members: { type: 'array', items: ref('Person'), description: 'The people who can be assigned.' },
@@ -56,6 +63,7 @@ const schemas = {
   BoardSummary: obj({
     id: str,
     name: str,
+    description: nullable(str),
     visibility: { enum: ['private', 'invited', 'workspace'] },
     publicLink: { type: 'boolean' },
     workspaceId: nullable(str),
@@ -202,6 +210,44 @@ The answer lists the records that changed.
             200: json(obj({ seq: { type: 'integer' }, changes: { type: 'array', items: ref('Change') } })),
             403: json(ref('Error'), 'You can view but not change it'),
             422: json(ref('Error'), 'The command isn’t allowed (the message says why)'),
+          },
+        },
+      },
+      '/api/boards/{id}/activity': {
+        get: {
+          tags: ['Boards'],
+          summary: 'What happened on a board, in a stretch of time',
+          description: `Newest first: its changes, in words ("moved “Deploy” to Done"), and comments. Changes are kept for ${ACTIVITY_DAYS} days. For more, ask again with \`until\` set to \`nextUntil\`.`,
+          parameters: [
+            id('id'),
+            { name: 'since', in: 'query', schema: { ...str, description: 'An ISO date or date-time, or back from now: 24h, 3d, 2w. Default: 24h.' } },
+            { name: 'until', in: 'query', schema: { ...str, description: 'Up to when (not including it), in the same forms. Default: now.' } },
+            { name: 'limit', in: 'query', schema: { type: 'integer', minimum: 1, maximum: 200, default: 50 } },
+          ],
+          responses: {
+            200: json(
+              obj({
+                activity: {
+                  type: 'array',
+                  items: obj(
+                    {
+                      at: { ...str, format: 'date-time' },
+                      kind: { enum: ['change', 'comment'] },
+                      actor: nullable(obj({ id: str, name: str })),
+                      command: str,
+                      via: { ...nullable(str), description: 'The app it was made through ("Claude", "API"); null: the website.' },
+                      items: { type: 'array', items: obj({ taskId: str, text: str }, ['text']), description: 'Changes: what it did, in words.' },
+                      taskId: str,
+                      task: nullable(str),
+                      body: str,
+                      mentions: { type: 'array', items: str },
+                    },
+                    ['at', 'kind', 'actor'],
+                  ),
+                },
+                nextUntil: nullable({ ...str, format: 'date-time' }),
+              }),
+            ),
           },
         },
       },

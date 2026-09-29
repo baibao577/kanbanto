@@ -92,6 +92,11 @@ describe('apps connecting with sign-in (OAuth, for MCP)', () => {
 
     const tools = (await rpc(access_token, 'tools/list')).body.result.tools.map((x: { name: string }) => x.name)
     expect(tools).toContain('create_tasks')
+    // What it changes is marked with the app's name.
+    const [{ id: boardId }] = (await ann.ok('GET', '/api/boards')).boards
+    await rpc(access_token, 'tools/call', { name: 'create_tasks', arguments: { board_id: boardId, tasks: [{ title: 'From Claude' }] } })
+    const { activity } = await ann.ok('GET', `/api/boards/${boardId}/activity`)
+    expect(activity[0]).toMatchObject({ via: 'Claude', items: [{ text: 'added “From Claude”' }] })
     // Only for MCP: not the rest of the API.
     expect((await anon().request('GET', '/api/boards', undefined, { authorization: `Bearer ${access_token}` })).status).toBe(403)
 
@@ -134,7 +139,7 @@ describe('apps connecting with sign-in (OAuth, for MCP)', () => {
     })
     expect(got.body.scope).toBe('kanbanto:read')
     const tools = (await rpc(got.body.access_token, 'tools/list')).body.result.tools.map((x: { name: string }) => x.name)
-    expect(tools).toEqual(['list_boards', 'get_board', 'find_tasks', 'get_task'])
+    expect(tools).toEqual(['list_boards', 'get_board', 'find_tasks', 'team_overview', 'recent_activity', 'get_task'])
   })
 
   it('known AI apps only: Claude and apps on the computer yes, other sites no; any app: yes', async () => {

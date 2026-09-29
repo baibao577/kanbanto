@@ -3,6 +3,7 @@ import {
   ArrowLineDown,
   ArrowLineUp,
   ArrowSquareOut,
+  ArrowSquareRight,
   ArrowsLeftRight,
   ChatCircle,
   Crosshair,
@@ -12,7 +13,7 @@ import {
   Prohibit,
 } from '@phosphor-icons/react'
 import { memo } from 'react'
-import { Avatar, DueChip, LabelChip, ProgressBar, StatusDot, StatusPill } from '@/components/common/bits'
+import { Avatar, DueChip, LabelChip, PriorityChip, ProgressBar, StatusDot, StatusPill } from '@/components/common/bits'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -41,7 +42,7 @@ interface Props {
   /** Set when this task also has its own row on the board. */
   onJumpToRow?: (id: string) => void
   /** Moving without dragging, from the card's menu: the board's columns, the card's column, and what to do. */
-  move?: { lists: Lane[]; col: string; to: (id: string, where: { col: string } | 'top' | 'bottom') => void }
+  move?: { lists: Lane[]; col: string; to: (id: string, where: { col: string } | 'top' | 'bottom') => void; toBoard: (id: string) => void }
   /** In a grouped list: the card has no parent header, so it's one of the list's items (see dnd.ts). */
   item?: boolean
   /** View only: the card can't be dragged. */
@@ -116,9 +117,17 @@ export const TaskCard = memo(function TaskCard({
 
       {d.includes('progress') && kids && <ProgressBar done={done} total={total} className="mt-2.5" />}
 
-      {(config.columns === 'parent' || blocked || t.due || (kids && !d.includes('progress')) || t.assigneeId || comments > 0 || files > 0) && (
+      {(config.columns === 'parent' ||
+        t.priority ||
+        blocked ||
+        t.due ||
+        (kids && !d.includes('progress')) ||
+        t.assigneeId ||
+        comments > 0 ||
+        files > 0) && (
         <footer className="mt-2 flex flex-wrap items-center gap-1.5">
           {config.columns === 'parent' && <StatusPill col={col} />}
+          {t.priority && <PriorityChip priority={t.priority} />}
           {blocked && (
             <span className="inline-flex h-5 items-center gap-1 rounded bg-warning/12 px-1.5 text-[11px] font-medium text-warning">
               <Prohibit weight="bold" className="size-3" /> Waiting
@@ -270,6 +279,10 @@ function CardMenu({
             </DropdownMenuItem>
             <DropdownMenuItem onSelect={() => move.to(id, 'bottom')}>
               <ArrowLineDown /> Move to bottom
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onSelect={() => move.toBoard(id)}>
+              <ArrowSquareRight /> Move to another board…
             </DropdownMenuItem>
           </>
         )}

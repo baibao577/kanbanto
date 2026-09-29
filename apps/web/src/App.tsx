@@ -25,6 +25,7 @@ import { useBoardStore } from '@/data/useBoardStore'
 
 // Dialogs load the first time they're opened.
 const TaskDialog = lazy(() => import('@/components/task/TaskDialog').then((m) => ({ default: m.TaskDialog })))
+const MoveToBoardDialog = lazy(() => import('@/components/task/MoveToBoardDialog').then((m) => ({ default: m.MoveToBoardDialog })))
 const ShareDialog = lazy(() => import('@/components/share/ShareDialog').then((m) => ({ default: m.ShareDialog })))
 const AccountView = lazy(() => import('@/components/account/AccountView').then((m) => ({ default: m.AccountView })))
 const AdminView = lazy(() => import('@/components/admin/AdminView').then((m) => ({ default: m.AdminView })))
@@ -250,6 +251,7 @@ function Workspace({ store }: { store: Store }) {
   const [search, setSearch] = useState('')
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [shareOpen, setShareOpen] = useState(false)
+  const [movingId, setMovingId] = useState<string | null>(null)
 
   const say = useCallback((message: string | null) => message && toast(message, { id: 'undo' }), [])
 
@@ -288,6 +290,7 @@ function Workspace({ store }: { store: Store }) {
     access,
     readOnly,
     openTask,
+    moveToBoard: setMovingId,
     createTask,
     focus: (id) => go({ focus: id }),
     memberName: (id) => (id ? (idx.members.get(id)?.name ?? '') : ''),
@@ -338,8 +341,8 @@ function Workspace({ store }: { store: Store }) {
           onOpenSettings={() => setSettingsOpen(true)}
           onExport={() => exportBoard(data)}
         />
-        <ViewBar search={search}>
-          <main className="min-h-0 flex-1" style={prefs.layout === 'board' ? canvasStyle(data.board.background) : undefined}>
+        <ViewBar search={search} style={prefs.layout === 'board' ? canvasStyle(data.board.background) : undefined}>
+          <main className="min-h-0 flex-1">
             <Suspense fallback={null}>
               <View key={viewKey} search={search} />
             </Suspense>
@@ -358,6 +361,18 @@ function Workspace({ store }: { store: Store }) {
         </Suspense>
       )}
       <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
+      {movingId && (
+        <Suspense fallback={null}>
+          <MoveToBoardDialog
+            taskId={movingId}
+            onClose={() => setMovingId(null)}
+            onMoved={() => {
+              setMovingId(null)
+              if (openId) closeTask()
+            }}
+          />
+        </Suspense>
+      )}
     </BoardContext.Provider>
   )
 }

@@ -3,7 +3,7 @@ import { z } from 'zod'
 import { COLORS, type ColorName } from './colors'
 import type { Command } from './commands'
 import { isPosition } from './position'
-import { CATEGORIES, LAYOUTS } from './types'
+import { CATEGORIES, LAYOUTS, PRIORITIES } from './types'
 
 /**
  * Runtime checks for data coming from outside the code: imported files, and records a client asks to put back
@@ -31,6 +31,7 @@ const recordId = z
   .max(100)
   .refine((s) => !CONTROL.test(s), 'Not a valid id.')
 const position = z.string().refine(isPosition, 'Not a valid position.')
+const priority = z.enum(PRIORITIES)
 const meta = {
   createdAt: z.string().max(40),
   updatedAt: z.string().max(40),
@@ -49,6 +50,7 @@ export const TaskSchema = z.object({
   labels: z.array(recordId).max(200),
   blockedBy: z.array(recordId).max(200),
   description: plain(50_000).optional(),
+  priority: priority.optional(),
   color: color.optional(),
   rank: position.optional(),
   ...meta,
@@ -59,6 +61,7 @@ export const BoardSchema = z.object({
   name: plain(200),
   mode: z.enum(['manual', 'derived']),
   background: color.optional(),
+  description: plain(1000).optional(),
   ...meta,
 })
 export const MemberSchema = z.object({ id: recordId, name: plain(200), ...meta })
@@ -95,6 +98,7 @@ const taskFields = z
     labels: z.array(id).max(200),
     blockedBy: z.array(id).max(200),
     assigneeId: id.nullable(),
+    priority: priority.nullable(),
     color: color.nullable(),
   })
   .partial()
@@ -143,7 +147,7 @@ export const CommandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('label.delete'), id }),
   z.object({
     type: z.literal('board.update'),
-    fields: z.object({ name: text(200), mode: z.enum(['manual', 'derived']), background: color.nullable() }).partial(),
+    fields: z.object({ name: text(200), mode: z.enum(['manual', 'derived']), background: color.nullable(), description: text(1000) }).partial(),
   }),
   z.object({ type: z.literal('records.restore'), changes: z.array(ChangeSchema).max(20_000) }),
 ])
@@ -167,12 +171,15 @@ export const ViewPrefsSchema = z.object({
   layout: z.enum(LAYOUTS),
   display: z.object({ board: viewConfig }),
   outline: z.object({
-    sort: z.object({ key: z.enum(['title', 'status', 'progress', 'assignee', 'start', 'due', 'labels']), dir: z.enum(['asc', 'desc']) }).optional(),
+    sort: z
+      .object({ key: z.enum(['title', 'status', 'progress', 'assignee', 'priority', 'start', 'due', 'labels']), dir: z.enum(['asc', 'desc']) })
+      .optional(),
   }),
   filter: z.object({
     statuses: z.array(z.string()).optional(),
     assignees: z.array(z.string()).optional(),
     labels: z.array(z.string()).optional(),
+    priorities: z.array(z.enum([...PRIORITIES, ''])).optional(),
     due: z.enum(['overdue', 'week', 'none']).optional(),
     upNext: z.boolean().optional(),
   }),

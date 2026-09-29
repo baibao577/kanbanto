@@ -1,5 +1,5 @@
 import { CaretRight, Crosshair, X } from '@phosphor-icons/react'
-import { createContext, useContext, useState, type ReactNode } from 'react'
+import { createContext, useContext, useState, type CSSProperties, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { useBoard } from '@/app/board-context'
 import { Button } from '@/components/ui/button'
@@ -14,17 +14,22 @@ export function ViewActions({ children }: { children: ReactNode }) {
   return slot ? createPortal(children, slot) : null
 }
 
-/** The strip under the top bar: where you are on the left, the current view's controls on the right. */
-export function ViewBar({ children, search }: { children: ReactNode; search: string }) {
+/**
+ * The strip under the top bar: where you are on the left, the current view's controls on the right. It's frosted glass
+ * over the view's background (`style`: the board's gradient), which runs on behind it.
+ */
+export function ViewBar({ children, search, style }: { children: ReactNode; search: string; style?: CSSProperties }) {
   const [slot, setSlot] = useState<HTMLElement | null>(null)
   return (
     <SlotContext.Provider value={slot}>
-      <div className="flex min-h-11 shrink-0 flex-wrap items-center gap-2 border-b bg-background px-3 py-1.5 sm:px-4">
-        <ScopeTrail search={search} />
-        <FilterChips />
-        <div ref={setSlot} className="ml-auto flex items-center gap-1.5" />
+      <div className="flex min-h-0 flex-1 flex-col" style={style}>
+        <div className="relative z-10 flex min-h-11 shrink-0 flex-wrap items-center gap-2 border-b border-white/25 bg-background/35 px-3 py-1.5 shadow-[0_6px_16px_-12px_oklch(0_0_0/0.25)] backdrop-blur-md backdrop-saturate-[1.15] sm:px-4 dark:border-white/[0.06] dark:bg-background/40">
+          <ScopeTrail search={search} />
+          <FilterChips />
+          <div ref={setSlot} className="ml-auto flex items-center gap-1.5" />
+        </div>
+        {children}
       </div>
-      {children}
     </SlotContext.Provider>
   )
 }

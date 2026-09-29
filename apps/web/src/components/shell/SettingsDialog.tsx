@@ -1,11 +1,13 @@
-import { Desktop, Moon, Sun, Trash } from '@phosphor-icons/react'
+import { Desktop, Info, Moon, PaintBrush, PlugsConnected, Sun, Trash, Tray, User, UsersThree, type Icon } from '@phosphor-icons/react'
 import { toast } from 'sonner'
 import { useState, type ReactNode } from 'react'
-import { WebhooksDialog } from '@/components/board/WebhooksDialog'
+import { api, errorMessage } from '@/api/client'
 import { useBoard } from '@/app/board-context'
-import { Avatar, BackgroundSwatches } from '@/components/common/bits'
 import { navigate } from '@/app/router'
+import { useAuth } from '@/app/use-auth'
 import { useTheme } from '@/app/use-theme'
+import { WebhooksDialog } from '@/components/board/WebhooksDialog'
+import { Avatar, BackgroundSwatches } from '@/components/common/bits'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -18,163 +20,360 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
+import { Switch } from '@/components/ui/switch'
+import { Textarea } from '@/components/ui/textarea'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
-import { api, errorMessage } from '@/api/client'
+import { cn } from '@/lib/utils'
+import type { PublicUser } from '@kanbanto/model/api'
+import { BOARD_BACKGROUNDS } from '@kanbanto/model/colors'
 import type { StatusMode } from '@kanbanto/model/types'
 
+type Tab = 'general' | 'look' | 'people' | 'you' | 'delete'
+
+/**
+ * Board settings, in sections: the board itself (for everyone on it), how it looks, who's on it and what's connected,
+ * your own settings (only you), and deleting it (owners). A sidebar on wide screens, tabs on narrow ones.
+ */
 export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boolean) => void }) {
-  const { data, run, access, openShare } = useBoard()
-  const { theme, setTheme } = useTheme()
-  const [webhooks, setWebhooks] = useState(false)
+  const { access } = useBoard()
+  const [tab, setTab] = useState<Tab>('general')
+  const owner = access.role === 'owner'
+  const tabs: { id: Tab; label: string; icon: Icon; danger?: boolean }[] = [
+    { id: 'general', label: 'General', icon: Info },
+    { id: 'look', label: 'Background', icon: PaintBrush },
+    { id: 'people', label: 'People & apps', icon: UsersThree },
+    { id: 'you', label: 'Just for you', icon: User },
+    ...(owner ? [{ id: 'delete' as const, label: 'Delete board', icon: Trash, danger: true }] : []),
+  ]
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[calc(100dvh-4rem)] overflow-y-auto sm:max-w-lg">
-        <DialogHeader>
-          <DialogTitle>Board settings</DialogTitle>
-          <DialogDescription>Changes are saved as you make them.</DialogDescription>
-        </DialogHeader>
-
-        <div className="space-y-6">
-          <div className="space-y-2">
-            <Label htmlFor="board-name">Board name</Label>
-            <Input
-              id="board-name"
-              key={data.board.name}
-              defaultValue={data.board.name}
-              onBlur={(e) => {
-                const name = e.target.value.trim()
-                if (name && name !== data.board.name) run({ type: 'board.update', fields: { name } })
-              }}
-              onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
-            />
+      <DialogContent className="flex h-[min(38rem,calc(100dvh-2rem))] flex-col gap-0 overflow-hidden p-0 sm:max-w-3xl md:flex-row">
+        <nav aria-label="Settings sections" className="shrink-0 border-b bg-muted/40 md:w-52 md:border-r md:border-b-0">
+          <div className="px-5 pt-4 pr-12 pb-1 md:pt-5 md:pr-5 md:pb-3">
+            <DialogTitle className="text-base">Board settings</DialogTitle>
+            <DialogDescription className="mt-0.5 text-xs">Saved as you go.</DialogDescription>
           </div>
-
-          <div className="space-y-2">
-            <Label>When a task has subtasks, its status…</Label>
-            <RadioGroup
-              value={data.board.mode}
-              onValueChange={(v) => run({ type: 'board.update', fields: { mode: v as StatusMode } })}
-              className="gap-2"
-            >
-              <Choice value="derived" title="Follows its subtasks" recommended>
-                It’s Done when all its subtasks are done, and In progress as soon as one of them starts.
-              </Choice>
-              <Choice value="manual" title="Is set by you">
-                It stays wherever you put it, whatever its subtasks are doing.
-              </Choice>
-            </RadioGroup>
-          </div>
-
-          <div className="space-y-2">
-            <Label>People</Label>
-            <div className="flex items-center gap-3">
-              <div className="flex -space-x-1.5">
-                {data.members.slice(0, 6).map((m) => (
-                  <Avatar key={m.id} name={m.name} className="ring-2 ring-background" />
-                ))}
-              </div>
-              <p className="flex-1 text-xs text-muted-foreground">
-                {data.members.length === 1 ? 'Only you so far.' : `${data.members.length} people can work on this board.`} Invite people and choose
-                what they can do in Share.
-              </p>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  onOpenChange(false)
-                  openShare()
-                }}
-              >
-                Share…
-              </Button>
-            </div>
-          </div>
-
-          <div className="space-y-2">
-            <Label>Board background</Label>
-            <BackgroundSwatches
-              value={data.board.background}
-              onChange={(color) => run({ type: 'board.update', fields: { background: color ?? null } })}
-            />
-          </div>
-
-          <div className="space-y-2">
-            <Label>Appearance</Label>
-            <ToggleGroup type="single" variant="outline" value={theme} onValueChange={(v) => v && setTheme(v)} className="w-full">
-              <ToggleGroupItem value="light" className="flex-1 gap-1.5">
-                <Sun /> Light
-              </ToggleGroupItem>
-              <ToggleGroupItem value="dark" className="flex-1 gap-1.5">
-                <Moon /> Dark
-              </ToggleGroupItem>
-              <ToggleGroupItem value="system" className="flex-1 gap-1.5">
-                <Desktop /> System
-              </ToggleGroupItem>
-            </ToggleGroup>
-          </div>
-
-          {access.role === 'owner' && (
-            <div className="space-y-2">
-              <Label>Webhooks</Label>
-              <div className="flex items-center gap-3">
-                <p className="flex-1 text-xs text-muted-foreground">Send this board’s changes to another app as they happen (Slack, n8n, Zapier…).</p>
-                <Button variant="outline" size="sm" onClick={() => setWebhooks(true)}>
-                  Manage…
-                </Button>
-              </div>
-              <WebhooksDialog open={webhooks} onOpenChange={setWebhooks} />
-            </div>
-          )}
-
-          {access.role === 'owner' && (
-            <div className="space-y-2 border-t pt-5">
-              <Label>Delete this board</Label>
-              <p className="text-xs text-muted-foreground">
-                Deletes the board and all its tasks for everyone. Export it first (⋯ → Export board) if you want a copy.
-              </p>
-              <AlertDialog>
-                <AlertDialogTrigger asChild>
-                  <Button variant="outline" size="sm" className="gap-1.5 text-destructive hover:text-destructive">
-                    <Trash /> Delete board…
-                  </Button>
-                </AlertDialogTrigger>
-                <AlertDialogContent>
-                  <AlertDialogHeader>
-                    <AlertDialogTitle>Delete “{data.board.name}”?</AlertDialogTitle>
-                    <AlertDialogDescription>
-                      Its {Object.keys(data.tasks).length.toLocaleString()} tasks will be deleted too. This can’t be undone.
-                    </AlertDialogDescription>
-                  </AlertDialogHeader>
-                  <AlertDialogFooter>
-                    <AlertDialogCancel>Cancel</AlertDialogCancel>
-                    <AlertDialogAction
-                      className="bg-destructive text-white hover:bg-destructive/90"
-                      onClick={() => {
-                        api('DELETE', `/boards/${data.board.id}`).then(
-                          () => {
-                            onOpenChange(false)
-                            navigate({ page: 'home' }, { replace: true })
-                            toast(`Deleted “${data.board.name}”`)
-                          },
-                          (e) => toast.error(errorMessage(e)),
-                        )
-                      }}
-                    >
-                      Delete board
-                    </AlertDialogAction>
-                  </AlertDialogFooter>
-                </AlertDialogContent>
-              </AlertDialog>
-            </div>
-          )}
+          <ul className="flex gap-1 overflow-x-auto p-2 md:flex-col md:px-3 md:pt-0">
+            {tabs.map(({ id, label, icon: I, danger }) => {
+              const on = id === tab
+              return (
+                <li key={id} className={cn(danger && 'md:mt-2 md:border-t md:pt-2')}>
+                  <button
+                    type="button"
+                    aria-current={on ? 'page' : undefined}
+                    onClick={() => setTab(id)}
+                    className={cn(
+                      'flex w-full items-center gap-2.5 rounded-md px-3 py-1.5 text-left text-sm whitespace-nowrap text-muted-foreground hover:bg-accent hover:text-foreground',
+                      on && 'bg-background font-medium text-foreground shadow-xs',
+                      danger && 'text-destructive/80 hover:text-destructive',
+                      danger && on && 'text-destructive',
+                    )}
+                  >
+                    <I weight={on ? 'fill' : 'regular'} className="size-4" />
+                    {label}
+                  </button>
+                </li>
+              )
+            })}
+          </ul>
+        </nav>
+        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5 sm:px-7 sm:py-6">
+          {tab === 'general' && <General />}
+          {tab === 'look' && <Look />}
+          {tab === 'people' && <People onClose={() => onOpenChange(false)} />}
+          {tab === 'you' && <JustForYou />}
+          {tab === 'delete' && owner && <DeleteBoard onDeleted={() => onOpenChange(false)} />}
         </div>
       </DialogContent>
     </Dialog>
+  )
+}
+
+function General() {
+  const { data, run } = useBoard()
+  return (
+    <Section title="General" hint="What everyone on the board sees.">
+      <Card>
+        <Row label="Name" htmlFor="board-name">
+          <Input
+            id="board-name"
+            key={data.board.name}
+            defaultValue={data.board.name}
+            onBlur={(e) => {
+              const name = e.target.value.trim()
+              if (name && name !== data.board.name) run({ type: 'board.update', fields: { name } })
+            }}
+            onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
+          />
+        </Row>
+        <Row
+          label="What’s this board for?"
+          htmlFor="board-about"
+          hint="Shown on your boards page. Assistants like Claude read it to pick the right board."
+        >
+          <Textarea
+            id="board-about"
+            key={data.board.description ?? ''}
+            defaultValue={data.board.description ?? ''}
+            maxLength={1000}
+            rows={2}
+            placeholder="E.g. Home and family errands, or The Acme website launch"
+            className="min-h-0 resize-none"
+            onBlur={(e) => {
+              const description = e.target.value.trim()
+              if (description !== (data.board.description ?? '')) run({ type: 'board.update', fields: { description } })
+            }}
+          />
+        </Row>
+      </Card>
+
+      <Card title="When a task has subtasks, its status…">
+        <RadioGroup
+          value={data.board.mode}
+          onValueChange={(v) => run({ type: 'board.update', fields: { mode: v as StatusMode } })}
+          className="gap-2 p-3"
+        >
+          <Choice value="derived" title="Follows its subtasks" recommended>
+            It’s Done when all its subtasks are done, and In progress as soon as one of them starts.
+          </Choice>
+          <Choice value="manual" title="Is set by you">
+            It stays wherever you put it, whatever its subtasks are doing.
+          </Choice>
+        </RadioGroup>
+      </Card>
+    </Section>
+  )
+}
+
+function Look() {
+  const { data, run } = useBoard()
+  const bg = data.board.background ? BOARD_BACKGROUNDS[data.board.background] : null
+  return (
+    <Section title="Background" hint="Behind the Board tab, for everyone on it.">
+      <div
+        aria-hidden
+        className={cn('flex h-24 items-end gap-2 rounded-xl border p-3', !bg && 'bg-lane')}
+        style={bg ? { background: `linear-gradient(135deg, ${bg.from}, ${bg.to})` } : undefined}
+      >
+        {[0.9, 0.7, 0.8].map((w, i) => (
+          <div key={i} className="h-14 flex-1 rounded-md bg-card/90 p-1.5 shadow-xs">
+            <div className="h-1.5 rounded-full bg-foreground/15" style={{ width: `${w * 100}%` }} />
+            <div className="mt-1.5 h-4 rounded bg-background shadow-xs" />
+          </div>
+        ))}
+      </div>
+      <BackgroundSwatches value={data.board.background} onChange={(color) => run({ type: 'board.update', fields: { background: color ?? null } })} />
+    </Section>
+  )
+}
+
+function People({ onClose }: { onClose: () => void }) {
+  const { data, access, openShare } = useBoard()
+  const [webhooks, setWebhooks] = useState(false)
+  return (
+    <Section title="People & apps" hint="Who can work on this board, and what it tells other apps.">
+      <Card>
+        <Row
+          label="People"
+          icon={UsersThree}
+          hint={
+            data.members.length === 1
+              ? 'Only you so far. Invite people and choose what they can do in Share.'
+              : `${data.members.length} people can work on this board.`
+          }
+          action={
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                onClose()
+                openShare()
+              }}
+            >
+              Share…
+            </Button>
+          }
+        >
+          <div className="flex -space-x-1.5">
+            {data.members.slice(0, 8).map((m) => (
+              <Avatar key={m.id} name={m.name} className="ring-2 ring-card" />
+            ))}
+          </div>
+        </Row>
+        {access.role === 'owner' && (
+          <Row
+            label="Webhooks"
+            icon={PlugsConnected}
+            hint="Send this board’s changes to another app as they happen (Slack, n8n, Zapier…)."
+            action={
+              <Button variant="outline" size="sm" onClick={() => setWebhooks(true)}>
+                Manage…
+              </Button>
+            }
+          />
+        )}
+      </Card>
+      <WebhooksDialog open={webhooks} onOpenChange={setWebhooks} />
+    </Section>
+  )
+}
+
+function JustForYou() {
+  const { data } = useBoard()
+  const { user, setUser } = useAuth()
+  const { theme, setTheme } = useTheme()
+  const isInbox = !!user && user.inboxBoardId === data.board.id
+  const setInbox = (on: boolean) =>
+    api<{ user: PublicUser }>('PATCH', '/auth/me', { inboxBoardId: on ? data.board.id : null }).then(
+      ({ user }) => {
+        setUser(user)
+        toast(on ? `“${data.board.name}” is your Inbox` : 'You have no Inbox now')
+      },
+      (e) => toast.error(errorMessage(e)),
+    )
+  return (
+    <Section title="Just for you" hint="Only you see these. Nobody else’s board changes.">
+      <Card>
+        {user && (
+          <Row
+            label="Use as my Inbox"
+            icon={Tray}
+            hint="Tasks you add from Claude or other apps without choosing a board go here. You can move them to the right board later."
+            action={<Switch checked={isInbox} onCheckedChange={(on) => void setInbox(on)} aria-label="Use as my Inbox" />}
+          />
+        )}
+        <Row label="Appearance" icon={theme === 'dark' ? Moon : theme === 'light' ? Sun : Desktop} hint="Light, dark, or the same as your computer.">
+          <ToggleGroup type="single" variant="outline" value={theme} onValueChange={(v) => v && setTheme(v)} className="w-full">
+            <ToggleGroupItem value="light" className="flex-1 gap-1.5">
+              <Sun /> Light
+            </ToggleGroupItem>
+            <ToggleGroupItem value="dark" className="flex-1 gap-1.5">
+              <Moon /> Dark
+            </ToggleGroupItem>
+            <ToggleGroupItem value="system" className="flex-1 gap-1.5">
+              <Desktop /> System
+            </ToggleGroupItem>
+          </ToggleGroup>
+        </Row>
+      </Card>
+    </Section>
+  )
+}
+
+function DeleteBoard({ onDeleted }: { onDeleted: () => void }) {
+  const { data } = useBoard()
+  return (
+    <Section title="Delete board" hint="For the board’s owners.">
+      <div className="space-y-3 rounded-xl border border-destructive/30 bg-destructive/5 p-4">
+        <p className="text-sm">
+          Deletes “{data.board.name}” and its {Object.keys(data.tasks).length.toLocaleString()} tasks for everyone, with their comments and files.
+          This can’t be undone.
+        </p>
+        <p className="text-xs text-muted-foreground">Want a copy first? ⋯ → Export board.</p>
+        <AlertDialog>
+          <AlertDialogTrigger asChild>
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-1.5 border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive"
+            >
+              <Trash /> Delete board…
+            </Button>
+          </AlertDialogTrigger>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Delete “{data.board.name}”?</AlertDialogTitle>
+              <AlertDialogDescription>
+                Its {Object.keys(data.tasks).length.toLocaleString()} tasks will be deleted too. This can’t be undone.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                className="bg-destructive text-white hover:bg-destructive/90"
+                onClick={() => {
+                  api('DELETE', `/boards/${data.board.id}`).then(
+                    () => {
+                      onDeleted()
+                      navigate({ page: 'home' }, { replace: true })
+                      toast(`Deleted “${data.board.name}”`)
+                    },
+                    (e) => toast.error(errorMessage(e)),
+                  )
+                }}
+              >
+                Delete board
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      </div>
+    </Section>
+  )
+}
+
+// ── Layout pieces ──────────────────────────────────────────────────────────────
+
+function Section({ title, hint, children }: { title: string; hint: string; children: ReactNode }) {
+  return (
+    <section className="space-y-4">
+      <header>
+        <h2 className="text-base font-semibold">{title}</h2>
+        <p className="text-xs text-muted-foreground">{hint}</p>
+      </header>
+      {children}
+    </section>
+  )
+}
+
+/** A group of settings in a bordered card, rows divided. */
+function Card({ title, children }: { title?: string; children: ReactNode }) {
+  return (
+    <div className="overflow-hidden rounded-xl border bg-card">
+      {title && <p className="border-b bg-muted/40 px-4 py-2 text-xs font-medium text-muted-foreground">{title}</p>}
+      <div className="divide-y">{children}</div>
+    </div>
+  )
+}
+
+/** One setting: its name (and icon), a hint, and the control — beside it (`action`) or below it (`children`). */
+function Row({
+  label,
+  htmlFor,
+  hint,
+  icon: I,
+  action,
+  children,
+}: {
+  label: string
+  htmlFor?: string
+  hint?: string
+  icon?: Icon
+  action?: ReactNode
+  children?: ReactNode
+}) {
+  return (
+    <div className="space-y-2.5 p-4">
+      <div className="flex items-start gap-3">
+        {I && (
+          <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-muted text-muted-foreground">
+            <I className="size-4" />
+          </span>
+        )}
+        <div className="min-w-0 flex-1 space-y-0.5">
+          <label htmlFor={htmlFor} className="block text-sm font-medium">
+            {label}
+          </label>
+          {hint && <p className="text-xs leading-relaxed text-muted-foreground">{hint}</p>}
+        </div>
+        {action && <div className="shrink-0">{action}</div>}
+      </div>
+      {children}
+    </div>
   )
 }
 

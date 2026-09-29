@@ -1,5 +1,20 @@
+import { PRIORITIES } from '@kanbanto/model/types'
 import { SETTING_DEFAULTS } from './defaults'
-import { bigint, boolean, index, integer, jsonb, pgTable, primaryKey, text, timestamp, unique, uniqueIndex, uuid } from 'drizzle-orm/pg-core'
+import {
+  type AnyPgColumn,
+  bigint,
+  boolean,
+  index,
+  integer,
+  jsonb,
+  pgTable,
+  primaryKey,
+  text,
+  timestamp,
+  unique,
+  uniqueIndex,
+  uuid,
+} from 'drizzle-orm/pg-core'
 
 const at = (name: string) => timestamp(name, { withTimezone: true, mode: 'date' })
 /** createdAt / updatedAt / version, the same meta every board record carries in the model. */
@@ -27,6 +42,8 @@ export const users = pgTable('users', {
   mentionEmails: boolean('mention_emails').notNull().default(true),
   /** When the last daily summary went out (at most one per 24 hours). */
   lastDigestAt: at('last_digest_at'),
+  /** Their Inbox: where apps put tasks they add without naming a board. */
+  inboxBoardId: text('inbox_board_id').references((): AnyPgColumn => boards.id, { onDelete: 'set null' }),
   disabledAt: at('disabled_at'),
   createdAt: at('created_at').notNull().defaultNow(),
   updatedAt: at('updated_at').notNull().defaultNow(),
@@ -232,6 +249,8 @@ export const boards = pgTable(
   {
     id: text('id').primaryKey(),
     name: text('name').notNull(),
+    /** What the board is for (people and assistants read it to tell boards apart). */
+    description: text('description'),
     mode: text('mode', { enum: ['manual', 'derived'] }).notNull(),
     background: text('background'),
     /** private: owners only · invited: its members · workspace: its members and everyone in its workspace. */
@@ -341,6 +360,8 @@ export const tasks = pgTable(
     parentId: text('parent_id'),
     title: text('title').notNull(),
     description: text('description'),
+    /** urgent · high · medium · low; null: none. */
+    priority: text('priority', { enum: PRIORITIES }),
     /** The list it's in. */
     status: text('status').notNull(),
     /** Position among its siblings in the outline. */
@@ -600,4 +621,27 @@ export const oauthGrants = pgTable(
     uniqueIndex('oauth_grants_refresh_idx').on(t.refreshHash),
     index('oauth_grants_user_idx').on(t.userId),
   ],
+)
+
+/**
+ * What happened on a board, as short lines of text ("moved “Deploy” to Done"), one row per change that said something.
+ * For "what's new" (the MCP tool recent_activity). Kept 90 days.
+ */
+export const boardActivity = pgTable(
+  'board_activity',
+  {
+    id: uuid('id').primaryKey(),
+    boardId: text('board_id')
+      .notNull()
+      .references(() => boards.id, { onDelete: 'cascade' }),
+    actorId: uuid('actor_id').references(() => users.id, { onDelete: 'set null' }),
+    at: at('at').notNull().defaultNow(),
+    /** The command's type (task.move, records.restore for undo, …). */
+    command: text('command').notNull(),
+    /** ActivityItem[] (model/activity.ts). */
+    items: jsonb('items').notNull(),
+    /** The app it was made through ("Claude", "API"); null: the website. */
+    via: text('via'),
+  },
+  (t) => [index('board_activity_board_idx').on(t.boardId, t.at)],
 )
