@@ -25,10 +25,10 @@ ENV NODE_ENV=production \
 WORKDIR /app/server
 COPY --from=build --chown=node:node /out/server ./
 COPY --from=build --chown=node:node /repo/apps/web/dist /app/web
-# Attachments kept on the server's disk, and the encryption key Kanbanto makes for itself. Mount volumes here so they
-# survive rebuilds.
+# Attachments kept on the server's disk, and the encryption key Kanbanto makes for itself. Mount volumes at these paths
+# so they survive rebuilds (docker-compose.yml does). No VOLUME instruction: some hosts (Railway) refuse it, and a
+# host's own volumes or settings (ENCRYPTION_KEY, a bucket for files) take its place.
 RUN mkdir -p /data/uploads /data/config && chown -R node:node /data
-VOLUME ["/data/uploads", "/data/config"]
 USER node
 EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=3s --start-period=20s CMD wget -qO- "http://127.0.0.1:${PORT}/api/health" || exit 1
