@@ -41,6 +41,7 @@ export async function sendDigests(app: FastifyInstance) {
       .where(
         and(
           eq(notifications.userId, u.id),
+          eq(notifications.kind, 'mention'),
           isNull(notifications.readAt),
           isNull(notifications.emailedAt),
           lt(notifications.createdAt, sql`now() - ${GRACE}`),

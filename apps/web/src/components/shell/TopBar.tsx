@@ -122,8 +122,8 @@ export function TopBar({ search, onSearch, onNewTask, connection, unsaved, ...me
           </Tooltip>
         )}
         {/* Visitors of a public board aren't on it, so there's nothing for them to share or see. */}
-        {user && access.via === 'member' && (
-          <Button size="sm" variant="outline" onClick={openShare} className="gap-1.5">
+        {user && access.via !== 'public' && (
+          <Button size="sm" variant="outline" onClick={openShare} className="gap-1.5" aria-label="Share">
             <UsersThree />
             <span className="hidden sm:inline">Share</span>
           </Button>

@@ -75,7 +75,7 @@ Open it from the menu under your initials (platform admins only). Each section h
 | | **How emails look:** product name, button colour, footer | Kanbanto, blue, empty |
 | | **Preview:** every email, and "Send it to me" | — |
 | **Storage** `#/admin/storage` | **Where files are kept:** this server's disk, or an S3-compatible bucket (write-only secret, encrypted) | Server's disk |
-| | **Limits:** space per person (in total, across the boards they own); largest file (1–200 MB) | 50 MB / 10 MB |
+| | **Limits:** space per person (in total, across the boards they own), and the same for each workspace (across its boards); largest file (1–200 MB) | 50 MB / 10 MB |
 
 Things each person sets for themselves in **Account settings** (`#/account`): name, password, whether they get the
 daily mention email, their own Resend key for invites, and their own storage bucket (at a public `https://` address).

@@ -1,8 +1,20 @@
-import { DotsThree, Key, PencilSimple, Plus, SignOut, Trash, UploadSimple } from '@phosphor-icons/react'
+import {
+  ArrowsLeftRight,
+  Buildings,
+  DotsThree,
+  LockSimple,
+  Key,
+  PencilSimple,
+  Plus,
+  SignOut,
+  Trash,
+  UploadSimple,
+  UsersThree,
+} from '@phosphor-icons/react'
 import { formatDistanceToNow, parseISO } from 'date-fns'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { toast } from 'sonner'
-import type { BoardSummary } from '@kanbanto/model/api'
+import type { BoardSummary, WorkspaceSummary } from '@kanbanto/model/api'
 import { BOARD_BACKGROUNDS, type ColorName } from '@kanbanto/model/colors'
 import { newId } from '@kanbanto/model/ids'
 import { parseBoard } from '@kanbanto/model/transfer'
@@ -10,25 +22,43 @@ import { api, errorMessage } from '@/api/client'
 import { hrefFor, navigate } from '@/app/router'
 import { useAuth } from '@/app/use-auth'
 import { ConfirmDialog, type ConfirmRequest } from '@/components/common/ConfirmDialog'
-import { VISIBILITY } from '@/components/share/visibility'
+import { visibilityOf } from '@/components/share/visibility'
 import { AccountMenu } from '@/components/shell/AccountMenu'
 import { NotificationBell } from '@/components/shell/NotificationBell'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { useBoards } from '@/data/useBoards'
+import { useWorkspaces } from '@/data/useWorkspaces'
 import { cn } from '@/lib/utils'
 import { CreateBoardDialog } from './CreateBoardDialog'
+import { CreateWorkspaceDialog } from './CreateWorkspaceDialog'
 import { JoinCodeDialog } from './JoinCodeDialog'
 import { LogoMark } from '@/components/common/Logo'
 
-/** Your boards (yours and ones shared with you), and creating, joining and importing boards. */
+/**
+ * Your boards, and creating, joining and importing boards. Once you're in a workspace, they're grouped by where they
+ * are: Personal, each workspace, and boards other people shared with you.
+ */
 export function HomeView() {
   const { user } = useAuth()
   const { boards, error, reload } = useBoards()
-  const [creating, setCreating] = useState(false)
+  const { workspaces, reload: reloadWorkspaces } = useWorkspaces()
+  // Creating a board, and where to suggest putting it (a workspace's id, or null for Personal).
+  const [creating, setCreating] = useState<{ where: string | null } | null>(null)
+  const [newWorkspace, setNewWorkspace] = useState(false)
   const [joining, setJoining] = useState(false)
   const [renaming, setRenaming] = useState<BoardSummary | null>(null)
   const [confirm, setConfirm] = useState<ConfirmRequest | null>(null)
@@ -79,7 +109,59 @@ export function HomeView() {
         ),
     })
 
-  const mine = boards ?? []
+  const moveTo = async (b: BoardSummary, to: WorkspaceSummary | null) => {
+    try {
+      const { visibility } = await api<{ visibility: string }>('PUT', `/boards/${b.id}/workspace`, { workspaceId: to?.id ?? null })
+      toast(`Moved “${b.name}” to ${to ? to.name : 'Personal'}`, {
+        description:
+          to && visibility !== 'workspace'
+            ? `Only people added can open it. To share it with everyone in ${to.name}, use Share on the board.`
+            : undefined,
+      })
+      void reload()
+    } catch (e) {
+      toast.error(errorMessage(e))
+    }
+  }
+
+  const all = boards ?? []
+  const spaces = workspaces ?? []
+  const tile = (b: BoardSummary) => {
+    const from = spaces.find((w) => w.id === b.workspaceId)
+    return (
+      <BoardTile
+        key={b.id}
+        board={b}
+        onRename={b.role === 'owner' || b.role === 'editor' ? () => setRenaming(b) : undefined}
+        onDelete={b.role === 'owner' ? () => askDelete(b) : undefined}
+        onLeave={b.role !== 'owner' && b.via === 'member' ? () => askLeave(b) : undefined}
+        move={
+          b.role === 'owner' && (spaces.length > 0 || b.workspaceId)
+            ? {
+                places: [null, ...spaces].filter((w) => (w?.id ?? null) !== b.workspaceId),
+                // Taking a board out of a workspace is for its admins.
+                blocked: b.workspaceId && from?.role !== 'admin' ? `Only ${from?.name ?? 'the workspace'}’s admins can move it` : null,
+                onMove: (to) => void moveTo(b, to),
+              }
+            : undefined
+        }
+      />
+    )
+  }
+  const createTile = (where: string | null) =>
+    boards && (
+      <button
+        onClick={() => setCreating({ where })}
+        className="flex h-[9.5rem] flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed text-sm text-muted-foreground transition-colors hover:border-primary/50 hover:bg-primary/5 hover:text-foreground"
+      >
+        <Plus className="size-5" />
+        Create board
+      </button>
+    )
+  const inMine = new Set(spaces.map((w) => w.id))
+  const personal = all.filter((b) => !b.workspaceId && b.role === 'owner')
+  // Boards someone else shared with you: from their Personal space, or a workspace you're not in.
+  const shared = all.filter((b) => (b.workspaceId ? !inMine.has(b.workspaceId) : b.role !== 'owner'))
 
   return (
     <div className="flex h-full flex-col">
@@ -90,7 +172,7 @@ export function HomeView() {
           <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setJoining(true)}>
             <Key /> <span className="hidden sm:inline">Join with a code</span>
           </Button>
-          <Button size="sm" className="gap-1.5" onClick={() => setCreating(true)}>
+          <Button size="sm" className="gap-1.5" onClick={() => setCreating({ where: null })}>
             <Plus weight="bold" /> <span className="hidden sm:inline">Create board</span>
           </Button>
           <DropdownMenu>
@@ -100,6 +182,9 @@ export function HomeView() {
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-52">
+              <DropdownMenuItem onSelect={() => setNewWorkspace(true)}>
+                <Buildings /> New workspace…
+              </DropdownMenuItem>
               <DropdownMenuItem onSelect={() => file.current?.click()}>
                 <UploadSimple /> Import a board…
               </DropdownMenuItem>
@@ -124,36 +209,65 @@ export function HomeView() {
       <main className="min-h-0 flex-1 overflow-auto">
         <div className="mx-auto max-w-6xl space-y-10 px-4 py-8">
           {error && !boards && <p className="text-sm text-destructive">{error}</p>}
-          <section>
-            <div className="mb-5 flex items-baseline gap-2">
-              <h1 className="text-lg font-semibold">Your boards</h1>
-              {boards && <span className="text-sm text-muted-foreground">{mine.length}</span>}
-            </div>
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-              {mine.map((b) => (
-                <BoardTile
-                  key={b.id}
-                  board={b}
-                  onRename={b.role === 'owner' || b.role === 'editor' ? () => setRenaming(b) : undefined}
-                  onDelete={b.role === 'owner' ? () => askDelete(b) : undefined}
-                  onLeave={b.role !== 'owner' ? () => askLeave(b) : undefined}
-                />
-              ))}
-              {boards && (
-                <button
-                  onClick={() => setCreating(true)}
-                  className="flex h-[9.5rem] flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed text-sm text-muted-foreground transition-colors hover:border-primary/50 hover:bg-primary/5 hover:text-foreground"
+          {spaces.length === 0 ? (
+            <BoardSection title="Your boards" count={boards ? all.length : undefined}>
+              {all.map(tile)}
+              {createTile(null)}
+            </BoardSection>
+          ) : (
+            <>
+              <BoardSection title="Personal" count={personal.length}>
+                {personal.map(tile)}
+                {createTile(null)}
+              </BoardSection>
+              {spaces.map((w) => (
+                <BoardSection
+                  key={w.id}
+                  title={w.name}
+                  icon={<Buildings className="size-4 text-muted-foreground" />}
+                  count={all.filter((b) => b.workspaceId === w.id).length}
+                  action={
+                    <Button asChild size="sm" variant="ghost" className="h-7 gap-1.5 text-muted-foreground">
+                      <a href={hrefFor({ page: 'workspace', id: w.id })}>
+                        <UsersThree /> {w.memberCount} {w.memberCount === 1 ? 'person' : 'people'}
+                      </a>
+                    </Button>
+                  }
                 >
-                  <Plus className="size-5" />
-                  Create board
-                </button>
+                  {all.filter((b) => b.workspaceId === w.id).map(tile)}
+                  {createTile(w.id)}
+                </BoardSection>
+              ))}
+              {shared.length > 0 && (
+                <BoardSection title="Shared with you" count={shared.length}>
+                  {shared.map(tile)}
+                </BoardSection>
+              )}
+            </>
+          )}
+          {workspaces && (
+            <div className="border-t pt-6">
+              <Button variant="outline" size="sm" className="gap-1.5" onClick={() => setNewWorkspace(true)}>
+                <Buildings /> New workspace
+              </Button>
+              {spaces.length === 0 && (
+                <p className="mt-2 text-xs text-muted-foreground">
+                  A place for a team’s boards: everyone in it can open them, without being invited to each one.
+                </p>
               )}
             </div>
-          </section>
+          )}
         </div>
       </main>
 
-      <CreateBoardDialog open={creating} onOpenChange={setCreating} />
+      <CreateBoardDialog open={!!creating} onOpenChange={(o) => !o && setCreating(null)} workspaces={spaces} where={creating?.where} />
+      <CreateWorkspaceDialog
+        open={newWorkspace}
+        onOpenChange={(o) => {
+          setNewWorkspace(o)
+          if (!o) void reloadWorkspaces()
+        }}
+      />
       <JoinCodeDialog open={joining} onOpenChange={setJoining} />
       <RenameBoardDialog key={renaming?.id} board={renaming} onClose={() => setRenaming(null)} onSaved={() => void reload()} />
       <ConfirmDialog request={confirm} onClose={() => setConfirm(null)} />
@@ -163,22 +277,51 @@ export function HomeView() {
 
 const ROLE_LABEL = { owner: null, editor: 'Editor', viewer: 'Viewer' } as const
 
+function BoardSection({
+  title,
+  icon,
+  count,
+  action,
+  children,
+}: {
+  title: string
+  icon?: ReactNode
+  count?: number
+  action?: ReactNode
+  children: ReactNode
+}) {
+  return (
+    <section>
+      <div className="mb-4 flex items-center gap-2">
+        {icon}
+        <h2 className="text-lg font-semibold">{title}</h2>
+        {count !== undefined && <span className="text-sm text-muted-foreground">{count}</span>}
+        {action && <div className="ml-auto">{action}</div>}
+      </div>
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">{children}</div>
+    </section>
+  )
+}
+
 function BoardTile({
   board,
   onRename,
   onDelete,
   onLeave,
+  move,
 }: {
   board: BoardSummary
   onRename?: () => void
   onDelete?: () => void
   onLeave?: () => void
+  /** Moving it to Personal (null) or another workspace; `blocked` says why it can't be. */
+  move?: { places: (WorkspaceSummary | null)[]; blocked: string | null; onMove: (to: WorkspaceSummary | null) => void }
 }) {
   const bg = board.background ? BOARD_BACKGROUNDS[board.background as ColorName] : null
   const pct = board.taskCount ? Math.round((board.doneCount / board.taskCount) * 100) : 0
-  const vis = VISIBILITY[board.visibility]
+  const vis = visibilityOf(board.visibility)
   const role = ROLE_LABEL[board.role]
-  const hasMenu = onRename || onDelete || onLeave
+  const hasMenu = onRename || onDelete || onLeave || move
   return (
     <div className="group relative overflow-hidden rounded-xl border bg-card shadow-xs transition-shadow hover:shadow-md">
       <a href={hrefFor({ page: 'board', id: board.id })} className="block outline-none focus-visible:ring-2 focus-visible:ring-ring">
@@ -233,6 +376,24 @@ function BoardTile({
                 <PencilSimple /> Rename
               </DropdownMenuItem>
             )}
+            {move && (
+              <DropdownMenuSub>
+                <DropdownMenuSubTrigger>
+                  <ArrowsLeftRight /> Move to
+                </DropdownMenuSubTrigger>
+                <DropdownMenuSubContent className="w-56">
+                  {move.blocked ? (
+                    <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">{move.blocked}</DropdownMenuLabel>
+                  ) : (
+                    move.places.map((w) => (
+                      <DropdownMenuItem key={w?.id ?? 'personal'} onSelect={() => move.onMove(w)}>
+                        {w ? <Buildings /> : <LockSimple />} {w ? w.name : 'Personal'}
+                      </DropdownMenuItem>
+                    ))
+                  )}
+                </DropdownMenuSubContent>
+              </DropdownMenuSub>
+            )}
             {onLeave && (
               <DropdownMenuItem onSelect={onLeave}>
                 <SignOut /> Leave board…
@@ -240,7 +401,7 @@ function BoardTile({
             )}
             {onDelete && (
               <>
-                {(onRename || onLeave) && <DropdownMenuSeparator />}
+                {(onRename || onLeave || move) && <DropdownMenuSeparator />}
                 <DropdownMenuItem variant="destructive" onSelect={onDelete}>
                   <Trash /> Delete board…
                 </DropdownMenuItem>

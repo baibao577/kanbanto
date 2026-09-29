@@ -86,7 +86,7 @@ describe('live', () => {
     const [{ id }] = (await ann.ok('GET', '/api/boards')).boards
     const live = await listen(ann, id)
     await live.until(() => live.messages.length > 0)
-    await ann.ok('PATCH', `/api/boards/${id}/sharing`, { visibility: 'public' })
+    await ann.ok('PATCH', `/api/boards/${id}/sharing`, { publicLink: true })
     expect(await live.until(() => live.messages.some((m) => m.type === 'reload'))).toBe(true)
     // A public board can be watched signed out.
     const anon = await listen(new Person(t.app), id)

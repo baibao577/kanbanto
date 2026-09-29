@@ -24,7 +24,8 @@
 - **Tasks inside tasks, as deep as you like.** A project, its phases, their tasks and subtasks — all on one board.
 - **Three views of the same work:** a **Board** with lists you name yourself, a **Timeline** you drag to reschedule,
   and an **Outline** — a table you can sort, filter and rearrange.
-- **Work together:** share a board with a link, an access code or an email invite, as an owner, editor or viewer.
+- **Work together:** make a workspace for your team, so everyone in it can open its boards, or share a board with a
+  link, an access code or an email invite, as an owner, editor or viewer.
   Changes appear for everyone instantly.
 - **Comments and files:** discuss each card, @mention people, attach files and screenshots, and point to a file with `#`.
 - **Your own server, your own data.** Files stay on your server, or in your own Cloudflare R2 / Amazon S3 bucket.

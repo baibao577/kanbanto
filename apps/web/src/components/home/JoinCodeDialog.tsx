@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import type { JoinResult } from '@kanbanto/model/api'
 import { api, errorMessage } from '@/api/client'
 import { navigate } from '@/app/router'
 import { Button } from '@/components/ui/button'
@@ -15,10 +16,12 @@ export function JoinCodeDialog({ open, onOpenChange }: { open: boolean; onOpenCh
     setBusy(true)
     setError(null)
     try {
-      const { boardId } = await api<{ boardId: string }>('POST', '/join', { invite: code })
+      const joined = await api<JoinResult>('POST', '/join', { invite: code })
       onOpenChange(false)
       setCode('')
-      navigate({ page: 'board', id: boardId })
+      // (Codes are for boards; a workspace's invite link pasted here works too.)
+      if (joined.kind === 'board') navigate({ page: 'board', id: joined.boardId })
+      else navigate({ page: 'workspace', id: joined.workspaceId })
     } catch (e) {
       setError(errorMessage(e))
     } finally {

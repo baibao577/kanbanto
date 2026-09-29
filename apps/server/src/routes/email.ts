@@ -11,6 +11,7 @@ import { getBrand } from '../mail/mailer'
 import { emails, renderEmail, sampleEmail } from '../mail/templates'
 import { senderFromRow, smtpHint, type Sender } from '../mail/senders'
 import { SendError, type Credentials } from '../mail/transport'
+import { env } from '../env'
 import { loadSettings } from '../settings'
 import { requireUser } from './auth'
 
@@ -190,6 +191,7 @@ export const emailRoutes: FastifyPluginAsync = async (app) => {
       .where(and(isNull(users.emailVerifiedAt), eq(users.isAdmin, false), isNull(users.disabledAt)))
     return {
       encryptionReady: encryptionReady(),
+      printedOnly: env.mailTransport === 'log',
       sender: senderView(await app.mail.senderFor(null)),
       settings: {
         dailyBudget: s.emailDailyBudget,

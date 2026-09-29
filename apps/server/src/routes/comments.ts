@@ -3,9 +3,10 @@ import { newId } from '@kanbanto/model/ids'
 import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm'
 import type { FastifyPluginAsync } from 'fastify'
 import { z } from 'zod'
-import { requireAccess } from '../boards/access'
+import { requireAccess, type BoardRow } from '../boards/access'
+import { boardPeople } from '../boards/store'
 import type { Db, Tx } from '../db'
-import { attachments, boardMembers, boards, comments, notifications, tasks, users } from '../db/schema'
+import { attachments, boards, comments, notifications, tasks, users, workspaces } from '../db/schema'
 import { HttpError, parse } from '../http'
 import { requireUser } from './auth'
 import { attachDrafts, trashCommentFiles, views as attachmentViews } from './files'
@@ -70,19 +71,21 @@ export async function commentCounts(db: Db | Tx, boardId: string) {
 }
 
 /** Only people on the board can be @mentioned (and not yourself). */
-async function validMentions(db: Db | Tx, boardId: string, ids: string[], authorId: string) {
-  const wanted = [...new Set(ids)].filter((id) => id !== authorId)
-  if (!wanted.length) return []
-  const rows = await db
-    .select({ userId: boardMembers.userId })
-    .from(boardMembers)
-    .where(and(eq(boardMembers.boardId, boardId), inArray(boardMembers.userId, wanted)))
-  return rows.map((r) => r.userId)
+async function validMentions(db: Db | Tx, board: BoardRow, ids: string[], authorId: string) {
+  const wanted = new Set(ids)
+  wanted.delete(authorId)
+  if (!wanted.size) return []
+  return (await boardPeople(db, board)).filter((p) => wanted.has(p.userId)).map((p) => p.userId)
 }
 
 async function notify(db: Db | Tx, c: { boardId: string; taskId: string; commentId: string; actorId: string }, who: string[]) {
   if (!who.length) return
   await db.insert(notifications).values(who.map((userId) => ({ id: newId(), userId, kind: 'mention' as const, ...c })))
+}
+
+/** Tells someone under the bell that `actorId` added them to a board or a workspace. */
+export async function notifyAdded(db: Db | Tx, userId: string, actorId: string, to: { boardId: string } | { workspaceId: string }) {
+  await db.insert(notifications).values({ id: newId(), userId, kind: 'added', actorId, ...to })
 }
 
 export const commentRoutes: FastifyPluginAsync = async (app) => {
@@ -93,16 +96,19 @@ export const commentRoutes: FastifyPluginAsync = async (app) => {
     return { comments: await commentViews(app.db, and(eq(comments.boardId, id), eq(comments.taskId, taskId))) }
   })
 
-  /** Adds a comment. Everyone on the board can comment, viewers included; visitors of a public board can't. */
+  /**
+   * Adds a comment. Everyone on the board can comment (added to it or through its workspace), viewers included;
+   * visitors with the public link can't.
+   */
   app.post('/boards/:id/tasks/:taskId/comments', async (req) => {
     const { id, taskId } = parse(TaskParams, req.params)
     const me = requireUser(req.user)
-    const { access } = await requireAccess(app.db, me, id, 'viewer')
-    if (access.via !== 'member') throw new HttpError(403, 'Join this board to comment on it.')
+    const { board, access } = await requireAccess(app.db, me, id, 'viewer')
+    if (access.via === 'public') throw new HttpError(403, 'Join this board to comment on it.')
     const body = parse(Body, req.body)
     const { data } = await app.engine.snapshot(id)
     if (!data.tasks[taskId]) throw new HttpError(404, 'That task no longer exists.')
-    const mentions = await validMentions(app.db, id, body.mentions, me.id)
+    const mentions = await validMentions(app.db, board, body.mentions, me.id)
     const commentId = newId()
     await app.db.transaction(async (tx) => {
       await tx.insert(comments).values({ id: commentId, boardId: id, taskId, authorId: me.id, body: body.body, mentions })
@@ -118,8 +124,8 @@ export const commentRoutes: FastifyPluginAsync = async (app) => {
   app.patch('/boards/:id/comments/:commentId', async (req) => {
     const { id, commentId } = parse(CommentParams, req.params)
     const me = requireUser(req.user)
-    const { access } = await requireAccess(app.db, me, id, 'viewer')
-    if (access.via !== 'member') throw new HttpError(403, 'Join this board to comment on it.')
+    const { board, access } = await requireAccess(app.db, me, id, 'viewer')
+    if (access.via === 'public') throw new HttpError(403, 'Join this board to comment on it.')
     const body = parse(Body, req.body)
     const [c] = await app.db
       .select()
@@ -127,7 +133,7 @@ export const commentRoutes: FastifyPluginAsync = async (app) => {
       .where(and(eq(comments.id, commentId), eq(comments.boardId, id)))
     if (!c) throw new HttpError(404, 'That comment no longer exists.')
     if (c.authorId !== me.id) throw new HttpError(403, 'You can only edit your own comments.')
-    const mentions = await validMentions(app.db, id, body.mentions, me.id)
+    const mentions = await validMentions(app.db, board, body.mentions, me.id)
     await app.db.transaction(async (tx) => {
       await tx.update(comments).set({ body: body.body, mentions, editedAt: new Date() }).where(eq(comments.id, commentId))
       await attachDrafts(tx, { boardId: id, taskId: c.taskId, uploaderId: me.id, commentId }, body.attachments)
@@ -168,11 +174,13 @@ export const commentRoutes: FastifyPluginAsync = async (app) => {
         n: notifications,
         actor: users.name,
         boardName: boards.name,
+        workspaceName: workspaces.name,
         taskTitle: tasks.title,
         body: comments.body,
       })
       .from(notifications)
-      .innerJoin(boards, eq(boards.id, notifications.boardId))
+      .leftJoin(boards, eq(boards.id, notifications.boardId))
+      .leftJoin(workspaces, eq(workspaces.id, notifications.workspaceId))
       .leftJoin(users, eq(users.id, notifications.actorId))
       .leftJoin(tasks, and(eq(tasks.boardId, notifications.boardId), eq(tasks.id, notifications.taskId)))
       .leftJoin(comments, eq(comments.id, notifications.commentId))
@@ -183,16 +191,21 @@ export const commentRoutes: FastifyPluginAsync = async (app) => {
       .select({ unread: sql<number>`count(*)::int` })
       .from(notifications)
       .where(and(eq(notifications.userId, me.id), isNull(notifications.readAt)))
-    const items: NotificationView[] = rows.map((r) => ({
-      id: r.n.id,
-      kind: r.n.kind,
-      actor: r.actor ?? 'Someone',
-      board: { id: r.n.boardId, name: r.boardName },
-      task: { id: r.n.taskId, title: r.taskTitle ?? 'A deleted task' },
-      excerpt: excerpt(r.body ?? ''),
-      createdAt: r.n.createdAt.toISOString(),
-      read: !!r.n.readAt,
-    }))
+    const items: NotificationView[] = rows.map((r) => {
+      const common = { id: r.n.id, actor: r.actor ?? 'Someone', createdAt: r.n.createdAt.toISOString(), read: !!r.n.readAt }
+      const board = r.n.boardId && r.boardName !== null ? { id: r.n.boardId, name: r.boardName } : null
+      if (r.n.kind === 'added') {
+        const workspace = r.n.workspaceId && r.workspaceName !== null ? { id: r.n.workspaceId, name: r.workspaceName } : null
+        return { ...common, kind: 'added', board, workspace }
+      }
+      return {
+        ...common,
+        kind: 'mention',
+        board: board ?? { id: '', name: 'A deleted board' },
+        task: { id: r.n.taskId ?? '', title: r.taskTitle ?? 'A deleted task' },
+        excerpt: excerpt(r.body ?? ''),
+      }
+    })
     return { notifications: items, unread }
   })
 

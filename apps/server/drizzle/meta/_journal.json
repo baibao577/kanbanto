@@ -50,6 +50,20 @@
       "when": 1790685644440,
       "tag": "0006_invite_link_shown",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1790696270052,
+      "tag": "0007_workspaces",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1790698353569,
+      "tag": "0008_added_notifications",
+      "breakpoints": true
     }
   ]
 }

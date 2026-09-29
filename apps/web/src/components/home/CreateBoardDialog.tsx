@@ -1,4 +1,5 @@
-import { useState, type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
+import type { WorkspaceSummary } from '@kanbanto/model/api'
 import { navigate } from '@/app/router'
 import { BackgroundSwatches } from '@/components/common/bits'
 import { Button } from '@/components/ui/button'
@@ -6,13 +7,43 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { toast } from 'sonner'
 import { api, errorMessage } from '@/api/client'
 import type { ColorName } from '@kanbanto/model/colors'
 
-/** New board: a name, a background, and whether to start empty or from the example. Opens it when created. */
-export function CreateBoardDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boolean) => void }) {
+const PERSONAL = 'personal'
+
+/**
+ * New board: a name, where it goes (Personal or one of your workspaces), a background, and whether to start empty or
+ * from the example. Opens it when created. `where` is the workspace to suggest.
+ */
+export function CreateBoardDialog({
+  open,
+  onOpenChange,
+  workspaces: given,
+  where,
+}: {
+  open: boolean
+  onOpenChange: (o: boolean) => void
+  /** Your workspaces; loaded when it opens if not given. */
+  workspaces?: WorkspaceSummary[]
+  where?: string | null
+}) {
+  const [loaded, setLoaded] = useState<WorkspaceSummary[]>([])
+  useEffect(() => {
+    if (open && !given)
+      api<{ workspaces: WorkspaceSummary[] }>('GET', '/workspaces').then(
+        (r) => setLoaded(r.workspaces),
+        () => {},
+      )
+  }, [open, given])
+  const workspaces = given ?? loaded
   const [name, setName] = useState('')
+  const [picked, setPicked] = useState<string | null>(null)
+  // Until you pick, it follows where you started from ("New board" in a workspace's section).
+  const place = picked ?? where ?? PERSONAL
+  const workspace = workspaces.find((w) => w.id === place)
   const [background, setBackground] = useState<ColorName | undefined>('blue')
   const [start, setStart] = useState<'empty' | 'example'>('empty')
 
@@ -21,9 +52,15 @@ export function CreateBoardDialog({ open, onOpenChange }: { open: boolean; onOpe
   const create = async () => {
     setBusy(true)
     try {
-      const { id } = await api<{ id: string }>('POST', '/boards', { name: name.trim() || 'Untitled board', background, template: start })
+      const { id } = await api<{ id: string }>('POST', '/boards', {
+        name: name.trim() || 'Untitled board',
+        background,
+        template: start,
+        workspaceId: workspace?.id ?? null,
+      })
       onOpenChange(false)
       setName('')
+      setPicked(null)
       navigate({ page: 'board', id })
     } catch (e) {
       toast.error(errorMessage(e))
@@ -33,7 +70,13 @@ export function CreateBoardDialog({ open, onOpenChange }: { open: boolean; onOpe
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog
+      open={open}
+      onOpenChange={(o) => {
+        if (!o) setPicked(null)
+        onOpenChange(o)
+      }}
+    >
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Create a board</DialogTitle>
@@ -50,6 +93,27 @@ export function CreateBoardDialog({ open, onOpenChange }: { open: boolean; onOpe
             <Label htmlFor="new-board-name">Name</Label>
             <Input id="new-board-name" autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Website launch" />
           </div>
+          {workspaces.length > 0 && (
+            <div className="space-y-2">
+              <Label htmlFor="new-board-where">Where</Label>
+              <Select value={place} onValueChange={setPicked}>
+                <SelectTrigger id="new-board-where" className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={PERSONAL}>Personal</SelectItem>
+                  {workspaces.map((w) => (
+                    <SelectItem key={w.id} value={w.id}>
+                      {w.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                {workspace ? `Everyone in ${workspace.name} can open and edit it. You can change that with Share.` : 'Only you, until you share it.'}
+              </p>
+            </div>
+          )}
           <div className="space-y-2">
             <Label>Background</Label>
             <BackgroundSwatches value={background} onChange={setBackground} />

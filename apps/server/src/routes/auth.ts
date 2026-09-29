@@ -5,7 +5,7 @@ import { z } from 'zod'
 import { createEmailToken, lastEmailToken, useEmailToken } from '../auth/email-tokens'
 import { hashPassword, verifyPassword } from '../auth/password'
 import { createSession, endAllSessions, endSession, SESSION_COOKIE, type SessionUser } from '../auth/sessions'
-import { findInvite, joinWithInvite } from '../boards/invites'
+import { acceptInvite, findAnyInvite, provesEmail } from '../boards/invites'
 import { createBoard } from '../boards/service'
 import { emailOutbox, users } from '../db/schema'
 import { env } from '../env'
@@ -13,7 +13,7 @@ import { HttpError, parse, siteUrl } from '../http'
 import { loggable } from '../errors'
 import { emails } from '../mail/templates'
 import { loadSettings as getSettings } from '../settings'
-import { announceSharingChange } from './sharing'
+import { announceSharingChange, announceWorkspaceChange } from '../boards/announce'
 
 const email = z
   .string()
@@ -131,7 +131,7 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
     const passwordHash = await hashPassword(body.password)
     const result = await app.db.transaction(async (tx) => {
       // Signing up never makes anyone a platform admin: that's granted on the server (see src/cli.ts).
-      const invite = body.invite ? await findInvite(tx, body.invite) : null
+      const invite = body.invite ? await findAnyInvite(tx, body.invite) : null
       if (!(await getSettings(tx)).openSignup && !invite) throw new HttpError(403, 'Sign-up is closed. Ask a board owner for an invite link.')
       const [taken] = await tx.select().from(users).where(eq(users.email, body.email))
       if (taken) {
@@ -140,10 +140,10 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
       }
       // Arriving through an invite emailed to this address proves the address is theirs — unless the inviter was
       // shown the link (the email couldn't be sent), since then the inviter could be the one using it.
-      const verified = invite?.invite.kind === 'email' && invite.invite.email === body.email && !invite.invite.linkShown
+      const verified = provesEmail(invite, body.email)
       const user = { id: newId(), email: body.email, name: body.name, isAdmin: false, emailVerified: verified, mentionEmails: true }
       await tx.insert(users).values({ id: user.id, email: user.email, name: user.name, passwordHash, emailVerifiedAt: verified ? new Date() : null })
-      const joined = body.invite ? await joinWithInvite(tx, { id: user.id, email: user.email }, body.invite) : null
+      const joined = body.invite ? await acceptInvite(tx, { id: user.id, email: user.email }, body.invite) : null
       return { kind: 'created' as const, user, joined }
     })
     if (result.kind === 'existing') {
@@ -151,9 +151,10 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
       return { checkEmail: true }
     }
     const { user, joined } = result
-    // Everyone starts with the example board, except people who came to join someone else's.
+    // Everyone starts with the example board, except people who came to join someone else's board or workspace.
     const setUp = async () => {
-      if (joined) await announceSharingChange(app, joined.boardId)
+      if (joined?.kind === 'board') await announceSharingChange(app, joined.boardId)
+      else if (joined) await announceWorkspaceChange(app, joined.workspaceId)
       else await createBoard(app.db, user.id, { name: 'My first board', template: 'example' })
     }
     if (!user.emailVerified && app.mail.platformReady) {
@@ -165,7 +166,7 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
     await setUp()
     const session = await createSession(app.db, user.id)
     setCookie(reply, session.token, session.expiresAt)
-    return { user, boardId: joined?.boardId ?? null }
+    return { user, boardId: joined?.kind === 'board' ? joined.boardId : null }
   })
 
   app.post('/signin', LIMIT, async (req, reply) => {

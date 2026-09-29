@@ -170,36 +170,52 @@ export const emails = {
 
   /**
    * `added`: they had an account and are on the board now · `accept`: they have an account, and accepting (signed in
-   * with this address) adds them · `signup`: no account yet.
+   * with this address) adds them · `signup`: no account yet. With `workspace`, the invite is to a workspace (`board`
+   * is then its name, and `role` doesn't apply).
    */
   invite: (
     brand: Brand,
-    d: { inviter: string; board: string; role: 'owner' | 'editor' | 'viewer'; url: string; kind: 'added' | 'accept' | 'signup'; email: string },
-  ): EmailContent => ({
-    subject: `${d.inviter} invited you to “${d.board}” on ${brand.name}`,
-    preview: d.kind === 'added' ? `You can now ${ROLE_WORDS[d.role]} “${d.board}”.` : `Join ${d.inviter} on the board “${d.board}”.`,
-    heading: `${d.inviter} invited you to “${d.board}”`,
-    paragraphs:
-      d.kind === 'added'
-        ? [
-            'Hi,',
-            `${d.inviter} added you to the board “${d.board}” on ${brand.name}. You can now ${ROLE_WORDS[d.role]} it, and it’s listed on your boards page.`,
-          ]
-        : d.kind === 'accept'
+    d: {
+      inviter: string
+      board: string
+      role: 'owner' | 'editor' | 'viewer'
+      url: string
+      kind: 'added' | 'accept' | 'signup'
+      email: string
+      workspace?: boolean
+    },
+  ): EmailContent => {
+    const what = d.workspace ? `the workspace “${d.board}”` : `the board “${d.board}”`
+    const wants = d.workspace ? `would like you to join ${what}` : `would like you to ${ROLE_WORDS[d.role]} ${what}`
+    return {
+      subject: `${d.inviter} invited you to “${d.board}” on ${brand.name}`,
+      preview:
+        d.kind === 'added'
+          ? d.workspace
+            ? `You’re now in ${what}.`
+            : `You can now ${ROLE_WORDS[d.role]} “${d.board}”.`
+          : `Join ${d.inviter} in ${what}.`,
+      heading: `${d.inviter} invited you to “${d.board}”`,
+      paragraphs:
+        d.kind === 'added'
           ? [
               'Hi,',
-              `${d.inviter} would like you to ${ROLE_WORDS[d.role]} the board “${d.board}” on ${brand.name}.`,
-              `To join, sign in as ${d.email} and accept.`,
+              d.workspace
+                ? `${d.inviter} added you to ${what} on ${brand.name}. You can now open the boards its members share with it, and it’s listed on your boards page.`
+                : `${d.inviter} added you to ${what} on ${brand.name}. You can now ${ROLE_WORDS[d.role]} it, and it’s listed on your boards page.`,
             ]
-          : [
-              'Hi,',
-              `${d.inviter} would like you to ${ROLE_WORDS[d.role]} the board “${d.board}” on ${brand.name}, a tool for planning projects as tasks and subtasks.`,
-              `To join, create an account with this email address (${d.email}). It takes less than a minute.`,
-            ],
-    button: { label: d.kind === 'added' ? 'Open the board' : 'Accept the invitation', href: d.url },
-    note: d.kind === 'added' ? undefined : `The invitation only works for ${d.email} and can be used once.`,
-    reason: `You’re receiving this because ${d.inviter} invited ${d.email} to a board on ${brand.name}. If you weren’t expecting it, you can ignore this email.`,
-  }),
+          : d.kind === 'accept'
+            ? ['Hi,', `${d.inviter} ${wants} on ${brand.name}.`, `To join, sign in as ${d.email} and accept.`]
+            : [
+                'Hi,',
+                `${d.inviter} ${wants} on ${brand.name}, a tool for planning projects as tasks and subtasks.`,
+                `To join, create an account with this email address (${d.email}). It takes less than a minute.`,
+              ],
+      button: { label: d.kind === 'added' ? (d.workspace ? 'Open your boards' : 'Open the board') : 'Accept the invitation', href: d.url },
+      note: d.kind === 'added' ? undefined : `The invitation only works for ${d.email} and can be used once.`,
+      reason: `You’re receiving this because ${d.inviter} invited ${d.email} to ${d.workspace ? 'a workspace' : 'a board'} on ${brand.name}. If you weren’t expecting it, you can ignore this email.`,
+    }
+  },
 
   digest: (
     brand: Brand,

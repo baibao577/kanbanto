@@ -22,6 +22,7 @@ import { commentRoutes } from './routes/comments'
 import { emailRoutes } from './routes/email'
 import { fileRoutes } from './routes/files'
 import { sharingRoutes } from './routes/sharing'
+import { workspaceRoutes } from './routes/workspaces'
 
 declare module 'fastify' {
   interface FastifyRequest {
@@ -147,6 +148,7 @@ export async function buildApp(
   await app.register(authRoutes, { prefix: '/api/auth' })
   await app.register(boardRoutes, { prefix: '/api' })
   await app.register(sharingRoutes, { prefix: '/api' })
+  await app.register(workspaceRoutes, { prefix: '/api' })
   await app.register(adminRoutes, { prefix: '/api/admin' })
   await app.register(emailRoutes, { prefix: '/api' })
   await app.register(commentRoutes, { prefix: '/api' })

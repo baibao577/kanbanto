@@ -3,26 +3,58 @@ import type { Change } from '@kanbanto/model/records'
 import type { BoardData, Member } from '@kanbanto/model/types'
 import { and, eq, getTableColumns, inArray, sql } from 'drizzle-orm'
 import type { PgTable } from 'drizzle-orm/pg-core'
-import type { Tx } from '../db'
-import { boardMembers, boards, labels, lists, tasks, users } from '../db/schema'
+import type { Db, Tx } from '../db'
+import { boardMembers, boards, labels, lists, tasks, users, workspaceMembers, type Role } from '../db/schema'
+import { higherRole, type BoardRow } from './access'
 import { boardFields, boardFromRow, labelFromRow, labelToRow, listFromRow, listToRow, taskFromRow, taskToRow } from './records'
 
-/** A board's people: its members, with the names from their accounts. */
-export async function loadMembers(tx: Tx, boardId: string): Promise<Member[]> {
-  const rows = await tx
-    .select({ m: boardMembers, name: users.name })
+export interface Person {
+  userId: string
+  name: string
+  email: string
+  role: Role
+  /** Added to the board, or there through its workspace. */
+  via: 'member' | 'workspace'
+  createdAt: Date
+  updatedAt: Date
+  version: number
+}
+
+/**
+ * A board's people, the ones who can be assigned and @mentioned: those added to it, and, while it's shared with its
+ * workspace, everyone in the workspace (with the board's workspace role, or their own if that's higher).
+ */
+export async function boardPeople(tx: Db | Tx, board: BoardRow): Promise<Person[]> {
+  const added = await tx
+    .select({ m: boardMembers, name: users.name, email: users.email })
     .from(boardMembers)
     .innerJoin(users, eq(users.id, boardMembers.userId))
-    .where(eq(boardMembers.boardId, boardId))
-  return rows
-    .map(({ m, name }) => ({
-      id: m.userId,
-      name,
-      createdAt: m.createdAt.toISOString(),
-      updatedAt: m.updatedAt.toISOString(),
-      version: m.version,
-    }))
-    .sort((a, b) => a.name.localeCompare(b.name))
+    .where(eq(boardMembers.boardId, board.id))
+  const people = new Map<string, Person>(added.map(({ m, name, email }) => [m.userId, { ...m, name, email, via: 'member' as const }]))
+  if (board.visibility === 'workspace' && board.workspaceId) {
+    const everyone = await tx
+      .select({ m: workspaceMembers, name: users.name, email: users.email })
+      .from(workspaceMembers)
+      .innerJoin(users, eq(users.id, workspaceMembers.userId))
+      .where(eq(workspaceMembers.workspaceId, board.workspaceId))
+    for (const { m, name, email } of everyone) {
+      const p = people.get(m.userId)
+      if (p) p.role = higherRole(p.role, board.workspaceRole)
+      else people.set(m.userId, { ...m, role: board.workspaceRole, name, email, via: 'workspace' })
+    }
+  }
+  return [...people.values()].sort((a, b) => a.name.localeCompare(b.name))
+}
+
+/** A board's people, as the model sees them. */
+export async function loadMembers(tx: Db | Tx, board: BoardRow): Promise<Member[]> {
+  return (await boardPeople(tx, board)).map((p) => ({
+    id: p.userId,
+    name: p.name,
+    createdAt: p.createdAt.toISOString(),
+    updatedAt: p.updatedAt.toISOString(),
+    version: p.version,
+  }))
 }
 
 /** The whole board as the model sees it, plus its change counter. Null if there's no such board. */
@@ -32,7 +64,7 @@ export async function loadBoard(tx: Tx, boardId: string): Promise<{ data: BoardD
   const listRows = await tx.select().from(lists).where(eq(lists.boardId, boardId))
   const labelRows = await tx.select().from(labels).where(eq(labels.boardId, boardId))
   const taskRows = await tx.select().from(tasks).where(eq(tasks.boardId, boardId))
-  const members = await loadMembers(tx, boardId)
+  const members = await loadMembers(tx, b)
   return {
     seq: b.seq,
     data: {

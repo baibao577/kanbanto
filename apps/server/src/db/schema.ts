@@ -164,27 +164,88 @@ export const emailOutbox = pgTable(
   ],
 )
 
+// ── Workspaces: a group of people, and a place for their boards ────────────────
+
+export const WORKSPACE_ROLES = ['admin', 'member'] as const
+export type WorkspaceRole = (typeof WORKSPACE_ROLES)[number]
+
+export const workspaces = pgTable('workspaces', {
+  id: uuid('id').primaryKey(),
+  name: text('name').notNull(),
+  createdBy: uuid('created_by').references(() => users.id, { onDelete: 'set null' }),
+  createdAt: at('created_at').notNull().defaultNow(),
+})
+
+/** Admins manage the workspace's people; everyone in it can open its boards shared with the workspace. */
+export const workspaceMembers = pgTable(
+  'workspace_members',
+  {
+    workspaceId: uuid('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    role: text('role', { enum: WORKSPACE_ROLES }).notNull(),
+    ...meta,
+  },
+  (t) => [primaryKey({ columns: [t.workspaceId, t.userId] }), index('workspace_members_user_idx').on(t.userId)],
+)
+
+/** Joining a workspace (as a member): its invite link, and invites by email. Like board_invites. */
+export const workspaceInvites = pgTable(
+  'workspace_invites',
+  {
+    id: uuid('id').primaryKey(),
+    workspaceId: uuid('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    kind: text('kind', { enum: ['link', 'email'] }).notNull(),
+    token: text('token').notNull(),
+    /** Email invites: who it's for (lowercased). */
+    email: text('email'),
+    /** Email invites: the link was shown to the inviter, so using it doesn't prove the address (see board_invites). */
+    linkShown: boolean('link_shown').notNull().default(false),
+    createdBy: uuid('created_by').references(() => users.id, { onDelete: 'set null' }),
+    createdAt: at('created_at').notNull().defaultNow(),
+    revokedAt: at('revoked_at'),
+  },
+  (t) => [uniqueIndex('workspace_invites_token_idx').on(t.token), index('workspace_invites_workspace_idx').on(t.workspaceId)],
+)
+
 // ── Boards and who can use them ────────────────────────────────────────────────
 
-export const VISIBILITIES = ['private', 'invited', 'public'] as const
+export const VISIBILITIES = ['private', 'invited', 'workspace'] as const
 export type Visibility = (typeof VISIBILITIES)[number]
 export const ROLES = ['owner', 'editor', 'viewer'] as const
 export type Role = (typeof ROLES)[number]
 
-export const boards = pgTable('boards', {
-  id: text('id').primaryKey(),
-  name: text('name').notNull(),
-  mode: text('mode', { enum: ['manual', 'derived'] }).notNull(),
-  background: text('background'),
-  /** private: owners only · invited: members · public: members, and anyone with the link can view. */
-  visibility: text('visibility', { enum: VISIBILITIES }).notNull().default('invited'),
-  createdBy: uuid('created_by').references(() => users.id, { onDelete: 'set null' }),
-  ...meta,
-  /** Goes up by one with every change to the board, so clients can tell if they missed one. */
-  seq: bigint('seq', { mode: 'number' }).notNull().default(0),
-  /** Last change of any kind (for "updated 5 minutes ago"). */
-  activityAt: at('activity_at').notNull().defaultNow(),
-})
+export const boards = pgTable(
+  'boards',
+  {
+    id: text('id').primaryKey(),
+    name: text('name').notNull(),
+    mode: text('mode', { enum: ['manual', 'derived'] }).notNull(),
+    background: text('background'),
+    /** private: owners only · invited: its members · workspace: its members and everyone in its workspace. */
+    visibility: text('visibility', { enum: VISIBILITIES }).notNull().default('invited'),
+    /** Anyone with the link can view it, even signed out (not while it's private). */
+    publicLink: boolean('public_link').notNull().default(false),
+    /** The workspace it's in; null: its owner's Personal space. A workspace with boards in it can't be deleted. */
+    workspaceId: uuid('workspace_id').references(() => workspaces.id),
+    /** What everyone in the workspace can do on it, when it's shared with the workspace. */
+    workspaceRole: text('workspace_role', { enum: ['editor', 'viewer'] })
+      .notNull()
+      .default('editor'),
+    createdBy: uuid('created_by').references(() => users.id, { onDelete: 'set null' }),
+    ...meta,
+    /** Goes up by one with every change to the board, so clients can tell if they missed one. */
+    seq: bigint('seq', { mode: 'number' }).notNull().default(0),
+    /** Last change of any kind (for "updated 5 minutes ago"). */
+    activityAt: at('activity_at').notNull().defaultNow(),
+  },
+  (t) => [index('boards_workspace_idx').on(t.workspaceId)],
+)
 
 export const boardMembers = pgTable(
   'board_members',
@@ -318,11 +379,11 @@ export const notifications = pgTable(
     userId: uuid('user_id')
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
-    kind: text('kind', { enum: ['mention'] }).notNull(),
-    boardId: text('board_id')
-      .notNull()
-      .references(() => boards.id, { onDelete: 'cascade' }),
-    taskId: text('task_id').notNull(),
+    /** mention: in a comment (board, task, comment) · added: to a board or a workspace (one of the two). */
+    kind: text('kind', { enum: ['mention', 'added'] }).notNull(),
+    boardId: text('board_id').references(() => boards.id, { onDelete: 'cascade' }),
+    workspaceId: uuid('workspace_id').references(() => workspaces.id, { onDelete: 'cascade' }),
+    taskId: text('task_id'),
     commentId: uuid('comment_id').references(() => comments.id, { onDelete: 'cascade' }),
     actorId: uuid('actor_id').references(() => users.id, { onDelete: 'set null' }),
     createdAt: at('created_at').notNull().defaultNow(),
@@ -373,8 +434,10 @@ export const attachments = pgTable(
       .references(() => boards.id, { onDelete: 'cascade' }),
     taskId: text('task_id').notNull(),
     uploaderId: uuid('uploader_id').references(() => users.id, { onDelete: 'set null' }),
-    /** Whose quota it counts against: the board's owner when it was uploaded. */
+    /** Whose quota it counts against: the board's owner when it was uploaded (unless it's in a workspace). */
     ownerId: uuid('owner_id').references(() => users.id, { onDelete: 'set null' }),
+    /** The workspace whose space it counts against, for boards in a workspace (instead of `ownerId`'s). */
+    workspaceId: uuid('workspace_id').references(() => workspaces.id, { onDelete: 'set null' }),
     /**
      * Where the bytes are: 'disk' (the server's disk) or 's3'. `backendId` is the storage_backends row for s3
      * (kept even if that storage is later changed, so old files still open). `ownStorage` = the owner's own bucket.
@@ -396,5 +459,9 @@ export const attachments = pgTable(
     /** Uploaded while writing a comment, not posted yet (removed after a day if it never is). */
     draft: boolean('draft').notNull().default(false),
   },
-  (t) => [index('attachments_task_idx').on(t.boardId, t.taskId), index('attachments_owner_idx').on(t.ownerId)],
+  (t) => [
+    index('attachments_task_idx').on(t.boardId, t.taskId),
+    index('attachments_owner_idx').on(t.ownerId),
+    index('attachments_workspace_idx').on(t.workspaceId),
+  ],
 )

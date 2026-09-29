@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react'
-import type { InvitePreview } from '@kanbanto/model/api'
+import { Buildings } from '@phosphor-icons/react'
+import { toast } from 'sonner'
+import type { InvitePreview, JoinResult } from '@kanbanto/model/api'
 import { BOARD_BACKGROUNDS, type ColorName } from '@kanbanto/model/colors'
 import { api, ApiError, errorMessage } from '@/api/client'
 import { hrefFor, navigate } from '@/app/router'
@@ -10,7 +12,7 @@ import { CheckInboxView } from './EmailViews'
 
 const CAN = { editor: 'add and change tasks', viewer: 'view it' }
 
-/** A share link: shows which board it's for, then joins it (after signing in or up, if needed). */
+/** An invite link: shows which board or workspace it's for, then joins it (after signing in or up, if needed). */
 export function JoinView({ token }: { token: string }) {
   const { user, signOut, refresh } = useAuth()
   const [preview, setPreview] = useState<InvitePreview | null>(null)
@@ -25,10 +27,11 @@ export function JoinView({ token }: { token: string }) {
   const join = async () => {
     setBusy(true)
     try {
-      const { boardId } = await api<{ boardId: string }>('POST', '/join', { invite: token })
+      const joined = await api<JoinResult>('POST', '/join', { invite: token })
       // Accepting an invite emailed to you may have just confirmed your address.
       await refresh()
-      navigate({ page: 'board', id: boardId }, { replace: true })
+      navigate(joined.kind === 'board' ? { page: 'board', id: joined.boardId } : { page: 'home' }, { replace: true })
+      if (joined.kind === 'workspace') toast(`You joined “${preview?.kind === 'workspace' ? preview.workspace.name : 'the workspace'}”`)
     } catch (e) {
       // A share link or code needs your address confirmed first.
       if (e instanceof ApiError && e.code === 'verify-email') setMustConfirm(true)
@@ -48,22 +51,32 @@ export function JoinView({ token }: { token: string }) {
     )
   if (!preview) return null
 
-  const bg = preview.board.background ? BOARD_BACKGROUNDS[preview.board.background as ColorName] : null
   const next = hrefFor({ page: 'join', token })
+  const forWorkspace = preview.kind === 'workspace'
+  const bg = !forWorkspace && preview.board.background ? BOARD_BACKGROUNDS[preview.board.background as ColorName] : null
   return (
-    <AuthLayout title={`Join “${preview.board.name}”`} subtitle={`You’ve been invited to ${CAN[preview.role]}.`}>
+    <AuthLayout
+      title={forWorkspace ? `Join “${preview.workspace.name}”` : `Join “${preview.board.name}”`}
+      subtitle={
+        forWorkspace
+          ? 'You’ve been invited to this workspace: you’ll be able to open the boards shared with it.'
+          : `You’ve been invited to ${CAN[preview.role]}.`
+      }
+    >
       <div
-        className="mb-5 h-16 rounded-lg bg-muted"
+        className="mb-5 grid h-16 place-items-center rounded-lg bg-muted text-muted-foreground"
         style={bg ? { background: `linear-gradient(135deg, ${bg.from}, ${bg.to})` } : undefined}
         aria-hidden
-      />
+      >
+        {forWorkspace && <Buildings className="size-7" />}
+      </div>
       {preview.email && (
         <p className="mb-4 rounded-md bg-muted px-3 py-2 text-xs text-muted-foreground">
           This invite is for <span className="font-medium text-foreground">{preview.email}</span>
           {user ? '.' : ': sign up or sign in with that address.'}
         </p>
       )}
-      {preview.private ? (
+      {!forWorkspace && preview.private ? (
         <p className="text-sm text-muted-foreground">This board is private right now, so it can’t be joined. Ask its owner to share it again.</p>
       ) : user && preview.email && preview.email !== user.email ? (
         <div className="space-y-2">
@@ -76,7 +89,7 @@ export function JoinView({ token }: { token: string }) {
         </div>
       ) : user ? (
         <Button className="w-full" onClick={() => void join()} disabled={busy}>
-          Join board
+          {forWorkspace ? 'Join workspace' : 'Join board'}
         </Button>
       ) : (
         <div className="space-y-2">

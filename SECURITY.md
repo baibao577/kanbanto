@@ -35,7 +35,10 @@ Fixes go into the latest version. If you run Kanbanto yourself, keep it up to da
 - **Every change to a board** is checked on the server against the person's role, with the same rules as the app, and
   records put back by undo must be ones a command could have made.
 - **Cross-site requests** are refused: changes must come from a page on the same site.
-- **Who's on a board** is visible to its members only; only owners see their email addresses.
+- **Who's on a board** is visible to its people only; only owners see their email addresses.
+- **Workspaces** only add people to boards shared with the workspace. Their admins manage who's in it, but can't
+  open its other boards (private ones stay private) until someone leaves and they take over that person's boards.
+  Taking a board out of a workspace needs the workspace's admin, so nobody walks off with a team's board.
 
 **Keys and secrets**
 

@@ -28,6 +28,7 @@ const TaskDialog = lazy(() => import('@/components/task/TaskDialog').then((m) =>
 const ShareDialog = lazy(() => import('@/components/share/ShareDialog').then((m) => ({ default: m.ShareDialog })))
 const AccountView = lazy(() => import('@/components/account/AccountView').then((m) => ({ default: m.AccountView })))
 const AdminView = lazy(() => import('@/components/admin/AdminView').then((m) => ({ default: m.AdminView })))
+const WorkspaceView = lazy(() => import('@/components/workspace/WorkspaceView').then((m) => ({ default: m.WorkspaceView })))
 
 /**
  * The Board tab's background: a vivid gradient, plus text colors for anything drawn straight on it
@@ -104,6 +105,13 @@ export default function App() {
       return (
         <Suspense fallback={null}>
           <AdminView section={route.section} />
+        </Suspense>
+      )
+    case 'workspace':
+      if (!user) return <Redirect to={{ page: 'signin', next: here() }} />
+      return (
+        <Suspense fallback={null}>
+          <WorkspaceView key={route.id} id={route.id} />
         </Suspense>
       )
     case 'board':

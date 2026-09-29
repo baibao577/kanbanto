@@ -148,7 +148,7 @@ server {
 3. Refresh: **Platform console** appears in the menu under your initials.
 
 **For an internal team**, turn off open sign-up in **Platform console → Accounts → Anyone can create an account**.
-People can then only join through a board's share link, access code or email invite.
+People can then only join through a board's share link, access code or email invite, or a workspace's invite.
 
 Other server commands (all run as `docker compose exec app node dist/cli.js …`):
 

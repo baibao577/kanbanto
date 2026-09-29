@@ -33,8 +33,9 @@ apps/server/      Fastify + Drizzle + PostgreSQL
   src/db/schema.ts  Tables
   drizzle/          SQL migrations (generated; never edited after they're committed)
   src/db/defaults.ts, src/settings.ts   Site settings' defaults (one place) and loading them
-  src/boards/       engine.ts (runs commands), store.ts (rows ⇄ records), access.ts (who can do what), invites.ts
-  src/routes/       auth, boards, sharing, comments (and the bell), files, email, admin
+  src/boards/       engine.ts (runs commands), store.ts (rows ⇄ records, a board's people), access.ts (who can do
+                    what), invites.ts, workspaces.ts (joining, leaving, moving boards)
+  src/routes/       auth, boards, sharing, workspaces, comments (and the bell), files, email, admin
   src/mail/         mailer.ts (outbox, budgets, whose key pays), senders.ts, transport.ts (SMTP, Resend),
                     templates.tsx + components.tsx (the emails), digest.ts
   src/storage/      stores.ts (server disk; S3-compatible via aws4fetch), service.ts (quotas, buckets),
@@ -89,7 +90,8 @@ The app uses hash routing, so any static host or proxy works without rewrite rul
 |---|---|
 | `#/` | Your boards |
 | `#/b/<id>/<tab>?focus=<task>&task=<task>` | A board: tab (board, timeline, outline), zoomed-in task, open card. Back/Forward work. |
-| `#/join/<token>` | A share link |
+| `#/join/<token>` | An invite link, to a board or a workspace |
+| `#/w/<id>` | A workspace's people and settings |
 | `#/signin`, `#/signup`, `#/forgot` | Signing in |
 | `#/verify/<token>`, `#/reset/<token>` | Links in emails |
 | `#/account/<section>` | Account settings: profile, password, notifications, email, storage |
@@ -102,18 +104,26 @@ The app uses hash routing, so any static host or proxy works without rewrite rul
   connections. Sign-in is limited per IP address and per account (10 wrong passwords in 15 minutes).
 - **Behind proxies:** `X-Forwarded-*` headers count only from the proxies named in `TRUST_PROXY`; links in emails are
   built from `APP_URL`, never from request headers.
-- **Everyone owns their own boards.** There are no workspaces. New accounts get an example board, unless they
-  signed up to join someone else's.
+- **Boards live in their owner's Personal space or in a workspace.** A workspace is a group of people (admins and
+  members) and a place for boards; it adds one way into a board, it doesn't replace the board's own sharing. New
+  accounts get an example board, unless they signed up to join someone else's board or workspace.
 - **Platform admins** are granted only on the server (`admin grant`), never through the website. They manage
-  settings and accounts but get **no access to boards** unless a board is shared with them.
-- **Who can open a board:** *Private* (owners only), *Invited people* (members), *Public* (anyone with the link can
-  view, even signed out).
+  settings and accounts but get **no access to boards** unless a board is shared with them. Workspace admins manage
+  the workspace's people, and likewise get no access to its boards that aren't shared with the workspace.
+- **Who can open a board** (`accessFor` in `src/boards/access.ts`): *Private* (owners only), *Only people added*
+  (its members), *Everyone in the workspace* (its members, plus everyone in its workspace with the board's workspace
+  role: editor by default, or viewer). Someone who's both gets the higher role. *Anyone with the link can view* is a
+  switch on top (not while private).
+- **Leaving a workspace** closes its boards to you, except ones you were added to. Boards you own there stay in the
+  workspace; where you were the only owner, an admin becomes the owner. **Moving a board** into a workspace is up to
+  its owner; taking one out also needs that workspace's admin.
 - **Roles:** Owner (edit, share, delete), Editor (edit), Viewer (view and comment). A board always keeps an owner.
 - **Invites:** a share link and an access code (`ABCD-EFGH`), each with a role, each can be turned off or replaced.
   Email invites add existing, confirmed accounts at once; anyone else gets a one-time invite bound to their address.
   Signing up through an emailed invite confirms the address, unless the inviter was shown the link (the email
   couldn't be sent), since then the inviter could have used it.
-- **Who's on a board** (the Share dialog) is for members: owners see email addresses, others see names.
+- **Who's on a board** (the Share dialog) is for its people: owners see email addresses, others see names. Everyone
+  in the workspace can be assigned and @mentioned on its boards shared with it.
 
 ## Email
 
@@ -137,8 +147,8 @@ The app uses hash routing, so any static host or proxy works without rewrite rul
 
 ## Comments and notifications
 
-- Every card has a live comment thread. Everyone on the board can comment, viewers included (not visitors of a
-  public board).
+- Every card has a live comment thread. Everyone on the board can comment, viewers included (not visitors with the
+  public link).
 - **@mentions** (of board members) show under the bell. By email, people get at most one summary a day, covering
   mentions unseen in the app for an hour.
 - `#` in a comment or description links to one of the card's files.
@@ -151,7 +161,9 @@ The app uses hash routing, so any static host or proxy works without rewrite rul
 - **Bring your own bucket:** people can connect their own bucket in Account settings; files on boards they own go
   there, with no limit. Their buckets must be at public addresses: every connection is checked after the name is
   looked up (so changing DNS later doesn't get around it), and redirects aren't followed.
-- **Quota** counts against the board's owner (default 50 MB in total across their boards; largest file 10 MB).
+- **Quota** counts against the board's owner (default 50 MB in total across their boards; largest file 10 MB), or,
+  for a board in a workspace, against the workspace (the same amount, across its boards; always the site's storage).
+  Moving a board moves its files' count with it.
 - Files are always served as downloads (pictures inline), never as web pages; programs and scripts are refused.
   Uploads are checked (who, and the declared size) before the file is read. Files for comments not yet posted are
   their uploader's only, and count against the owner's space once posted.

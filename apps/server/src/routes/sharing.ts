@@ -1,16 +1,19 @@
+import type { InvitePreview, JoinResult } from '@kanbanto/model/api'
 import { newId } from '@kanbanto/model/ids'
 import { and, eq, isNull, sql } from 'drizzle-orm'
-import type { FastifyInstance, FastifyPluginAsync, FastifyRequest } from 'fastify'
+import type { FastifyPluginAsync, FastifyRequest } from 'fastify'
 import { z } from 'zod'
-import { accessFor, memberRole, requireAccess } from '../boards/access'
-import { activeInvites, findInvite, joinWithInvite, newCode, newLinkToken, type InviteKind } from '../boards/invites'
+import { memberRole, requireAccess } from '../boards/access'
+import { announceSharingChange, announceWorkspaceChange } from '../boards/announce'
+import { acceptInvite, activeInvites, findAnyInvite, newCode, newLinkToken, provesEmail, type InviteKind } from '../boards/invites'
 import type { Tx } from '../db'
-import { boardInvites, boardMembers, boards, ROLES, tasks, users, VISIBILITIES } from '../db/schema'
+import { boardInvites, boardMembers, boards, ROLES, tasks, users, VISIBILITIES, workspaceMembers, workspaces } from '../db/schema'
 import { env } from '../env'
 import { HttpError, parse, siteUrl } from '../http'
 import { WHY_NOT_SENT } from '../mail/mailer'
 import { emails } from '../mail/templates'
 import { requireUser } from './auth'
+import { notifyAdded } from './comments'
 
 const Params = z.object({ id: z.string().min(1).max(100) })
 const MemberParams = Params.extend({ userId: z.uuid() })
@@ -43,14 +46,15 @@ export const sharingRoutes: FastifyPluginAsync = async (app) => {
   const sharingChanged = (boardId: string) => announceSharingChange(app, boardId)
 
   /**
-   * Everything on the Share dialog, for people on the board (visitors of a public board don't see who's on it).
-   * Owners see everyone's email address and the invites; others see names, and only their own address.
+   * Everything on the Share dialog, for people on the board (visitors with the public link don't see who's on it).
+   * Owners see everyone's email address and the invites; others see names, and only their own address. Everyone in
+   * the workspace isn't listed one by one: only how many they are.
    */
   app.get('/boards/:id/sharing', async (req) => {
     const { id } = parse(Params, req.params)
     const me = requireUser(req.user)
     const { board, access } = await requireAccess(app.db, me, id, 'viewer')
-    if (access.via !== 'member') throw new HttpError(403, 'Only people on this board can see who’s on it.')
+    if (access.via === 'public') throw new HttpError(403, 'Only people on this board can see who’s on it.')
     const owner = access.role === 'owner'
     const rows = await app.db
       .select({ userId: users.id, name: users.name, email: users.email, role: boardMembers.role })
@@ -63,16 +67,42 @@ export const sharingRoutes: FastifyPluginAsync = async (app) => {
       .map((m) => (owner || m.userId === me.id ? m : { userId: m.userId, name: m.name, role: m.role }))
     // Only owners see the invites (anyone holding them can join).
     const invites = owner ? await activeInvites(app.db, id) : { link: null, code: null, pending: [] }
-    return { visibility: board.visibility, members, ...invites, canManage: owner }
+    const [workspace] = board.workspaceId
+      ? await app.db
+          .select({
+            id: workspaces.id,
+            name: workspaces.name,
+            memberCount: sql<number>`(select count(*)::int from ${workspaceMembers} m where m.workspace_id = ${workspaces.id})`,
+          })
+          .from(workspaces)
+          .where(eq(workspaces.id, board.workspaceId))
+      : [null]
+    return {
+      visibility: board.visibility,
+      publicLink: board.publicLink,
+      workspaceRole: board.workspaceRole,
+      workspace: workspace ?? null,
+      members,
+      ...invites,
+      canManage: owner,
+    }
   })
 
+  /** Who can open the board, what everyone in its workspace can do, and whether anyone with the link can view it. */
   app.patch('/boards/:id/sharing', async (req) => {
     const { id } = parse(Params, req.params)
-    await requireAccess(app.db, requireUser(req.user), id, 'owner')
-    const { visibility } = parse(z.object({ visibility: z.enum(VISIBILITIES) }), req.body)
-    await app.db.update(boards).set({ visibility }).where(eq(boards.id, id))
+    const { board } = await requireAccess(app.db, requireUser(req.user), id, 'owner')
+    const body = parse(
+      z
+        .object({ visibility: z.enum(VISIBILITIES), publicLink: z.boolean(), workspaceRole: inviteRole })
+        .partial()
+        .strict(),
+      req.body,
+    )
+    if (body.visibility === 'workspace' && !board.workspaceId) throw new HttpError(400, 'This board isn’t in a workspace. Move it to one first.')
+    const [updated] = await app.db.update(boards).set(body).where(eq(boards.id, id)).returning()
     await sharingChanged(id)
-    return { visibility }
+    return { visibility: updated.visibility, publicLink: updated.publicLink, workspaceRole: updated.workspaceRole }
   })
 
   /** Turns on (or changes the role of) the share link / access code. `regenerate` replaces it, so the old one stops working. */
@@ -151,6 +181,7 @@ export const sharingRoutes: FastifyPluginAsync = async (app) => {
         const role = (await memberRole(app.db, id, u.id)) ?? 'viewer'
         throw new HttpError(409, `${u.name} is already on this board (${ROLE_TEXT[role]}). Change their role in the list below.`)
       }
+      await notifyAdded(app.db, u.id, me.id, { boardId: id })
       await sharingChanged(id)
       const sent = await inviteEmail(`${base}/#/b/${encodeURIComponent(id)}`, 'added')
       return { outcome: 'added', name: u.name, emailed: sent.queued, why: sent.queued ? null : WHY_NOT_SENT[sent.reason] }
@@ -224,54 +255,41 @@ export const sharingRoutes: FastifyPluginAsync = async (app) => {
     return { ok: true }
   })
 
-  /** What an invite is for (the join page shows it before you accept). Works signed out. */
-  app.get('/invites/:token', LIMIT, async (req) => {
+  /** What an invite is for, a board or a workspace (the join page shows it before you accept). Works signed out. */
+  app.get('/invites/:token', LIMIT, async (req): Promise<InvitePreview> => {
     const { token } = parse(z.object({ token: z.string().min(1).max(200) }), req.params)
-    const found = await findInvite(app.db, token)
+    const found = await findAnyInvite(app.db, token)
     if (!found) throw new HttpError(404, 'That invite doesn’t work any more. Ask for a new link or code.')
+    if (found.kind === 'workspace')
+      return { kind: 'workspace', workspace: { id: found.workspace.id, name: found.workspace.name }, email: found.invite.email }
     const { invite, board } = found
     return {
+      kind: 'board',
       board: { id: board.id, name: board.name, background: board.background },
       role: invite.role,
       private: board.visibility === 'private',
-      /** Email invites work only for this address. */
       email: invite.email,
     }
   })
 
   /**
-   * Joins a board with a share link token or an access code. Accepting an email invite for your own address that was
-   * emailed to you (not shown to the inviter) also confirms your address, so it works before you've confirmed it.
+   * Joins a board (share link, access code or email invite) or a workspace (invite link or email invite). Accepting an
+   * email invite for your own address that was emailed to you (not shown to the inviter) also confirms your address,
+   * so it works before you've confirmed it.
    */
-  app.post('/join', LIMIT, async (req) => {
+  app.post('/join', LIMIT, async (req): Promise<JoinResult> => {
     const me = requireUser(req.user, { allowUnverified: true })
     const { invite } = parse(z.object({ invite: z.string().trim().min(1, 'Enter a code.').max(200) }), req.body)
     const joined = await app.db.transaction(async (tx) => {
       if (me.mustVerify) {
-        const found = await findInvite(tx, invite)
-        const proves = found?.invite.kind === 'email' && found.invite.email === me.email && !found.invite.linkShown
-        if (!proves) throw new HttpError(403, 'Confirm your email address first: check your inbox for the link.', 'verify-email')
+        if (!provesEmail(await findAnyInvite(tx, invite), me.email))
+          throw new HttpError(403, 'Confirm your email address first: check your inbox for the link.', 'verify-email')
         await tx.update(users).set({ emailVerifiedAt: new Date() }).where(eq(users.id, me.id))
       }
-      return joinWithInvite(tx, me, invite)
+      return acceptInvite(tx, me, invite)
     })
-    await sharingChanged(joined.boardId)
+    if (joined.kind === 'board') await sharingChanged(joined.boardId)
+    else await announceWorkspaceChange(app, joined.workspaceId)
     return joined
-  })
-}
-
-/**
- * People, visibility or invites changed: every cached and open copy of the board is refreshed (so new people
- * can be assigned right away), and anyone who lost access is disconnected.
- */
-export async function announceSharingChange(app: FastifyInstance, boardId: string) {
-  await app.engine.touch(boardId)
-  const [board] = await app.db.select().from(boards).where(eq(boards.id, boardId))
-  if (!board) return
-  await app.hub.recheck(boardId, async (userId) => {
-    if (!userId) return board.visibility === 'public'
-    const [u] = await app.db.select({ disabledAt: users.disabledAt }).from(users).where(eq(users.id, userId))
-    if (!u || u.disabledAt) return false
-    return !!accessFor(null, board, await memberRole(app.db, boardId, userId))
   })
 }

@@ -77,7 +77,7 @@ afterEach(() => {
 const snapshot = (): BoardSnapshot => ({
   data: server,
   seq,
-  access: { role: 'editor', via: 'member', visibility: 'invited' },
+  access: { role: 'editor', via: 'member', visibility: 'invited', publicLink: false, workspace: null },
   counts: { comments: {}, attachments: {} },
   canComment: true,
 })

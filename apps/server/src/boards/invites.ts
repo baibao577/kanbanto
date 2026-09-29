@@ -1,9 +1,11 @@
+import type { JoinResult } from '@kanbanto/model/api'
 import { randomBytes } from 'node:crypto'
 import { and, eq, isNull, sql } from 'drizzle-orm'
 import type { Db, Tx } from '../db'
 import { boardInvites, boardMembers, boards, type Role } from '../db/schema'
 import { HttpError } from '../http'
 import { higherRole } from './access'
+import { findWorkspaceInvite, joinWorkspace } from './workspaces'
 
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789' // no 0/O, 1/I
 
@@ -14,7 +16,7 @@ export const normalizeCode = (input: string) => input.toUpperCase().replace(/[^A
 export const formatCode = (code: string) => `${code.slice(0, 4)}-${code.slice(4)}`
 
 /** An active invite by its link token or access code, with its board. */
-export async function findInvite(db: Tx, tokenOrCode: string) {
+export async function findInvite(db: Db | Tx, tokenOrCode: string) {
   const candidates = [tokenOrCode.trim(), normalizeCode(tokenOrCode)]
   for (const token of candidates) {
     if (!token) continue
@@ -77,4 +79,30 @@ export async function activeInvites(db: Db | Tx, boardId: string) {
     code: code ? { code: formatCode(code.token), role: code.role } : null,
     pending: rows.filter((r) => r.kind === 'email').map((r) => ({ id: r.id, email: r.email!, role: r.role, createdAt: r.createdAt.toISOString() })),
   }
+}
+
+/** A board invite (share link, access code, email) or a workspace invite (link, email), by its token or code. */
+export type AnyInvite =
+  | ({ kind: 'board' } & NonNullable<Awaited<ReturnType<typeof findInvite>>>)
+  | ({ kind: 'workspace' } & NonNullable<Awaited<ReturnType<typeof findWorkspaceInvite>>>)
+
+export async function findAnyInvite(tx: Db | Tx, tokenOrCode: string): Promise<AnyInvite | null> {
+  const board = await findInvite(tx, tokenOrCode)
+  if (board) return { kind: 'board', ...board }
+  const workspace = await findWorkspaceInvite(tx, tokenOrCode)
+  return workspace && { kind: 'workspace', ...workspace }
+}
+
+/**
+ * Using this invite proves `email` is the user's: it's an email invite to that address that was emailed (not shown to
+ * the inviter, who could then be the one using it).
+ */
+export const provesEmail = (found: AnyInvite | null, email: string) =>
+  !!found && found.invite.kind === 'email' && found.invite.email === email && !found.invite.linkShown
+
+/** Joins the board or workspace an invite is for. */
+export async function acceptInvite(tx: Tx, user: { id: string; email: string }, tokenOrCode: string): Promise<JoinResult> {
+  const found = await findAnyInvite(tx, tokenOrCode)
+  if (found?.kind === 'workspace') return { kind: 'workspace', workspaceId: await joinWorkspace(tx, user, found) }
+  return { kind: 'board', ...(await joinWithInvite(tx, user, tokenOrCode)) }
 }

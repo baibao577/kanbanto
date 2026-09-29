@@ -15,6 +15,8 @@ import { DiskStore, S3Store, StorageError, type S3Config } from './stores'
  * - Each board's files count against its owner. If the owner connected their own bucket, files go there (no limit);
  *   otherwise they go to the site's storage (the server's disk, or the bucket the platform admin set up), within
  *   the per-owner quota.
+ * - A board in a workspace: its files count against the workspace (which gets the same quota as a person), in the
+ *   site's storage.
  * - Changing storage never moves or breaks existing files: each file remembers where it was saved, and replaced
  *   storage settings are retired, not overwritten.
  */
@@ -67,15 +69,20 @@ export async function boardOwner(db: Db | Tx, boardId: string) {
   return row?.userId ?? null
 }
 
+/** Whose space a board's files count against: its workspace's, or its owner's. */
+export type Payer = { workspaceId: string } | { ownerId: string }
+
 /**
- * Bytes `ownerId` uses in the site's storage. Files in the trash don't count, and neither do files waiting in
- * comments nobody has posted yet (they count when posted; each person may only have a few waiting).
+ * Bytes a person (their Personal boards) or a workspace uses in the site's storage. Files in the trash don't count,
+ * and neither do files waiting in comments nobody has posted yet (they count when posted; each person may only have
+ * a few waiting).
  */
-export async function quotaUsed(db: Db | Tx, ownerId: string) {
+export async function quotaUsed(db: Db | Tx, payer: Payer) {
+  const whose = 'workspaceId' in payer ? eq(attachments.workspaceId, payer.workspaceId) : eq(attachments.ownerId, payer.ownerId)
   const [{ n }] = await db
     .select({ n: sql<number>`coalesce(sum(${attachments.size}), 0)::bigint` })
     .from(attachments)
-    .where(and(eq(attachments.ownerId, ownerId), eq(attachments.ownStorage, false), isNull(attachments.deletedAt), eq(attachments.draft, false)))
+    .where(and(whose, eq(attachments.ownStorage, false), isNull(attachments.deletedAt), eq(attachments.draft, false)))
   return Number(n)
 }
 

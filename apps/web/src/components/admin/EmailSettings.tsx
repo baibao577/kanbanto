@@ -1,4 +1,4 @@
-import { PaperPlaneTilt } from '@phosphor-icons/react'
+import { PaperPlaneTilt, Warning } from '@phosphor-icons/react'
 import { hrefFor } from '@/app/router'
 import { useState } from 'react'
 import { toast } from 'sonner'
@@ -32,6 +32,19 @@ export function EmailSettings() {
         title="Email"
         description="Used for confirming new accounts, password resets, board invites and the daily mention summary. Until it’s set up, people share boards with links and codes, and password resets go through you."
       />
+      {info.printedOnly && (
+        <div role="alert" className="flex gap-3 rounded-xl border border-warning/40 bg-warning/10 px-4 py-3 text-sm">
+          <Warning weight="fill" className="mt-0.5 size-4 shrink-0 text-warning" />
+          <div className="space-y-1">
+            <p className="font-medium">Emails are printed in the server’s terminal, not sent</p>
+            <p className="text-xs text-muted-foreground">
+              The server was started with <code className="font-mono">MAIL_TRANSPORT=log</code> (a development setting, usually in{' '}
+              <code className="font-mono">apps/server/.env</code>). The settings below are saved, but nothing reaches anyone’s inbox until you remove
+              that line and restart the server.
+            </p>
+          </div>
+        </div>
+      )}
       <SettingsCard title="Sending" description="How emails go out, and the address they come from.">
         <EmailKeyForm
           sender={info.sender}

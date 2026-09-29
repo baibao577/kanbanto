@@ -146,15 +146,21 @@ export async function attachDrafts(db: Db | Tx, c: { boardId: string; taskId: st
     isNull(attachments.deletedAt),
   )
   const drafts = await db
-    .select({ size: attachments.size, ownerId: attachments.ownerId, ownStorage: attachments.ownStorage })
+    .select({ size: attachments.size, ownerId: attachments.ownerId, workspaceId: attachments.workspaceId, ownStorage: attachments.ownStorage })
     .from(attachments)
     .where(mine)
-  const counted = drafts.filter((d) => !d.ownStorage && d.ownerId)
+  const counted = drafts.filter((d) => !d.ownStorage && (d.workspaceId || d.ownerId))
   if (counted.length) {
     const { quotaMb } = await storageSettings(db)
     const adding = counted.reduce((n, d) => n + d.size, 0)
-    if ((await quotaUsed(db, counted[0].ownerId!)) + adding > quotaMb * MB)
-      throw new HttpError(413, `The board’s owner is out of file space (${quotaMb} MB), so these files can’t be added. Ask them to free some up.`)
+    const { workspaceId, ownerId } = counted[0]
+    if ((await quotaUsed(db, workspaceId ? { workspaceId } : { ownerId: ownerId! })) + adding > quotaMb * MB)
+      throw new HttpError(
+        413,
+        workspaceId
+          ? `The workspace is out of file space (${quotaMb} MB), so these files can’t be added. Free some up first.`
+          : `The board’s owner is out of file space (${quotaMb} MB), so these files can’t be added. Ask them to free some up.`,
+      )
   }
   const rows = await db.update(attachments).set({ commentId: c.commentId, draft: false }).where(mine).returning({ id: attachments.id })
   return rows.length
@@ -197,16 +203,17 @@ export const fileRoutes: FastifyPluginAsync = async (app) => {
    * Uploads a file to a card (editors and owners), or — with `x-attach-to: comment` — for a comment being written
    * (anyone who can comment, viewers included; it's a draft until the comment is posted). The body is the file's bytes, sent as application/octet-stream
    * (so nothing tries to parse it, whatever the file is); its name and type are in `x-file-name` and `x-file-type`.
-   * It goes to the board owner's own storage if they connected one, else the site's storage within their quota.
+   * It goes to the board owner's own storage if they connected one, else the site's storage within their quota (or,
+   * for a board in a workspace, the site's storage within the workspace's).
    */
   /** Who may upload here (checked before the file is read, and again after). */
   const uploader = async (req: FastifyRequest) => {
     const { id, taskId } = parse(TaskParams, req.params)
     const me = requireUser(req.user)
     const forComment = req.headers['x-attach-to'] === 'comment'
-    const { access } = await requireAccess(app.db, me, id, forComment ? 'viewer' : 'editor')
-    if (forComment && access.via !== 'member') throw new HttpError(403, 'Join this board to comment on it.')
-    return { id, taskId, me, forComment }
+    const { board, access } = await requireAccess(app.db, me, id, forComment ? 'viewer' : 'editor')
+    if (forComment && access.via === 'public') throw new HttpError(403, 'Join this board to comment on it.')
+    return { id, taskId, me, forComment, board }
   }
 
   app.post(
@@ -231,7 +238,7 @@ export const fileRoutes: FastifyPluginAsync = async (app) => {
       },
     },
     async (req) => {
-      const { id, taskId, me, forComment } = await uploader(req)
+      const { id, taskId, me, forComment, board } = await uploader(req)
       const body = req.body
       if (!Buffer.isBuffer(body) || !body.length) throw new HttpError(400, 'Choose a file to upload.')
       const { maxFileMb, quotaMb } = await storageSettings(app.db)
@@ -241,10 +248,18 @@ export const fileRoutes: FastifyPluginAsync = async (app) => {
       const { data } = await app.engine.snapshot(id)
       if (!data.tasks[taskId]) throw new HttpError(404, 'That task no longer exists.')
 
-      const owner = await boardOwner(app.db, id)
+      const workspaceId = board.workspaceId
+      const owner = workspaceId ? null : await boardOwner(app.db, id)
       const own = owner ? await activeBackend(app.db, owner) : null
-      if (!own && owner) {
-        const used = await quotaUsed(app.db, owner)
+      if (workspaceId) {
+        const used = await quotaUsed(app.db, { workspaceId })
+        if (used + body.length > quotaMb * MB)
+          throw new HttpError(
+            413,
+            `This would go over the workspace’s ${quotaMb} MB of file space (${formatMb(used)} used). Delete some files first.`,
+          )
+      } else if (!own && owner) {
+        const used = await quotaUsed(app.db, { ownerId: owner })
         if (used + body.length > quotaMb * MB) {
           const mine = owner === me.id
           throw new HttpError(
@@ -277,6 +292,7 @@ export const fileRoutes: FastifyPluginAsync = async (app) => {
         taskId,
         uploaderId: me.id,
         ownerId: owner,
+        workspaceId,
         backend: backendRow ? 's3' : 'disk',
         backendId: backendRow?.id ?? null,
         ownStorage: !!own,
@@ -404,7 +420,7 @@ export const fileRoutes: FastifyPluginAsync = async (app) => {
     return {
       encryptionReady: encryptionReady(),
       bucket: bucketView(await activeBackend(app.db, me.id)),
-      used: await quotaUsed(app.db, me.id),
+      used: await quotaUsed(app.db, { ownerId: me.id }),
       quota: quotaMb * MB,
       maxFile: maxFileMb * MB,
     }

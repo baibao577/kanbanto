@@ -1,4 +1,4 @@
-import { ArrowsClockwise, Copy, EnvelopeSimple, SignOut, X } from '@phosphor-icons/react'
+import { ArrowsClockwise, Buildings, CaretDown, Copy, EnvelopeSimple, LinkSimple, SignOut, X } from '@phosphor-icons/react'
 import { useCallback, useState, type ReactNode } from 'react'
 import { toast } from 'sonner'
 import type { InvitationResult, Role, Sharing, Visibility } from '@kanbanto/model/api'
@@ -12,11 +12,10 @@ import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { cn } from '@/lib/utils'
-import { VISIBILITY } from './visibility'
+import { PUBLIC_LINK, VISIBILITY, visibilityOf } from './visibility'
 
 const ROLE_TEXT: Record<Role, string> = { owner: 'Owner', editor: 'Can edit', viewer: 'Can view' }
 const ROLE_HINT: Record<Role, string> = {
@@ -59,173 +58,278 @@ export function ShareDialog({ open, onOpenChange }: { open: boolean; onOpenChang
 
   const manage = !!sharing?.canManage
   const paused = sharing?.visibility === 'private'
+  const ws = sharing?.workspace
+  const boardLink = `${location.origin}${location.pathname}${hrefFor({ page: 'board', id: boardId })}`
+  /** A setting in words, with the workspace's name and size where it's about the workspace. */
+  const describe = (v: Visibility) =>
+    v === 'workspace' && ws
+      ? {
+          ...VISIBILITY.workspace,
+          title: `Everyone in ${ws.name}`,
+          short: `The ${ws.memberCount} ${ws.memberCount === 1 ? 'person' : 'people'} in ${ws.name}, and people added`,
+        }
+      : visibilityOf(v)
+
+  const options = ws ? (['workspace', 'invited', 'private'] as const) : (['invited', 'private'] as const)
+  const general = sharing && describe(sharing.visibility)
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[calc(100dvh-4rem)] overflow-y-auto sm:max-w-lg">
-        <DialogHeader>
-          <DialogTitle>Share “{data.board.name}”</DialogTitle>
+      {/* Header and "General access" stay put; the middle scrolls, and the people list has its own scroll. */}
+      <DialogContent
+        className="flex max-h-[calc(100dvh-4rem)] flex-col gap-0 p-0 sm:max-w-lg"
+        // Start in the email box (not on phones, where that would pop up the keyboard).
+        onOpenAutoFocus={(e) => {
+          e.preventDefault()
+          if (matchMedia('(hover: hover)').matches) document.getElementById('share-invite-email')?.focus()
+        }}
+      >
+        <DialogHeader className="px-6 pt-6 pb-4">
+          <DialogTitle className="pr-6">Share “{data.board.name}”</DialogTitle>
           <DialogDescription>
-            {manage ? 'Choose who can open this board and invite people.' : 'Only the board’s owners can change who can open it.'}
+            {ws && `In the ${ws.name} workspace. `}
+            {manage ? 'Invite people, and choose who else can open it.' : 'Only the board’s owners can change who can open it.'}
           </DialogDescription>
         </DialogHeader>
 
-        {!sharing ? (
-          <div className="h-40" />
+        {!sharing || !general ? (
+          <div className="h-60" />
         ) : (
-          <div className="space-y-6">
-            <Section title="Who can open this board">
-              {manage ? (
-                <RadioGroup
-                  value={sharing.visibility}
-                  onValueChange={(v) => void act('PATCH', '/sharing', { visibility: v as Visibility })}
-                  className="gap-2"
-                >
-                  {(['private', 'invited', 'public'] as const).map((v) => {
-                    const { icon: Icon, title, hint } = VISIBILITY[v]
-                    return (
-                      <label
-                        key={v}
-                        className="flex cursor-pointer gap-3 rounded-lg border p-3 transition-colors hover:bg-accent/50 has-[[data-state=checked]]:border-primary has-[[data-state=checked]]:bg-primary/5"
-                      >
-                        <RadioGroupItem value={v} className="mt-0.5" />
-                        <Icon className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
-                        <span className="space-y-0.5">
-                          <span className="block text-sm font-medium">{title}</span>
-                          <span className="block text-xs leading-relaxed text-muted-foreground">{hint}</span>
+          <>
+            <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-6 pb-5">
+              {manage && <InviteByEmail boardId={boardId} onDone={() => void load()} />}
+              {manage && (
+                <LinksAndCode sharing={sharing} paused={paused}>
+                  <Invite
+                    title="Invite link"
+                    hint="Anyone with the link can join after signing in (or creating an account)."
+                    invite={sharing.link && { value: linkFor(sharing.link.token), role: sharing.link.role }}
+                    display={(v) => (
+                      <Input readOnly value={v} onFocus={(e) => e.target.select()} className="h-8 font-mono text-xs" aria-label="Share link" />
+                    )}
+                    onCopy={(v) => void copy(v, 'Link')}
+                    onEnable={(role) => act('PUT', '/invites/link', { role })}
+                    onRole={(role) => act('PUT', '/invites/link', { role })}
+                    onReset={() =>
+                      act('PUT', '/invites/link', { role: sharing.link!.role, regenerate: true }, 'New link made. The old one no longer works.')
+                    }
+                    onDisable={() => act('DELETE', '/invites/link', undefined, 'Link turned off')}
+                  />
+                  <Invite
+                    title="Access code"
+                    hint="People enter it under “Join with a code” on their boards page."
+                    invite={sharing.code && { value: sharing.code.code, role: sharing.code.role }}
+                    display={(v) => (
+                      <span className="flex h-8 flex-1 items-center rounded-md border bg-muted/50 px-3 font-mono text-base tracking-[0.2em]">
+                        {v}
+                      </span>
+                    )}
+                    onCopy={(v) => void copy(v, 'Code')}
+                    onEnable={(role) => act('PUT', '/invites/code', { role })}
+                    onRole={(role) => act('PUT', '/invites/code', { role })}
+                    onReset={() =>
+                      act('PUT', '/invites/code', { role: sharing.code!.role, regenerate: true }, 'New code made. The old one no longer works.')
+                    }
+                    onDisable={() => act('DELETE', '/invites/code', undefined, 'Code turned off')}
+                  />
+                </LinksAndCode>
+              )}
+
+              <section className="space-y-1.5">
+                <Label>People with access</Label>
+                <ul className="-mx-2 max-h-72 space-y-0.5 overflow-y-auto px-2">
+                  {ws && sharing.visibility === 'workspace' && (
+                    <li className="flex items-center gap-3 py-1.5">
+                      <span className="grid size-8 shrink-0 place-items-center rounded-full bg-muted text-muted-foreground">
+                        <Buildings className="size-4" />
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-sm font-medium">Everyone in {ws.name}</span>
+                        <span className="block truncate text-xs text-muted-foreground">
+                          {ws.memberCount} {ws.memberCount === 1 ? 'person' : 'people'}
                         </span>
-                      </label>
+                      </span>
+                      <span className="pr-1 text-xs text-muted-foreground">{ROLE_TEXT[sharing.workspaceRole]}</span>
+                    </li>
+                  )}
+                  {sharing.members.map((m) => {
+                    const me = m.userId === user?.id
+                    return (
+                      <li key={m.userId} className="flex items-center gap-3 py-1.5">
+                        <Avatar name={m.name} className="size-8 text-xs" />
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate text-sm font-medium">
+                            {m.name}
+                            {me && <span className="font-normal text-muted-foreground"> (you)</span>}
+                          </span>
+                          {m.email && <span className="block truncate text-xs text-muted-foreground">{m.email}</span>}
+                        </span>
+                        {manage ? (
+                          <RoleSelect
+                            value={m.role}
+                            roles={['owner', 'editor', 'viewer']}
+                            onChange={(role) => void act('PATCH', `/members/${m.userId}`, { role })}
+                          />
+                        ) : (
+                          <span className="pr-1 text-xs text-muted-foreground">{ROLE_TEXT[m.role]}</span>
+                        )}
+                        {(manage || me) && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="size-8 shrink-0 text-muted-foreground"
+                            aria-label={me ? 'Leave this board' : `Remove ${m.name}`}
+                            title={me ? 'Leave this board' : `Remove ${m.name}`}
+                            onClick={async () => {
+                              const ok = await act('DELETE', `/members/${m.userId}`, undefined, me ? undefined : `Removed ${m.name}`)
+                              if (ok && me) {
+                                onOpenChange(false)
+                                navigate({ page: 'home' }, { replace: true })
+                                toast(`You left “${data.board.name}”`)
+                              }
+                            }}
+                          >
+                            {me ? <SignOut /> : <X />}
+                          </Button>
+                        )}
+                      </li>
                     )
                   })}
-                </RadioGroup>
-              ) : (
-                <p className="flex items-center gap-2 text-sm">
-                  {(() => {
-                    const { icon: Icon, label } = VISIBILITY[sharing.visibility]
-                    return (
-                      <>
-                        <Icon className="size-4 text-muted-foreground" /> {label}
-                      </>
-                    )
-                  })()}
-                </p>
-              )}
-            </Section>
-
-            {manage && (
-              <>
-                {paused && (
-                  <p className="rounded-md bg-muted px-3 py-2 text-xs text-muted-foreground">
-                    The board is private, so the link and code can’t be used to join it until you share it again.
-                  </p>
-                )}
-                <Invite
-                  title="Invite with a link"
-                  hint="Anyone with the link can join after signing in (or creating an account)."
-                  invite={sharing.link && { value: linkFor(sharing.link.token), role: sharing.link.role }}
-                  display={(v) => (
-                    <Input readOnly value={v} onFocus={(e) => e.target.select()} className="h-8 font-mono text-xs" aria-label="Share link" />
-                  )}
-                  onCopy={(v) => void copy(v, 'Link')}
-                  onEnable={(role) => act('PUT', '/invites/link', { role })}
-                  onRole={(role) => act('PUT', '/invites/link', { role })}
-                  onReset={() =>
-                    act('PUT', '/invites/link', { role: sharing.link!.role, regenerate: true }, 'New link made. The old one no longer works.')
-                  }
-                  onDisable={() => act('DELETE', '/invites/link', undefined, 'Link turned off')}
-                />
-                <Invite
-                  title="Invite with an access code"
-                  hint="People enter it under “Join with a code” on their boards page."
-                  invite={sharing.code && { value: sharing.code.code, role: sharing.code.role }}
-                  display={(v) => (
-                    <span className="flex h-8 flex-1 items-center rounded-md border bg-muted/50 px-3 font-mono text-base tracking-[0.2em]">{v}</span>
-                  )}
-                  onCopy={(v) => void copy(v, 'Code')}
-                  onEnable={(role) => act('PUT', '/invites/code', { role })}
-                  onRole={(role) => act('PUT', '/invites/code', { role })}
-                  onReset={() =>
-                    act('PUT', '/invites/code', { role: sharing.code!.role, regenerate: true }, 'New code made. The old one no longer works.')
-                  }
-                  onDisable={() => act('DELETE', '/invites/code', undefined, 'Code turned off')}
-                />
-                <InviteByEmail boardId={boardId} onDone={() => void load()} />
-              </>
-            )}
-
-            <Section title={`People on this board (${sharing.members.length})`}>
-              <ul className="space-y-1">
-                {sharing.members.map((m) => {
-                  const me = m.userId === user?.id
-                  return (
-                    <li key={m.userId} className="flex items-center gap-3 rounded-md py-1.5">
-                      <Avatar name={m.name} className="size-8 text-xs" />
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate text-sm font-medium">
-                          {m.name}
-                          {me && <span className="font-normal text-muted-foreground"> (you)</span>}
-                        </span>
-                        {m.email && <span className="block truncate text-xs text-muted-foreground">{m.email}</span>}
+                  {sharing.pending.map((p) => (
+                    <li key={p.id} className="flex items-center gap-3 py-1.5">
+                      <span className="grid size-8 shrink-0 place-items-center rounded-full border border-dashed text-muted-foreground">
+                        <EnvelopeSimple className="size-4" />
                       </span>
-                      {manage ? (
-                        <RoleSelect
-                          value={m.role}
-                          roles={['owner', 'editor', 'viewer']}
-                          onChange={(role) => void act('PATCH', `/members/${m.userId}`, { role })}
-                        />
-                      ) : (
-                        <span className="text-xs text-muted-foreground">{ROLE_TEXT[m.role]}</span>
-                      )}
-                      {(manage || me) && (
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="size-8 text-muted-foreground"
-                          aria-label={me ? 'Leave this board' : `Remove ${m.name}`}
-                          title={me ? 'Leave this board' : `Remove ${m.name}`}
-                          onClick={async () => {
-                            const ok = await act('DELETE', `/members/${m.userId}`, undefined, me ? undefined : `Removed ${m.name}`)
-                            if (ok && me) {
-                              onOpenChange(false)
-                              navigate({ page: 'home' }, { replace: true })
-                              toast(`You left “${data.board.name}”`)
-                            }
-                          }}
-                        >
-                          {me ? <SignOut /> : <X />}
-                        </Button>
-                      )}
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-sm">{p.email}</span>
+                        <span className="block truncate text-xs text-muted-foreground">Invited, hasn’t joined yet</span>
+                      </span>
+                      <span className="pr-1 text-xs text-muted-foreground">{ROLE_TEXT[p.role]}</span>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="size-8 shrink-0 text-muted-foreground"
+                        aria-label={`Cancel the invite to ${p.email}`}
+                        title="Cancel the invite"
+                        onClick={() => void act('DELETE', `/invitations/${p.id}`, undefined, `Invite to ${p.email} cancelled`)}
+                      >
+                        <X />
+                      </Button>
                     </li>
-                  )
-                })}
-                {sharing.pending.map((p) => (
-                  <li key={p.id} className="flex items-center gap-3 rounded-md py-1.5">
-                    <span className="grid size-8 shrink-0 place-items-center rounded-full border border-dashed text-muted-foreground">
-                      <EnvelopeSimple className="size-4" />
-                    </span>
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate text-sm">{p.email}</span>
-                      <span className="block truncate text-xs text-muted-foreground">Invited, hasn’t joined yet</span>
-                    </span>
-                    <span className="text-xs text-muted-foreground">{ROLE_TEXT[p.role]}</span>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="size-8 text-muted-foreground"
-                      aria-label={`Cancel the invite to ${p.email}`}
-                      title="Cancel the invite"
-                      onClick={() => void act('DELETE', `/invitations/${p.id}`, undefined, `Invite to ${p.email} cancelled`)}
-                    >
-                      <X />
-                    </Button>
-                  </li>
-                ))}
-              </ul>
-            </Section>
-          </div>
+                  ))}
+                </ul>
+              </section>
+            </div>
+
+            {/* General access: who else can open it, and the public link. */}
+            <div className="space-y-3 rounded-b-lg border-t bg-muted/40 px-6 py-4">
+              <Label>General access</Label>
+              <div className="flex items-center gap-3">
+                <span className="grid size-8 shrink-0 place-items-center rounded-full bg-background text-muted-foreground shadow-xs">
+                  <general.icon className="size-4" />
+                </span>
+                <div className="min-w-0 flex-1">
+                  {manage ? (
+                    <Select value={sharing.visibility} onValueChange={(v) => void act('PATCH', '/sharing', { visibility: v as Visibility })}>
+                      <SelectTrigger
+                        size="sm"
+                        className="-ml-2 h-7 w-auto max-w-full gap-1 border-none bg-transparent px-2 text-sm font-medium shadow-none hover:bg-accent dark:bg-transparent"
+                        aria-label="Who can open this board"
+                      >
+                        <SelectValue>{general.title}</SelectValue>
+                      </SelectTrigger>
+                      <SelectContent align="start" className="w-80">
+                        {options.map((v) => {
+                          const d = describe(v)
+                          return (
+                            <SelectItem key={v} value={v}>
+                              <span className="flex flex-col">
+                                <span>{d.title}</span>
+                                <span className="text-[11px] text-muted-foreground">{d.short}</span>
+                              </span>
+                            </SelectItem>
+                          )
+                        })}
+                      </SelectContent>
+                    </Select>
+                  ) : (
+                    <p className="text-sm font-medium">{general.title}</p>
+                  )}
+                  <p className="truncate text-xs text-muted-foreground">{general.short}</p>
+                </div>
+                {sharing.visibility === 'workspace' &&
+                  (manage ? (
+                    <RoleSelect
+                      value={sharing.workspaceRole}
+                      roles={['editor', 'viewer']}
+                      onChange={(r) => void act('PATCH', '/sharing', { workspaceRole: r })}
+                    />
+                  ) : (
+                    <span className="text-xs text-muted-foreground">{ROLE_TEXT[sharing.workspaceRole]}</span>
+                  ))}
+              </div>
+              <div className="flex items-center gap-3">
+                <span className="grid size-8 shrink-0 place-items-center rounded-full bg-background text-muted-foreground shadow-xs">
+                  <PUBLIC_LINK.icon className="size-4" />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-medium">{PUBLIC_LINK.title}</p>
+                  <p className="truncate text-xs text-muted-foreground">{paused ? 'Not while the board is private.' : 'Even without an account.'}</p>
+                </div>
+                {sharing.publicLink && !paused && (
+                  <Button variant="outline" size="sm" className="h-8 gap-1.5" aria-label="Copy link" onClick={() => void copy(boardLink, 'Link')}>
+                    <Copy /> <span className="hidden sm:inline">Copy link</span>
+                  </Button>
+                )}
+                {manage ? (
+                  <Switch
+                    checked={sharing.publicLink}
+                    disabled={paused}
+                    aria-label={PUBLIC_LINK.title}
+                    onCheckedChange={(on) => void act('PATCH', '/sharing', { publicLink: on })}
+                  />
+                ) : (
+                  <span className="text-xs text-muted-foreground">{sharing.publicLink ? 'On' : 'Off'}</span>
+                )}
+              </div>
+            </div>
+          </>
         )}
       </DialogContent>
     </Dialog>
+  )
+}
+
+/** The invite link and access code, folded away until needed (with whether they're on). */
+function LinksAndCode({ sharing, paused, children }: { sharing: Sharing; paused: boolean; children: ReactNode }) {
+  const [open, setOpen] = useState(false)
+  const on = [sharing.link && 'link', sharing.code && 'code'].filter(Boolean)
+  return (
+    <div className="rounded-lg border">
+      <button
+        type="button"
+        aria-expanded={open}
+        onClick={() => setOpen(!open)}
+        className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm hover:bg-accent/50"
+      >
+        <LinkSimple className="size-4 text-muted-foreground" />
+        <span className="flex-1 font-medium">Invite with a link or code</span>
+        <span className="text-xs text-muted-foreground">
+          {on.length === 2 ? 'Link and code on' : on[0] === 'link' ? 'Link on' : on[0] === 'code' ? 'Code on' : 'Off'}
+        </span>
+        <CaretDown className={cn('size-3.5 text-muted-foreground transition-transform', open && 'rotate-180')} />
+      </button>
+      {open && (
+        <div className="space-y-4 border-t px-3 py-3">
+          {paused && (
+            <p className="rounded-md bg-muted px-3 py-2 text-xs text-muted-foreground">
+              The board is private, so the link and code can’t be used to join it until you share it again.
+            </p>
+          )}
+          {children}
+        </div>
+      )}
+    </div>
   )
 }
 
@@ -338,12 +442,10 @@ function InviteByEmail({ boardId, onDone }: { boardId: string; onDone: () => voi
   }
 
   return (
-    <Section
-      title="Invite by email"
-      hint="People with an account are added right away (once they’ve confirmed their email); anyone else gets an invite that only works for their address."
-    >
+    <section className="space-y-1.5">
+      {/* On phones the role and button go under the address, so it has room. */}
       <form
-        className="flex items-center gap-2"
+        className="flex flex-wrap items-center gap-2 sm:flex-nowrap"
         onSubmit={(e) => {
           e.preventDefault()
           void invite()
@@ -353,16 +455,23 @@ function InviteByEmail({ boardId, onDone }: { boardId: string; onDone: () => voi
           type="email"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
-          placeholder="name@example.com"
-          className="h-8"
+          id="share-invite-email"
+          placeholder="Add people by email"
+          className="h-8 basis-full sm:basis-auto"
           aria-label="Email"
           required
         />
         <RoleSelect value={role} roles={['editor', 'viewer', 'owner']} onChange={setRole} />
-        <Button type="submit" size="sm" className="h-8" disabled={busy}>
+        <Button type="submit" size="sm" className="h-8 flex-1 sm:flex-none" disabled={busy}>
           Invite
         </Button>
       </form>
+      {email && (
+        <p className="text-xs text-muted-foreground">
+          People with an account are added right away (once they’ve confirmed their email); anyone else gets an invite that only works for their
+          address.
+        </p>
+      )}
       {fallback && (
         <div className="space-y-2 rounded-md border bg-muted/40 p-3 text-xs">
           <p>
@@ -379,6 +488,6 @@ function InviteByEmail({ boardId, onDone }: { boardId: string; onDone: () => voi
           {fallback.link && <p className="text-muted-foreground">Send it to them yourself. It only works for {fallback.email}.</p>}
         </div>
       )}
-    </Section>
+    </section>
   )
 }

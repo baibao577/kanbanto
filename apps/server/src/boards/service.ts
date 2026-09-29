@@ -19,15 +19,17 @@ function freshMeta(data: BoardData, now: string): BoardData {
   }
 }
 
-/** Saves a new board with `ownerId` as its owner. */
-export async function insertBoard(tx: Tx, data: BoardData, ownerId: string, visibility: Visibility = 'invited') {
+/** Saves a new board with `ownerId` as its owner: in a workspace (shared with everyone in it), or in Personal. */
+export async function insertBoard(tx: Tx, data: BoardData, ownerId: string, workspaceId: string | null = null) {
   const now = new Date()
+  const visibility: Visibility = workspaceId ? 'workspace' : 'invited'
   await tx.insert(boards).values({
     id: data.board.id,
     name: data.board.name,
     mode: data.board.mode,
     background: data.board.background ?? null,
     visibility,
+    workspaceId,
     createdBy: ownerId,
     createdAt: now,
     updatedAt: now,
@@ -39,7 +41,11 @@ export async function insertBoard(tx: Tx, data: BoardData, ownerId: string, visi
 
 export type Template = 'empty' | 'example'
 
-export async function createBoard(db: Db, ownerId: string, opts: { name: string; background?: ColorName; template: Template }): Promise<string> {
+export async function createBoard(
+  db: Db,
+  ownerId: string,
+  opts: { name: string; background?: ColorName; template: Template; workspaceId?: string | null },
+): Promise<string> {
   const id = newId()
   const now = new Date().toISOString()
   const base = opts.template === 'example' ? freshMeta(exampleData(id, ownerId), now) : emptyBoard(id, opts.name, now)
@@ -47,7 +53,7 @@ export async function createBoard(db: Db, ownerId: string, opts: { name: string;
     ...base,
     board: { ...base.board, name: opts.name, ...(opts.background ? { background: opts.background } : {}) },
   }
-  await db.transaction((tx) => insertBoard(tx, data, ownerId))
+  await db.transaction((tx) => insertBoard(tx, data, ownerId, opts.workspaceId ?? null))
   return id
 }
 

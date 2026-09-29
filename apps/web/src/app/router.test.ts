@@ -18,6 +18,7 @@ describe('router', () => {
       ['#/account', { page: 'account' }],
       ['#/account/password', { page: 'account', section: 'password' }],
       ['#/forgot', { page: 'forgot' }],
+      ['#/w/w-1', { page: 'workspace', id: 'w-1' }],
       ['#/verify/v_tok', { page: 'verify', token: 'v_tok' }],
       ['#/reset/r-tok', { page: 'reset', token: 'r-tok' }],
     ]

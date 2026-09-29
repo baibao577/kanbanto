@@ -199,9 +199,9 @@ describe('sharing', () => {
     expect((await load(bob, id)).access.role).toBe('editor')
   })
 
-  it('public boards can be viewed by anyone with the link, even signed out', async () => {
+  it('with the public link on, anyone can view a board, even signed out', async () => {
     const { ann, bob, id } = await annAndBoard()
-    await ann.ok('PATCH', `/api/boards/${id}/sharing`, { visibility: 'public' })
+    await ann.ok('PATCH', `/api/boards/${id}/sharing`, { publicLink: true })
     const anon = new Person(t.app)
     expect((await load(anon, id)).access).toMatchObject({ role: 'viewer', via: 'public' })
     expect((await load(bob, id)).access.role).toBe('viewer')
@@ -214,7 +214,7 @@ describe('sharing', () => {
   it('who’s on a board: members only; only owners see email addresses', async () => {
     const { ann, bob, id } = await annAndBoard()
     await ann.ok('POST', `/api/boards/${id}/invitations`, { email: 'bob@example.com', role: 'viewer' })
-    await ann.ok('PATCH', `/api/boards/${id}/sharing`, { visibility: 'public' })
+    await ann.ok('PATCH', `/api/boards/${id}/sharing`, { publicLink: true })
     // A stranger visiting the public board doesn't see who's on it.
     const eve = await Person.signUp(t.app, 'Eve')
     expect((await eve.request('GET', `/api/boards/${id}/sharing`)).status).toBe(403)

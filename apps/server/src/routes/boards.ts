@@ -1,4 +1,4 @@
-import type { BoardSummary, Role, Visibility } from '@kanbanto/model/api'
+import type { BoardAccess, BoardSummary, Role } from '@kanbanto/model/api'
 import { BOARD_BACKGROUNDS, type ColorName } from '@kanbanto/model/colors'
 import { CommandSchema } from '@kanbanto/model/schema'
 import { readBoardFile } from '@kanbanto/model/transfer'
@@ -6,9 +6,10 @@ import { newId } from '@kanbanto/model/ids'
 import { eq, sql } from 'drizzle-orm'
 import type { FastifyPluginAsync } from 'fastify'
 import { z } from 'zod'
-import { accessFor, memberRole, requireAccess } from '../boards/access'
+import { accessFor, accessOf, requireAccess, type BoardRow } from '../boards/access'
 import { createBoard, importBoard } from '../boards/service'
-import { boards } from '../db/schema'
+import { requireWorkspace } from '../boards/workspaces'
+import { boards, workspaces } from '../db/schema'
 import { HttpError, parse } from '../http'
 import { requireUser } from './auth'
 import { commentCounts } from './comments'
@@ -24,51 +25,78 @@ const CreateBoard = z.object({
     .refine((n) => !n.includes('\u0000'), 'Board names can’t contain NUL characters.'),
   background: background.optional(),
   template: z.enum(['empty', 'example']).default('empty'),
+  /** Where it goes: a workspace you're in (shared with everyone in it), or your Personal space. */
+  workspaceId: z.uuid().nullable().optional(),
 })
 const Params = z.object({ id: z.string().min(1).max(100) })
 const Mutation = z.object({ mutationId: z.string().min(1).max(100), command: CommandSchema })
 const MB = 1024 * 1024
 
 export const boardRoutes: FastifyPluginAsync = async (app) => {
-  /** Boards you can open: yours and ones you've joined. */
+  /**
+   * Boards you can open: yours, ones you've been added to, and ones shared with a workspace you're in. Private boards
+   * only for their owners (even in a workspace: its admins don't see them).
+   */
   app.get('/boards', async (req) => {
     const user = requireUser(req.user)
     const rows = await app.db.execute<{
       id: string
       name: string
       background: string | null
-      visibility: string
-      role: string | null
+      visibility: BoardRow['visibility']
+      public_link: boolean
+      workspace_id: string | null
+      workspace_role: BoardRow['workspaceRole']
+      role: Role | null
+      in_workspace: boolean
       task_count: number
       done_count: number
       created_at: Date
       activity_at: Date
     }>(sql`
-      select b.id, b.name, b.background, b.visibility, m.role, b.created_at, b.activity_at,
+      select b.id, b.name, b.background, b.visibility, b.public_link, b.workspace_id, b.workspace_role, m.role,
+        (w.user_id is not null) as in_workspace, b.created_at, b.activity_at,
         (select count(*)::int from tasks t where t.board_id = b.id) as task_count,
         (select count(*)::int from tasks t join lists l on l.board_id = t.board_id and l.id = t.status
           where t.board_id = b.id and l.category = 'done') as done_count
       from boards b
-      join board_members m on m.board_id = b.id and m.user_id = ${user.id}
-      where m.role = 'owner' or (m.role is not null and b.visibility <> 'private')
+      left join board_members m on m.board_id = b.id and m.user_id = ${user.id}
+      left join workspace_members w on w.workspace_id = b.workspace_id and w.user_id = ${user.id}
+      where m.role is not null or (b.visibility = 'workspace' and w.user_id is not null)
       order by b.activity_at desc`)
-    const summaries: BoardSummary[] = rows.map((r) => ({
-      id: r.id,
-      name: r.name,
-      background: r.background,
-      visibility: r.visibility as Visibility,
-      role: r.role as Role,
-      taskCount: r.task_count,
-      doneCount: r.done_count,
-      createdAt: new Date(r.created_at).toISOString(),
-      updatedAt: new Date(r.activity_at).toISOString(),
-    }))
+    const summaries: BoardSummary[] = []
+    for (const r of rows) {
+      const board = {
+        id: r.id,
+        visibility: r.visibility,
+        publicLink: false,
+        workspaceId: r.workspace_id,
+        workspaceRole: r.workspace_role,
+      } as BoardRow
+      const access = accessFor(board, r.role, r.in_workspace)
+      if (!access) continue
+      summaries.push({
+        id: r.id,
+        name: r.name,
+        background: r.background,
+        visibility: r.visibility,
+        publicLink: r.public_link,
+        workspaceId: r.workspace_id,
+        role: access.role,
+        via: access.via === 'workspace' ? 'workspace' : 'member',
+        taskCount: r.task_count,
+        doneCount: r.done_count,
+        createdAt: new Date(r.created_at).toISOString(),
+        updatedAt: new Date(r.activity_at).toISOString(),
+      })
+    }
     return { boards: summaries }
   })
 
   app.post('/boards', async (req) => {
     const user = requireUser(req.user)
     const body = parse(CreateBoard, req.body)
+    if (body.workspaceId) await requireWorkspace(app.db, body.workspaceId, user.id)
     return { id: await createBoard(app.db, user.id, body) }
   })
 
@@ -89,7 +117,13 @@ export const boardRoutes: FastifyPluginAsync = async (app) => {
     const { board, access } = await requireAccess(app.db, req.user, id, 'viewer')
     const { data, seq } = await app.engine.snapshot(id)
     const counts = { comments: await commentCounts(app.db, id), attachments: await attachmentCounts(app.db, id) }
-    return { data, seq, access: { ...access, visibility: board.visibility }, counts, canComment: access.via === 'member' }
+    // Visitors with the public link aren't told which workspace it's in.
+    const [workspace] =
+      board.workspaceId && access.via !== 'public'
+        ? await app.db.select({ id: workspaces.id, name: workspaces.name }).from(workspaces).where(eq(workspaces.id, board.workspaceId))
+        : [null]
+    const shown: BoardAccess = { ...access, visibility: board.visibility, publicLink: board.publicLink, workspace: workspace ?? null }
+    return { data, seq, access: shown, counts, canComment: access.via !== 'public' }
   })
 
   app.delete('/boards/:id', async (req) => {
@@ -118,7 +152,7 @@ export const boardRoutes: FastifyPluginAsync = async (app) => {
     const [board] = await app.db.select().from(boards).where(eq(boards.id, id))
     // Someone who must confirm their email first sees boards only as a signed-out visitor would.
     const user = req.user?.mustVerify ? null : req.user
-    if (!board || !accessFor(user, board, await memberRole(app.db, id, user?.id))) {
+    if (!board || !(await accessOf(app.db, board, user?.id))) {
       socket.close(4403, 'No access')
       return
     }

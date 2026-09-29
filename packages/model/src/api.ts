@@ -6,7 +6,9 @@ import type { BoardData } from './types'
  */
 
 export type Role = 'owner' | 'editor' | 'viewer'
-export type Visibility = 'private' | 'invited' | 'public'
+/** Who can open a board: its owners only · the people added to it · those and everyone in its workspace. */
+export type Visibility = 'private' | 'invited' | 'workspace'
+export type WorkspaceRole = 'admin' | 'member'
 
 export interface PublicUser {
   id: string
@@ -66,6 +68,8 @@ export type SaveEmailSender =
 /** GET /api/admin/email */
 export interface PlatformEmail {
   encryptionReady: boolean
+  /** The server prints emails instead of sending them (MAIL_TRANSPORT=log, for development). */
+  printedOnly: boolean
   sender: EmailSender | null
   /** Limits are null when there's no limit. */
   settings: {
@@ -93,9 +97,9 @@ export interface AccountEmail {
   allowance: { used: number; limit: number | null }
 }
 
-/** POST /api/boards/:id/invitations */
+/** POST /api/boards/:id/invitations, POST /api/workspaces/:id/invitations */
 export interface InvitationResult {
-  /** added: they had an account and are on the board now · invited: an email invite waits for them */
+  /** added: they had an account and are on the board (or in the workspace) now · invited: an email invite waits */
   outcome: 'added' | 'invited'
   name?: string
   emailed: boolean
@@ -114,11 +118,16 @@ export const EMAIL_KIND_LABELS = {
   notice: 'Account notice',
 } as const
 
-/** What you can do on a board, and why: as a member, or as anyone (public boards). */
+/**
+ * What you can do on a board, and why: added to it (member), through its workspace, or as anyone (its public link).
+ */
 export interface BoardAccess {
   role: Role
-  via: 'member' | 'public'
+  via: 'member' | 'workspace' | 'public'
   visibility: Visibility
+  publicLink: boolean
+  /** The workspace it's in (null: its owner's Personal space). */
+  workspace: { id: string; name: string } | null
 }
 
 /** Comments and attachments per task (for the badges on cards). */
@@ -151,17 +160,29 @@ export interface CommentView {
   editedAt: string | null
 }
 
-export interface NotificationView {
-  id: string
-  kind: 'mention'
-  actor: string
-  board: { id: string; name: string }
-  task: { id: string; title: string }
-  /** The start of the comment. */
-  excerpt: string
-  createdAt: string
-  read: boolean
-}
+/** Under the bell: someone @mentioned you in a comment, or added you to a board or a workspace. */
+export type NotificationView =
+  | {
+      id: string
+      kind: 'mention'
+      actor: string
+      board: { id: string; name: string }
+      task: { id: string; title: string }
+      /** The start of the comment. */
+      excerpt: string
+      createdAt: string
+      read: boolean
+    }
+  | {
+      id: string
+      kind: 'added'
+      actor: string
+      /** One of the two: what you were added to. */
+      board: { id: string; name: string } | null
+      workspace: { id: string; name: string } | null
+      createdAt: string
+      read: boolean
+    }
 
 export interface AttachmentView {
   id: string
@@ -222,8 +243,12 @@ export interface BoardSummary {
   name: string
   background: string | null
   visibility: Visibility
-  /** Your role on it. */
+  publicLink: boolean
+  /** The workspace it's in (null: its owner's Personal space). */
+  workspaceId: string | null
+  /** Your role on it, and why: added to it, or through its workspace. */
   role: Role
+  via: 'member' | 'workspace'
   taskCount: number
   doneCount: number
   createdAt: string
@@ -241,6 +266,12 @@ export interface SharingMember {
 /** GET /api/boards/:id/sharing */
 export interface Sharing {
   visibility: Visibility
+  publicLink: boolean
+  /** What everyone in the workspace can do, when it's shared with the workspace. */
+  workspaceRole: 'editor' | 'viewer'
+  /** The workspace it's in (null: Personal). */
+  workspace: { id: string; name: string; memberCount: number } | null
+  /** People added to the board. */
   members: SharingMember[]
   /** Only owners see the link and code. */
   link: { token: string; role: 'editor' | 'viewer' } | null
@@ -250,13 +281,51 @@ export interface Sharing {
   canManage: boolean
 }
 
-/** GET /api/invites/:token */
-export interface InvitePreview {
-  board: { id: string; name: string; background: string | null }
-  role: 'editor' | 'viewer'
-  private: boolean
-  /** Email invites only work for this address (null for share links and codes). */
-  email: string | null
+/** GET /api/invites/:token: what an invite is for, a board or a workspace. */
+export type InvitePreview =
+  | {
+      kind: 'board'
+      board: { id: string; name: string; background: string | null }
+      role: 'editor' | 'viewer'
+      private: boolean
+      /** Email invites only work for this address (null for share links and codes). */
+      email: string | null
+    }
+  | {
+      kind: 'workspace'
+      workspace: { id: string; name: string }
+      /** Email invites only work for this address (null for the invite link). */
+      email: string | null
+    }
+
+/** POST /api/join */
+export type JoinResult = { kind: 'board'; boardId: string; role: Role } | { kind: 'workspace'; workspaceId: string }
+
+/** GET /api/workspaces (one per workspace you're in) */
+export interface WorkspaceSummary {
+  id: string
+  name: string
+  /** Your role in it. */
+  role: WorkspaceRole
+  memberCount: number
+}
+
+export interface WorkspaceMember {
+  userId: string
+  name: string
+  /** Admins see everyone's; others only their own. */
+  email?: string
+  role: WorkspaceRole
+}
+
+/** GET /api/workspaces/:id */
+export interface WorkspaceDetail extends WorkspaceSummary {
+  members: WorkspaceMember[]
+  /** Boards in it (all of them, including ones you can't open). */
+  boardCount: number
+  /** Admins only: the invite link, and email invites not accepted yet. */
+  link: { token: string } | null
+  pending: { id: string; email: string; createdAt: string }[]
 }
 
 /** GET /api/admin/stats */

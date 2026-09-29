@@ -10,7 +10,10 @@ import { cn } from '@/lib/utils'
 
 const fetchNotifications = () => api<{ notifications: NotificationView[]; unread: number }>('GET', '/notifications')
 
-/** The bell: @mentions of you, newest first. Checked every minute and when you come back to the tab. */
+/**
+ * The bell: @mentions of you, and boards or workspaces someone added you to, newest first. Checked every minute and
+ * when you come back to the tab.
+ */
 export function NotificationBell() {
   const { user } = useAuth()
   const [items, setItems] = useState<NotificationView[]>([])
@@ -39,7 +42,9 @@ export function NotificationBell() {
   const openOne = (n: NotificationView) => {
     setOpen(false)
     if (!n.read) void api('POST', '/notifications/read', { ids: [n.id] }).then(refresh)
-    navigate({ page: 'board', id: n.board.id, task: n.task.id })
+    if (n.kind === 'mention') navigate({ page: 'board', id: n.board.id, task: n.task.id })
+    else if (n.board) navigate({ page: 'board', id: n.board.id })
+    else if (n.workspace) navigate({ page: 'workspace', id: n.workspace.id })
   }
 
   return (
@@ -59,7 +64,7 @@ export function NotificationBell() {
       </PopoverTrigger>
       <PopoverContent align="end" className="w-80 p-0">
         <div className="flex items-center border-b px-3 py-2">
-          <span className="text-sm font-semibold">Mentions</span>
+          <span className="text-sm font-semibold">Notifications</span>
           {unread > 0 && (
             <button
               className="ml-auto text-xs text-muted-foreground hover:text-foreground"
@@ -77,11 +82,30 @@ export function NotificationBell() {
                   onClick={() => openOne(n)}
                   className={cn('block w-full border-b px-3 py-2.5 text-left last:border-0 hover:bg-accent', !n.read && 'bg-primary/5')}
                 >
-                  <p className="text-xs">
-                    <span className="font-semibold">{n.actor}</span> mentioned you on <span className="font-medium">“{n.task.title}”</span>
-                    <span className="text-muted-foreground"> · {n.board.name}</span>
-                  </p>
-                  {n.excerpt && <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">{n.excerpt}</p>}
+                  {n.kind === 'mention' ? (
+                    <>
+                      <p className="text-xs">
+                        <span className="font-semibold">{n.actor}</span> mentioned you on <span className="font-medium">“{n.task.title}”</span>
+                        <span className="text-muted-foreground"> · {n.board.name}</span>
+                      </p>
+                      {n.excerpt && <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">{n.excerpt}</p>}
+                    </>
+                  ) : (
+                    <p className="text-xs">
+                      <span className="font-semibold">{n.actor}</span> added you to{' '}
+                      {n.workspace ? (
+                        <>
+                          the workspace <span className="font-medium">“{n.workspace.name}”</span>
+                        </>
+                      ) : n.board ? (
+                        <>
+                          the board <span className="font-medium">“{n.board.name}”</span>
+                        </>
+                      ) : (
+                        'something that’s since been deleted'
+                      )}
+                    </p>
+                  )}
                   <p className="mt-1 text-[11px] text-muted-foreground">
                     {!n.read && <span className="mr-1 inline-block size-1.5 rounded-full bg-primary align-middle" />}
                     {formatDistanceToNow(parseISO(n.createdAt), { addSuffix: true })}
@@ -91,7 +115,9 @@ export function NotificationBell() {
             ))}
           </ul>
         ) : (
-          <p className="px-3 py-6 text-center text-xs text-muted-foreground">When someone @mentions you in a comment, it shows up here.</p>
+          <p className="px-3 py-6 text-center text-xs text-muted-foreground">
+            When someone @mentions you in a comment or adds you to a board, it shows up here.
+          </p>
         )}
       </PopoverContent>
     </Popover>

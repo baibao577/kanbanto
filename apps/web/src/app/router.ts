@@ -6,7 +6,8 @@ import { LAYOUTS, type Layout } from '@kanbanto/model/types'
  *   #/                       your boards
  *   #/b/<id>/<tab>?focus=<task>&task=<task>   a board. The address carries what you're looking at, so
  *                            Back/Forward and links bring it back. A bare #/b/<id> means "as I left it".
- *   #/join/<token>           a share link (or an email invite)
+ *   #/join/<token>           a share link (or an email invite), to a board or a workspace
+ *   #/w/<id>                 a workspace's people and settings
  *   #/signin, #/signup       (?next=<where to go after>)
  *   #/forgot                 ask for a password reset email
  *   #/verify/<token>, #/reset/<token>   links from emails
@@ -19,6 +20,7 @@ export type Route =
   | { page: 'home' }
   | BoardRoute
   | { page: 'join'; token: string }
+  | { page: 'workspace'; id: string }
   | { page: 'verify'; token: string }
   | { page: 'reset'; token: string }
   | { page: 'forgot' }
@@ -36,6 +38,8 @@ export function parseRoute(hash: string): Route {
   const token = hash.match(/^#\/(join|verify|reset)\/([^/?#]+)/)
   if (token) return { page: token[1] as 'join' | 'verify' | 'reset', token: decodeURIComponent(token[2]) }
   if (/^#\/forgot\/?$/.test(hash)) return { page: 'forgot' }
+  const ws = hash.match(/^#\/w\/([^/?#]+)\/?$/)
+  if (ws) return { page: 'workspace', id: decodeURIComponent(ws[1]) }
   const auth = hash.match(/^#\/(signin|signup)(?:\?(.*))?$/)
   if (auth) {
     const next = new URLSearchParams(auth[2] ?? '').get('next')
@@ -69,6 +73,7 @@ export function hrefFor(r: Route) {
   if (r.page === 'account') return r.section && r.section !== 'profile' ? `#/account/${r.section}` : '#/account'
   if (r.page === 'admin') return r.section && r.section !== 'overview' ? `#/admin/${r.section}` : '#/admin'
   if (r.page === 'forgot') return '#/forgot'
+  if (r.page === 'workspace') return `#/w/${encodeURIComponent(r.id)}`
   if (r.page === 'join' || r.page === 'verify' || r.page === 'reset') return `#/${r.page}/${encodeURIComponent(r.token)}`
   if (r.page === 'signin' || r.page === 'signup') return `#/${r.page}${r.next ? `?next=${encodeURIComponent(r.next)}` : ''}`
   const q = new URLSearchParams()
