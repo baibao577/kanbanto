@@ -36,3 +36,7 @@ backups/
 
 # The encryption key Kanbanto makes in development (apps/server/data/config)
 **/data/config/
+
+# Personal Claude Code files: private notes and settings never belong in this repo
+CLAUDE.local.md
+.claude/
