@@ -408,9 +408,33 @@ export interface WebhookView {
 /** Where board owners may send webhooks, as set by a platform admin. */
 export type WebhookMode = 'off' | 'public' | 'any'
 
+/** Which apps may connect to people's accounts with sign-in (OAuth, for MCP), as set by a platform admin. */
+export type OAuthMode = 'off' | 'known' | 'any'
+
 /** GET /api/admin/settings */
 export interface AdminSettings {
   openSignup: boolean
   apiTokens: boolean
   webhooks: WebhookMode
+  oauthApps: OAuthMode
+}
+
+/** GET /api/oauth/request: what the consent page shows. */
+export interface OAuthRequestView {
+  /** The name the app gave itself (not verified: `sendsBackTo` is what can be trusted). */
+  app: string
+  /** Where you'll be sent back to: a site's host, "an app on your computer", or a desktop app. */
+  sendsBackTo: string
+  /** The most it asked for: read, or read and make changes. */
+  maxScope: 'read' | 'write'
+}
+
+/** GET /api/account/apps (one per app) */
+export interface ConnectedAppView {
+  clientId: string
+  name: string
+  sendsBackTo: string
+  scope: 'read' | 'write'
+  connectedAt: string
+  lastUsedAt: string | null
 }

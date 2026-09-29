@@ -78,6 +78,7 @@ Open it from the menu under your initials (platform admins only). Each section h
 | | **Limits:** space per person (in total, across the boards they own), and the same for each workspace (across its boards); largest file (1–200 MB) | 50 MB / 10 MB |
 | **Integrations** `#/admin/integrations` | **People can make API tokens** (for scripts, other apps and AI assistants; turning it off stops every token) | Off |
 | | **Webhooks:** off, to public `https://` addresses only, or to any address including this server's network (only if you trust every board owner) | Off |
+| | **Apps that connect by signing in** (OAuth, for MCP: Claude on the web and Desktop, ChatGPT): off, known AI apps only, or any app. The site must be reachable from the internet over https. | Off |
 
 Things each person sets for themselves in **Account settings** (`#/account`): name, password, whether they get the
 daily mention email, their own Resend key for invites, their own storage bucket (at a public `https://` address), and

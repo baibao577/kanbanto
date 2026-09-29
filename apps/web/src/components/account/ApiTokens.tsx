@@ -2,7 +2,7 @@ import { ArrowSquareOut, Copy, Key, Trash } from '@phosphor-icons/react'
 import { formatDistanceToNow, parseISO } from 'date-fns'
 import { useState } from 'react'
 import { toast } from 'sonner'
-import type { ApiTokenView } from '@kanbanto/model/api'
+import type { ApiTokenView, ConnectedAppView, OAuthMode } from '@kanbanto/model/api'
 import { api, errorMessage } from '@/api/client'
 import { hrefFor } from '@/app/router'
 import { useAuth } from '@/app/use-auth'
@@ -92,7 +92,7 @@ export function ApiTokensSection() {
   return (
     <div className="space-y-6">
       <PageTitle
-        title="API tokens"
+        title="API & connected apps"
         description={
           <>
             Let scripts, other apps and AI assistants work with your boards. A token acts as you, with your access.{' '}
@@ -103,7 +103,7 @@ export function ApiTokensSection() {
         }
       />
       {loaded && !loaded.enabled ? (
-        <SettingsCard title="Turned off on this site">
+        <SettingsCard title="API tokens are turned off on this site">
           <p className="text-sm text-muted-foreground">
             API tokens need a platform admin to turn them on
             {user?.isAdmin ? (
@@ -236,7 +236,90 @@ export function ApiTokensSection() {
           </>
         )
       )}
+      <ConnectedApps />
       <ConfirmDialog request={confirm} onClose={() => setConfirm(null)} />
     </div>
+  )
+}
+
+const fetchApps = () => api<{ mode: OAuthMode; apps: ConnectedAppView[] }>('GET', '/account/apps')
+
+/**
+ * Apps connected with sign-in (OAuth), like Claude on the web: how to connect one, and the ones you did, with
+ * Disconnect. Shown when a platform admin lets apps connect (or you still have some connected).
+ */
+function ConnectedApps() {
+  const [loaded, load] = useLoaded(fetchApps)
+  const [confirm, setConfirm] = useState<ConfirmRequest | null>(null)
+  if (!loaded || (loaded.mode === 'off' && !loaded.apps.length)) return null
+
+  const disconnect = (a: ConnectedAppView) =>
+    setConfirm({
+      title: `Disconnect “${a.name}”?`,
+      description: 'It stops working with your boards at once. You can connect it again later.',
+      confirmLabel: 'Disconnect',
+      destructive: true,
+      onConfirm: () =>
+        api('DELETE', `/account/apps/${encodeURIComponent(a.clientId)}`).then(
+          () => {
+            toast(`Disconnected “${a.name}”`)
+            void load()
+          },
+          (e) => toast.error(errorMessage(e)),
+        ),
+    })
+
+  return (
+    <SettingsCard
+      title="Connected apps"
+      description="Apps you allowed to use your boards by signing in, like Claude on the web or in Claude Desktop. No token to copy."
+    >
+      {loaded.mode !== 'off' && (
+        <div className="space-y-1 rounded-md bg-muted/50 px-3 py-2.5 text-xs text-muted-foreground">
+          <p>
+            <span className="font-medium text-foreground">In Claude</span> (web or Desktop): Settings → Connectors → Add custom connector, with this
+            address. Claude then sends you here to allow it.
+          </p>
+          <div className="flex items-center gap-2 pt-1">
+            <code className="min-w-0 flex-1 truncate rounded border bg-background px-2 py-1 font-mono">{site()}/api/mcp</code>
+            <Button
+              variant="outline"
+              size="icon"
+              className="size-7 shrink-0"
+              aria-label="Copy the address"
+              onClick={() => void copy(`${site()}/api/mcp`, 'Address')}
+            >
+              <Copy />
+            </Button>
+          </div>
+        </div>
+      )}
+      {loaded.apps.length ? (
+        <ul className="divide-y">
+          {loaded.apps.map((a) => (
+            <li key={a.clientId} className="flex items-center gap-3 py-2.5 first:pt-0 last:pb-0">
+              <span className="min-w-0 flex-1">
+                <span className="flex items-center gap-2 text-sm font-medium">
+                  <span className="truncate">{a.name}</span>
+                  <span className="shrink-0 rounded bg-secondary px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+                    {a.scope === 'write' ? 'Read and change' : 'Read only'}
+                  </span>
+                </span>
+                <span className="block truncate text-xs text-muted-foreground">
+                  Sends you back to {a.sendsBackTo} · connected {formatDistanceToNow(parseISO(a.connectedAt), { addSuffix: true })} ·{' '}
+                  {a.lastUsedAt ? `used ${formatDistanceToNow(parseISO(a.lastUsedAt), { addSuffix: true })}` : 'not used yet'}
+                </span>
+              </span>
+              <Button variant="outline" size="sm" onClick={() => disconnect(a)}>
+                Disconnect
+              </Button>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="text-sm text-muted-foreground">No apps connected yet.</p>
+      )}
+      <ConfirmDialog request={confirm} onClose={() => setConfirm(null)} />
+    </SettingsCard>
   )
 }

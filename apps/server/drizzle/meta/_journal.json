@@ -78,6 +78,13 @@
       "when": 1790702521222,
       "tag": "0010_task_times",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1790707978999,
+      "tag": "0011_oauth_apps",
+      "breakpoints": true
     }
   ]
 }

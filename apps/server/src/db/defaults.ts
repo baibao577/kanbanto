@@ -19,4 +19,9 @@ export const SETTING_DEFAULTS = {
   apiTokens: false,
   /** Board owners can add webhooks: off, to public addresses only, or to any address (this server's network too). */
   webhooks: 'off' as 'off' | 'public' | 'any',
+  /**
+   * Apps that connect to people's accounts with sign-in (OAuth), for MCP: Claude on the web and Desktop, ChatGPT.
+   * Off; known AI apps only (see src/oauth.ts); or any app (each person still approves each one).
+   */
+  oauthApps: 'off' as 'off' | 'known' | 'any',
 }

@@ -338,10 +338,8 @@ function buildServer(app: FastifyInstance, me: SessionUser, scope: TokenScope) {
 /** POST /api/mcp, with an API token. */
 export const mcpRoutes: FastifyPluginAsync = async (app) => {
   app.post('/mcp', async (req, reply) => {
-    if (!req.apiToken || !req.user) {
-      reply.header('www-authenticate', 'Bearer')
-      throw new HttpError(401, 'Connect with an API token: Authorization: Bearer kbt_… (Account settings → API tokens).')
-    }
+    // (The 401's WWW-Authenticate header, pointing apps to sign-in, is added in app.ts.)
+    if (!req.apiToken || !req.user) throw new HttpError(401, 'Connect with an API token (Account settings → API tokens), or sign in from the app.')
     if (req.user.mustVerify) throw new HttpError(403, 'Confirm your email address first: check your inbox for the link.')
     const server = buildServer(app, req.user, req.apiToken.scope)
     const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true })

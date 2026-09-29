@@ -25,6 +25,8 @@ import { emailRoutes } from './routes/email'
 import { fileRoutes } from './routes/files'
 import { sharingRoutes } from './routes/sharing'
 import { mcpRoutes } from './mcp'
+import { isOAuthToken, oauthRoutes, resourceMetadataUrl, userForOAuthToken } from './oauth'
+import { loadSettings } from './settings'
 import { openApiRoutes } from './openapi'
 import { integrationRoutes } from './routes/integrations'
 import { workspaceRoutes } from './routes/workspaces'
@@ -114,11 +116,40 @@ export async function buildApp(
   app.decorateRequest('apiToken', null)
   // Background jobs (the daily digest) link to APP_URL; in development, to the address of the first request.
   if (env.appUrl) mail.siteUrl = env.appUrl
+  // Apps (some in a browser, like the MCP Inspector) call the OAuth and MCP endpoints from other sites. None of them use
+  // cookies, so any site may.
+  app.addHook('onRequest', async (req, reply) => {
+    if (!/^\/(\.well-known\/|oauth\/(register|token|revoke)|api\/mcp)/.test(req.url)) return
+    reply.header('access-control-allow-origin', '*')
+    reply.header('access-control-allow-headers', 'authorization, content-type, mcp-protocol-version, mcp-session-id')
+    reply.header('access-control-allow-methods', 'GET, POST, OPTIONS')
+    reply.header('access-control-expose-headers', 'www-authenticate, mcp-session-id')
+    if (req.method === 'OPTIONS') return reply.status(204).send()
+  })
+  // A 401 from the MCP endpoint says where to sign in, when apps may connect with sign-in (the MCP spec's discovery).
+  app.addHook('onSend', async (req, reply, payload) => {
+    if (reply.statusCode === 401 && req.url.startsWith('/api/mcp'))
+      reply.header(
+        'www-authenticate',
+        (await loadSettings(db)).oauthApps === 'off' ? 'Bearer' : `Bearer resource_metadata="${resourceMetadataUrl(req)}"`,
+      )
+    return payload
+  })
+
   app.addHook('onRequest', async (req) => {
     mail.siteUrl ??= siteUrl(req)
+    // An app connected with sign-in (OAuth): its tokens are for the MCP endpoint only.
+    const bearer = req.headers.authorization?.match(/^Bearer\s+(\S+)$/i)?.[1]
+    if (bearer && isOAuthToken(bearer)) {
+      if (req.url.split('?')[0] !== '/api/mcp') throw new HttpError(403, 'This token is only for the MCP endpoint (/api/mcp).')
+      const { user, token } = await userForOAuthToken(db, bearer)
+      req.user = user
+      req.apiToken = token
+      req.user.mustVerify = !req.user.emailVerified && mail.platformReady && !req.user.isAdmin
+      return
+    }
     // An API token (scripts, integrations, AI assistants): only for what TOKEN_ROUTES allows, and a read-only token
     // only reads (the MCP endpoint checks each tool itself).
-    const bearer = req.headers.authorization?.match(/^Bearer\s+(\S+)$/i)?.[1]
     if (bearer) {
       const { user, token } = await userForApiToken(db, bearer)
       const path = req.url.split('?')[0]
@@ -148,6 +179,8 @@ export async function buildApp(
     const upgrade = req.headers.upgrade?.toLowerCase() === 'websocket'
     const origin = req.headers.origin
     if (!(unsafe || upgrade) || !origin) return
+    // Requests with a token (not a cookie), and the OAuth endpoints apps call, can't be forged by another site.
+    if (req.apiToken || /^\/oauth\/(register|token|revoke)(\?|$)/.test(req.url)) return
     let host: string
     try {
       host = new URL(origin).host
@@ -183,6 +216,7 @@ export async function buildApp(
   await app.register(workspaceRoutes, { prefix: '/api' })
   await app.register(integrationRoutes, { prefix: '/api' })
   await app.register(mcpRoutes, { prefix: '/api' })
+  await app.register(oauthRoutes)
   await app.register(openApiRoutes)
   await app.register(adminRoutes, { prefix: '/api/admin' })
   await app.register(emailRoutes, { prefix: '/api' })

@@ -30,7 +30,7 @@ export async function setup() {
 
 export async function reset(db: Db) {
   await db.execute(
-    sql`truncate users, sessions, site_settings, boards, board_members, board_invites, lists, labels, tasks, email_senders, email_tokens, email_outbox, comments, notifications, storage_backends, attachments, workspaces, workspace_members, workspace_invites, api_tokens, webhooks, webhook_deliveries cascade`,
+    sql`truncate users, sessions, site_settings, boards, board_members, board_invites, lists, labels, tasks, email_senders, email_tokens, email_outbox, comments, notifications, storage_backends, attachments, workspaces, workspace_members, workspace_invites, api_tokens, webhooks, webhook_deliveries, oauth_clients, oauth_codes, oauth_grants cascade`,
   )
   forgetSignInFailures()
   if (shared) {

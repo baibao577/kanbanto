@@ -40,6 +40,7 @@ apps/server/      Fastify + Drizzle + PostgreSQL
   src/auth/apiTokens.ts   Bearer tokens: who they act as, and which routes they may use (TOKEN_ROUTES)
   src/webhooks.ts   Queues, signs and delivers webhooks (with retries), like the email outbox
   src/mcp.ts        The MCP endpoint (/api/mcp): tools for AI assistants, over the same access checks and commands
+  src/oauth.ts      Apps connecting with sign-in (OAuth 2.1 for MCP): discovery, registration, consent, tokens
   src/openapi.ts    /api/openapi.json (commands described from their schema) and the reference page at /api/docs
   src/mail/         mailer.ts (outbox, budgets, whose key pays), senders.ts, transport.ts (SMTP, Resend),
                     templates.tsx + components.tsx (the emails), digest.ts

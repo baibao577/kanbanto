@@ -18,7 +18,8 @@ then `git pull` (or download the new release) and `docker compose up -d --build`
 - **Comments** with @mentions, a notification bell and a daily email summary; **attachments** on cards and in comments.
 - **Integrations:** personal API tokens (once a platform admin turns them on), webhooks per board with signed
   deliveries and retries, an MCP endpoint for AI assistants, a Skill for Claude Code, and an API reference at
-  `/api/docs` on every site.
+  `/api/docs` on every site. Claude on the web and in Claude Desktop (and ChatGPT) can connect by signing in (OAuth),
+  when a platform admin allows it.
 - **Email** through any SMTP server or Resend, with limits to stay within a free plan. **File storage** on the server's
   disk or in an S3-compatible bucket (Cloudflare R2, Amazon S3, MinIO); people can bring their own.
 - **Self-hosting:** one Docker Compose file, an optional HTTPS add-on, backups and restores, a Platform console for

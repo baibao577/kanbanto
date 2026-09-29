@@ -70,7 +70,11 @@ Fixes go into the latest version. If you run Kanbanto yourself, keep it up to da
   checked after every name lookup, with redirects not followed, so board owners can't make the server reach its
   private network. Admins can allow any address for internal tools; only do so if you trust every board owner.
   Deliveries are signed with a per-webhook secret, stored encrypted.
-- **AI assistants (MCP)** use API tokens, with the same checks. There's no delete tool. Task text is written by people
+- **Apps that connect by signing in** (OAuth, for MCP) are off until a platform admin allows them, by default only
+  known AI apps. Each person approves each app on a page that shows where it sends them back to; codes are one-time,
+  PKCE is required, access tokens last an hour and refresh tokens are replaced on every use (only hashes are stored).
+  These tokens only reach the MCP endpoint, and disconnecting (or turning the setting off) stops them at once.
+- **AI assistants (MCP)** use API tokens or those sign-in tokens, with the same checks. There's no delete tool. Task text is written by people
   and can try to steer an assistant, so the docs recommend read-only tokens unless changes are needed.
 
 **Platform admins**

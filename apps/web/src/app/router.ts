@@ -8,6 +8,7 @@ import { LAYOUTS, type Layout } from '@kanbanto/model/types'
  *                            Back/Forward and links bring it back. A bare #/b/<id> means "as I left it".
  *   #/join/<token>           a share link (or an email invite), to a board or a workspace
  *   #/w/<id>                 a workspace's people and settings
+ *   #/authorize?<oauth params>   approving an app that connects with sign-in (from /oauth/authorize)
  *   #/signin, #/signup       (?next=<where to go after>)
  *   #/forgot                 ask for a password reset email
  *   #/verify/<token>, #/reset/<token>   links from emails
@@ -21,6 +22,7 @@ export type Route =
   | BoardRoute
   | { page: 'join'; token: string }
   | { page: 'workspace'; id: string }
+  | { page: 'authorize'; query: string }
   | { page: 'verify'; token: string }
   | { page: 'reset'; token: string }
   | { page: 'forgot' }
@@ -38,6 +40,8 @@ export function parseRoute(hash: string): Route {
   const token = hash.match(/^#\/(join|verify|reset)\/([^/?#]+)/)
   if (token) return { page: token[1] as 'join' | 'verify' | 'reset', token: decodeURIComponent(token[2]) }
   if (/^#\/forgot\/?$/.test(hash)) return { page: 'forgot' }
+  const authorize = hash.match(/^#\/authorize\?(.*)$/)
+  if (authorize) return { page: 'authorize', query: authorize[1] }
   const ws = hash.match(/^#\/w\/([^/?#]+)\/?$/)
   if (ws) return { page: 'workspace', id: decodeURIComponent(ws[1]) }
   const auth = hash.match(/^#\/(signin|signup)(?:\?(.*))?$/)
@@ -74,6 +78,7 @@ export function hrefFor(r: Route) {
   if (r.page === 'admin') return r.section && r.section !== 'overview' ? `#/admin/${r.section}` : '#/admin'
   if (r.page === 'forgot') return '#/forgot'
   if (r.page === 'workspace') return `#/w/${encodeURIComponent(r.id)}`
+  if (r.page === 'authorize') return `#/authorize?${r.query}`
   if (r.page === 'join' || r.page === 'verify' || r.page === 'reset') return `#/${r.page}/${encodeURIComponent(r.token)}`
   if (r.page === 'signin' || r.page === 'signup') return `#/${r.page}${r.next ? `?next=${encodeURIComponent(r.next)}` : ''}`
   const q = new URLSearchParams()

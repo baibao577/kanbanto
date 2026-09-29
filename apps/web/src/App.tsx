@@ -28,6 +28,7 @@ const TaskDialog = lazy(() => import('@/components/task/TaskDialog').then((m) =>
 const ShareDialog = lazy(() => import('@/components/share/ShareDialog').then((m) => ({ default: m.ShareDialog })))
 const AccountView = lazy(() => import('@/components/account/AccountView').then((m) => ({ default: m.AccountView })))
 const AdminView = lazy(() => import('@/components/admin/AdminView').then((m) => ({ default: m.AdminView })))
+const AuthorizeView = lazy(() => import('@/components/auth/AuthorizeView').then((m) => ({ default: m.AuthorizeView })))
 const WorkspaceView = lazy(() => import('@/components/workspace/WorkspaceView').then((m) => ({ default: m.WorkspaceView })))
 
 /**
@@ -105,6 +106,13 @@ export default function App() {
       return (
         <Suspense fallback={null}>
           <AdminView section={route.section} />
+        </Suspense>
+      )
+    case 'authorize':
+      if (!user) return <Redirect to={{ page: 'signin', next: here() }} />
+      return (
+        <Suspense fallback={null}>
+          <AuthorizeView query={route.query} />
         </Suspense>
       )
     case 'workspace':

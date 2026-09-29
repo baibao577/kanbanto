@@ -1,6 +1,6 @@
 import { ArrowSquareOut } from '@phosphor-icons/react'
 import { toast } from 'sonner'
-import type { AdminSettings, WebhookMode } from '@kanbanto/model/api'
+import type { AdminSettings, OAuthMode, WebhookMode } from '@kanbanto/model/api'
 import { api, errorMessage } from '@/api/client'
 import { PageTitle, SettingsCard } from '@/components/settings/SettingsCard'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
@@ -23,7 +23,24 @@ const WEBHOOKS: { value: WebhookMode; title: string; hint: string }[] = [
   },
 ]
 
-/** Platform console → Integrations: whether people can make API tokens, and where board owners may send webhooks. */
+const OAUTH: { value: OAuthMode; title: string; hint: string }[] = [
+  { value: 'off', title: 'Off', hint: 'Apps can’t connect by signing in. People can still use API tokens, if those are on.' },
+  {
+    value: 'known',
+    title: 'Known AI apps only',
+    hint: 'Claude (on the web and in Claude Desktop), ChatGPT, and apps on the person’s own computer (Claude Code, Cursor). This site must be reachable from the internet over https.',
+  },
+  {
+    value: 'any',
+    title: 'Any app',
+    hint: 'Any app that registers itself. People still approve each one, and see where it sends them back to, but an app could pretend to be one they know.',
+  },
+]
+
+/**
+ * Platform console → Integrations: whether people can make API tokens, where board owners may send webhooks, and which
+ * apps may connect to people's accounts by signing in (OAuth, for MCP).
+ */
 export function IntegrationsSection() {
   const [settings, load] = useLoaded(fetchSettings)
 
@@ -66,6 +83,26 @@ export function IntegrationsSection() {
             <p className="text-xs text-muted-foreground">
               Tokens can’t reach anyone’s account settings or this console, and read-only tokens can’t change anything.
             </p>
+          </SettingsCard>
+
+          <SettingsCard
+            title="Apps that connect by signing in"
+            description="Lets people connect AI apps to their boards without copying a token: they add Kanbanto in the app, sign in here, and approve it. The app gets the MCP tools only, with the person’s access. People see and disconnect their apps in Account settings → API & apps."
+          >
+            <RadioGroup value={settings.oauthApps} onValueChange={(v) => void save({ oauthApps: v as OAuthMode }, 'Saved')} className="gap-2">
+              {OAUTH.map((o) => (
+                <label
+                  key={o.value}
+                  className="flex cursor-pointer gap-3 rounded-lg border p-3 transition-colors hover:bg-accent/50 has-[[data-state=checked]]:border-primary has-[[data-state=checked]]:bg-primary/5"
+                >
+                  <RadioGroupItem value={o.value} className="mt-0.5" />
+                  <span className="space-y-0.5">
+                    <span className="block text-sm font-medium">{o.title}</span>
+                    <span className="block text-xs leading-relaxed text-muted-foreground">{o.hint}</span>
+                  </span>
+                </label>
+              ))}
+            </RadioGroup>
           </SettingsCard>
 
           <SettingsCard

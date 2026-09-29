@@ -120,8 +120,29 @@ Read-only tokens get the first four only. There's no delete tool, on purpose.
 instructions and…" in a card is just text to Kanbanto, but an assistant might follow it. Give assistants a read-only
 token unless they need to make changes, and keep an eye on what they do (it's all visible live, as you, and undoable).
 
-**claude.ai and ChatGPT** connect through their own servers and sign in with OAuth, which Kanbanto doesn't offer yet.
-Use Claude Code, Claude Desktop with a local MCP bridge, or another app that takes a URL and headers.
+### Claude on the web, Claude Desktop and ChatGPT: sign in instead of a token
+
+When a platform admin allows it (**Platform console → Integrations → Apps that connect by signing in**), people add
+Kanbanto to their AI app without copying a token. In Claude: **Settings → Connectors → Add custom connector**, with the
+address `https://<your site>/api/mcp`. Claude sends them to a Kanbanto page to sign in and approve it (read, or read and
+make changes), then back to Claude. **Account settings → API & apps** lists connected apps, with Disconnect.
+
+How it works: OAuth 2.1 as the MCP specification describes it. A `401` from `/api/mcp` points to
+`/.well-known/oauth-protected-resource/api/mcp`, then `/.well-known/oauth-authorization-server`; apps register
+themselves (`/oauth/register`), people approve at `/oauth/authorize`, and apps exchange the one-time code with PKCE
+(`/oauth/token`). Access tokens last an hour; refresh tokens are replaced each time they're used. These tokens only
+work for `/api/mcp`.
+
+The admin setting:
+
+- **Off** (the default).
+- **Known AI apps only**: apps that send people back to claude.ai, claude.com, chatgpt.com or chat.openai.com, or to
+  an app on their own computer (Claude Code, Cursor, VS Code). The safe choice.
+- **Any app**: any app that registers. People still approve each one and see where it sends them back to, but an app
+  could pretend to be one they know.
+
+Claude's and ChatGPT's servers make the calls, so **your Kanbanto must be reachable from the internet over https**. A
+Kanbanto only on your computer or company network can use API tokens with Claude Code and similar apps instead.
 
 ### The Kanbanto Skill (Claude Code)
 

@@ -67,6 +67,9 @@ export const siteSettings = pgTable('site_settings', {
   webhooks: text('webhooks', { enum: ['off', 'public', 'any'] })
     .notNull()
     .default(SETTING_DEFAULTS.webhooks),
+  oauthApps: text('oauth_apps', { enum: ['off', 'known', 'any'] })
+    .notNull()
+    .default(SETTING_DEFAULTS.oauthApps),
 })
 
 // ── Email ──────────────────────────────────────────────────────────────────────
@@ -539,4 +542,62 @@ export const webhookDeliveries = pgTable(
     sentAt: at('sent_at'),
   },
   (t) => [index('webhook_deliveries_due_idx').on(t.status, t.nextAttemptAt), index('webhook_deliveries_hook_idx').on(t.webhookId, t.createdAt)],
+)
+
+// ── Apps connected with sign-in (OAuth 2.1, for MCP) ────────────────────────────
+
+/** An app that registered itself (dynamic client registration), like Claude or ChatGPT. */
+export const oauthClients = pgTable('oauth_clients', {
+  /** The client_id it was given. */
+  id: text('id').primaryKey(),
+  /** What it calls itself (shown on the consent page, with where it sends people back to). */
+  name: text('name').notNull(),
+  redirectUris: text('redirect_uris').array().notNull(),
+  /** SHA-256 of its client secret, for apps that asked for one; null: a public app (PKCE only). */
+  secretHash: text('secret_hash'),
+  createdAt: at('created_at').notNull().defaultNow(),
+})
+
+/** A one-time code from the consent page, exchanged for tokens within minutes (only its hash is stored). */
+export const oauthCodes = pgTable('oauth_codes', {
+  codeHash: text('code_hash').primaryKey(),
+  clientId: text('client_id')
+    .notNull()
+    .references(() => oauthClients.id, { onDelete: 'cascade' }),
+  userId: uuid('user_id')
+    .notNull()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  redirectUri: text('redirect_uri').notNull(),
+  codeChallenge: text('code_challenge').notNull(),
+  scope: text('scope', { enum: ['read', 'write'] }).notNull(),
+  expiresAt: at('expires_at').notNull(),
+})
+
+/**
+ * Someone allowed an app: its access token (short-lived) and refresh token (replaced each time it's used). Only
+ * hashes are stored. Deleting the row disconnects the app.
+ */
+export const oauthGrants = pgTable(
+  'oauth_grants',
+  {
+    id: uuid('id').primaryKey(),
+    clientId: text('client_id')
+      .notNull()
+      .references(() => oauthClients.id, { onDelete: 'cascade' }),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    scope: text('scope', { enum: ['read', 'write'] }).notNull(),
+    accessHash: text('access_hash').notNull(),
+    accessExpiresAt: at('access_expires_at').notNull(),
+    refreshHash: text('refresh_hash').notNull(),
+    refreshExpiresAt: at('refresh_expires_at').notNull(),
+    createdAt: at('created_at').notNull().defaultNow(),
+    lastUsedAt: at('last_used_at'),
+  },
+  (t) => [
+    uniqueIndex('oauth_grants_access_idx').on(t.accessHash),
+    uniqueIndex('oauth_grants_refresh_idx').on(t.refreshHash),
+    index('oauth_grants_user_idx').on(t.userId),
+  ],
 )

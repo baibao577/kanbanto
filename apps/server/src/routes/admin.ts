@@ -106,15 +106,20 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
   })
 
   app.get('/settings', async (): Promise<AdminSettings> => {
-    const { openSignup, apiTokens, webhooks } = await getSettings(app.db)
-    return { openSignup, apiTokens, webhooks }
+    const { openSignup, apiTokens, webhooks, oauthApps } = await getSettings(app.db)
+    return { openSignup, apiTokens, webhooks, oauthApps }
   })
 
-  /** Sign-up, API tokens (turning them off stops every token working), and where webhooks may go. */
+  /** Sign-up, API tokens (turning them off stops every token working), where webhooks may go, and which apps may connect. */
   app.patch('/settings', async (req): Promise<AdminSettings> => {
     const body = parse(
       z
-        .object({ openSignup: z.boolean(), apiTokens: z.boolean(), webhooks: z.enum(['off', 'public', 'any']) })
+        .object({
+          openSignup: z.boolean(),
+          apiTokens: z.boolean(),
+          webhooks: z.enum(['off', 'public', 'any']),
+          oauthApps: z.enum(['off', 'known', 'any']),
+        })
         .partial()
         .strict(),
       req.body,
@@ -124,7 +129,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         .insert(siteSettings)
         .values({ id: 1, ...body })
         .onConflictDoUpdate({ target: siteSettings.id, set: body })
-    const { openSignup, apiTokens, webhooks } = await getSettings(app.db)
-    return { openSignup, apiTokens, webhooks }
+    const { openSignup, apiTokens, webhooks, oauthApps } = await getSettings(app.db)
+    return { openSignup, apiTokens, webhooks, oauthApps }
   })
 }

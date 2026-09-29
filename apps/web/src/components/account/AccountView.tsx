@@ -21,7 +21,7 @@ const SECTIONS: (SettingsNavItem & { id: AccountSection })[] = [
   { id: 'notifications', label: 'Notifications', icon: Bell, href: { page: 'account', section: 'notifications' } },
   { id: 'email', label: 'Email sending', icon: EnvelopeSimple, href: { page: 'account', section: 'email' } },
   { id: 'storage', label: 'File storage', icon: HardDrives, href: { page: 'account', section: 'storage' } },
-  { id: 'api', label: 'API tokens', icon: Code, href: { page: 'account', section: 'api' } },
+  { id: 'api', label: 'API & apps', icon: Code, href: { page: 'account', section: 'api' } },
 ]
 
 /** Your account settings, laid out like the Platform console: a sidebar of sections, each on its own page. */
