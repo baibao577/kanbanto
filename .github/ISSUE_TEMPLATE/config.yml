@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Report a security problem
+    url: https://github.com/baibao577/kanbanto/security/advisories/new
+    about: Please report vulnerabilities privately, not in a public issue.
+  - name: Ask a question or share an idea
+    url: https://github.com/baibao577/kanbanto/discussions
+    about: Setup help, questions and ideas go in Discussions.
+  - name: Troubleshooting guide
+    url: https://github.com/baibao577/kanbanto/blob/main/docs/troubleshooting.md
+    about: Most setup problems are answered here.

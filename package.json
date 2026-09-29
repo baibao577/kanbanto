@@ -1,0 +1,44 @@
+{
+  "name": "kanbanto-monorepo",
+  "private": true,
+  "description": "Kanbanto: plan projects as tasks inside tasks, as a board, a timeline or an outline. Self-hosted.",
+  "license": "SEE LICENSE IN LICENSE.md",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/baibao577/kanbanto.git"
+  },
+  "homepage": "https://github.com/baibao577/kanbanto#readme",
+  "bugs": {
+    "url": "https://github.com/baibao577/kanbanto/issues"
+  },
+  "type": "module",
+  "engines": {
+    "node": ">=24",
+    "pnpm": ">=10"
+  },
+  "scripts": {
+    "dev": "pnpm --parallel --filter @kanbanto/web --filter @kanbanto/server dev",
+    "build": "pnpm --filter @kanbanto/web build && pnpm --filter @kanbanto/server build",
+    "start": "pnpm --filter @kanbanto/server start",
+    "test": "pnpm -r --workspace-concurrency=1 test",
+    "lint": "oxlint",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "typecheck": "pnpm -r typecheck",
+    "db:up": "docker compose up -d db mailpit",
+    "db:generate": "pnpm --filter @kanbanto/server db:generate",
+    "db:migrate": "pnpm --filter @kanbanto/server db:migrate",
+    "admin": "pnpm --filter @kanbanto/server cli admin"
+  },
+  "devDependencies": {
+    "oxlint": "^1.81.0",
+    "prettier": "^3.9.9",
+    "typescript": "~6.0.2"
+  },
+  "packageManager": "pnpm@10.33.0",
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ]
+  }
+}

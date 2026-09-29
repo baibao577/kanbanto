@@ -1,0 +1,19 @@
+name: Idea for Kanbanto
+description: Suggest something new or better.
+labels: [idea]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What would you like to do?
+      description: The problem or task, in your own words. (What you'd like to be able to do matters more than how.)
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: How might it work?
+  - type: textarea
+    id: now
+    attributes:
+      label: What do you do today instead?

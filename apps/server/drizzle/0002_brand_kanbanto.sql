@@ -1,0 +1,1 @@
+ALTER TABLE "site_settings" ALTER COLUMN "brand_name" SET DEFAULT 'Kanbanto';

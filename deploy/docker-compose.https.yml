@@ -1,0 +1,34 @@
+# HTTPS add-on: puts Caddy in front of Kanbanto and gets a certificate for your domain automatically.
+#
+#   1. Point your domain's DNS (an A record) at this server, and open ports 80 and 443.
+#   2. In .env set DOMAIN=kanbanto.example.com and APP_URL=https://kanbanto.example.com
+#   3. docker compose -f docker-compose.yml -f deploy/docker-compose.https.yml up -d --build
+services:
+  app:
+    environment:
+      # Caddy is the one proxy in front: believe what it says about the client's address and HTTPS.
+      TRUST_PROXY: '1'
+    # Only Caddy talks to Kanbanto directly.
+    ports: !override
+      - '127.0.0.1:${PORT:-3000}:3000'
+
+  caddy:
+    image: caddy:2-alpine
+    environment:
+      DOMAIN: ${DOMAIN:?Set DOMAIN in .env (your domain, pointing at this server)}
+    ports:
+      - '80:80'
+      - '443:443'
+      - '443:443/udp'
+    volumes:
+      # Paths are relative to the project folder (where docker-compose.yml is).
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - app
+    restart: unless-stopped
+
+volumes:
+  caddy_data:
+  caddy_config:

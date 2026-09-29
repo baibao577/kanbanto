@@ -1,0 +1,120 @@
+import { eq, sql } from 'drizzle-orm'
+import type { FastifyPluginAsync } from 'fastify'
+import { z } from 'zod'
+import { createEmailToken } from '../auth/email-tokens'
+import { endAllSessions } from '../auth/sessions'
+import { boardMembers, siteSettings, users } from '../db/schema'
+import { HttpError, parse, siteUrl } from '../http'
+import { emails } from '../mail/templates'
+import { getSettings, requireUser } from './auth'
+
+const UserParams = z.object({ id: z.uuid() })
+
+/**
+ * The platform console, for platform admins (granted on the server with `admin grant <email>`, see src/cli.ts):
+ * accounts, sign-up, and totals. It deliberately doesn't open people's boards.
+ */
+export const adminRoutes: FastifyPluginAsync = async (app) => {
+  app.addHook('onRequest', async (req) => {
+    if (!requireUser(req.user).isAdmin) throw new HttpError(403, 'Only platform admins can do that.')
+  })
+
+  app.get('/stats', async () => {
+    const [row] = await app.db.execute<{ users: number; active_users: number; boards: number; tasks: number; new_users: number }>(sql`
+      select
+        (select count(*)::int from users) as users,
+        (select count(*)::int from users where disabled_at is null) as active_users,
+        (select count(*)::int from boards) as boards,
+        (select count(*)::int from tasks) as tasks,
+        (select count(*)::int from users where created_at > now() - interval '7 days') as new_users`)
+    return { users: row.users, activeUsers: row.active_users, boards: row.boards, tasks: row.tasks, newUsers: row.new_users }
+  })
+
+  app.get('/users', async () => {
+    const rows = await app.db
+      .select({
+        id: users.id,
+        email: users.email,
+        name: users.name,
+        isAdmin: users.isAdmin,
+        emailVerifiedAt: users.emailVerifiedAt,
+        disabledAt: users.disabledAt,
+        createdAt: users.createdAt,
+        boards: sql<number>`(select count(*)::int from ${boardMembers} where ${boardMembers.userId} = ${users.id} and ${boardMembers.role} = 'owner')`,
+      })
+      .from(users)
+      .orderBy(sql`${users.createdAt} desc`)
+    return {
+      users: rows.map(({ emailVerifiedAt, ...u }) => ({
+        ...u,
+        emailVerified: !!emailVerifiedAt,
+        disabled: !!u.disabledAt,
+        disabledAt: u.disabledAt?.toISOString() ?? null,
+        createdAt: u.createdAt.toISOString(),
+      })),
+    }
+  })
+
+  /**
+   * Turns an account off (signed out, can't sign in) or back on, or marks its email as confirmed (the admin vouches
+   * for it, e.g. an address that can't receive the confirmation email). Admin rights are only changed on the server.
+   */
+  app.patch('/users/:id', async (req) => {
+    const { id } = parse(UserParams, req.params)
+    const me = requireUser(req.user)
+    const body = parse(z.strictObject({ disabled: z.boolean(), emailVerified: z.literal(true) }).partial(), req.body)
+    if (id === me.id && body.disabled !== undefined) throw new HttpError(400, 'You can’t turn off your own account.')
+    const updated = await app.db
+      .update(users)
+      .set({
+        ...(body.disabled !== undefined && { disabledAt: body.disabled ? new Date() : null }),
+        ...(body.emailVerified && { emailVerifiedAt: sql`coalesce(${users.emailVerifiedAt}, now())` }),
+        updatedAt: new Date(),
+      })
+      .where(eq(users.id, id))
+      .returning({ id: users.id })
+    if (!updated.length) throw new HttpError(404, 'That account doesn’t exist.')
+    if (body.disabled) {
+      await endAllSessions(app.db, id)
+      app.hub.signOut(id)
+    }
+    return { ok: true }
+  })
+
+  /**
+   * A one-time link for setting a new password (24 hours), for the admin to pass on: nothing changes until it's used,
+   * and then the person picks their own password and is signed out everywhere else. The person is told by email (when
+   * the site sends email), so a link they didn't ask for doesn't go unnoticed. Returns the token: the browser builds
+   * the link from the address the admin is using.
+   */
+  app.post('/users/:id/reset-link', async (req) => {
+    const { id } = parse(UserParams, req.params)
+    const [u] = await app.db.select({ id: users.id, email: users.email, name: users.name }).from(users).where(eq(users.id, id))
+    if (!u) throw new HttpError(404, 'That account doesn’t exist.')
+    const token = await createEmailToken(app.db, u.id, 'admin-reset', u.email)
+    if (app.mail.platformReady) {
+      const site = siteUrl(req)
+      await app.mail.queue({
+        kind: 'notice',
+        to: u.email,
+        requestedBy: null,
+        content: (brand) => emails.notice(brand, { name: u.name, what: 'admin-reset', site }),
+      })
+    }
+    return { token }
+  })
+
+  app.get('/settings', async () => {
+    const { openSignup } = await getSettings(app.db)
+    return { openSignup }
+  })
+
+  app.patch('/settings', async (req) => {
+    const body = parse(z.object({ openSignup: z.boolean() }), req.body)
+    await app.db
+      .insert(siteSettings)
+      .values({ id: 1, openSignup: body.openSignup })
+      .onConflictDoUpdate({ target: siteSettings.id, set: { openSignup: body.openSignup } })
+    return body
+  })
+}

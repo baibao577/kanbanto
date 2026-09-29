@@ -1,0 +1,191 @@
+@import 'tailwindcss';
+@import 'tw-animate-css';
+@import '@fontsource-variable/inter';
+
+@custom-variant dark (&:is(.dark *));
+
+/*
+ * Design tokens. Every color, radius and font in the app comes from here,
+ * so a new theme (or a brand) is a new set of these values — nothing else changes.
+ */
+:root {
+  --radius: 0.625rem;
+
+  /* surfaces */
+  --background: oklch(0.985 0.002 260); /* app canvas */
+  --foreground: oklch(0.22 0.012 260);
+  --card: oklch(1 0 0);
+  --card-foreground: var(--foreground);
+  --popover: oklch(1 0 0);
+  --popover-foreground: var(--foreground);
+  --lane: oklch(0.962 0.003 260); /* board lists */
+  --lane-hover: oklch(0.945 0.004 260);
+  /* the box around a parent's subtasks inside a list: a step darker than the list, so the cards lift off it */
+  --well: color-mix(in oklab, var(--foreground) 4.5%, transparent);
+  /* task cards on the board, and their outline */
+  --tile: var(--card);
+  --card-edge: color-mix(in oklab, var(--border) 70%, transparent);
+  /* how strongly a list's own color shows: in its body, and in its header */
+  --tint-lane: 7%;
+  --tint-header: 42%;
+
+  /* brand + roles */
+  --primary: oklch(0.53 0.19 268);
+  --primary-foreground: oklch(0.99 0 0);
+  --secondary: oklch(0.955 0.004 260);
+  --secondary-foreground: var(--foreground);
+  --muted: oklch(0.955 0.004 260);
+  --muted-foreground: oklch(0.53 0.014 260);
+  --accent: oklch(0.95 0.008 265);
+  --accent-foreground: var(--foreground);
+  --destructive: oklch(0.58 0.21 27);
+  --border: oklch(0.915 0.004 260);
+  --input: oklch(0.9 0.005 260);
+  --ring: oklch(0.53 0.19 268);
+
+  /* status categories (what a list "counts as") */
+  --status-backlog: oklch(0.75 0.01 260);
+  --status-todo: oklch(0.64 0.02 260);
+  --status-doing: oklch(0.72 0.15 70);
+  --status-done: oklch(0.62 0.15 152);
+  --warning: oklch(0.6 0.19 35);
+
+  /* things drawn straight on the board background (row headers, "Add another list", …) */
+  --canvas-fg: var(--foreground);
+  --canvas-muted: var(--muted-foreground);
+  --canvas-chip: var(--lane);
+  --canvas-dim: 0;
+
+  /* timeline */
+  --grid-line: oklch(0.93 0.003 260);
+  --weekend: oklch(0.975 0.002 260);
+
+  /* 12-color palette for labels, lists and timeline bars (see src/model/colors.ts) */
+  --c-gray: oklch(0.62 0.02 260);
+  --c-red: oklch(0.63 0.2 25);
+  --c-orange: oklch(0.7 0.17 50);
+  --c-amber: oklch(0.77 0.15 78);
+  --c-yellow: oklch(0.85 0.15 98);
+  --c-lime: oklch(0.8 0.17 128);
+  --c-green: oklch(0.66 0.15 150);
+  --c-teal: oklch(0.68 0.11 185);
+  --c-sky: oklch(0.7 0.12 230);
+  --c-blue: oklch(0.58 0.18 262);
+  --c-violet: oklch(0.58 0.19 295);
+  --c-pink: oklch(0.68 0.18 350);
+}
+
+.dark {
+  /*
+   * A soft dark grey rather than near-black (easier to read for long), in clear steps: canvas → list → card, so
+   * cards stand out the way white cards do in light mode.
+   */
+  --background: oklch(0.215 0.006 265);
+  --foreground: oklch(0.94 0.005 260);
+  --card: oklch(0.255 0.007 265);
+  --card-foreground: var(--foreground);
+  --popover: oklch(0.27 0.007 265);
+  --popover-foreground: var(--foreground);
+  --lane: oklch(0.255 0.007 265);
+  --lane-hover: oklch(0.28 0.008 265);
+  /* Dark surfaces rise by getting lighter: list → the box around subtasks → card, each a clear step up. */
+  --well: color-mix(in oklab, white 6%, transparent);
+  --tile: oklch(0.335 0.009 265);
+  --card-edge: color-mix(in oklab, var(--foreground) 11%, transparent);
+  /* Colors need more of themselves to show on a dark surface. */
+  --tint-lane: 13%;
+  --tint-header: 50%;
+
+  --primary: oklch(0.7 0.15 268);
+  --primary-foreground: oklch(0.16 0.02 268);
+  --secondary: oklch(0.29 0.007 265);
+  --secondary-foreground: var(--foreground);
+  --muted: oklch(0.29 0.007 265);
+  --muted-foreground: oklch(0.74 0.012 260);
+  --accent: oklch(0.31 0.012 268);
+  --accent-foreground: var(--foreground);
+  --destructive: oklch(0.66 0.19 25);
+  --border: oklch(0.35 0.008 265);
+  --input: oklch(0.38 0.008 265);
+  --ring: oklch(0.7 0.15 268);
+
+  --status-backlog: oklch(0.5 0.01 260);
+  --status-todo: oklch(0.68 0.02 260);
+  --status-doing: oklch(0.78 0.14 75);
+  --status-done: oklch(0.72 0.14 152);
+  --warning: oklch(0.72 0.16 45);
+
+  --canvas-dim: 0.28;
+
+  --grid-line: oklch(0.29 0.006 265);
+  --weekend: oklch(0.235 0.006 265);
+
+  --c-gray: oklch(0.66 0.02 260);
+  --c-red: oklch(0.68 0.19 25);
+  --c-orange: oklch(0.74 0.16 50);
+  --c-amber: oklch(0.8 0.14 78);
+  --c-yellow: oklch(0.87 0.14 98);
+  --c-lime: oklch(0.83 0.16 128);
+  --c-green: oklch(0.72 0.14 150);
+  --c-teal: oklch(0.74 0.1 185);
+  --c-sky: oklch(0.76 0.11 230);
+  --c-blue: oklch(0.68 0.16 262);
+  --c-violet: oklch(0.7 0.17 295);
+  --c-pink: oklch(0.74 0.16 350);
+}
+
+@theme inline {
+  --font-sans: 'Inter Variable', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-lane: var(--lane);
+  --color-lane-hover: var(--lane-hover);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-status-backlog: var(--status-backlog);
+  --color-status-todo: var(--status-todo);
+  --color-status-doing: var(--status-doing);
+  --color-status-done: var(--status-done);
+  --color-warning: var(--warning);
+  --color-grid-line: var(--grid-line);
+  --color-weekend: var(--weekend);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+    font-feature-settings: 'cv11', 'ss01';
+  }
+  button:not(:disabled),
+  [role='button']:not(:disabled) {
+    cursor: pointer;
+  }
+}

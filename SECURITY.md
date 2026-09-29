@@ -1,0 +1,68 @@
+# Security
+
+## Reporting a vulnerability
+
+Please **don't open a public issue** for security problems. Report them privately through GitHub:
+**[Report a vulnerability](https://github.com/baibao577/kanbanto/security/advisories/new)**
+(the repository's *Security* tab → *Report a vulnerability*).
+
+Include what you found, how to reproduce it, and what someone could do with it. You'll get a reply as soon as
+possible, and credit in the fix's release notes if you'd like.
+
+Fixes go into the latest version. If you run Kanbanto yourself, keep it up to date — see
+[Upgrades](docs/self-hosting.md#upgrades).
+
+## How Kanbanto protects your data
+
+**Accounts and sign-in**
+
+- **Passwords** are hashed with scrypt; they are never stored or logged.
+- **Sessions** are random tokens in an httpOnly, SameSite=Lax cookie, marked Secure over HTTPS. Only their SHA-256
+  hash is stored, so a copy of the database can't be used to sign in. Changing a password signs out other devices and
+  closes their live connections.
+- **Guessing is limited:** sign-in, sign-up and joining are rate-limited per IP address, and each account allows 10
+  wrong passwords in 15 minutes. Forwarded client addresses are believed only from the proxies named in `TRUST_PROXY`.
+- **Email links** (confirm email, reset password) are single-use, expire, and only their hash is stored. Links in emails
+  are built from the configured `APP_URL`, never from request headers.
+- **Signing up doesn't reveal who has an account** once the site sends email: the answer is the same either way, and
+  the address's owner is told by email. (Without email, sign-up says when an address is taken.)
+- **An address counts as confirmed** only when proved by email: a confirmation link, a password reset link, or an
+  invite emailed to it (not one whose link the inviter was shown). Email invites go straight to an account only if its
+  address is confirmed.
+
+**Boards**
+
+- **Every change to a board** is checked on the server against the person's role, with the same rules as the app, and
+  records put back by undo must be ones a command could have made.
+- **Cross-site requests** are refused: changes must come from a page on the same site.
+- **Who's on a board** is visible to its members only; only owners see their email addresses.
+
+**Keys and secrets**
+
+- **Email keys, mail server passwords and storage keys** saved in the website are encrypted (AES-256-GCM) with a key
+  that's never in the database: `ENCRYPTION_KEY`, or one Kanbanto makes on first start and keeps in its own volume.
+  The browser only ever sees a short hint of a key, and never a password. Kanbanto won't start in production with the
+  public development key.
+- **Only platform admins can point the server at other systems.** People's own email settings are Resend keys only,
+  and their own storage must be at a public internet address: every connection is checked after the name is looked
+  up, and redirects aren't followed, so nobody can make the server reach its private network. The site's own mail
+  server and bucket, set by platform admins, may be anywhere (a company relay, a MinIO on your network) — so keep
+  platform admin rights to the people who run the server.
+- **Sent emails** are kept (for the sending limits) without their contents, and failed database queries are logged
+  without the data they carried.
+
+**Files**
+
+- **Uploaded files** are always served as downloads (pictures inline), never as web pages, and common program and
+  script types are refused. Files in a bucket are reached through 5-minute signed links.
+- Uploads are checked (who, and the declared size) before the file is read. Files for a comment not yet posted are
+  visible only to their uploader.
+
+**Platform admins**
+
+- Admin rights are granted only on the server (`admin grant`), never through the website.
+- Admins get **no access to boards** that aren't shared with them. They can make a password reset link for an account
+  (to help someone locked out) — which would let them sign in as that person — so the person is told by email when
+  a link is made, and using it signs them out everywhere.
+
+For running Kanbanto safely on a server, follow the [security checklist](docs/self-hosting.md#security-checklist).

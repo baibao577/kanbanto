@@ -1,0 +1,78 @@
+# Kanbanto: the app and its database.
+#
+#   docker compose up -d --build --wait    start (the first build takes a few minutes), then open http://localhost:3000
+#   docker compose down                    stop (your data is kept)
+#
+# Settings come from a `.env` file next to this one (copy `.env.example`). With no `.env`, the defaults below are
+# fine for trying Kanbanto on your own computer — read docs/self-hosting.md before putting it on a server.
+#
+# Developers: run only the database and a test inbox (`pnpm db:up`) and `pnpm dev` for hot reload (see CONTRIBUTING.md).
+
+# The data is kept in volumes named after this (kanbanto_pgdata, …), not after the folder: an update unzipped into a
+# folder with another name still finds it. (COMPOSE_PROJECT_NAME in .env overrides it.)
+name: kanbanto
+
+services:
+  app:
+    build: .
+    environment:
+      DATABASE_URL: postgres://kankan:${POSTGRES_PASSWORD:-kankan}@db:5432/kankan
+      # The address people use to open Kanbanto (for links in emails).
+      APP_URL: ${APP_URL:-http://localhost:${PORT:-3000}}
+      # Optional. Encrypts the email and storage keys saved in the Platform console; without it, Kanbanto makes its
+      # own on first start and keeps it in the `config` volume (`docker compose exec app node dist/cli.js key`).
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-}
+      # How many proxies are in front of Kanbanto (the HTTPS add-on sets 1). None by default.
+      TRUST_PROXY: ${TRUST_PROXY:-}
+      # Optional: email through your own mail server, set here instead of in the Platform console
+      # (see docs/configuration.md). Empty: set email up in the Platform console, or not at all.
+      SMTP_URL: ${SMTP_URL:-}
+      SMTP_FROM: ${SMTP_FROM:-}
+      LOG_FORMAT: ${LOG_FORMAT:-}
+    volumes:
+      # Attachments kept on this server (until you switch to an S3/R2 bucket in the Platform console).
+      - uploads:/data/uploads
+      # The encryption key Kanbanto made for itself (include it in your backups).
+      - config:/data/config
+    ports:
+      # With BIND_ADDRESS=127.0.0.1 it's reachable from this machine only (e.g. behind your own proxy).
+      - '${BIND_ADDRESS:-}${BIND_ADDRESS:+:}${PORT:-3000}:3000'
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: kankan
+      # Only takes effect when the database is first created. To change it later, see docs/troubleshooting.md.
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-kankan}
+      POSTGRES_DB: kankan
+    ports:
+      # Reachable only from this computer (for backups and development), never from the network.
+      - '127.0.0.1:${DB_PORT:-5433}:5432'
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      # Creates a second, empty database for the automated tests (harmless otherwise).
+      - ./docker/init-test-db.sql:/docker-entrypoint-initdb.d/init-test-db.sql:ro
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U kankan']
+      interval: 2s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  # Development only (not started by `docker compose up`): a pretend inbox that catches every email.
+  # `pnpm db:up` starts it; read the emails at http://localhost:8025.
+  mailpit:
+    image: axllent/mailpit:latest
+    profiles: [dev]
+    ports:
+      - '127.0.0.1:1025:1025'
+      - '127.0.0.1:8025:8025'
+
+volumes:
+  pgdata:
+  uploads:
+  config:

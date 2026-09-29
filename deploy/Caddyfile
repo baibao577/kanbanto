@@ -1,0 +1,10 @@
+# HTTPS for Kanbanto with automatic certificates (Let's Encrypt). Used by deploy/docker-compose.https.yml.
+{$DOMAIN} {
+	encode zstd gzip
+	# Kanbanto needs the original Host and the scheme (Caddy sends both, and passes live-update WebSockets through).
+	reverse_proxy app:3000
+	# Uploads can be up to the "largest file" setting in the Platform console (max 200 MB).
+	request_body {
+		max_size 200MB
+	}
+}

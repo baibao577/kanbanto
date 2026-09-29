@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Kanbanto</title>
+    <meta name="description" content="Plan projects as tasks inside tasks, and see them as a board, a timeline or an outline." />
+    <meta name="theme-color" content="#f9fafb" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#16171c" media="(prefers-color-scheme: dark)" />
+    <script>
+      // Apply the saved theme before first paint so the page doesn't flash. Same key as src/app/theme.tsx.
+      try {
+        var t = localStorage.getItem('kankan:theme')
+        var dark = t === 'dark' || (t !== 'light' && matchMedia('(prefers-color-scheme: dark)').matches)
+        document.documentElement.classList.toggle('dark', dark)
+        document.documentElement.style.colorScheme = dark ? 'dark' : 'light'
+      } catch (e) {}
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
