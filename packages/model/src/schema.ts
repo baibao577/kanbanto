@@ -1,3 +1,4 @@
+import { normalizeTaskDate } from './dates'
 import { z } from 'zod'
 import { COLORS, type ColorName } from './colors'
 import type { Command } from './commands'
@@ -10,7 +11,11 @@ import { CATEGORIES, LAYOUTS } from './types'
  * same ones the commands enforce, so a record can't come back in a shape no command could have made.
  */
 const color = z.enum(COLORS.map((c) => c.id) as [ColorName, ...ColorName[]])
-const date = z.string().regex(/^\d{4}-\d{2}-\d{2}$/)
+/** A whole day (2026-10-15), or a date-time with its time zone (2026-10-15T14:30:00+07:00), stored as a UTC moment. */
+const date = z
+  .string()
+  .max(40)
+  .refine((v) => normalizeTaskDate(v) !== null, 'Dates look like 2026-10-31, or 2026-10-31T14:30:00Z with a time.')
 // PostgreSQL text can't hold a NUL character; ids are printable too.
 const NUL = '\u0000'
 // oxlint-disable-next-line no-control-regex

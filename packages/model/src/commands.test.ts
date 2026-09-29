@@ -80,6 +80,12 @@ describe('task commands', () => {
     expect(exec(manual, { type: 'task.update', id: 'A2', fields: { status: 'done' } }).data.tasks.A2.status).toBe('done')
   })
 
+  it('dates: a whole day, or a time sent with its time zone and stored in UTC', () => {
+    const t = exec(board(), { type: 'task.update', id: 'A3', fields: { start: '2026-10-14', due: '2026-10-15T14:30:00+07:00' } }).data.tasks.A3
+    expect([t.start, t.due]).toEqual(['2026-10-14', '2026-10-15T07:30:00Z'])
+    expect(refusal(board(), { type: 'task.update', id: 'A3', fields: { due: '2026-10-15T14:30' } })).toMatch(/Dates look like/)
+  })
+
   it('updating the board to what it already is changes nothing', () => {
     const b = board()
     expect(exec(b, { type: 'board.update', fields: { name: b.board.name, mode: b.board.mode } }).changes).toEqual([])

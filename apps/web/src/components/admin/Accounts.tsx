@@ -128,7 +128,7 @@ export function AccountsSection() {
                     </div>
                   </td>
                   <td className="hidden px-4 py-2.5 tabular-nums sm:table-cell">{u.boards}</td>
-                  <td className="hidden px-4 py-2.5 text-muted-foreground md:table-cell">{format(parseISO(u.createdAt), 'd MMM yyyy')}</td>
+                  <td className="hidden px-4 py-2.5 text-muted-foreground md:table-cell">{format(parseISO(u.createdAt), 'EEE d MMM yyyy')}</td>
                   <td className="px-4 py-2.5">
                     <div className="flex flex-wrap gap-1">
                       {u.isAdmin && <Badge className="bg-primary/10 text-primary">Platform admin</Badge>}

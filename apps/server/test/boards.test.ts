@@ -52,6 +52,15 @@ describe('boards', () => {
     expect(after.data.board.background).toBe('pink')
   })
 
+  it('dates keep their form: a whole day, or a time as a UTC moment', async () => {
+    const ann = await Person.signUp(t.app, 'Ann')
+    const [{ id }] = (await ann.ok('GET', '/api/boards')).boards
+    await mutate(ann, id, { type: 'task.update', id: 'A3', fields: { start: '2026-10-14', due: '2026-10-15T14:30:00+07:00' } })
+    t.app.engine.forget(id) // read it back from the database, not the cache
+    const task = (await load(ann, id)).data.tasks.A3
+    expect([task.start, task.due]).toEqual(['2026-10-14', '2026-10-15T07:30:00Z'])
+  })
+
   it('a retried request runs once', async () => {
     const ann = await Person.signUp(t.app, 'Ann')
     const { id } = await ann.ok('POST', '/api/boards', { name: 'Plan' })

@@ -1,4 +1,5 @@
 import { format, parseISO } from 'date-fns'
+import { localDayOf, localTimeOf } from '@kanbanto/model/dates'
 
 /** "Mai Chan" → "MC", "Ton" → "TO". */
 export function initials(name: string) {
@@ -6,8 +7,20 @@ export function initials(name: string) {
   return (parts.length > 1 ? parts[0][0] + parts[1][0] : name.slice(0, 2)).toUpperCase()
 }
 
-/** "2026-10-03" → "Oct 3" (or "Oct 3, 2026"). */
-export const formatDay = (iso: string, withYear = false) => format(parseISO(iso), withYear ? 'MMM d, yyyy' : 'MMM d')
+/**
+ * A task date for people: day first, with the month's name, and a 24-hour time when it has one (in your time zone).
+ * Short: "3 Oct", "3 Oct · 14:30". Full: "Sat 3 Oct", "Sat 3 Oct · 14:30", with the year when it isn't this year
+ * ("Tue 5 Jan 2027").
+ */
+export function formatDay(iso: string, full = false) {
+  const d = parseISO(localDayOf(iso))
+  const day = format(d, full ? (d.getFullYear() === new Date().getFullYear() ? 'EEE d MMM' : 'EEE d MMM yyyy') : 'd MMM')
+  const time = localTimeOf(iso)
+  return time ? `${day} · ${time}` : day
+}
+
+/** A moment something happened: "Sat 3 Oct 2026, 14:30". */
+export const formatMoment = (iso: string) => format(parseISO(iso), 'EEE d MMM yyyy, HH:mm')
 
 /** A file size in words: 812 B, 34 KB, 2.4 MB. */
 export const formatSize = (bytes: number) =>

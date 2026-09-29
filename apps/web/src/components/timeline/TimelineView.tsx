@@ -23,7 +23,8 @@ import {
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
-import { dayParts, fromDay, taskSpan, todayDay } from '@kanbanto/model/dates'
+import { dayParts, fromDay, shiftDays, taskSpan, todayDay } from '@kanbanto/model/dates'
+import { formatDay } from '@/lib/format'
 import { statusCol } from '@kanbanto/model/indexer'
 import { afterSubtree, defaultExpanded, flattenTree, treeTop } from '@kanbanto/model/tree'
 import { COLORS, statusTone, tone, type ColorName } from '@kanbanto/model/colors'
@@ -139,8 +140,12 @@ export function TimelineView({ search }: { search: string }) {
     if (!drag) return
     setDrag(null)
     if (drag.delta === 0) return drag.mode === 'move' ? openTask(drag.id) : undefined
+    // Moved by whole days; a date with a time keeps its time.
     const s = dragged(drag)
-    run({ type: 'task.update', id: drag.id, fields: { start: fromDay(s.start), due: fromDay(s.end) } })
+    const t = data.tasks[drag.id]
+    const start = t.start ? shiftDays(t.start, s.start - drag.start) : fromDay(s.start)
+    const due = t.due ? shiftDays(t.due, s.end - drag.end) : fromDay(s.end)
+    run({ type: 'task.update', id: drag.id, fields: { start, due } })
   }
   const spanOf = (id: string) => (drag?.id === id ? dragged(drag) : spans.get(id))
 
@@ -152,7 +157,7 @@ export function TimelineView({ search }: { search: string }) {
       const p = dayParts(d)
       if (p.date === 1 || d === rangeStart) months.push({ day: d, label: `${MONTHS[p.month]} ${p.year}` })
       if (zoom === 'day') minor.push({ day: d, label: String(p.date), weekend: p.weekday === 0 || p.weekday === 6 })
-      else if (zoom === 'week' && p.weekday === 1) minor.push({ day: d, label: `${MONTHS[p.month]} ${p.date}` })
+      else if (zoom === 'week' && p.weekday === 1) minor.push({ day: d, label: `${p.date} ${MONTHS[p.month]}` })
     }
     // The partial month at the start gets no label if the next one would overlap it.
     if (months.length > 1 && (months[1].day - months[0].day) * DAY_W[zoom] < 90) months.shift()
@@ -337,7 +342,7 @@ export function TimelineView({ search }: { search: string }) {
                               drag?.id === id ? 'z-[3] cursor-grabbing shadow-lg' : 'cursor-grab',
                             )}
                             style={barStyle(t.color ? tone(t.color) : statusTone(col.category, col.color), { left: x(span.start), width: w })}
-                            title={`${t.title}\n${fromDay(span.start)} → ${fromDay(span.end)} (${span.end - span.start + 1} days)`}
+                            title={`${t.title}\n${formatDay(t.start ?? fromDay(span.start), true)} → ${formatDay(t.due ?? fromDay(span.end), true)} (${span.end - span.start + 1} ${span.end === span.start ? 'day' : 'days'})`}
                             onPointerDown={(e) => onBarDown(e, id)}
                             onPointerMove={onBarMove}
                             onPointerUp={onBarUp}

@@ -2,7 +2,7 @@ import { CalendarBlank, Check, Prohibit } from '@phosphor-icons/react'
 import { formatDay, initials } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { BOARD_BACKGROUNDS, COLORS, statusTone, tone, type ColorName } from '@kanbanto/model/colors'
-import { todayDay, toDay } from '@kanbanto/model/dates'
+import { isPast } from '@kanbanto/model/dates'
 import type { Category, LabelDef, StatusColumn } from '@kanbanto/model/types'
 
 /** A status dot. Backlog is a hollow ring: planned, not ready yet. */
@@ -165,7 +165,7 @@ export function Avatar({ name, className }: { name: string; className?: string }
 
 /** Due date on a card; red when it's past and the task isn't done. */
 export function DueChip({ due, done }: { due: string; done: boolean }) {
-  const overdue = !done && toDay(due) < todayDay()
+  const overdue = !done && isPast(due)
   return (
     <span
       className={cn(

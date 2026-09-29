@@ -18,6 +18,8 @@ const json = (schema: object, description = 'OK') => ({ description, content: { 
 const id = (name: string, where = 'path') => ({ name, in: where, required: true, schema: str })
 const ok = { 200: json(obj({ ok: { type: 'boolean' } })) }
 
+const WHEN = 'A whole day (2026-10-15), or with a time an exact moment in UTC (2026-10-15T07:30:00Z), shown in each person’s own time zone.'
+
 const schemas = {
   Task: obj(
     {
@@ -27,8 +29,8 @@ const schemas = {
       status: { ...str, description: 'The id of its list.' },
       order: { ...str, description: 'Its position among its siblings (a sortable key).' },
       assigneeId: str,
-      start: { ...str, format: 'date' },
-      due: { ...str, format: 'date' },
+      start: { ...str, description: WHEN },
+      due: { ...str, description: WHEN },
       labels: { type: 'array', items: str },
       blockedBy: { type: 'array', items: str, description: 'Tasks it waits on.' },
       description: str,

@@ -41,6 +41,11 @@ curl -X POST https://kanbanto.example.com/api/boards/<board id>/mutations \
 `GET /api/boards/<id>` returns the whole board: its lists, labels, people and tasks (a task's `status` is its list's id;
 `parentId` makes the tree).
 
+**Dates.** A task's `start` and `due` are a whole day, `2026-10-15`, or with a time an exact moment in UTC,
+`2026-10-15T07:30:00Z`, which the app shows in each person's own time zone. Send a time with its time zone
+(`2026-10-15T14:30:00+07:00` or `…Z`); it's stored in UTC, to the minute. A time without a time zone is refused, since it
+would mean a different moment on every computer.
+
 ## Webhooks
 
 A board's owners add them in **Board settings → Webhooks**. Each change on the board (`board.changed`) and each new

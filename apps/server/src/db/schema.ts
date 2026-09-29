@@ -1,5 +1,5 @@
 import { SETTING_DEFAULTS } from './defaults'
-import { bigint, boolean, date, index, integer, jsonb, pgTable, primaryKey, text, timestamp, unique, uniqueIndex, uuid } from 'drizzle-orm/pg-core'
+import { bigint, boolean, index, integer, jsonb, pgTable, primaryKey, text, timestamp, unique, uniqueIndex, uuid } from 'drizzle-orm/pg-core'
 
 const at = (name: string) => timestamp(name, { withTimezone: true, mode: 'date' })
 /** createdAt / updatedAt / version, the same meta every board record carries in the model. */
@@ -344,8 +344,9 @@ export const tasks = pgTable(
     outlineOrder: text('outline_order').notNull(),
     /** Position in its board list, once placed by hand. */
     rank: text('rank'),
-    start: date('start', { mode: 'string' }),
-    due: date('due', { mode: 'string' }),
+    /** A whole day (2026-10-15), or with a time a UTC moment (2026-10-15T07:30:00Z): see model/dates.ts. */
+    start: text('start'),
+    due: text('due'),
     assigneeId: uuid('assignee_id').references(() => users.id, { onDelete: 'set null' }),
     labels: text('labels').array().notNull().default([]),
     blockedBy: text('blocked_by').array().notNull().default([]),

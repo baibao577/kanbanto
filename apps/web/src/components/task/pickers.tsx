@@ -1,4 +1,4 @@
-import { CalendarBlank, Check, UserCircle, UserPlus, X } from '@phosphor-icons/react'
+import { CalendarBlank, Check, Clock, UserCircle, UserPlus, X } from '@phosphor-icons/react'
 import { parseISO } from 'date-fns'
 import { lazy, Suspense, useMemo, useState, type ReactNode } from 'react'
 import { useBoard } from '@/app/board-context'
@@ -6,8 +6,9 @@ import { Avatar } from '@/components/common/bits'
 import { formatDay } from '@/lib/format'
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { cn } from '@/lib/utils'
-import { fromDay, toDay } from '@kanbanto/model/dates'
+import { fromDay, localDayOf, localTimeOf, momentAt, parseTime, toDay, todayDay } from '@kanbanto/model/dates'
 import { ancestorsOf } from '@kanbanto/model/indexer'
 
 // The calendar (and its date library) loads the first time someone opens a date.
@@ -158,9 +159,29 @@ export function PersonPicker({ value, onChange }: { value?: string; onChange: (m
   )
 }
 
-/** A date with a calendar popover and a clear button. */
-export function DateField({ value, onChange, placeholder }: { value?: string; onChange: (iso: string | undefined) => void; placeholder: string }) {
+/** Half-hour times for the time list, 00:00 to 23:30. */
+const SLOTS = Array.from({ length: 48 }, (_, i) => `${String(Math.floor(i / 2)).padStart(2, '0')}:${i % 2 ? '30' : '00'}`)
+const today = () => fromDay(todayDay())
+
+/**
+ * A date with a calendar popover and a clear button. A time is optional (24-hour, in your time zone): "Add time" under
+ * the calendar; without one it's a whole day. `defaultTime` is what "Add time" starts with.
+ */
+export function DateField({
+  value,
+  onChange,
+  placeholder,
+  defaultTime = '09:00',
+}: {
+  value?: string
+  onChange: (iso: string | undefined) => void
+  placeholder: string
+  defaultTime?: string
+}) {
   const [open, setOpen] = useState(false)
+  const day = value ? localDayOf(value) : undefined
+  const time = value ? localTimeOf(value) : null
+  const at = (d: string, t: string | null) => (t ? momentAt(d, t) : d)
   return (
     <div className="flex items-center gap-1">
       <Popover open={open} onOpenChange={setOpen}>
@@ -174,16 +195,28 @@ export function DateField({ value, onChange, placeholder }: { value?: string; on
           <Suspense fallback={<div className="size-72" />}>
             <Calendar
               mode="single"
-              selected={value ? parseISO(value) : undefined}
-              defaultMonth={value ? parseISO(value) : undefined}
+              selected={day ? parseISO(day) : undefined}
+              defaultMonth={day ? parseISO(day) : undefined}
               onSelect={(d) => {
                 if (!d) return
-                // Calendar dates are local midnight; store the calendar day, not a UTC shift of it.
-                onChange(fromDay(toDay(`${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`)))
-                setOpen(false)
+                // Calendar dates are local midnight; keep the calendar day (and the time, if there is one).
+                onChange(at(fromDay(toDay(`${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`)), time))
+                if (!time) setOpen(false)
               }}
             />
           </Suspense>
+          <div className="border-t px-3 py-2">
+            {time ? (
+              <TimeField value={time} onChange={(t) => onChange(momentAt(day ?? today(), t))} onRemove={() => day && onChange(day)} />
+            ) : (
+              <button
+                onClick={() => onChange(momentAt(day ?? today(), defaultTime))}
+                className="flex h-8 items-center gap-1.5 rounded-md px-1.5 text-sm text-muted-foreground hover:bg-accent hover:text-foreground"
+              >
+                <Clock className="size-4" /> Add time
+              </button>
+            )}
+          </div>
         </PopoverContent>
       </Popover>
       {value && (
@@ -199,7 +232,67 @@ export function DateField({ value, onChange, placeholder }: { value?: string; on
   )
 }
 
-/** The button look shared by the dialog's side fields. */
+/** A 24-hour time: type it ("1430", "9", "9.15") or pick a half hour from the list. */
+function TimeField({ value, onChange, onRemove }: { value: string; onChange: (time: string) => void; onRemove: () => void }) {
+  const [draft, setDraft] = useState<string | null>(null)
+  const bad = draft !== null && parseTime(draft) === null
+  const commit = () => {
+    if (draft === null) return
+    const t = parseTime(draft)
+    if (t) onChange(t)
+    setDraft(null)
+  }
+  // The list opens at the nearest half hour.
+  const [h, m] = value.split(':').map(Number)
+  const nearest = SLOTS[Math.min(47, h * 2 + Math.round(m / 30))]
+  return (
+    <div className="flex items-center gap-1.5">
+      <Clock className="size-4 shrink-0 text-muted-foreground" />
+      <input
+        value={draft ?? value}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault()
+            commit()
+          }
+          if (e.key === 'Escape' && draft !== null) {
+            e.stopPropagation()
+            setDraft(null)
+          }
+        }}
+        aria-label="Time (24-hour)"
+        aria-invalid={bad}
+        inputMode="numeric"
+        className={cn(
+          'h-8 w-16 rounded-md border bg-transparent px-2 text-center font-mono text-sm tabular-nums outline-none focus-visible:ring-2 focus-visible:ring-ring/50',
+          bad && 'border-destructive focus-visible:ring-destructive/40',
+        )}
+      />
+      <Select value={nearest} onValueChange={onChange}>
+        <SelectTrigger size="sm" className="h-8 w-9 justify-center px-0 *:data-[slot=select-value]:hidden" aria-label="Choose a time">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent className="max-h-60" position="popper" align="start">
+          {SLOTS.map((s) => (
+            <SelectItem key={s} value={s} className="font-mono tabular-nums">
+              {s}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      <button
+        onClick={onRemove}
+        className="ml-auto h-8 rounded-md px-1.5 text-xs text-muted-foreground hover:bg-accent hover:text-foreground"
+        title="Make it a whole day again"
+      >
+        Remove time
+      </button>
+    </div>
+  )
+}
+
 export function FieldButton({ empty, className, children, ...props }: React.ComponentProps<'button'> & { empty?: boolean }) {
   return (
     <button

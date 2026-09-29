@@ -1,3 +1,4 @@
+import { normalizeTaskDate } from './dates'
 import { applyChanges, current } from './changes'
 import { isLeaf, wouldCycle, type TaskIndex } from './indexer'
 import { comparePositions, positionBetween, positionsBetween } from './position'
@@ -68,8 +69,6 @@ export interface Context {
 }
 
 export type Result = { changes: Change[] } | { error: string }
-
-const DATE = /^\d{4}-\d{2}-\d{2}$/
 
 /** Runs a command against the board. Returns the changes, or why it isn't allowed. */
 export function execute(data: BoardData, cmd: Command, ctx: Context): Result {
@@ -317,8 +316,11 @@ function cleanFields(data: BoardData, id: string, f: TaskFields): Partial<Task> 
   for (const key of ['start', 'due'] as const) {
     const v = f[key]
     if (v === undefined) continue
-    if (v && !DATE.test(v)) reject('Dates look like 2026-10-31.')
-    out[key] = v || undefined
+    if (!v) {
+      out[key] = undefined
+      continue
+    }
+    out[key] = normalizeTaskDate(v) ?? reject('Dates look like 2026-10-31, or 2026-10-31T14:30:00Z with a time.')
   }
   if (f.labels) out.labels = [...new Set(f.labels)].filter((l) => data.labels.some((x) => x.id === l))
   if (f.blockedBy) out.blockedBy = [...new Set(f.blockedBy)].filter((b) => b !== id && data.tasks[b])

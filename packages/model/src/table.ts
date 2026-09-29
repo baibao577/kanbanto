@@ -1,4 +1,4 @@
-import { todayDay, toDay } from './dates'
+import { isPast, sortTime, todayDay, toDay } from './dates'
 import { isBlocked, isLeaf, type TaskIndex } from './indexer'
 import type { LabelDef, Member, StatusColumn } from './types'
 
@@ -40,7 +40,7 @@ export function matchesFilter(idx: TaskIndex, id: string, f: TableFilter): boole
   if (f.due) {
     const done = idx.category.get(id) === 'done'
     if (f.due === 'none' && t.due) return false
-    if (f.due === 'overdue' && (!t.due || done || toDay(t.due) >= todayDay())) return false
+    if (f.due === 'overdue' && (!t.due || done || !isPast(t.due))) return false
     if (f.due === 'week') {
       const d = t.due ? toDay(t.due) - todayDay() : NaN
       if (!(d >= 0 && d <= 7)) return false
@@ -67,9 +67,9 @@ export function sortComparator(idx: TaskIndex, sort: Sort, labelById: Map<string
       case 'assignee':
         return t.assigneeId ? idx.members.get(t.assigneeId)?.name.toLowerCase() : undefined
       case 'start':
-        return t.start
+        return t.start ? sortTime(t.start) : undefined
       case 'due':
-        return t.due
+        return t.due ? sortTime(t.due) : undefined
       case 'labels': {
         const first = t.labels
           .map((l) => labelById.get(l)?.name.toLowerCase())

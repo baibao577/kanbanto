@@ -1,5 +1,5 @@
 import { CaretRight, CheckCircle, Circle, Crosshair, ListChecks, Plus, Prohibit, TextAlignLeft, Trash, X } from '@phosphor-icons/react'
-import { format, parseISO } from 'date-fns'
+import { formatMoment } from '@/lib/format'
 import { useEffect, useMemo, useRef, type ReactNode } from 'react'
 import { useBoard } from '@/app/board-context'
 import { ColorSwatches, LabelChip, ProgressBar, StatusDot, StatusPill } from '@/components/common/bits'
@@ -234,7 +234,7 @@ function TaskDetail({ id, onClose }: { id: string; onClose: () => void }) {
                 <DateField value={t.start} placeholder="Add a start date" onChange={(start) => patch({ start: start ?? '' })} />
               </SideField>
               <SideField label="Due">
-                <DateField value={t.due} placeholder="Add a due date" onChange={(due) => patch({ due: due ?? '' })} />
+                <DateField value={t.due} placeholder="Add a due date" defaultTime="17:00" onChange={(due) => patch({ due: due ?? '' })} />
               </SideField>
             </div>
             <div>
@@ -392,7 +392,7 @@ function DeleteTask({ id, title, onDeleted }: { id: string; title: string; onDel
   )
 }
 
-/** "May 1, 2026, 10:05" (built-in example tasks have no real time, so they just say "with the example"). */
+/** "Fri 1 May 2026, 10:05" (built-in example tasks have no real time, so they just say "with the example"). */
 function formatWhen(iso: string) {
-  return iso === EPOCH ? 'with the example board' : format(parseISO(iso), 'MMM d, yyyy, HH:mm')
+  return iso === EPOCH ? 'with the example board' : formatMoment(iso)
 }
