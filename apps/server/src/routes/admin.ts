@@ -1,3 +1,4 @@
+import type { AdminSettings } from '@kanbanto/model/api'
 import { eq, sql } from 'drizzle-orm'
 import type { FastifyPluginAsync } from 'fastify'
 import { z } from 'zod'
@@ -104,17 +105,26 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     return { token }
   })
 
-  app.get('/settings', async () => {
-    const { openSignup } = await getSettings(app.db)
-    return { openSignup }
+  app.get('/settings', async (): Promise<AdminSettings> => {
+    const { openSignup, apiTokens, webhooks } = await getSettings(app.db)
+    return { openSignup, apiTokens, webhooks }
   })
 
-  app.patch('/settings', async (req) => {
-    const body = parse(z.object({ openSignup: z.boolean() }), req.body)
-    await app.db
-      .insert(siteSettings)
-      .values({ id: 1, openSignup: body.openSignup })
-      .onConflictDoUpdate({ target: siteSettings.id, set: { openSignup: body.openSignup } })
-    return body
+  /** Sign-up, API tokens (turning them off stops every token working), and where webhooks may go. */
+  app.patch('/settings', async (req): Promise<AdminSettings> => {
+    const body = parse(
+      z
+        .object({ openSignup: z.boolean(), apiTokens: z.boolean(), webhooks: z.enum(['off', 'public', 'any']) })
+        .partial()
+        .strict(),
+      req.body,
+    )
+    if (Object.keys(body).length)
+      await app.db
+        .insert(siteSettings)
+        .values({ id: 1, ...body })
+        .onConflictDoUpdate({ target: siteSettings.id, set: body })
+    const { openSignup, apiTokens, webhooks } = await getSettings(app.db)
+    return { openSignup, apiTokens, webhooks }
   })
 }

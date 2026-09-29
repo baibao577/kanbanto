@@ -76,9 +76,12 @@ Open it from the menu under your initials (platform admins only). Each section h
 | | **Preview:** every email, and "Send it to me" | — |
 | **Storage** `#/admin/storage` | **Where files are kept:** this server's disk, or an S3-compatible bucket (write-only secret, encrypted) | Server's disk |
 | | **Limits:** space per person (in total, across the boards they own), and the same for each workspace (across its boards); largest file (1–200 MB) | 50 MB / 10 MB |
+| **Integrations** `#/admin/integrations` | **People can make API tokens** (for scripts, other apps and AI assistants; turning it off stops every token) | Off |
+| | **Webhooks:** off, to public `https://` addresses only, or to any address including this server's network (only if you trust every board owner) | Off |
 
 Things each person sets for themselves in **Account settings** (`#/account`): name, password, whether they get the
-daily mention email, their own Resend key for invites, and their own storage bucket (at a public `https://` address).
+daily mention email, their own Resend key for invites, their own storage bucket (at a public `https://` address), and
+their API tokens. Board owners add webhooks in Board settings. See [API, webhooks and AI](api.md).
 
 ## 3. Server commands
 

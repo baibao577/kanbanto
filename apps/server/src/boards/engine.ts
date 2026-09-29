@@ -38,6 +38,11 @@ export class BoardEngine {
   private readonly db: Db
   private readonly hub: LiveHub
 
+  /** Told after each command that changed something (webhooks). */
+  onChanged:
+    ((boardId: string, e: { board: { id: string; name: string }; userId: string; command: string; seq: number; changes: Change[] }) => void) | null =
+    null
+
   constructor(db: Db, hub: LiveHub) {
     this.db = db
     this.hub = hub
@@ -87,7 +92,11 @@ export class BoardEngine {
     const out = { seq: result.seq, changes: result.changes }
     this.done.set(key, out)
     if (this.done.size > REMEMBERED_MUTATIONS) this.done.delete(this.done.keys().next().value!)
-    if (out.changes.length) this.hub.broadcast(boardId, { type: 'changes', ...out, mutationId })
+    if (out.changes.length) {
+      this.hub.broadcast(boardId, { type: 'changes', ...out, mutationId })
+      const board = { id: boardId, name: result.data.board.name }
+      this.onChanged?.(boardId, { board, userId, command: command.type, seq: out.seq, changes: out.changes })
+    }
     return out
   }
 

@@ -1,6 +1,7 @@
 import { Desktop, Moon, Sun, Trash } from '@phosphor-icons/react'
 import { toast } from 'sonner'
-import type { ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
+import { WebhooksDialog } from '@/components/board/WebhooksDialog'
 import { useBoard } from '@/app/board-context'
 import { Avatar, BackgroundSwatches } from '@/components/common/bits'
 import { navigate } from '@/app/router'
@@ -28,6 +29,7 @@ import type { StatusMode } from '@kanbanto/model/types'
 export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boolean) => void }) {
   const { data, run, access, openShare } = useBoard()
   const { theme, setTheme } = useTheme()
+  const [webhooks, setWebhooks] = useState(false)
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -44,7 +46,10 @@ export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCh
               id="board-name"
               key={data.board.name}
               defaultValue={data.board.name}
-              onBlur={(e) => e.target.value.trim() && run({ type: 'board.update', fields: { name: e.target.value } })}
+              onBlur={(e) => {
+                const name = e.target.value.trim()
+                if (name && name !== data.board.name) run({ type: 'board.update', fields: { name } })
+              }}
               onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
             />
           </div>
@@ -112,6 +117,19 @@ export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCh
               </ToggleGroupItem>
             </ToggleGroup>
           </div>
+
+          {access.role === 'owner' && (
+            <div className="space-y-2">
+              <Label>Webhooks</Label>
+              <div className="flex items-center gap-3">
+                <p className="flex-1 text-xs text-muted-foreground">Send this board’s changes to another app as they happen (Slack, n8n, Zapier…).</p>
+                <Button variant="outline" size="sm" onClick={() => setWebhooks(true)}>
+                  Manage…
+                </Button>
+              </div>
+              <WebhooksDialog open={webhooks} onOpenChange={setWebhooks} />
+            </div>
+          )}
 
           {access.role === 'owner' && (
             <div className="space-y-2 border-t pt-5">

@@ -11,8 +11,8 @@ import { LAYOUTS, type Layout } from '@kanbanto/model/types'
  *   #/signin, #/signup       (?next=<where to go after>)
  *   #/forgot                 ask for a password reset email
  *   #/verify/<token>, #/reset/<token>   links from emails
- *   #/account/<section>      your account settings (profile, password, notifications, email, storage)
- *   #/admin/<section>        the Platform console (overview, accounts, email, storage)
+ *   #/account/<section>      your account settings (profile, password, notifications, email, storage, api)
+ *   #/admin/<section>        the Platform console (overview, accounts, email, storage, integrations)
  * Hash addresses work on any static host, with no server rewrite rules.
  */
 export type BoardRoute = { page: 'board'; id: string; layout?: Layout; focus?: string; task?: string }
@@ -29,9 +29,9 @@ export type Route =
   | { page: 'admin'; section?: AdminSection }
   | { page: 'account'; section?: AccountSection }
 
-export const ADMIN_SECTIONS = ['overview', 'accounts', 'email', 'storage'] as const
+export const ADMIN_SECTIONS = ['overview', 'accounts', 'email', 'storage', 'integrations'] as const
 export type AdminSection = (typeof ADMIN_SECTIONS)[number]
-export const ACCOUNT_SECTIONS = ['profile', 'password', 'notifications', 'email', 'storage'] as const
+export const ACCOUNT_SECTIONS = ['profile', 'password', 'notifications', 'email', 'storage', 'api'] as const
 export type AccountSection = (typeof ACCOUNT_SECTIONS)[number]
 
 export function parseRoute(hash: string): Route {

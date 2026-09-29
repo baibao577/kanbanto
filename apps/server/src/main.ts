@@ -1,4 +1,5 @@
 import { buildApp } from './app'
+import { deleteExpiredTokens } from './auth/apiTokens'
 import { deleteExpiredSessions } from './auth/sessions'
 import { loadMasterKey } from './crypto'
 import { createDb, migrateDb } from './db'
@@ -53,6 +54,8 @@ const cleanup = setInterval(
   () => {
     void deleteExpiredSessions(db).catch(() => {})
     void app.mail.prune().catch(() => {})
+    void app.webhooks.prune().catch(() => {})
+    void deleteExpiredTokens(db).catch(() => {})
     void tidyFiles(app).catch((e) => app.log.error({ err: loggable(e) }, 'tidying files'))
   },
   6 * 60 * 60 * 1000,

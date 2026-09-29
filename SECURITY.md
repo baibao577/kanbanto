@@ -61,6 +61,18 @@ Fixes go into the latest version. If you run Kanbanto yourself, keep it up to da
 - Uploads are checked (who, and the declared size) before the file is read. Files for a comment not yet posted are
   visible only to their uploader.
 
+**API tokens, webhooks and AI assistants**
+
+- **API tokens** are off until a platform admin turns them on. Only their SHA-256 is stored; each acts as its person,
+  with their access, and can't reach account settings, other tokens or the Platform console. Read-only tokens can't
+  change anything. Deleting a token, or turning tokens off, stops it at once.
+- **Webhooks** are off until a platform admin allows them. By default they may only go to public `https://` addresses,
+  checked after every name lookup, with redirects not followed, so board owners can't make the server reach its
+  private network. Admins can allow any address for internal tools; only do so if you trust every board owner.
+  Deliveries are signed with a per-webhook secret, stored encrypted.
+- **AI assistants (MCP)** use API tokens, with the same checks. There's no delete tool. Task text is written by people
+  and can try to steer an assistant, so the docs recommend read-only tokens unless changes are needed.
+
 **Platform admins**
 
 - Admin rights are granted only on the server (`admin grant`), never through the website.

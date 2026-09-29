@@ -1,10 +1,11 @@
-import { ChartBar, EnvelopeSimple, HardDrives, UsersThree } from '@phosphor-icons/react'
+import { ChartBar, EnvelopeSimple, HardDrives, PlugsConnected, UsersThree } from '@phosphor-icons/react'
 import { useEffect } from 'react'
 import { type AdminSection } from '@/app/router'
 import { useAuth } from '@/app/use-auth'
 import { SettingsLayout, type SettingsNavItem } from '@/components/settings/SettingsLayout'
 import { AccountsSection } from './Accounts'
 import { EmailSettings } from './EmailSettings'
+import { IntegrationsSection } from './Integrations'
 import { OverviewSection } from './Overview'
 import { StorageSettings } from './StorageSettings'
 
@@ -13,6 +14,7 @@ const SECTIONS: (SettingsNavItem & { id: AdminSection })[] = [
   { id: 'accounts', label: 'Accounts', icon: UsersThree, href: { page: 'admin', section: 'accounts' } },
   { id: 'email', label: 'Email', icon: EnvelopeSimple, href: { page: 'admin', section: 'email' } },
   { id: 'storage', label: 'Storage', icon: HardDrives, href: { page: 'admin', section: 'storage' } },
+  { id: 'integrations', label: 'Integrations', icon: PlugsConnected, href: { page: 'admin', section: 'integrations' } },
 ]
 
 /**
@@ -41,6 +43,7 @@ export function AdminView({ section = 'overview' }: { section?: AdminSection }) 
       {current.id === 'accounts' && <AccountsSection />}
       {current.id === 'email' && <EmailSettings />}
       {current.id === 'storage' && <StorageSettings />}
+      {current.id === 'integrations' && <IntegrationsSection />}
     </SettingsLayout>
   )
 }

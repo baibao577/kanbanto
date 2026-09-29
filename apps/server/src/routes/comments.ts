@@ -1,7 +1,7 @@
 import type { CommentView, NotificationView } from '@kanbanto/model/api'
 import { newId } from '@kanbanto/model/ids'
 import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm'
-import type { FastifyPluginAsync } from 'fastify'
+import type { FastifyInstance, FastifyPluginAsync } from 'fastify'
 import { z } from 'zod'
 import { requireAccess, type BoardRow } from '../boards/access'
 import { boardPeople } from '../boards/store'
@@ -88,6 +88,40 @@ export async function notifyAdded(db: Db | Tx, userId: string, actorId: string, 
   await db.insert(notifications).values({ id: newId(), userId, kind: 'added', actorId, ...to })
 }
 
+/**
+ * Adds a comment by `me` (who may comment on the board: check first). Tells the people @mentioned, shows it to everyone
+ * with the board open, and sends it to the board's webhooks.
+ */
+export async function postComment(
+  app: FastifyInstance,
+  board: BoardRow,
+  me: { id: string; name: string },
+  taskId: string,
+  body: { body: string; mentions: string[]; attachments?: string[] },
+) {
+  const id = board.id
+  const { data } = await app.engine.snapshot(id)
+  if (!data.tasks[taskId]) throw new HttpError(404, 'That task no longer exists.')
+  const mentions = await validMentions(app.db, board, body.mentions, me.id)
+  const commentId = newId()
+  await app.db.transaction(async (tx) => {
+    await tx.insert(comments).values({ id: commentId, boardId: id, taskId, authorId: me.id, body: body.body, mentions })
+    await attachDrafts(tx, { boardId: id, taskId, uploaderId: me.id, commentId }, body.attachments ?? [])
+    await notify(tx, { boardId: id, taskId, commentId, actorId: me.id }, mentions)
+  })
+  const [comment] = await commentViews(app.db, and(eq(comments.id, commentId)))
+  app.hub.broadcast(id, { type: 'comment', taskId, action: 'added', commentId, comment })
+  void app.webhooks
+    .emit(id, 'comment.added', {
+      board: { id, name: board.name },
+      actor: { id: me.id, name: me.name },
+      task: { id: taskId, title: data.tasks[taskId].title },
+      comment: { id: commentId, body: body.body, mentions },
+    })
+    .catch((e) => app.log.error({ err: e instanceof Error ? e.message : e }, 'queueing webhooks'))
+  return comment
+}
+
 export const commentRoutes: FastifyPluginAsync = async (app) => {
   /** A card's comments (anyone who can view the board can read them). */
   app.get('/boards/:id/tasks/:taskId/comments', async (req) => {
@@ -106,18 +140,7 @@ export const commentRoutes: FastifyPluginAsync = async (app) => {
     const { board, access } = await requireAccess(app.db, me, id, 'viewer')
     if (access.via === 'public') throw new HttpError(403, 'Join this board to comment on it.')
     const body = parse(Body, req.body)
-    const { data } = await app.engine.snapshot(id)
-    if (!data.tasks[taskId]) throw new HttpError(404, 'That task no longer exists.')
-    const mentions = await validMentions(app.db, board, body.mentions, me.id)
-    const commentId = newId()
-    await app.db.transaction(async (tx) => {
-      await tx.insert(comments).values({ id: commentId, boardId: id, taskId, authorId: me.id, body: body.body, mentions })
-      await attachDrafts(tx, { boardId: id, taskId, uploaderId: me.id, commentId }, body.attachments)
-      await notify(tx, { boardId: id, taskId, commentId, actorId: me.id }, mentions)
-    })
-    const [comment] = await commentViews(app.db, and(eq(comments.id, commentId)))
-    app.hub.broadcast(id, { type: 'comment', taskId, action: 'added', commentId, comment })
-    return { comment }
+    return { comment: await postComment(app, board, me, taskId, body) }
   })
 
   /** Edits your own comment. People newly @mentioned are told. */

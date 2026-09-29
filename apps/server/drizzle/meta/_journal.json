@@ -64,6 +64,13 @@
       "when": 1790698353569,
       "tag": "0008_added_notifications",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1790700087899,
+      "tag": "0009_integrations",
+      "breakpoints": true
     }
   ]
 }

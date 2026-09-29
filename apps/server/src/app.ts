@@ -5,6 +5,7 @@ import fastifyWebsocket from '@fastify/websocket'
 import Fastify, { LogController, type FastifyInstance, type FastifyServerOptions } from 'fastify'
 import path from 'node:path'
 import pretty from 'pino-pretty'
+import { TOKEN_ROUTES, userForApiToken, type TokenAccess } from './auth/apiTokens'
 import { SESSION_COOKIE, userForToken, type SessionUser } from './auth/sessions'
 import { BoardEngine } from './boards/engine'
 import type { Db } from './db'
@@ -12,6 +13,7 @@ import { env } from './env'
 import { dbErrorCode, loggable } from './errors'
 import { HttpError, siteUrl } from './http'
 import { LiveHub } from './live'
+import { Webhooks } from './webhooks'
 import { Mailer } from './mail/mailer'
 import { serverSender, type Sender } from './mail/senders'
 import { providerTransport, type Transport } from './mail/transport'
@@ -22,6 +24,9 @@ import { commentRoutes } from './routes/comments'
 import { emailRoutes } from './routes/email'
 import { fileRoutes } from './routes/files'
 import { sharingRoutes } from './routes/sharing'
+import { mcpRoutes } from './mcp'
+import { openApiRoutes } from './openapi'
+import { integrationRoutes } from './routes/integrations'
 import { workspaceRoutes } from './routes/workspaces'
 
 declare module 'fastify' {
@@ -30,12 +35,15 @@ declare module 'fastify' {
     user: SessionUser | null
     /** The raw session token from the cookie (to sign out or keep this session on password change). */
     sessionToken: string | null
+    /** Set when the request came with an API token instead of a session cookie. */
+    apiToken: TokenAccess | null
   }
   interface FastifyInstance {
     db: Db
     engine: BoardEngine
     hub: LiveHub
     mail: Mailer
+    webhooks: Webhooks
   }
 }
 
@@ -82,11 +90,20 @@ export async function buildApp(
   const mail = new Mailer(db, opts.transport ?? providerTransport, opts.serverSender !== undefined ? opts.serverSender : serverSender(env))
   app.decorate('db', db)
   app.decorate('hub', hub)
-  app.decorate('engine', new BoardEngine(db, hub))
+  const engine = new BoardEngine(db, hub)
+  const webhooks = new Webhooks(db)
+  engine.onChanged = (boardId, e) => void webhooks.boardChanged(boardId, e).catch((err) => app.log.error({ err: loggable(err) }, 'queueing webhooks'))
+  app.decorate('engine', engine)
   app.decorate('mail', mail)
-  if (opts.mailWorker) await mail.start(app.log)
-  else await mail.refresh()
-  app.addHook('onClose', async () => mail.stop())
+  app.decorate('webhooks', webhooks)
+  if (opts.mailWorker) {
+    await mail.start(app.log)
+    webhooks.start(app.log)
+  } else await mail.refresh()
+  app.addHook('onClose', async () => {
+    mail.stop()
+    webhooks.stop()
+  })
 
   await app.register(fastifyCookie)
   await app.register(fastifyRateLimit, { global: false })
@@ -94,10 +111,25 @@ export async function buildApp(
 
   app.decorateRequest('user', null)
   app.decorateRequest('sessionToken', null)
+  app.decorateRequest('apiToken', null)
   // Background jobs (the daily digest) link to APP_URL; in development, to the address of the first request.
   if (env.appUrl) mail.siteUrl = env.appUrl
   app.addHook('onRequest', async (req) => {
     mail.siteUrl ??= siteUrl(req)
+    // An API token (scripts, integrations, AI assistants): only for what TOKEN_ROUTES allows, and a read-only token
+    // only reads (the MCP endpoint checks each tool itself).
+    const bearer = req.headers.authorization?.match(/^Bearer\s+(\S+)$/i)?.[1]
+    if (bearer) {
+      const { user, token } = await userForApiToken(db, bearer)
+      const path = req.url.split('?')[0]
+      if (!TOKEN_ROUTES.test(path)) throw new HttpError(403, 'API tokens can’t be used for this. Sign in on the website instead.')
+      if (token.scope === 'read' && req.method !== 'GET' && req.method !== 'HEAD' && path !== '/api/mcp')
+        throw new HttpError(403, 'This API token can only read. Make one that can also make changes.')
+      req.user = user
+      req.apiToken = token
+      req.user.mustVerify = !req.user.emailVerified && mail.platformReady && !req.user.isAdmin
+      return
+    }
     const token = req.cookies[SESSION_COOKIE]
     if (!token) return
     req.user = await userForToken(db, token)
@@ -149,6 +181,9 @@ export async function buildApp(
   await app.register(boardRoutes, { prefix: '/api' })
   await app.register(sharingRoutes, { prefix: '/api' })
   await app.register(workspaceRoutes, { prefix: '/api' })
+  await app.register(integrationRoutes, { prefix: '/api' })
+  await app.register(mcpRoutes, { prefix: '/api' })
+  await app.register(openApiRoutes)
   await app.register(adminRoutes, { prefix: '/api/admin' })
   await app.register(emailRoutes, { prefix: '/api' })
   await app.register(commentRoutes, { prefix: '/api' })

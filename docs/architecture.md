@@ -35,7 +35,12 @@ apps/server/      Fastify + Drizzle + PostgreSQL
   src/db/defaults.ts, src/settings.ts   Site settings' defaults (one place) and loading them
   src/boards/       engine.ts (runs commands), store.ts (rows ⇄ records, a board's people), access.ts (who can do
                     what), invites.ts, workspaces.ts (joining, leaving, moving boards)
-  src/routes/       auth, boards, sharing, workspaces, comments (and the bell), files, email, admin
+  src/routes/       auth, boards, sharing, workspaces, comments (and the bell), files, email, admin, integrations
+                    (API tokens, a board's webhooks)
+  src/auth/apiTokens.ts   Bearer tokens: who they act as, and which routes they may use (TOKEN_ROUTES)
+  src/webhooks.ts   Queues, signs and delivers webhooks (with retries), like the email outbox
+  src/mcp.ts        The MCP endpoint (/api/mcp): tools for AI assistants, over the same access checks and commands
+  src/openapi.ts    /api/openapi.json (commands described from their schema) and the reference page at /api/docs
   src/mail/         mailer.ts (outbox, budgets, whose key pays), senders.ts, transport.ts (SMTP, Resend),
                     templates.tsx + components.tsx (the emails), digest.ts
   src/storage/      stores.ts (server disk; S3-compatible via aws4fetch), service.ts (quotas, buckets),
@@ -124,6 +129,18 @@ The app uses hash routing, so any static host or proxy works without rewrite rul
   couldn't be sent), since then the inviter could have used it.
 - **Who's on a board** (the Share dialog) is for its people: owners see email addresses, others see names. Everyone
   in the workspace can be assigned and @mentioned on its boards shared with it.
+
+## Integrations
+
+- **API tokens** (`kbt_…`, only their SHA-256 stored) act as their person. They reach `TOKEN_ROUTES` only (boards,
+  workspaces, notifications, files, MCP), never account settings or the Platform console; read-only tokens only `GET`.
+  Platform admins turn them on (`site_settings.api_tokens`).
+- **Webhooks** hang off the board engine: after each command that changed something, `BoardEngine.onChanged` queues a
+  `board.changed` delivery for the board's webhooks (and posting a comment queues `comment.added`). A worker sends them,
+  signed (HMAC-SHA256 of `<time>.<body>`), with retries. Admins choose where they may go: off, public addresses only
+  (checked after every name lookup, like people's buckets), or anywhere.
+- **MCP** is stateless: each POST to `/api/mcp` builds a server whose tools call the same functions the routes use
+  (`requireAccess`, `engine.mutate`, `postComment`), as the token's person.
 
 ## Email
 

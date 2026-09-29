@@ -15,4 +15,8 @@ export const SETTING_DEFAULTS = {
   /** File space each board owner gets in the site's storage, and the largest file. */
   storageQuotaMb: 50,
   maxFileMb: 10,
+  /** People can make API tokens (for scripts, integrations and AI assistants). Off until a platform admin turns it on. */
+  apiTokens: false,
+  /** Board owners can add webhooks: off, to public addresses only, or to any address (this server's network too). */
+  webhooks: 'off' as 'off' | 'public' | 'any',
 }

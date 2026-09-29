@@ -366,3 +366,51 @@ export type LiveMessage =
   | { type: 'deleted' }
   | { type: 'comment'; taskId: string; action: 'added' | 'edited' | 'deleted'; commentId: string; comment?: CommentView }
   | { type: 'attachment'; taskId: string; action: 'added' | 'deleted'; attachmentId: string; attachment?: AttachmentView }
+
+// ── Integrations ──────────────────────────────────────────────────────────────
+
+/** GET /api/account/tokens (one per token; the token itself is only shown when it's made) */
+export interface ApiTokenView {
+  id: string
+  name: string
+  /** read: can only look · write: can also change boards */
+  scope: 'read' | 'write'
+  /** Its start and end, to recognise it (kbt_ab…wxyz). */
+  hint: string
+  createdAt: string
+  lastUsedAt: string | null
+  expiresAt: string | null
+}
+
+export interface WebhookDeliveryView {
+  id: string
+  event: string
+  status: 'pending' | 'sent' | 'failed'
+  attempts: number
+  responseStatus: number | null
+  error: string | null
+  createdAt: string
+}
+
+/** GET /api/boards/:id/webhooks (one per webhook) */
+export interface WebhookView {
+  id: string
+  url: string
+  active: boolean
+  createdAt: string
+  lastDeliveryAt: string | null
+  lastStatus: number | null
+  lastError: string | null
+  /** The latest deliveries, newest first. */
+  recent: WebhookDeliveryView[]
+}
+
+/** Where board owners may send webhooks, as set by a platform admin. */
+export type WebhookMode = 'off' | 'public' | 'any'
+
+/** GET /api/admin/settings */
+export interface AdminSettings {
+  openSignup: boolean
+  apiTokens: boolean
+  webhooks: WebhookMode
+}

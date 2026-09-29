@@ -80,6 +80,12 @@ describe('task commands', () => {
     expect(exec(manual, { type: 'task.update', id: 'A2', fields: { status: 'done' } }).data.tasks.A2.status).toBe('done')
   })
 
+  it('updating the board to what it already is changes nothing', () => {
+    const b = board()
+    expect(exec(b, { type: 'board.update', fields: { name: b.board.name, mode: b.board.mode } }).changes).toEqual([])
+    expect(exec(b, { type: 'board.update', fields: { name: 'Renamed' } }).changes).toHaveLength(1)
+  })
+
   it('moves: no loops; reparent and place before a sibling', () => {
     expect(refusal(board(), { type: 'task.move', id: 'A', parentId: 'A2a' })).toMatch(/own subtasks/)
     const { data } = exec(board(), { type: 'task.move', id: 'A3', parentId: 'B', place: { before: 'B1' } })

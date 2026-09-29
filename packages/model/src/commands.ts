@@ -245,6 +245,8 @@ function run(data: BoardData, cmd: Command, ctx: Context): Change[] {
       if (cmd.fields.name !== undefined) next.name = cmd.fields.name.trim() || reject('A board needs a name.')
       if (cmd.fields.mode) next.mode = cmd.fields.mode
       if (cmd.fields.background !== undefined) next.background = cmd.fields.background ?? undefined
+      // Nothing different (e.g. the name field lost focus unchanged): not a change.
+      if (next.name === b.name && next.mode === b.mode && next.background === b.background) break
       out.push({ entity: 'board', id: b.id, before: b, after: stamp(b, next, now) })
       break
     }

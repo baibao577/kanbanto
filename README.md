@@ -28,6 +28,8 @@
   link, an access code or an email invite, as an owner, editor or viewer.
   Changes appear for everyone instantly.
 - **Comments and files:** discuss each card, @mention people, attach files and screenshots, and point to a file with `#`.
+- **Connect it:** an API with personal tokens, webhooks for each board, and an MCP endpoint so AI assistants like
+  Claude can find, plan and update tasks for you.
 - **Your own server, your own data.** Files stay on your server, or in your own Cloudflare R2 / Amazon S3 bucket.
 
 | Timeline | Outline | A card |
@@ -144,6 +146,7 @@ covered step by step in the **[Self-hosting guide](docs/self-hosting.md)**.
 | [Self-hosting](docs/self-hosting.md) | Servers, HTTPS, first admin, file storage, backups, upgrades, security checklist |
 | [Email](docs/email.md) | Sending email through your mail server (SMTP) or Resend |
 | [Configuration](docs/configuration.md) | Every setting: `.env` variables, the Platform console, server commands |
+| [API, webhooks and AI](docs/api.md) | API tokens, commands, webhooks and checking their signatures, connecting AI assistants (MCP) |
 | [Troubleshooting](docs/troubleshooting.md) | Problems and fixes, by symptom |
 | [Architecture](docs/architecture.md) | How Kanbanto works inside (for developers and curious admins) |
 | [Contributing](CONTRIBUTING.md) | Running it for development, tests, conventions |

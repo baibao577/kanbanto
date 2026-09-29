@@ -63,6 +63,10 @@ export const siteSettings = pgTable('site_settings', {
   storageQuotaMb: integer('storage_quota_mb').notNull().default(SETTING_DEFAULTS.storageQuotaMb),
   /** Largest single file. */
   maxFileMb: integer('max_file_mb').notNull().default(SETTING_DEFAULTS.maxFileMb),
+  apiTokens: boolean('api_tokens').notNull().default(SETTING_DEFAULTS.apiTokens),
+  webhooks: text('webhooks', { enum: ['off', 'public', 'any'] })
+    .notNull()
+    .default(SETTING_DEFAULTS.webhooks),
 })
 
 // ── Email ──────────────────────────────────────────────────────────────────────
@@ -464,4 +468,74 @@ export const attachments = pgTable(
     index('attachments_owner_idx').on(t.ownerId),
     index('attachments_workspace_idx').on(t.workspaceId),
   ],
+)
+
+// ── Integrations: API tokens and webhooks ───────────────────────────────────────
+
+/**
+ * A personal API token: acts as its person (with their access), for scripts, integrations and AI assistants. Only
+ * its SHA-256 is stored. `read` tokens can only look; `write` tokens can also change boards.
+ */
+export const apiTokens = pgTable(
+  'api_tokens',
+  {
+    id: uuid('id').primaryKey(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    tokenHash: text('token_hash').notNull(),
+    /** The start and end of the token, to recognise it (kbt_ab…wxyz). */
+    hint: text('hint').notNull(),
+    scope: text('scope', { enum: ['read', 'write'] }).notNull(),
+    createdAt: at('created_at').notNull().defaultNow(),
+    lastUsedAt: at('last_used_at'),
+    expiresAt: at('expires_at'),
+  },
+  (t) => [uniqueIndex('api_tokens_hash_idx').on(t.tokenHash), index('api_tokens_user_idx').on(t.userId)],
+)
+
+/** Where a board's changes are sent: an address that gets a signed POST for each change. */
+export const webhooks = pgTable(
+  'webhooks',
+  {
+    id: uuid('id').primaryKey(),
+    boardId: text('board_id')
+      .notNull()
+      .references(() => boards.id, { onDelete: 'cascade' }),
+    url: text('url').notNull(),
+    /** For signing deliveries (HMAC-SHA256), encrypted like other secrets. */
+    secretEncrypted: text('secret_encrypted').notNull(),
+    active: boolean('active').notNull().default(true),
+    createdBy: uuid('created_by').references(() => users.id, { onDelete: 'set null' }),
+    createdAt: at('created_at').notNull().defaultNow(),
+    /** How the last delivery went. */
+    lastDeliveryAt: at('last_delivery_at'),
+    lastStatus: integer('last_status'),
+    lastError: text('last_error'),
+  },
+  (t) => [index('webhooks_board_idx').on(t.boardId)],
+)
+
+/** Each delivery waits here until it's sent (retried with growing delays), and is kept a week for the log. */
+export const webhookDeliveries = pgTable(
+  'webhook_deliveries',
+  {
+    id: uuid('id').primaryKey(),
+    webhookId: uuid('webhook_id')
+      .notNull()
+      .references(() => webhooks.id, { onDelete: 'cascade' }),
+    event: text('event').notNull(),
+    payload: jsonb('payload').notNull(),
+    status: text('status', { enum: ['pending', 'sent', 'failed'] })
+      .notNull()
+      .default('pending'),
+    attempts: integer('attempts').notNull().default(0),
+    nextAttemptAt: at('next_attempt_at').notNull().defaultNow(),
+    responseStatus: integer('response_status'),
+    lastError: text('last_error'),
+    createdAt: at('created_at').notNull().defaultNow(),
+    sentAt: at('sent_at'),
+  },
+  (t) => [index('webhook_deliveries_due_idx').on(t.status, t.nextAttemptAt), index('webhook_deliveries_hook_idx').on(t.webhookId, t.createdAt)],
 )
