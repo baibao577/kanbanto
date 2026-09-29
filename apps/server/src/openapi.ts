@@ -213,6 +213,45 @@ The answer lists the records that changed.
           },
         },
       },
+      '/api/boards/{id}/tasks/{taskId}/move': {
+        post: {
+          tags: ['Boards'],
+          summary: 'Move a task to another board',
+          description:
+            'Moves the task, with its subtasks, comments and files, to another board you can edit. It gets a new id there (in the answer). Lists and labels are matched by name (missing labels are added); people who aren’t on that board are unassigned; “waiting on” links to tasks that stay behind are dropped. Editors and owners of both boards.',
+          parameters: [id('id'), id('taskId')],
+          requestBody: {
+            content: {
+              'application/json': {
+                schema: obj(
+                  {
+                    boardId: { ...str, description: 'The board to move it to.' },
+                    list: { ...str, description: 'A list there for what isn’t done yet. Default: lists with the same name, else the same kind.' },
+                    parentId: { ...nullable(str), description: 'A task there to put it under. Default: the top level.' },
+                  },
+                  ['boardId'],
+                ),
+              },
+            },
+          },
+          responses: {
+            200: json(
+              obj({
+                id: { ...str, description: 'Its id on the other board.' },
+                board: obj({ id: str, name: str }),
+                summary: obj({
+                  title: str,
+                  subtasks: { type: 'integer' },
+                  unassigned: { type: 'array', items: str, description: 'People who aren’t on that board.' },
+                  newLabels: { type: 'array', items: str },
+                  droppedLinks: { type: 'integer' },
+                }),
+              }),
+            ),
+            422: json(ref('Error'), 'It can’t be moved there (the message says why)'),
+          },
+        },
+      },
       '/api/boards/{id}/activity': {
         get: {
           tags: ['Boards'],

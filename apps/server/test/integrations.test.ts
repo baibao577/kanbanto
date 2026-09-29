@@ -208,6 +208,11 @@ describe('MCP', () => {
       'update_task',
       'move_task',
       'move_to_board',
+      'create_board',
+      'update_board',
+      'manage_lists',
+      'manage_labels',
+      'set_inbox',
       'add_comment',
     ])
 
@@ -356,6 +361,57 @@ describe('MCP', () => {
 
     // A board that's gone stops being the Inbox.
     await ann.ok('DELETE', `/api/boards/${personal}`)
+    expect((await ann.ok('GET', '/api/auth/me')).user.inboxBoardId).toBe(null)
+  })
+
+  it('sets up a board: creates it, changes its settings, lists and labels, and makes it the Inbox', async () => {
+    const { ann } = await site({ apiTokens: true })
+    await ann.ok('POST', '/api/workspaces', { name: 'Acme' })
+    const mcp = withToken(await makeToken(ann, 'write'))
+    const call = async (name: string, args: object) => toolResult(await rpc(mcp, 'tools/call', { name, arguments: args }))
+
+    const made = await call('create_board', { name: 'Q4 launch', about: 'Launching the new site', workspace: 'acme' })
+    expect(made.board).toMatchObject({ name: 'Q4 launch', workspace: 'acme' })
+    expect(made.lists.map((l: { name: string }) => l.name)).toEqual(['Backlog', 'To Do', 'Doing', 'Done'])
+    const id = made.board.id
+    expect((await call('list_boards', {})).boards.find((b: { id: string }) => b.id === id)).toMatchObject({
+      workspace: 'Acme',
+      about: 'Launching the new site',
+    })
+    expect((await call('create_board', { name: 'X', workspace: 'Nope' })).error).toContain('Yours: Acme')
+
+    const set = await call('update_board', { board_id: id, name: 'Q4 site launch', background: 'teal', parent_status: 'set_by_hand' })
+    expect(set.board).toMatchObject({ name: 'Q4 site launch', background: 'teal', parent_status: 'set_by_hand', about: 'Launching the new site' })
+
+    // Lists: add Review before Done, rename, reorder; an empty list can go, one with tasks can't.
+    let lists = (await call('manage_lists', { board_id: id, action: 'add', name: 'Review', counts_as: 'doing', before: 'done' })).lists
+    expect(lists.map((l: { name: string }) => l.name)).toEqual(['Backlog', 'To Do', 'Doing', 'Review', 'Done'])
+    lists = (await call('manage_lists', { board_id: id, action: 'rename', list: 'review', name: 'In review' })).lists
+    lists = (await call('manage_lists', { board_id: id, action: 'move', list: 'Backlog' })).lists
+    expect(lists.map((l: { name: string; counts_as: string }) => `${l.name}:${l.counts_as}`)).toEqual([
+      'To Do:todo',
+      'Doing:doing',
+      'In review:doing',
+      'Done:done',
+      'Backlog:backlog',
+    ])
+    await call('create_tasks', { board_id: id, tasks: [{ title: 'Copy', list: 'In review' }] })
+    expect((await call('manage_lists', { board_id: id, action: 'remove', list: 'In review' })).error).toContain('still has 1 task')
+    lists = (await call('manage_lists', { board_id: id, action: 'remove', list: 'Backlog' })).lists
+    expect(lists).toHaveLength(4)
+
+    // Labels: add (picking a color), rename, and remove only when unused.
+    let labels = (await call('manage_labels', { board_id: id, action: 'add', name: 'design' })).labels
+    expect(labels).toEqual([expect.objectContaining({ name: 'design', color: expect.any(String) })])
+    labels = (await call('manage_labels', { board_id: id, action: 'rename', label: 'design', name: 'Design' })).labels
+    const [task] = (await call('find_tasks', { board_id: id, text: 'copy' })).tasks
+    await call('update_task', { board_id: id, task_id: task.id, labels: ['Design'] })
+    expect((await call('manage_labels', { board_id: id, action: 'remove', label: 'Design' })).error).toContain('is on 1 task')
+
+    // The Inbox.
+    expect((await call('set_inbox', { board_id: id })).inbox).toEqual({ id, name: 'Q4 site launch' })
+    expect((await call('create_tasks', { tasks: [{ title: 'Call the printer' }] })).board).toMatchObject({ id, inbox: true })
+    expect((await call('set_inbox', { board_id: null })).inbox).toBe(null)
     expect((await ann.ok('GET', '/api/auth/me')).user.inboxBoardId).toBe(null)
   })
 

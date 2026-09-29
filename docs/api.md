@@ -124,11 +124,17 @@ claude mcp add --transport http kanbanto https://kanbanto.example.com/api/mcp --
 | `update_task` | Title, description, dates, assignee, priority, labels, list |
 | `move_task` | Change a task's parent or its place among siblings |
 | `move_to_board` | Move a task, with its subtasks, comments and files, to another board (say, from the Inbox) |
+| `create_board` | A new board in Personal or a workspace, with what it's for |
+| `update_board` | Name, what it's for, background, how a parent task's status is set |
+| `manage_lists` | Add, rename, reorder, change the kind of, or remove (empty) lists |
+| `manage_labels` | Add, rename, recolor, or remove (unused) labels |
+| `set_inbox` | Choose your Inbox board |
 | `add_comment` | Comment as you; `@Name` notifies people |
 
 Read-only tokens get the first six only. Every change on a board is kept as a line of activity for 90 days ("Ann moved
-“Deploy” to Done", marked with the app it came through), which is what `recent_activity` reads. There's no delete tool,
-on purpose.
+“Deploy” to Done", marked with the app it came through), which is what `recent_activity` reads. Sharing (inviting people, links,
+roles) and deleting boards or tasks aren't tools, on purpose: an assistant reads text other people wrote, and those
+can't be undone. People do them in the app.
 
 **Help assistants help you.** Say what each board is for (Board settings → "What's this board for?"): assistants read it
 to pick the right board. And choose an **Inbox** (Board settings → "Use as my Inbox"): "remind me to buy milk" then

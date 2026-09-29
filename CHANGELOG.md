@@ -25,6 +25,8 @@ then `git pull` (or download the new release) and `docker compose up -d --build`
   can say **what they're for**.
 - **Move a task to another board**, with its subtasks, comments and files (from its menu, or the card's panel). You see
   what fits before it moves: lists and labels are matched by name, and people who aren't on that board are named.
+- Assistants can **set up boards**: create one, change its settings, lists and labels, and choose your Inbox. Sharing
+  and deleting stay in the app.
 - **Email** through any SMTP server or Resend, with limits to stay within a free plan. **File storage** on the server's
   disk or in an S3-compatible bucket (Cloudflare R2, Amazon S3, MinIO); people can bring their own.
 - **Self-hosting:** one Docker Compose file, an optional HTTPS add-on, backups and restores, a Platform console for

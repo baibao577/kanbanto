@@ -28,6 +28,7 @@ export async function insertBoard(tx: Tx, data: BoardData, ownerId: string, work
     name: data.board.name,
     mode: data.board.mode,
     background: data.board.background ?? null,
+    description: data.board.description ?? null,
     visibility,
     workspaceId,
     createdBy: ownerId,
@@ -44,14 +45,19 @@ export type Template = 'empty' | 'example'
 export async function createBoard(
   db: Db,
   ownerId: string,
-  opts: { name: string; background?: ColorName; template: Template; workspaceId?: string | null },
+  opts: { name: string; background?: ColorName; template: Template; workspaceId?: string | null; description?: string },
 ): Promise<string> {
   const id = newId()
   const now = new Date().toISOString()
   const base = opts.template === 'example' ? freshMeta(exampleData(id, ownerId), now) : emptyBoard(id, opts.name, now)
   const data: BoardData = {
     ...base,
-    board: { ...base.board, name: opts.name, ...(opts.background ? { background: opts.background } : {}) },
+    board: {
+      ...base.board,
+      name: opts.name,
+      ...(opts.background ? { background: opts.background } : {}),
+      ...(opts.description?.trim() ? { description: opts.description.trim() } : {}),
+    },
   }
   await db.transaction((tx) => insertBoard(tx, data, ownerId, opts.workspaceId ?? null))
   return id
