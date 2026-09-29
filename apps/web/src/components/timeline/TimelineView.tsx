@@ -271,7 +271,7 @@ export function TimelineView({ search }: { search: string }) {
                       {...dragProps(id)}
                       title="Drag to move"
                       className={cn(
-                        'sticky left-0 z-10 flex shrink-0 cursor-grab items-center gap-1.5 overflow-hidden border-r bg-background pr-1.5 group-hover:bg-muted active:cursor-grabbing',
+                        'drag-handle sticky left-0 z-10 flex shrink-0 cursor-grab items-center gap-1.5 overflow-hidden border-r bg-background pr-1.5 group-hover:bg-muted active:cursor-grabbing',
                         zone === 'inside' && 'bg-[color-mix(in_oklab,var(--primary)_10%,var(--background))] ring-2 ring-primary/40 ring-inset',
                       )}
                       style={{ width: LEFT_W, paddingLeft: depth * 16 + 8 }}

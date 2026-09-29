@@ -28,28 +28,34 @@ export const cellKey = (row: string, col: string) => `${row}\u0000${col}`
 export const groupsSubtasks = (cfg: ViewConfig) =>
   !!cfg.groupByParent && cfg.columns === 'status' && cfg.filter !== 'topLevel' && cfg.filter !== 'main'
 
-/** Cards in a list, grouped under their parent. `parentId: null` = cards with no parent header (top level, or the row's own task). */
+/** One thing a grouped list shows: a parent's group of subtasks, or (`parentId: null`) a card with no parent header. */
 export interface CardGroup {
   parentId: string | null
   ids: string[]
 }
 
-/** Splits a cell's cards into parent groups: loose cards first, then one group per parent in outline order. */
+/**
+ * Splits a cell's cards into what a grouped list shows, keeping the list's order: each card with no parent header (top
+ * level, or the row's own task) on its own, and one group per parent, placed where its first card is.
+ */
 export function groupCell(idx: TaskIndex, ids: string[], rowKey: string): CardGroup[] {
-  const loose: string[] = []
-  const groups = new Map<string, string[]>()
+  const out: CardGroup[] = []
+  const groups = new Map<string, CardGroup>()
   for (const id of ids) {
     const p = idx.tasks[id].parentId
-    if (!p || !(p in idx.tasks) || p === rowKey) loose.push(id)
+    if (!p || !(p in idx.tasks) || p === rowKey) {
+      out.push({ parentId: null, ids: [id] })
+      continue
+    }
+    const g = groups.get(p)
+    if (g) g.ids.push(id)
     else {
-      const g = groups.get(p)
-      if (g) g.push(id)
-      else groups.set(p, [id])
+      const group = { parentId: p, ids: [id] }
+      groups.set(p, group)
+      out.push(group)
     }
   }
-  const out: CardGroup[] = loose.length ? [{ parentId: null, ids: loose }] : []
-  const sorted = [...groups.entries()].sort((a, b) => idx.position.get(a[0])! - idx.position.get(b[0])!)
-  return out.concat(sorted.map(([parentId, g]) => ({ parentId, ids: g })))
+  return out
 }
 
 export const validFocus = (idx: TaskIndex, scope: Scope) => (scope.focusId && scope.focusId in idx.tasks ? scope.focusId : undefined)

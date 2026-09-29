@@ -1,7 +1,7 @@
 import type { Command, TaskFields } from '@kanbanto/model/commands'
 import { isLeaf, wouldCycle, type TaskIndex } from '@kanbanto/model/indexer'
 import type { BoardData, ViewConfig } from '@kanbanto/model/types'
-import { cellKey, groupCell, groupsSubtasks, TOP_LEVEL, UNASSIGNED } from '@kanbanto/model/view'
+import { cellKey, groupCell, groupsSubtasks, TOP_LEVEL, UNASSIGNED, type CardGroup } from '@kanbanto/model/view'
 import type { GroupDrag } from './dnd'
 
 /**
@@ -49,6 +49,10 @@ export function blockReason(c: DropContext, id: string, row: string, col: string
 /**
  * The command for card `id` dropped in cell (row, col) at position `at`, or null when nothing would change.
  * Check `blockReason` first.
+ *
+ * With subtasks grouped under their parent (see `groupCell`), `at` is a position inside the card's parent group when
+ * that group is in the list, and otherwise a position among the list's items (cards without a header, and groups):
+ * where the card goes, or where its new group starts.
  */
 export function dropCommand(c: DropContext, id: string, row: string, col: string, at: number): Command | null {
   const t = c.data.tasks[id]
@@ -72,23 +76,17 @@ export function dropCommand(c: DropContext, id: string, row: string, col: string
     // Status lists: free order, like Trello. Re-number this list's cards with the dropped card in place.
     let order: string[]
     if (groupsSubtasks(c.config)) {
-      // `at` is a position inside the card's parent group; the rest of the list keeps its grouping.
       const key = groupOf(c, id, row)
-      const before = groupCell(c.idx, cell, row).find((g) => g.parentId === key)
-      const pos = before && before.ids.slice(0, at).includes(id) ? at - 1 : at
-      const groups = groupCell(
-        c.idx,
-        cell.filter((x) => x !== id),
-        row,
-      )
-      let target = groups.find((g) => g.parentId === key)
-      if (!target) {
-        target = { parentId: key, ids: [] }
-        if (key === null) groups.unshift(target)
-        else groups.push(target)
+      const items = groupCell(c.idx, cell, row)
+      const group = key === null ? undefined : items.find((g) => g.parentId === key)
+      if (group) {
+        const pos = group.ids.slice(0, at).includes(id) ? at - 1 : at
+        group.ids = group.ids.filter((x) => x !== id)
+        group.ids.splice(Math.min(pos, group.ids.length), 0, id)
+        order = items.flatMap((g) => g.ids)
+      } else {
+        order = placeItem(items, (g) => g.parentId === null && g.ids[0] === id, at, { parentId: key, ids: [id] }).flatMap((g) => g.ids)
       }
-      target.ids.splice(Math.min(pos, target.ids.length), 0, id)
-      order = groups.flatMap((g) => g.ids)
     } else {
       order = cell.filter((x) => x !== id)
       order.splice(Math.min(at - (cell.slice(0, at).includes(id) ? 1 : 0), order.length), 0, id)
@@ -108,14 +106,31 @@ export function dropCommand(c: DropContext, id: string, row: string, col: string
 }
 
 /**
- * A parent's header dropped in another list: all its subtasks from the list it came from move there, together, to
- * the end. Null when it's dropped back where it was; BLOCKED.project when it would change project.
+ * Puts `item` at position `at` among `items`, taking out the items `moving` matches first. `at` counts those items
+ * (it's measured with them still in the list).
  */
-export function dropGroupCommand(c: DropContext, g: GroupDrag, row: string, col: string): Command | typeof BLOCKED.project | null {
+function placeItem(items: CardGroup[], moving: (g: CardGroup) => boolean, at: number, item: CardGroup): CardGroup[] {
+  const out = items.filter((g) => !moving(g))
+  const before = items.slice(0, at).filter(moving).length
+  out.splice(Math.min(at - before, out.length), 0, item)
+  return out
+}
+
+/**
+ * A parent's header dropped at position `at` among a list's items (cards without a header, and groups): all its
+ * subtasks from the list it came from move there together, joining any of its subtasks already in that list. In its
+ * own list, this re-orders the list. Null when nothing would change; BLOCKED.project when it would change project.
+ */
+export function dropGroupCommand(c: DropContext, g: GroupDrag, row: string, col: string, at: number): Command | typeof BLOCKED.project | null {
   const k = cellKey(row, col)
-  if (g.cell === k) return null
   if (c.config.rows === 'rootParent' && row !== g.row) return BLOCKED.project
-  const list = (c.cells.get(k) ?? []).filter((x) => !g.ids.includes(x)).concat(g.ids)
+  const cell = c.cells.get(k) ?? []
+  const items = groupCell(c.idx, cell, row)
+  // Its subtasks already in that list (or, in its own list, any not shown) go with it.
+  const mine = (x: CardGroup) => x.parentId === g.parentId
+  const others = items.find(mine)?.ids.filter((x) => !g.ids.includes(x)) ?? []
+  const list = placeItem(items, mine, at, { parentId: g.parentId, ids: [...others, ...g.ids] }).flatMap((x) => x.ids)
+  if (g.cell === k && list.join() === cell.join()) return null
   const assignee = c.config.rows === 'assignee' ? { assigneeId: row === UNASSIGNED ? null : row } : {}
   return { type: 'tasks.moveToList', ids: g.ids, status: col, list, ...assignee }
 }

@@ -1,5 +1,6 @@
 import { ArrowsInSimple, ArrowsOutSimple, CaretDown, CaretRight, Crosshair, Eye, EyeSlash } from '@phosphor-icons/react'
-import { useMemo, useState } from 'react'
+import { useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { flushSync } from 'react-dom'
 import { toast } from 'sonner'
 import { useBoard } from '@/app/board-context'
 import { Avatar, ProgressBar, StatusDot, StatusPill } from '@/components/common/bits'
@@ -17,13 +18,14 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { pointerDrag } from '@/lib/pointerDrag'
 import { cn } from '@/lib/utils'
 import { tone } from '@kanbanto/model/colors'
 import { ancestorsOf, statusCol } from '@kanbanto/model/indexer'
 import { filterCount, matchesFilter } from '@kanbanto/model/table'
 import type { StatusColumn } from '@kanbanto/model/types'
-import { buildView, cellKey, groupCell, groupsSubtasks, NO_ROW, UNASSIGNED, type CardGroup, type Lane } from '@kanbanto/model/view'
-import { CARD_DRAG_TYPE, cardIndexAt, dragging, GROUP_DRAG_TYPE, groupAttr, LIST_DRAG_TYPE, listIndexAt, type GroupDrag } from './dnd'
+import { buildView, cellKey, groupCell, groupsSubtasks, NO_ROW, UNASSIGNED, type Lane } from '@kanbanto/model/view'
+import { cardIndexAt, dragging, itemIndexAt, listIndexAt, type GroupDrag } from './dnd'
 import { BLOCKED, blockReason as blockReasonIn, dropCommand, dropGroupCommand, groupOf as groupOfIn, newCardIn, type DropContext } from './dropRules'
 import { GroupHeader } from './GroupHeader'
 import { ListHeader } from './ListHeader'
@@ -36,13 +38,29 @@ const ROWS_STEP = 40
 const COLS_STEP = 30
 
 /**
- * Where a dragged card (or a parent's group) would land: a cell and a position in it.
- * With grouped subtasks, `group` is the group the card lands in and `index` is its position there.
- * `blocked` says why it can't go there.
+ * Where a dragged card (or a parent's group, `moving: 'group'`) would land: a cell and a position in it.
+ * With grouped subtasks, `index` is a position among the list's items (cards without a parent header, and groups),
+ * except when the card lands inside its parent's `group`: then it's a position there. `newGroup` is the parent whose
+ * group the card starts at `index`. `blocked` says why it can't go there.
  */
-type CardDrop = { cell: string; index: number; blocked?: string; group?: string; moving?: 'group' }
+type CardDrop = {
+  row: string
+  col: string
+  cell: string
+  index: number
+  blocked?: string
+  group?: string
+  newGroup?: string
+  moving?: 'group'
+}
 const sameDrop = (a: CardDrop | null, b: CardDrop) =>
-  !!a && a.cell === b.cell && a.index === b.index && a.blocked === b.blocked && a.group === b.group && a.moving === b.moving
+  !!a &&
+  a.cell === b.cell &&
+  a.index === b.index &&
+  a.blocked === b.blocked &&
+  a.group === b.group &&
+  a.newGroup === b.newGroup &&
+  a.moving === b.moving
 
 /** A list's own color, as a light tint over the list background. */
 const laneTint = (col?: StatusColumn) =>
@@ -88,7 +106,7 @@ function Board({ search }: { search: string }) {
     () => (grouping ? { ...config, parentDisplay: config.parentDisplay.filter((p) => p !== 'label') } : config),
     [config, grouping],
   )
-  const [groupDrag, setGroupDrag] = useState<{ parentId: string; cell: string } | null>(null)
+  const boardRef = useRef<HTMLDivElement>(null)
   const rules: DropContext = useMemo(() => ({ data, idx, config, cells: view.cells }), [data, idx, config, view.cells])
   const groupOf = (id: string, row: string) => groupOfIn(rules, id, row)
   const grouped = config.rows !== 'none'
@@ -120,9 +138,9 @@ function Board({ search }: { search: string }) {
 
   const blockReason = (id: string, row: string, col: string) => blockReasonIn(rules, id, row, col)
 
-  /** A parent's header dropped in another list: all its subtasks from the list it came from move there. */
-  const dropGroup = (g: GroupDrag, row: string, col: string) => {
-    const cmd = dropGroupCommand(rules, g, row, col)
+  /** A parent's header dropped at position `at` of a list: its subtasks from the list it came from move there. */
+  const dropGroup = (g: GroupDrag, row: string, col: string, at: number) => {
+    const cmd = dropGroupCommand(rules, g, row, col, at)
     if (cmd === BLOCKED.project)
       toast('Cards can’t be dragged between projects here', {
         description: 'Open the parent to change where it belongs, or show a row for each parent task instead.',
@@ -147,6 +165,16 @@ function Board({ search }: { search: string }) {
       if (cmd) run(cmd)
     }
   }
+
+  /** A card moved from its menu: to another column (at the bottom), or to the top or bottom of its own. */
+  const moveFrom = (row: string, col: string) => ({
+    lists: columns,
+    col,
+    to: (id: string, where: { col: string } | 'top' | 'bottom') => {
+      const to = typeof where === 'object' ? where.col : col
+      drop(id, row, to, where === 'top' ? 0 : (view.cells.get(cellKey(row, to))?.length ?? 0))
+    },
+  })
 
   /** New card typed into a cell: it takes that cell's status / parent / person. */
   const addIn = (row: string, col: string) => (title: string) => {
@@ -177,58 +205,39 @@ function Board({ search }: { search: string }) {
   }
 
   // ---- dropping cards ----
-  const cellProps = (row: string, col: string) => {
-    const k = cellKey(row, col)
-    return {
-      onDragOver: (e: React.DragEvent<HTMLElement>) => {
-        const g = dragging.group
-        if (g) {
-          e.preventDefault()
-          const blocked = config.rows === 'rootParent' && row !== g.row ? 'Can’t move between projects here' : undefined
-          const next: CardDrop = { cell: k, index: 0, blocked, moving: 'group' }
-          if (!sameDrop(cardDrop, next)) setCardDrop(next)
-          return
-        }
-        const id = dragging.card
-        if (!id) return
-        e.preventDefault()
-        let next: CardDrop
-        if (grouping) {
-          // The card can only land inside its own parent's group, so measure within that group.
-          const group = groupAttr(groupOf(id, row))
-          const el = e.currentTarget.querySelector<HTMLElement>(`[data-group="${CSS.escape(group)}"]`)
-          next = { cell: k, index: el ? cardIndexAt(el, e.clientY) : 0, group }
-        } else next = { cell: k, index: cardIndexAt(e.currentTarget, e.clientY) }
-        next.blocked = blockReason(id, row, col) ?? undefined
-        e.dataTransfer.dropEffect = next.blocked ? 'none' : 'move'
-        if (!sameDrop(cardDrop, next)) setCardDrop(next)
-      },
-      onDragLeave: (e: React.DragEvent<HTMLElement>) => {
-        if (!e.currentTarget.contains(e.relatedTarget as Node)) setCardDrop((c) => (c?.cell === k ? null : c))
-      },
-      onDrop: (e: React.DragEvent<HTMLElement>) => {
-        if (e.dataTransfer.types.includes(GROUP_DRAG_TYPE) && dragging.group) {
-          e.preventDefault()
-          setCardDrop(null)
-          dropGroup(dragging.group, row, col)
-          return
-        }
-        const id = e.dataTransfer.getData(CARD_DRAG_TYPE)
-        if (!id) return
-        e.preventDefault()
-        const at = cardDrop?.cell === k ? cardDrop.index : cellIds(k).length
-        setCardDrop(null)
-        drop(id, row, col, at)
-      },
+  /** Where a dragged card (or group) would land with the pointer at (x, y). */
+  const cardDropAt = (x: number, y: number): CardDrop | null => {
+    const el = document.elementFromPoint(x, y)?.closest<HTMLElement>('[data-cell]')
+    if (!el || !boardRef.current?.contains(el)) return null
+    const { row = NO_ROW, col = '' } = el.dataset
+    const cell = cellKey(row, col)
+    const g = dragging.group
+    if (g) {
+      const blocked = config.rows === 'rootParent' && row !== g.row ? BLOCKED.project : undefined
+      return { row, col, cell, index: itemIndexAt(el, y), blocked, moving: 'group' }
     }
+    const id = dragging.card
+    if (!id) return null
+    let next: CardDrop
+    if (grouping) {
+      // A subtask stays under its parent: inside the parent's group if the list has one, else in a new one.
+      const parent = groupOf(id, row)
+      const box = parent && el.querySelector<HTMLElement>(`[data-group="${CSS.escape(parent)}"]`)
+      if (box) next = { row, col, cell, index: cardIndexAt(box, y), group: parent }
+      else next = { row, col, cell, index: itemIndexAt(el, y), newGroup: parent ?? undefined }
+    } else next = { row, col, cell, index: cardIndexAt(el, y) }
+    next.blocked = blockReason(id, row, col) ?? undefined
+    return next
   }
+  /** Props for a cell cards can be dropped in. */
+  const cellProps = (row: string, col: string) => ({ 'data-cell': '', 'data-row': row, 'data-col': col })
 
   const renderCards = (row: string, col: string) => {
     const k = cellKey(row, col)
     const all = view.cells.get(k) ?? []
     const ids = cellIds(k)
     const here = cardDrop?.cell === k ? cardDrop : null
-    const card = (id: string) => (
+    const card = (id: string, item?: boolean) => (
       <TaskCard
         key={id}
         id={id}
@@ -237,73 +246,46 @@ function Board({ search }: { search: string }) {
         labelById={labelById}
         onOpen={openTask}
         onFocus={focus}
-        onDragEnd={() => setCardDrop(null)}
         onJumpToRow={nestedRows && rowIndex.has(id) ? jumpToRow : undefined}
+        move={moveFrom(row, col)}
         readOnly={readOnly}
         comments={counts.comments[id]}
         files={counts.attachments[id]}
+        item={item}
       />
     )
-    const slot = <DropSlot key="__drop" blocked={here?.blocked} />
+    const slot = (top?: boolean) => <DropSlot key="__drop" top={top} blocked={here?.blocked} />
 
     let items: React.ReactNode[]
     if (grouping) {
-      const groups = groupCell(idx, ids, row)
-      const renderGroup = (g: CardGroup) => {
-        const key = groupAttr(g.parentId)
-        const cards = g.ids.map(card)
-        if (here && !here.moving && here.group === key) cards.splice(Math.min(here.index, cards.length), 0, slot)
-        if (g.parentId === null)
-          return (
-            <div key={key} data-group={key} className="flex flex-col gap-2">
-              {cards}
-            </div>
-          )
+      // Cards without a parent header, and one group per parent, in the list's order (see groupCell).
+      items = groupCell(idx, ids, row).map((g) => {
+        if (g.parentId === null) return card(g.ids[0], true)
+        const cards = g.ids.map((id) => card(id))
+        if (here?.group === g.parentId) cards.splice(Math.min(here.index, cards.length), 0, slot())
         return (
-          <div
-            key={key}
-            data-group={key}
-            className={cn(
-              'flex flex-col gap-1.5 rounded-lg bg-(--well) p-1.5 pt-0.5 transition-opacity',
-              groupDrag?.parentId === g.parentId && groupDrag.cell === k && 'opacity-40',
-            )}
-          >
-            <GroupHeader
-              parentId={g.parentId}
-              ids={g.ids}
-              row={row}
-              cell={k}
-              onDragStart={(parentId, cell) => setGroupDrag({ parentId, cell })}
-              onDragEnd={() => {
-                setGroupDrag(null)
-                setCardDrop(null)
-              }}
-            />
+          <div key={g.parentId} data-item data-group={g.parentId} className="flex flex-col gap-1.5 rounded-lg bg-(--well) p-1.5 pt-0.5">
+            <GroupHeader parentId={g.parentId} ids={g.ids} row={row} />
             {cards}
           </div>
         )
+      })
+      // Landing between the list's items: a card without a parent header, a group, or a card starting its parent's
+      // group here (shown with the parent's name).
+      if (here && !here.group) {
+        const marker = here.newGroup ? (
+          <div key="__drop" data-item-slot className="flex flex-col gap-1.5 rounded-lg bg-(--well) p-1.5 pt-0.5">
+            <p className="flex h-7 items-center px-1 text-xs font-semibold text-muted-foreground">{data.tasks[here.newGroup]?.title}</p>
+            {slot()}
+          </div>
+        ) : (
+          slot(true)
+        )
+        items.splice(Math.min(here.index, items.length), 0, marker)
       }
-      items = groups.map(renderGroup)
-      // The card's parent has no group in this list yet: show where the new group will appear.
-      if (here && !here.moving && here.group && !groups.some((g) => groupAttr(g.parentId) === here.group)) {
-        const ghost =
-          here.group === groupAttr(null) ? (
-            <div key="__ghost" data-group={here.group} className="flex flex-col gap-2">
-              {slot}
-            </div>
-          ) : (
-            <div key="__ghost" data-group={here.group} className="flex flex-col gap-1.5 rounded-lg bg-(--well) p-1.5 pt-0.5">
-              <p className="flex h-7 items-center px-1 text-xs font-semibold text-muted-foreground">{data.tasks[here.group]?.title}</p>
-              {slot}
-            </div>
-          )
-        if (here.group === groupAttr(null)) items.unshift(ghost)
-        else items.push(ghost)
-      }
-      if (here?.moving === 'group') items.push(<DropSlot key="__drop" blocked={here.blocked} />)
     } else {
-      items = ids.map(card)
-      if (here) items.splice(Math.min(here.index, items.length), 0, slot)
+      items = ids.map((id) => card(id))
+      if (here) items.splice(Math.min(here.index, items.length), 0, slot())
     }
     return (
       <>
@@ -321,33 +303,134 @@ function Board({ search }: { search: string }) {
   }
 
   // ---- dragging lists ----
-  const listRowProps = {
-    onDragOver: (e: React.DragEvent<HTMLElement>) => {
-      if (!dragging.list) return
-      e.preventDefault()
-      const i = listIndexAt(e.currentTarget, e.clientX)
-      if (i !== listDrop) setListDrop(i)
-    },
-    onDragLeave: (e: React.DragEvent<HTMLElement>) => {
-      if (!e.currentTarget.contains(e.relatedTarget as Node)) setListDrop(null)
-    },
-    onDrop: (e: React.DragEvent<HTMLElement>) => {
-      const id = e.dataTransfer.getData(LIST_DRAG_TYPE)
-      if (!id) return
-      e.preventDefault()
-      const i = listDrop ?? columns.length
-      setListDrop(null)
-      const before = columns[i]?.key
-      if (before === id || columns[i - 1]?.key === id) return // dropped where it already is
-      run({ type: 'column.move', id, beforeId: before })
-    },
+  /** Where a dragged list would go with the pointer at x: an index among the lists. */
+  const listDropAt = (x: number) => {
+    const board = boardRef.current
+    const row = board?.matches('[data-list-row]') ? board : board?.querySelector<HTMLElement>('[data-list-row]')
+    return row ? listIndexAt(row, x) : null
   }
-  const listDragProps = {
-    onDragStart: (id: string, height: number) => setListDrag({ id, height }),
-    onDragEnd: () => {
-      setListDrag(null)
-      setListDrop(null)
-    },
+  const moveList = (id: string, i: number) => {
+    const before = columns[i]?.key
+    if (before === id || columns[i - 1]?.key === id) return // dropped where it already is
+    run({ type: 'column.move', id, beforeId: before })
+  }
+
+  // ---- picking things up ----
+  // A drag outlives the render it started in, so it calls the latest version of these.
+  const live = useRef({ cardDropAt, listDropAt, drop, dropGroup, moveList })
+  useLayoutEffect(() => {
+    live.current = { cardDropAt, listDropAt, drop, dropGroup, moveList }
+  })
+
+  /** Cards, parent groups and lists are picked up here (they're marked with `data-drag`). */
+  const onPointerDown = (e: React.PointerEvent<HTMLElement>) => {
+    const handle = (e.target as HTMLElement).closest<HTMLElement>('[data-drag]')
+    if (readOnly || !handle || !e.currentTarget.contains(handle)) return
+    const kind = handle.dataset.drag
+    // Shared by cards and groups: follow the pointer, and drop where the marker was last shown. A card's marker
+    // goes back to where it came from (`home`) when the pointer isn't over a list.
+    const trackCards = (onDrop: (at: CardDrop) => void, onEnd: () => void, home: CardDrop | null = null) => {
+      let last = home
+      return {
+        move: (x: number, y: number) => {
+          const next = live.current.cardDropAt(x, y) ?? home
+          last = next
+          setCardDrop((c) => (next && sameDrop(c, next) ? c : next))
+        },
+        drop: () => last && onDrop(last),
+        end: () => {
+          onEnd()
+          setCardDrop(null)
+        },
+      }
+    }
+
+    if (kind === 'card') {
+      const id = handle.dataset.cardId!
+      pointerDrag(e, {
+        ghost: handle,
+        start: () => {
+          dragging.card = id
+          dragging.height = handle.offsetHeight
+          // The drop marker takes the card's place: leaving the card there too would push the cards below it away
+          // from the pointer by a whole card. Hidden, it still counts in cardIndexAt, as dropCommand expects.
+          const cell = handle.closest<HTMLElement>('[data-cell]')
+          const group = handle.closest<HTMLElement>('[data-group]')
+          const { row = NO_ROW, col = '' } = cell?.dataset ?? {}
+          const within = group ?? cell
+          const home: CardDrop = {
+            row,
+            col,
+            cell: cellKey(row, col),
+            // Inside its group, or (grouped, without a header) among the list's items, or among the list's cards.
+            index: [...(within?.querySelectorAll(group || !grouping ? '[data-card-id]' : '[data-item]') ?? [])].indexOf(handle),
+            group: group?.dataset.group,
+          }
+          // Show the marker before hiding the card, so nothing below it moves.
+          flushSync(() => setCardDrop(home))
+          handle.style.display = 'none'
+          return trackCards(
+            (at) => live.current.drop(id, at.row, at.col, at.index),
+            () => {
+              handle.style.display = ''
+              dragging.card = null
+            },
+            home,
+          )
+        },
+      })
+    } else if (kind === 'group') {
+      const parentId = handle.dataset.parentId!
+      const box = handle.parentElement!
+      const { row = NO_ROW, col = '' } = handle.closest<HTMLElement>('[data-cell]')?.dataset ?? {}
+      const cell = cellKey(row, col)
+      const ids = groupCell(idx, cellIds(cell), row).find((g) => g.parentId === parentId)?.ids ?? []
+      pointerDrag(e, {
+        ghost: box,
+        start: () => {
+          const g: GroupDrag = { parentId, ids, row, cell }
+          dragging.group = g
+          dragging.height = box.offsetHeight
+          // Like a card: the marker takes the group's place, and it goes back there when not over a list.
+          const items = [...(box.closest('[data-cell]')?.querySelectorAll('[data-item]') ?? [])]
+          const home: CardDrop = { row, col, cell, index: items.indexOf(box), moving: 'group' }
+          flushSync(() => setCardDrop(home))
+          box.style.display = 'none'
+          return trackCards(
+            (at) => live.current.dropGroup(g, at.row, at.col, at.index),
+            () => {
+              box.style.display = ''
+              dragging.group = null
+            },
+            home,
+          )
+        },
+      })
+    } else if (kind === 'list') {
+      const list = handle.closest<HTMLElement>('[data-list-id]')
+      const id = list?.dataset.listId
+      if (!list || !id) return
+      pointerDrag(e, {
+        ghost: list,
+        start: () => {
+          dragging.list = id
+          setListDrag({ id, height: list.offsetHeight })
+          let last: number | null = null
+          return {
+            move: (x) => {
+              last = live.current.listDropAt(x)
+              setListDrop(last)
+            },
+            drop: () => last !== null && live.current.moveList(id, last),
+            end: () => {
+              dragging.list = null
+              setListDrag(null)
+              setListDrop(null)
+            },
+          }
+        },
+      })
+    }
   }
   /** Inserts the list drop marker into a row of list elements. */
   const withListSlot = (items: React.ReactNode[], slot: (key: string) => React.ReactNode) => {
@@ -366,7 +449,6 @@ function Board({ search }: { search: string }) {
         count={colCount(c.key)}
         editing={editingList === c.key}
         setEditing={setEditingList}
-        {...listDragProps}
         className={joined ? 'rounded-t-xl' : 'rounded-xl bg-lane'}
       />
     ) : (
@@ -429,7 +511,7 @@ function Board({ search }: { search: string }) {
         <Empty>{search ? 'No cards match your search.' : 'Nothing to show with these display settings.'}</Empty>
       ) : !grouped || !view.columns.length ? (
         // Trello-style: each list is one rounded column that scrolls on its own.
-        <div className="flex h-full items-start gap-3 overflow-x-auto p-4" {...listRowProps}>
+        <div ref={boardRef} onPointerDown={onPointerDown} data-list-row className="flex h-full items-start gap-3 overflow-x-auto p-4">
           {!view.columns.length && <AllListsHidden lists={hiddenLists} />}
           {withListSlot(
             columns.map((c) => {
@@ -467,13 +549,13 @@ function Board({ search }: { search: string }) {
         </div>
       ) : (
         // Rows: list headers stay on top; each row is a band of cells.
-        <div className="h-full overflow-auto">
+        <div ref={boardRef} onPointerDown={onPointerDown} className="h-full overflow-auto">
           <div className="w-max min-w-full px-4 pb-8">
             <div
               className="sticky top-0 z-10 flex gap-3 pt-4 pb-2"
               // Same background as the board, pinned to the window so the gradient lines up seamlessly.
               style={{ background: 'var(--board-bg, var(--background))', backgroundAttachment: 'fixed' }}
-              {...listRowProps}
+              data-list-row
             >
               {withListSlot(
                 columns.map((c) => (
@@ -536,15 +618,21 @@ function Board({ search }: { search: string }) {
 }
 
 /** Where a dragged card will land. Red with a reason when it can't go there. */
-function DropSlot({ blocked }: { blocked?: string }) {
+function DropSlot({ blocked, top }: { blocked?: string; top?: boolean }) {
+  // `top`: between a grouped list's items, rather than between cards (see dnd.ts).
+  const mark = top ? { 'data-item-slot': '' } : { 'data-drop-slot': '' }
   if (blocked)
     return (
-      <div className="rounded-lg border-2 border-dashed border-destructive/40 bg-destructive/5 px-3 py-2.5 text-center text-xs font-medium text-destructive">
+      <div
+        {...mark}
+        className="rounded-lg border-2 border-dashed border-destructive/40 bg-destructive/5 px-3 py-2.5 text-center text-xs font-medium text-destructive"
+      >
         {blocked}
       </div>
     )
   return (
     <div
+      {...mark}
       className="shrink-0 rounded-lg border-2 border-dashed border-primary/50 bg-primary/5"
       style={{ height: Math.min(Math.max(dragging.height, 36), 160) }}
     />

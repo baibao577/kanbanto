@@ -60,14 +60,30 @@ describe('dropping a card on the board', () => {
     expect(blockReason(c, 'A', NO_ROW, 'A2')).toBe(BLOCKED.cycle)
   })
 
-  it('a parent’s group moves all its cards from that list to the end of another', () => {
+  it('grouped lists keep their order: groups and cards without a parent header go anywhere in it', () => {
+    // Doing: [Design: A2a] [Event: B1]. To Do: [Design: A2b] [Launch website: A3].
     const c = board({ groupByParent: true })
-    const g = { parentId: 'A2', ids: ['A2a'], row: NO_ROW, cell: cellKey(NO_ROW, 'doing') }
-    expect(dropGroupCommand(c, g, NO_ROW, 'doing')).toBeNull()
-    const cmd = dropGroupCommand(c, g, NO_ROW, 'todo')
-    expect(cmd).toMatchObject({ type: 'tasks.moveToList', ids: ['A2a'], status: 'todo' })
-    expect((cmd as { list: string[] }).list.at(-1)).toBe('A2a')
-    expect(dropGroupCommand(board({ rows: 'rootParent' }), { ...g, row: 'A' }, 'B', 'todo')).toBe(BLOCKED.project)
+    const doing = cellKey(NO_ROW, 'doing')
+    const event = { parentId: 'B', ids: ['B1'], row: NO_ROW, cell: doing }
+    // A group re-ordered in its own list; dropped where it already is, nothing changes.
+    expect(dropGroupCommand(c, event, NO_ROW, 'doing', 0)).toMatchObject({ type: 'tasks.moveToList', ids: ['B1'], list: ['B1', 'A2a'] })
+    expect(dropGroupCommand(c, event, NO_ROW, 'doing', 1)).toBeNull()
+    expect(dropGroupCommand(c, event, NO_ROW, 'doing', 2)).toBeNull()
+    // Into another list at a position; joining its parent's cards already there.
+    expect(dropGroupCommand(c, event, NO_ROW, 'todo', 1)).toMatchObject({ status: 'todo', list: ['A2b', 'B1', 'A3'] })
+    const design = { parentId: 'A2', ids: ['A2a'], row: NO_ROW, cell: doing }
+    expect(dropGroupCommand(c, design, NO_ROW, 'todo', 2)).toMatchObject({ list: ['A3', 'A2b', 'A2a'] })
+    expect(dropGroupCommand(board({ groupByParent: true, rows: 'rootParent' }), { ...design, row: 'A' }, 'B', 'todo', 0)).toBe(BLOCKED.project)
+
+    // A subtask dropped where its parent has no group yet starts one there.
+    expect(dropCommand(c, 'A3', NO_ROW, 'doing', 1)).toMatchObject({ status: 'doing', list: ['A2a', 'A3', 'B1'] })
+    // Inside its parent's group, `at` is a position in the group.
+    expect(dropCommand(c, 'A2b', NO_ROW, 'todo', 0)).toBeNull()
+
+    // With a row per project, the project's own tasks have no header: they go between groups.
+    const rows = board({ groupByParent: true, rows: 'rootParent' })
+    expect(dropCommand(rows, 'A3', 'A', 'todo', 0)).toMatchObject({ list: ['A3', 'A2b'] })
+    expect(dropCommand(rows, 'A3', 'A', 'todo', 2)).toBeNull()
   })
 
   it('a new card takes its cell’s list, parent and person, and lands at the bottom', () => {

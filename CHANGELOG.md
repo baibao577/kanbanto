@@ -7,6 +7,9 @@ then `git pull` (or download the new release) and `docker compose up -d --build`
 
 - **Boards of tasks inside tasks**, as deep as you like, shown as a **Board** (lists you name), a **Timeline** and an
   **Outline** (a table you can sort, filter and rearrange). Undo and redo, filters, search, zooming into a task.
+  Lists can group subtasks under their parent; drag groups and cards into any order.
+- **Works on phones and tablets:** press and hold a card, list or row to drag it. Each card's menu can also move it to
+  another list, or to the top or bottom of its own.
 - **Sharing:** private, invited or public boards; owners, editors and viewers; share links, access codes and invites by
   email. Changes appear for everyone live.
 - **Comments** with @mentions, a notification bell and a daily email summary; **attachments** on cards and in comments.

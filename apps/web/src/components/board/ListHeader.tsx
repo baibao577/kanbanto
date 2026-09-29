@@ -29,20 +29,17 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { cn } from '@/lib/utils'
 import { tone } from '@kanbanto/model/colors'
 import { CATEGORIES, CATEGORY_HINT, CATEGORY_LABEL, type Category, type StatusColumn } from '@kanbanto/model/types'
-import { dragging, LIST_DRAG_TYPE } from './dnd'
 
 interface Props {
   col: StatusColumn
   count: number
   editing: boolean
   setEditing: (id: string | null) => void
-  onDragStart: (id: string, height: number) => void
-  onDragEnd: () => void
   className?: string
 }
 
 /** A status list's header: rename in place, color, what it counts as, reorder, hide, delete. */
-export function ListHeader({ col, count, editing, setEditing, onDragStart, onDragEnd, className }: Props) {
+export function ListHeader({ col, count, editing, setEditing, className }: Props) {
   const { data, prefs, setPrefs, run, readOnly } = useBoard()
   const [deleting, setDeleting] = useState(false)
   const columns = data.columns
@@ -58,20 +55,11 @@ export function ListHeader({ col, count, editing, setEditing, onDragStart, onDra
 
   return (
     <header
-      draggable={!editing && !readOnly}
-      onDragStart={(e) => {
-        e.dataTransfer.setData(LIST_DRAG_TYPE, col.id)
-        e.dataTransfer.effectAllowed = 'move'
-        dragging.list = col.id
-        onDragStart(col.id, (e.currentTarget.closest('[data-list-id]') as HTMLElement | null)?.offsetHeight ?? 40)
-      }}
-      onDragEnd={() => {
-        dragging.list = null
-        onDragEnd()
-      }}
+      // Picked up by the board (BoardView), which moves the list.
+      data-drag={editing || readOnly ? undefined : 'list'}
       // A list's color fills its header box; the dot then shows what the list counts as.
       style={col.color ? { backgroundColor: `color-mix(in oklab, ${tone(col.color)} var(--tint-header), var(--lane))` } : undefined}
-      className={cn('flex h-10 cursor-grab items-center gap-2 px-3 active:cursor-grabbing', className)}
+      className={cn('drag-handle flex h-10 cursor-grab items-center gap-2 px-3 active:cursor-grabbing', className)}
     >
       <StatusDot category={col.category} className={col.color ? 'ring-2 ring-card/70' : undefined} />
       {editing ? (

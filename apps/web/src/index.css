@@ -3,6 +3,8 @@
 @import '@fontsource-variable/inter';
 
 @custom-variant dark (&:is(.dark *));
+/* Devices that can't hover (touch screens): show what would otherwise appear on hover. */
+@custom-variant touch-only (@media (hover: none));
 
 /*
  * Design tokens. Every color, radius and font in the app comes from here,
@@ -188,4 +190,19 @@
   [role='button']:not(:disabled) {
     cursor: pointer;
   }
+}
+
+/* While something is being dragged (lib/pointerDrag.ts). */
+html.dragging,
+html.dragging * {
+  cursor: grabbing !important;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* Things you can pick up: a long press drags them, rather than selecting text or opening the browser's menu. */
+@utility drag-handle {
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
 }

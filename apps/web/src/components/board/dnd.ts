@@ -1,10 +1,7 @@
 /**
- * Native drag-and-drop helpers for the board.
- * `dataTransfer` can't be read during dragover, so what's being dragged is also kept here.
+ * Drag-and-drop helpers for the board (the dragging itself is lib/pointerDrag.ts).
+ * What's being dragged is kept here, for the drop markers.
  */
-export const CARD_DRAG_TYPE = 'text/x-kanbanto-task'
-export const LIST_DRAG_TYPE = 'text/x-kanbanto-list'
-export const GROUP_DRAG_TYPE = 'text/x-kanbanto-group'
 
 /** A parent's header being dragged: its subtasks in the list it came from. */
 export interface GroupDrag {
@@ -21,18 +18,30 @@ export const dragging: { card: string | null; list: string | null; group: GroupD
   height: 40,
 }
 
-/** Group key for grouped cells: the parent id, or '__loose' for cards without a parent header. */
-export const groupAttr = (parentId: string | null) => parentId ?? '__loose'
-
-/** Where a pointer at `y` would insert among the `[data-card-id]` elements inside `container`. */
-export function cardIndexAt(container: HTMLElement, y: number): number {
-  const cards = container.querySelectorAll<HTMLElement>('[data-card-id]')
-  for (let i = 0; i < cards.length; i++) {
-    const r = cards[i].getBoundingClientRect()
-    if (y < r.top + r.height / 2) return i
+/**
+ * Where a pointer at `y` would insert among the `item` elements inside `container`. The dragged one is hidden but still
+ * counted. Over the drop marker (`slot`), the answer is where the marker already is, so it only moves once the pointer
+ * passes the middle of what's next to it.
+ */
+function indexAt(container: HTMLElement, y: number, item: string, slot: string): number {
+  let i = 0
+  for (const el of container.querySelectorAll<HTMLElement>(`${item}, ${slot}`)) {
+    const r = el.getBoundingClientRect()
+    if (el.matches(slot)) {
+      if (y < r.bottom) return i
+      continue
+    }
+    if (r.height && y < r.top + r.height / 2) return i
+    i++
   }
-  return cards.length
+  return i
 }
+
+/** Among the cards (`[data-card-id]`) inside `container`. */
+export const cardIndexAt = (container: HTMLElement, y: number) => indexAt(container, y, '[data-card-id]', '[data-drop-slot]')
+
+/** Among a grouped list's items (`[data-item]`: cards without a parent header, and groups). */
+export const itemIndexAt = (container: HTMLElement, y: number) => indexAt(container, y, '[data-item]', '[data-item-slot]')
 
 /** Where a pointer at `x` would insert among the `[data-list-id]` elements inside `container`. */
 export function listIndexAt(container: HTMLElement, x: number): number {

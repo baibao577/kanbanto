@@ -201,7 +201,7 @@ export function OutlineView({ search }: { search: string }) {
                       {...dropProps(id)}
                       className={cn(
                         GRID,
-                        'group relative border-b hover:bg-[color-mix(in_oklab,var(--accent)_45%,var(--card))]',
+                        'group drag-handle relative border-b hover:bg-[color-mix(in_oklab,var(--accent)_45%,var(--card))]',
                         i === rows.length - 1 && addAfter !== i && 'border-b-0',
                         dragId === id && 'opacity-40',
                         zone === 'inside' && 'bg-primary/8',

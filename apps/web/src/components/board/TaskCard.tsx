@@ -1,11 +1,33 @@
-import { ArrowDown, ChatCircle, Crosshair, ListChecks, Paperclip, Prohibit } from '@phosphor-icons/react'
+import {
+  ArrowDown,
+  ArrowLineDown,
+  ArrowLineUp,
+  ArrowSquareOut,
+  ArrowsLeftRight,
+  ChatCircle,
+  Crosshair,
+  DotsThree,
+  ListChecks,
+  Paperclip,
+  Prohibit,
+} from '@phosphor-icons/react'
 import { memo } from 'react'
 import { Avatar, DueChip, LabelChip, ProgressBar, StatusDot, StatusPill } from '@/components/common/bits'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 import { ancestorsOf, isBlocked, statusCol, type TaskIndex } from '@kanbanto/model/indexer'
 import type { LabelDef, ViewConfig } from '@kanbanto/model/types'
-import { CARD_DRAG_TYPE, dragging } from './dnd'
+import type { Lane } from '@kanbanto/model/view'
 
 const CHECKLIST_MAX = 5
 
@@ -16,9 +38,12 @@ interface Props {
   labelById: Map<string, LabelDef>
   onOpen: (id: string) => void
   onFocus: (id: string) => void
-  onDragEnd: () => void
   /** Set when this task also has its own row on the board. */
   onJumpToRow?: (id: string) => void
+  /** Moving without dragging, from the card's menu: the board's columns, the card's column, and what to do. */
+  move?: { lists: Lane[]; col: string; to: (id: string, where: { col: string } | 'top' | 'bottom') => void }
+  /** In a grouped list: the card has no parent header, so it's one of the list's items (see dnd.ts). */
+  item?: boolean
   /** View only: the card can't be dragged. */
   readOnly?: boolean
   /** How many comments and files it has. */
@@ -33,8 +58,9 @@ export const TaskCard = memo(function TaskCard({
   labelById,
   onOpen,
   onFocus,
-  onDragEnd,
   onJumpToRow,
+  move,
+  item,
   readOnly,
   comments = 0,
   files = 0,
@@ -52,26 +78,13 @@ export const TaskCard = memo(function TaskCard({
   return (
     <article
       data-card-id={id}
-      draggable={!readOnly}
+      data-item={item ? '' : undefined}
+      data-drag={readOnly ? undefined : 'card'}
       tabIndex={0}
       aria-label={t.title}
       onClick={() => onOpen(id)}
       onKeyDown={(e) => e.key === 'Enter' && e.target === e.currentTarget && onOpen(id)}
-      onDragStart={(e) => {
-        e.dataTransfer.setData(CARD_DRAG_TYPE, id)
-        e.dataTransfer.effectAllowed = 'move'
-        dragging.card = id
-        dragging.height = e.currentTarget.offsetHeight
-        // Dim the card after the browser has taken its drag image.
-        const el = e.currentTarget
-        requestAnimationFrame(() => el.classList.add('opacity-40'))
-      }}
-      onDragEnd={(e) => {
-        e.currentTarget.classList.remove('opacity-40')
-        dragging.card = null
-        onDragEnd()
-      }}
-      className="group/card relative cursor-pointer rounded-lg border border-(--card-edge) bg-(--tile) px-3 py-2.5 text-card-foreground shadow-xs transition-[border-color,box-shadow,opacity] outline-none hover:border-foreground/20 hover:shadow-sm focus-visible:ring-2 focus-visible:ring-ring/50"
+      className="group/card drag-handle relative cursor-pointer rounded-lg border border-(--card-edge) bg-(--tile) px-3 py-2.5 text-card-foreground shadow-xs transition-[border-color,box-shadow,opacity] outline-none hover:border-foreground/20 hover:shadow-sm focus-visible:ring-2 focus-visible:ring-ring/50"
     >
       {labels.length > 0 && (
         <div className="mb-1.5 flex flex-wrap gap-1 pr-12">
@@ -83,7 +96,8 @@ export const TaskCard = memo(function TaskCard({
 
       {path && <p className={cn('mb-0.5 truncate text-[11px] leading-4 text-muted-foreground', !labels.length && 'pr-12')}>{path.join(' › ')}</p>}
 
-      <p className={cn('text-sm leading-snug break-words', kids && 'font-medium')}>{t.title}</p>
+      {/* On touch screens the menu button always shows, so keep the first line clear of it. */}
+      <p className={cn('text-sm leading-snug break-words', kids && 'font-medium', !labels.length && !path && 'touch-only:pr-6')}>{t.title}</p>
 
       {d.includes('checklist') && kids && (
         <ul className="mt-2 space-y-1">
@@ -136,24 +150,36 @@ export const TaskCard = memo(function TaskCard({
         </footer>
       )}
 
-      {/* Hover actions */}
-      <div className="absolute top-1.5 right-1.5 flex gap-0.5 opacity-0 transition-opacity group-focus-within/card:opacity-100 group-hover/card:opacity-100">
+      {/* Hover actions. Touch screens can't hover: they get the menu only, which has these too. */}
+      <div className="absolute top-1.5 right-1.5 flex gap-0.5">
         {onJumpToRow && (
-          <CardAction label="Go to its row" onClick={() => onJumpToRow(id)}>
+          <CardAction label="Go to its row" onClick={() => onJumpToRow(id)} className="touch-only:hidden">
             <ArrowDown className="size-3.5" />
           </CardAction>
         )}
         {kids && (
-          <CardAction label="Focus on its subtasks" onClick={() => onFocus(id)}>
+          <CardAction label="Focus on its subtasks" onClick={() => onFocus(id)} className="touch-only:hidden">
             <Crosshair className="size-3.5" />
           </CardAction>
         )}
+        <CardMenu
+          id={id}
+          idx={idx}
+          title={t.title}
+          onOpen={onOpen}
+          onFocus={kids ? onFocus : undefined}
+          onJumpToRow={onJumpToRow}
+          move={readOnly ? undefined : move}
+        />
       </div>
     </article>
   )
 })
 
-function CardAction({ label, onClick, children }: { label: string; onClick: () => void; children: React.ReactNode }) {
+const ACTION =
+  'grid size-6 place-items-center rounded-md border border-border/70 bg-(--tile) text-muted-foreground opacity-0 shadow-xs transition-opacity group-focus-within/card:opacity-100 group-hover/card:opacity-100 hover:text-foreground'
+
+function CardAction({ label, onClick, className, children }: { label: string; onClick: () => void; className?: string; children: React.ReactNode }) {
   return (
     <Tooltip>
       <TooltipTrigger asChild>
@@ -163,12 +189,91 @@ function CardAction({ label, onClick, children }: { label: string; onClick: () =
             e.stopPropagation()
             onClick()
           }}
-          className="grid size-6 place-items-center rounded-md border border-border/70 bg-(--tile) text-muted-foreground shadow-xs hover:text-foreground"
+          className={cn(ACTION, className)}
         >
           {children}
         </button>
       </TooltipTrigger>
       <TooltipContent>{label}</TooltipContent>
     </Tooltip>
+  )
+}
+
+/** The card's own menu: open it, and move it without dragging (the only way on some devices). */
+function CardMenu({
+  id,
+  idx,
+  title,
+  onOpen,
+  onFocus,
+  onJumpToRow,
+  move,
+}: {
+  id: string
+  idx: TaskIndex
+  title: string
+  onOpen: (id: string) => void
+  onFocus?: (id: string) => void
+  onJumpToRow?: (id: string) => void
+  move?: Props['move']
+}) {
+  const others = move?.lists.filter((l) => l.key !== move.col) ?? []
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          aria-label={`${title} options`}
+          onClick={(e) => e.stopPropagation()}
+          className={cn(ACTION, 'touch-only:opacity-100 data-[state=open]:opacity-100')}
+        >
+          <DotsThree weight="bold" className="size-4" />
+        </button>
+      </DropdownMenuTrigger>
+      {/* Menu clicks would otherwise reach the card (React passes events up through portals) and open it. */}
+      <DropdownMenuContent align="end" className="w-56" onClick={(e) => e.stopPropagation()}>
+        <DropdownMenuItem onSelect={() => onOpen(id)}>
+          <ArrowSquareOut /> Open
+        </DropdownMenuItem>
+        {onFocus && (
+          <DropdownMenuItem onSelect={() => onFocus(id)}>
+            <Crosshair /> Focus on its subtasks
+          </DropdownMenuItem>
+        )}
+        {onJumpToRow && (
+          <DropdownMenuItem onSelect={() => onJumpToRow(id)}>
+            <ArrowDown /> Go to its row
+          </DropdownMenuItem>
+        )}
+        {move && (
+          <>
+            <DropdownMenuSeparator />
+            {others.length > 0 && (
+              <DropdownMenuSub>
+                <DropdownMenuSubTrigger>
+                  <ArrowsLeftRight /> Move to
+                </DropdownMenuSubTrigger>
+                <DropdownMenuSubContent className="max-h-80 w-56 overflow-y-auto">
+                  {others.map((l) => {
+                    const c = idx.colById.get(l.key)
+                    return (
+                      <DropdownMenuItem key={l.key} onSelect={() => move.to(id, { col: l.key })}>
+                        {c && <StatusDot category={c.category} color={c.color} />}
+                        <span className="truncate">{l.title}</span>
+                      </DropdownMenuItem>
+                    )
+                  })}
+                </DropdownMenuSubContent>
+              </DropdownMenuSub>
+            )}
+            <DropdownMenuItem onSelect={() => move.to(id, 'top')}>
+              <ArrowLineUp /> Move to top
+            </DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => move.to(id, 'bottom')}>
+              <ArrowLineDown /> Move to bottom
+            </DropdownMenuItem>
+          </>
+        )}
+      </DropdownMenuContent>
+    </DropdownMenu>
   )
 }

@@ -143,11 +143,18 @@ describe('subtasks grouped under their parent', () => {
       { parentId: 'A2', ids: ['A2a', 'A2c', 'A2d'] },
     ])
     expect(groups('doing')).toEqual([{ parentId: 'A2', ids: ['A2e'] }])
+    // In the list's order (here, never dragged: outline order), a group where its first card is.
     expect(groups('todo')).toEqual([
-      { parentId: null, ids: ['A3'] },
       { parentId: 'A2', ids: ['A2b'] },
+      { parentId: null, ids: ['A3'] },
     ])
     expect([...v.cells.values()].flat()).not.toContain('A2')
+    // Dragged into another order: the group follows its first card, and cards without a header stay where they are.
+    expect(groupCell(i, ['A3', 'A2b', 'A1', 'A2a'], 'A')).toEqual([
+      { parentId: null, ids: ['A3'] },
+      { parentId: 'A2', ids: ['A2b', 'A2a'] },
+      { parentId: null, ids: ['A1'] },
+    ])
     expect([i.subDone.get('A2'), i.subTotal.get('A2')]).toEqual([3, 5])
   })
 })

@@ -47,6 +47,7 @@ apps/web/         React + Vite + Tailwind + shadcn/ui, Phosphor icons
   src/data/sync.ts  BoardSync: keeps an open board in step with the server
   src/components/views.ts   The views (tabs): add one here and to LAYOUTS in the model
   src/components/board/dropRules.ts   What a drop on the board means (status, parent, person, position)
+  src/lib/pointerDrag.ts   Dragging with a mouse, pen or finger (hold to pick up on touch), used by every view
   src/components/   board/, timeline/, outline/, task/, share/, account/, admin/, settings/, auth/, home/, shell/
 ```
 

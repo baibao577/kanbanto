@@ -10,23 +10,19 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { ancestorsOf, descendantsOf, isLeaf } from '@kanbanto/model/indexer'
-import { dragging, GROUP_DRAG_TYPE } from './dnd'
 
 interface Props {
   parentId: string
   /** The subtasks under this header in this list. */
   ids: string[]
   row: string
-  cell: string
-  onDragStart: (parentId: string, cell: string) => void
-  onDragEnd: () => void
 }
 
 /**
  * A parent task shown as a header over its subtasks inside a list (never as a card).
  * Drag it to move the subtasks under it together; its menu can move all of its subtasks at once.
  */
-export function GroupHeader({ parentId, ids, row, cell, onDragStart, onDragEnd }: Props) {
+export function GroupHeader({ parentId, ids, row }: Props) {
   const { data, prefs, idx, run, openTask, focus, readOnly } = useBoard()
   const t = data.tasks[parentId]
   // Path between the row's task (or the top) and this parent, for deeper nesting.
@@ -41,20 +37,11 @@ export function GroupHeader({ parentId, ids, row, cell, onDragStart, onDragEnd }
 
   return (
     <header
-      draggable={!readOnly}
-      onDragStart={(e) => {
-        e.dataTransfer.setData(GROUP_DRAG_TYPE, parentId)
-        e.dataTransfer.effectAllowed = 'move'
-        dragging.group = { parentId, ids, row, cell }
-        dragging.height = (e.currentTarget.parentElement as HTMLElement | null)?.offsetHeight ?? 60
-        onDragStart(parentId, cell)
-      }}
-      onDragEnd={() => {
-        dragging.group = null
-        onDragEnd()
-      }}
+      // Picked up by the board (BoardView), which moves the whole group.
+      data-drag={readOnly ? undefined : 'group'}
+      data-parent-id={parentId}
       title={`${[...path, t.title].join(' › ')}\nDrag to move these ${ids.length} ${ids.length === 1 ? 'card' : 'cards'} together`}
-      className="group/gh flex h-7 cursor-grab items-center gap-1 pr-0.5 pl-0.5 active:cursor-grabbing"
+      className="group/gh drag-handle flex h-7 cursor-grab items-center gap-1 pr-0.5 pl-0.5 active:cursor-grabbing"
     >
       {!readOnly && <DotsSixVertical weight="bold" className="size-3.5 shrink-0 text-muted-foreground/70" />}
       <span className="flex min-w-0 items-baseline gap-1">
