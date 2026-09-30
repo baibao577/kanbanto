@@ -70,6 +70,16 @@ export async function commentCounts(db: Db | Tx, boardId: string) {
   return Object.fromEntries(rows.map((r) => [r.taskId, r.n]))
 }
 
+/** When each task's latest comment was written, for card age. */
+export async function lastComments(db: Db | Tx, boardId: string) {
+  const rows = await db
+    .select({ taskId: comments.taskId, at: sql<Date>`max(${comments.createdAt})` })
+    .from(comments)
+    .where(eq(comments.boardId, boardId))
+    .groupBy(comments.taskId)
+  return Object.fromEntries(rows.map((r) => [r.taskId, new Date(r.at).toISOString()]))
+}
+
 /** Only people on the board can be @mentioned (and not yourself). */
 async function validMentions(db: Db | Tx, board: BoardRow, ids: string[], authorId: string) {
   const wanted = new Set(ids)

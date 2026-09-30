@@ -78,7 +78,7 @@ const snapshot = (): BoardSnapshot => ({
   data: server,
   seq,
   access: { role: 'editor', via: 'member', visibility: 'invited', publicLink: false, workspace: null, archivedAt: null },
-  counts: { comments: {}, attachments: {} },
+  counts: { comments: {}, attachments: {}, lastComment: {} },
   canComment: true,
 })
 

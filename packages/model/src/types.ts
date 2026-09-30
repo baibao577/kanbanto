@@ -123,6 +123,11 @@ export interface Task extends Meta {
   reminders?: Reminder[]
   /** When it was archived (with its subtasks): then it's in `BoardData.archived`, out of every view and count. */
   archivedAt?: string
+  /**
+   * The last real work on it: moved to another list or edited (see ACTIVE_FIELDS). Reordering doesn't count. Unset on
+   * older cards: `updatedAt` stands in. Card age also counts its subtasks and comments (see age.ts).
+   */
+  activeAt?: string
   /** Timeline bar color; unset = its status color. */
   color?: ColorName
   /**
@@ -147,7 +152,7 @@ export type RowsBy = 'none' | 'rootParent' | 'directParent' | 'assignee'
  */
 export type Filter = 'all' | 'leaves' | 'main' | 'topLevel' | 'actionable'
 /** Independent on/off toggles for how parents show up; none on = hidden. */
-export type ParentDisplay = 'label' | 'checklist' | 'progress' | 'rowHeader'
+export type ParentDisplay = 'label' | 'checklist' | 'progress' | 'rowHeader' | 'age'
 
 /** The display settings of a board or list: the four settings every view is made of. */
 export interface ViewConfig {

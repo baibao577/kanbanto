@@ -3,6 +3,7 @@ import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/
 import type { Command, TaskFields } from '@kanbanto/model/commands'
 import { COLORS, LABEL_COLOR_CYCLE, type ColorName } from '@kanbanto/model/colors'
 import { newId } from '@kanbanto/model/ids'
+import { idleDays, lastActivity } from '@kanbanto/model/age'
 import { isPast, sortTime } from '@kanbanto/model/dates'
 import { ancestorsOf, descendantsOf, indexFor, isBlocked, statusCol, type TaskIndex } from '@kanbanto/model/indexer'
 import { fireTime } from '@kanbanto/model/reminders'
@@ -18,7 +19,7 @@ import { comments, reminderSends, tasks, users, workspaceMembers, workspaces } f
 import { HttpError } from './http'
 import { createBoard } from './boards/service'
 import { boardsFor } from './routes/boards'
-import { postComment } from './routes/comments'
+import { lastComments, postComment } from './routes/comments'
 
 /**
  * MCP (Model Context Protocol): lets AI assistants (Claude Code, Claude Desktop, Cursor…) read and change boards as the
@@ -173,7 +174,7 @@ function buildServer(app: FastifyInstance, me: SessionUser, token: TokenAccess) 
     {
       title: 'List boards',
       description:
-        'The boards you can open, most recently active first: where each lives (a workspace’s name, "Personal" or "Shared with you"), what it’s for (about), your role, and which is your Inbox. Archived boards only with include_archived.',
+        'The boards you can open, most recently active first: where each lives (a workspace’s name, "Personal" or "Shared with you"), what it’s for (about), your role, which is your Inbox, and which are your favourites. Archived boards only with include_archived.',
       inputSchema: { include_archived: z.boolean().optional() },
       annotations: readOnly,
     },
@@ -184,6 +185,7 @@ function buildServer(app: FastifyInstance, me: SessionUser, token: TokenAccess) 
         workspace: b.place,
         ...(b.description && { about: b.description }),
         ...(b.id === me.inboxBoardId && { inbox: true }),
+        ...(b.favoritedAt && { favorite: true }),
         role: b.role,
         workspace_id: b.workspaceId,
         tasks: b.taskCount,
@@ -260,12 +262,23 @@ function buildServer(app: FastifyInstance, me: SessionUser, token: TokenAccess) 
         created_before: z.string().optional().describe(MOMENT),
         changed_after: z.string().optional().describe(`Last changed on or after this. ${MOMENT}`),
         changed_before: z.string().optional().describe(`Last changed before this (e.g. "14d": untouched for two weeks). ${MOMENT}`),
+        idle_days: z
+          .number()
+          .int()
+          .min(1)
+          .max(3650)
+          .optional()
+          .describe(
+            'Stale work: only open tasks with no activity for at least this many days (not moved to another list, edited or commented on, and nor were their subtasks). Results then show idle_days.',
+          ),
         include_done: z.boolean().optional(),
         include_archived: z.boolean().optional().describe('Also archived tasks (marked archived; they have no list position or progress).'),
         sort: z
-          .enum(['outline', 'due', 'priority', 'updated'])
+          .enum(['outline', 'due', 'priority', 'updated', 'idle'])
           .optional()
-          .describe('outline (default: board order), due (soonest first), priority (most important first), updated (most recently changed first).'),
+          .describe(
+            'outline (default: board order), due (soonest first), priority (most important first), updated (most recently changed first), idle (longest without activity first; results show idle_days).',
+          ),
         limit: z.number().int().min(1).max(200).optional(),
         offset: z.number().int().min(0).optional(),
       },
@@ -288,9 +301,10 @@ function buildServer(app: FastifyInstance, me: SessionUser, token: TokenAccess) 
         created_before?: string
         changed_after?: string
         changed_before?: string
+        idle_days?: number
         include_done?: boolean
         include_archived?: boolean
-        sort?: 'outline' | 'due' | 'priority' | 'updated'
+        sort?: 'outline' | 'due' | 'priority' | 'updated' | 'idle'
         limit?: number
         offset?: number
       }) => {
@@ -307,7 +321,8 @@ function buildServer(app: FastifyInstance, me: SessionUser, token: TokenAccess) 
           const t = Date.parse(iso)
           return t >= from && t < to
         }
-        const found: { task: Task; row: Record<string, unknown> }[] = []
+        const aging = !!a.idle_days || a.sort === 'idle'
+        const found: { task: Task; row: Record<string, unknown>; active?: number }[] = []
         for (const b of chosen) {
           const boardId = b.id
           const { data, idx } = await open(boardId, 'viewer')
@@ -326,6 +341,7 @@ function buildServer(app: FastifyInstance, me: SessionUser, token: TokenAccess) 
           const who = a.assignee && !nobody ? soft(() => person(data, a.assignee)) : null
           if (list === undefined || label === undefined || who === undefined) continue
           if (a.parent_id && !data.tasks[a.parent_id]) throw new HttpError(404, 'There’s no such parent task on this board.')
+          const commented = aging ? await lastComments(app.db, boardId) : undefined
           for (const id of a.parent_id ? descendantsOf(idx, a.parent_id) : idx.preorder) {
             const t = data.tasks[id]
             if (!a.include_done && idx.category.get(id) === 'done') continue
@@ -343,10 +359,22 @@ function buildServer(app: FastifyInstance, me: SessionUser, token: TokenAccess) 
               const hay = `${t.title} ${t.description ?? ''}`.toLowerCase()
               if (!words.every((w) => hay.includes(w))) continue
             }
-            found.push({ task: t, row: { board_id: boardId, board: data.board.name, workspace: b.place, ...brief(data, idx, t) } })
+            const active = aging ? lastActivity(idx, id, commented) : undefined
+            if (a.idle_days && (idx.category.get(id) === 'done' || idleDays(active!) < a.idle_days)) continue
+            found.push({
+              task: t,
+              active,
+              row: {
+                board_id: boardId,
+                board: data.board.name,
+                workspace: b.place,
+                ...brief(data, idx, t),
+                ...(aging && { idle_days: idleDays(active!) }),
+              },
+            })
           }
           // Archived tasks: the filters that still mean something for them.
-          if (a.include_archived && !a.parent_id && !list && a.blocked === undefined)
+          if (a.include_archived && !a.parent_id && !list && a.blocked === undefined && !a.idle_days)
             for (const t of Object.values(data.archived ?? {})) {
               if (label && !t.labels.includes(label)) continue
               if (who && t.assigneeId !== who) continue
@@ -367,6 +395,7 @@ function buildServer(app: FastifyInstance, me: SessionUser, token: TokenAccess) 
           found.sort((x, y) => p(x.task) - p(y.task) || (x.task.due ? sortTime(x.task.due) : last) - (y.task.due ? sortTime(y.task.due) : last))
         }
         if (a.sort === 'updated') found.sort((x, y) => Date.parse(y.task.updatedAt) - Date.parse(x.task.updatedAt))
+        if (a.sort === 'idle') found.sort((x, y) => (x.active ?? last) - (y.active ?? last))
         const page = found.slice(offset, offset + limit)
         return {
           tasks: page.map((f) => f.row),
@@ -386,7 +415,15 @@ function buildServer(app: FastifyInstance, me: SessionUser, token: TokenAccess) 
       inputSchema: {
         board_id: z.string().optional(),
         workspace: WORKSPACE,
-        stale_days: z.number().int().min(1).max(365).optional().describe('In progress but unchanged for this many days counts as stuck. Default 7.'),
+        stale_days: z
+          .number()
+          .int()
+          .min(1)
+          .max(365)
+          .optional()
+          .describe(
+            'In progress with no activity (not moved, edited or commented on, nor its subtasks) for this many days counts as stuck. Default 7.',
+          ),
       },
       annotations: readOnly,
     },
@@ -404,9 +441,10 @@ function buildServer(app: FastifyInstance, me: SessionUser, token: TokenAccess) 
         const important = open_
           .filter((id) => t(id).priority === 'urgent' || t(id).priority === 'high')
           .sort((x, y) => PRIORITIES.indexOf(t(x).priority!) - PRIORITIES.indexOf(t(y).priority!))
-        const stuck = open_
-          .filter((id) => idx.category.get(id) === 'doing' && Date.parse(t(id).updatedAt) < staleBefore)
-          .sort((x, y) => Date.parse(t(x).updatedAt) - Date.parse(t(y).updatedAt))
+        // Stuck: in progress with no activity (see find_tasks idle_days) since then.
+        const commented = await lastComments(app.db, b.id)
+        const active = (id: string) => lastActivity(idx, id, commented)
+        const stuck = open_.filter((id) => idx.category.get(id) === 'doing' && active(id) < staleBefore).sort((x, y) => active(x) - active(y))
         const isOverdue = new Set(overdue)
         const isStuckOn = new Set(blocked)
         const people = new Map<string, { name: string; open: number; in_progress: number; overdue: number; blocked: number }>()
@@ -438,7 +476,7 @@ function buildServer(app: FastifyInstance, me: SessionUser, token: TokenAccess) 
           overdue: few(overdue),
           blocked: few(blocked),
           urgent_or_high: few(important),
-          stuck: few(stuck, (id) => ({ last_changed: t(id).updatedAt })),
+          stuck: few(stuck, (id) => ({ last_activity: new Date(active(id)).toISOString() })),
         })
       }
       return {

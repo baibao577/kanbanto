@@ -376,6 +376,8 @@ export const tasks = pgTable(
     priority: text('priority', { enum: PRIORITIES }),
     /** Archived (with its subtasks): out of every view and count until restored. */
     archivedAt: at('archived_at'),
+    /** The last real work on it (moved or edited; see model Task.activeAt). Null on older cards: updated_at stands in. */
+    activeAt: at('active_at'),
     /** Reminder[] (model/types.ts); null: none. */
     reminders: jsonb('reminders').$type<Reminder[]>(),
     /** The list it's in. */
@@ -721,4 +723,19 @@ export const boardPresets = pgTable(
     updatedAt: at('updated_at').notNull().defaultNow(),
   },
   (t) => [index('board_presets_board_idx').on(t.boardId)],
+)
+
+/** Boards people starred as favourites (shown first on the boards page and in the board switcher). */
+export const boardFavorites = pgTable(
+  'board_favorites',
+  {
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    boardId: text('board_id')
+      .notNull()
+      .references(() => boards.id, { onDelete: 'cascade' }),
+    createdAt: at('created_at').notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.boardId] })],
 )

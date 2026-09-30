@@ -14,6 +14,7 @@ import {
   Tray,
   UploadSimple,
   UsersThree,
+  Star,
 } from '@phosphor-icons/react'
 import { formatDistanceToNow, parseISO } from 'date-fns'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
@@ -44,7 +45,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { useBoards } from '@/data/useBoards'
+import { favoritesOf, useBoards } from '@/data/useBoards'
 import { useWorkspaces } from '@/data/useWorkspaces'
 import { formatAgo } from '@/lib/format'
 import { BoardDot } from '@/components/common/bits'
@@ -60,7 +61,7 @@ import { LogoMark } from '@/components/common/Logo'
  */
 export function HomeView() {
   const { user } = useAuth()
-  const { boards, error, reload } = useBoards()
+  const { boards, error, reload, setFavorite } = useBoards()
   const { workspaces, reload: reloadWorkspaces } = useWorkspaces()
   // Creating a board, and where to suggest putting it (a workspace's id, or null for Personal).
   const [creating, setCreating] = useState<{ where: string | null } | null>(null)
@@ -153,6 +154,7 @@ export function HomeView() {
         key={b.id}
         board={b}
         inbox={b.id === user?.inboxBoardId}
+        onFavorite={() => void setFavorite(b.id, !b.favoritedAt)}
         onRename={b.role === 'owner' || b.role === 'editor' ? () => setRenaming(b) : undefined}
         onDelete={b.role === 'owner' ? () => askDelete(b) : undefined}
         onArchive={b.role === 'owner' ? () => void setArchived(b, true) : undefined}
@@ -182,6 +184,7 @@ export function HomeView() {
     )
   const inMine = new Set(spaces.map((w) => w.id))
   const personal = all.filter((b) => !b.workspaceId && b.role === 'owner')
+  const favorites = favoritesOf(boards)
   // Boards someone else shared with you: from their Personal space, or a workspace you're not in.
   const shared = all.filter((b) => (b.workspaceId ? !inMine.has(b.workspaceId) : b.role !== 'owner'))
 
@@ -231,6 +234,12 @@ export function HomeView() {
       <main className="min-h-0 flex-1 overflow-auto">
         <div className="mx-auto max-w-6xl space-y-10 px-4 py-8">
           {error && !boards && <p className="text-sm text-destructive">{error}</p>}
+          {/* Starred boards first (they stay in their own section too). */}
+          {favorites.length > 0 && (
+            <BoardSection title="Favourites" icon={<Star weight="fill" className="size-4 text-amber-500" />} count={favorites.length}>
+              {favorites.map(tile)}
+            </BoardSection>
+          )}
           {spaces.length === 0 ? (
             <BoardSection title="Your boards" count={boards ? all.length : undefined}>
               {all.map(tile)}
@@ -392,6 +401,7 @@ function BoardSection({
 function BoardTile({
   board,
   inbox,
+  onFavorite,
   onRename,
   onDelete,
   onArchive,
@@ -401,6 +411,7 @@ function BoardTile({
   board: BoardSummary
   /** It's your Inbox. */
   inbox?: boolean
+  onFavorite: () => void
   onRename?: () => void
   onArchive?: () => void
   onDelete?: () => void
@@ -474,6 +485,23 @@ function BoardTile({
           </span>
         </div>
       </a>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <button
+            aria-label={board.favoritedAt ? `Remove ${board.name} from favourites` : `Add ${board.name} to favourites`}
+            aria-pressed={!!board.favoritedAt}
+            onClick={onFavorite}
+            className={cn(
+              'absolute top-2 grid size-7 place-items-center rounded-md bg-black/20 text-white backdrop-blur-sm hover:bg-black/35 focus-visible:opacity-100',
+              hasMenu ? 'right-10' : 'right-2',
+              board.favoritedAt ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 touch-only:opacity-100',
+            )}
+          >
+            <Star weight={board.favoritedAt ? 'fill' : 'bold'} className={cn('size-4', board.favoritedAt && 'text-amber-400')} />
+          </button>
+        </TooltipTrigger>
+        <TooltipContent>{board.favoritedAt ? 'Remove from favourites' : 'Add to favourites'}</TooltipContent>
+      </Tooltip>
       {hasMenu && (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>

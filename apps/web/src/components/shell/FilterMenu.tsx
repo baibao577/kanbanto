@@ -4,12 +4,15 @@ import { useBoard } from '@/app/board-context'
 import { Avatar, LabelChip, PriorityIcon, StatusDot } from '@/components/common/bits'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
+import { Input } from '@/components/ui/input'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Separator } from '@/components/ui/separator'
 import { Switch } from '@/components/ui/switch'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { filterCount, type TableFilter } from '@kanbanto/model/table'
 import { PRIORITIES, PRIORITY_LABEL } from '@kanbanto/model/types'
+
+const IDLE_DEFAULT = 7
 
 const toggleIn = (list: string[] | undefined, v: string) => {
   const next = list?.includes(v) ? list.filter((x) => x !== v) : [...(list ?? []), v]
@@ -45,6 +48,32 @@ export function FilterMenu() {
             </span>
             <Switch checked={!!f.upNext} onCheckedChange={(on) => set({ upNext: on || undefined })} />
           </label>
+          <div className="mt-3 flex items-center justify-between gap-3">
+            <label htmlFor="filter-idle" className="cursor-pointer">
+              <span className="block text-sm">No activity lately</span>
+              <span className="block text-xs text-muted-foreground">Not moved, edited or commented on (nor its subtasks)</span>
+            </label>
+            <Switch id="filter-idle" checked={!!f.idle} onCheckedChange={(on) => set({ idle: on ? IDLE_DEFAULT : undefined })} />
+          </div>
+          {!!f.idle && (
+            <label className="mt-2 flex items-center gap-2 text-sm text-muted-foreground">
+              For
+              <Input
+                type="number"
+                inputMode="numeric"
+                min={1}
+                max={365}
+                aria-label="Days without activity"
+                defaultValue={f.idle}
+                onChange={(e) => {
+                  const n = Math.round(Number(e.target.value))
+                  if (n >= 1 && n <= 365) set({ idle: n })
+                }}
+                className="h-7 w-16 px-2 text-sm"
+              />
+              days or more
+            </label>
+          )}
         </div>
         <Separator />
 

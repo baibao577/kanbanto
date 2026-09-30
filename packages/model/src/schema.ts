@@ -67,6 +67,7 @@ export const TaskSchema = z.object({
   description: plain(50_000).optional(),
   priority: priority.optional(),
   archivedAt: z.string().max(40).optional(),
+  activeAt: z.string().max(40).optional(),
   reminders: reminders.optional(),
   color: color.optional(),
   rank: position.optional(),
@@ -182,7 +183,7 @@ const viewConfig = z.object({
   columns: z.enum(['status', 'parent']),
   rows: z.enum(['none', 'rootParent', 'directParent', 'assignee']),
   filter: z.enum(['all', 'leaves', 'main', 'topLevel', 'actionable']),
-  parentDisplay: z.array(z.enum(['label', 'checklist', 'progress', 'rowHeader'])),
+  parentDisplay: z.array(z.enum(['label', 'checklist', 'progress', 'rowHeader', 'age'])),
   hiddenColumns: z.array(z.string()).optional(),
   groupByParent: z.boolean().optional(),
 })
@@ -204,6 +205,7 @@ export const PresetSettingsSchema = z.object({
     priorities: z.array(z.enum([...PRIORITIES, ''])).optional(),
     due: z.enum(['overdue', 'week', 'none']).optional(),
     upNext: z.boolean().optional(),
+    idle: z.number().int().min(1).max(3650).optional(),
   }),
 })
 

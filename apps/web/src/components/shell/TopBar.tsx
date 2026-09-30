@@ -1,4 +1,4 @@
-import { CaretDown, CloudSlash, Eye, MagnifyingGlass, PencilSimple, Plus, SquaresFour, UsersThree, X } from '@phosphor-icons/react'
+import { CaretDown, CloudSlash, Eye, MagnifyingGlass, PencilSimple, Plus, SquaresFour, Star, UsersThree, X } from '@phosphor-icons/react'
 import { useEffect, useRef, useState } from 'react'
 import { useBoard } from '@/app/board-context'
 import { hrefFor, navigate } from '@/app/router'
@@ -12,7 +12,8 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { useBoards } from '@/data/useBoards'
+import { favoritesOf, useBoards } from '@/data/useBoards'
+import type { BoardSummary } from '@kanbanto/model/api'
 import type { ColorName } from '@kanbanto/model/colors'
 import { BoardDot, Kbd } from '@/components/common/bits'
 import { Button } from '@/components/ui/button'
@@ -146,11 +147,19 @@ export function TopBar({ search, onSearch, onNewTask, connection, unsaved, ...me
 
 /** The board's name; opens a menu to switch boards, rename this one, go to all boards or create one. */
 function BoardSwitcher({ name, currentId, onRename }: { name: string; currentId: string; onRename?: (name: string) => void }) {
-  const { boards } = useBoards()
+  const { boards, setFavorite } = useBoards()
   const [editing, setEditing] = useState(false)
   const [creating, setCreating] = useState(false)
-  // Most recently changed first (the server's order).
-  const recent = (boards ?? []).filter((b) => b.id !== currentId && !b.archivedAt).slice(0, 8)
+  const favorites = favoritesOf(boards).filter((b) => b.id !== currentId)
+  const current = boards?.find((b) => b.id === currentId)
+  // Most recently changed first (the server's order), after the favourites.
+  const recent = (boards ?? []).filter((b) => b.id !== currentId && !b.archivedAt && !b.favoritedAt).slice(0, 8)
+  const item = (b: BoardSummary) => (
+    <DropdownMenuItem key={b.id} onSelect={() => navigate({ page: 'board', id: b.id })}>
+      <BoardDot background={(b.background as ColorName | null) ?? undefined} />
+      <span className="truncate">{b.name}</span>
+    </DropdownMenuItem>
+  )
 
   if (editing)
     return (
@@ -180,17 +189,27 @@ function BoardSwitcher({ name, currentId, onRename }: { name: string; currentId:
           </button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start" className="w-64">
-          {recent.length > 0 && (
+          {favorites.length > 0 && (
             <>
-              <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">Switch to</DropdownMenuLabel>
-              {recent.map((b) => (
-                <DropdownMenuItem key={b.id} onSelect={() => navigate({ page: 'board', id: b.id })}>
-                  <BoardDot background={(b.background as ColorName | null) ?? undefined} />
-                  <span className="truncate">{b.name}</span>
-                </DropdownMenuItem>
-              ))}
+              <DropdownMenuLabel className="flex items-center gap-1.5 text-xs font-normal text-muted-foreground">
+                <Star weight="fill" className="size-3 text-amber-500" /> Favourites
+              </DropdownMenuLabel>
+              {favorites.map(item)}
               <DropdownMenuSeparator />
             </>
+          )}
+          {recent.length > 0 && (
+            <>
+              <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">{favorites.length ? 'Recent' : 'Switch to'}</DropdownMenuLabel>
+              {recent.map(item)}
+              <DropdownMenuSeparator />
+            </>
+          )}
+          {current && (
+            <DropdownMenuItem onSelect={() => void setFavorite(current.id, !current.favoritedAt)}>
+              <Star weight={current.favoritedAt ? 'fill' : 'regular'} className={current.favoritedAt ? 'text-amber-500' : undefined} />
+              {current.favoritedAt ? 'Remove from favourites' : 'Add to favourites'}
+            </DropdownMenuItem>
           )}
           {onRename && (
             <DropdownMenuItem onSelect={() => setEditing(true)}>

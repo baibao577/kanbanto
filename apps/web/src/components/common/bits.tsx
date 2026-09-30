@@ -1,6 +1,16 @@
-import { CalendarBlank, CellSignalHigh, CellSignalLow, CellSignalMedium, Check, Prohibit, WarningCircle } from '@phosphor-icons/react'
+import {
+  CalendarBlank,
+  CellSignalHigh,
+  CellSignalLow,
+  CellSignalMedium,
+  Check,
+  HourglassMedium,
+  Prohibit,
+  WarningCircle,
+} from '@phosphor-icons/react'
 import { formatDay, initials } from '@/lib/format'
 import { cn } from '@/lib/utils'
+import { ageTone } from '@kanbanto/model/age'
 import { BOARD_BACKGROUNDS, COLORS, statusTone, tone, type ColorName } from '@kanbanto/model/colors'
 import { isPast } from '@kanbanto/model/dates'
 import { PRIORITY_LABEL, type Category, type LabelDef, type Priority, type StatusColumn } from '@kanbanto/model/types'
@@ -177,6 +187,23 @@ export function DueChip({ due, done }: { due: string; done: boolean }) {
     >
       <CalendarBlank weight="bold" className="size-3" />
       {formatDay(due)}
+    </span>
+  )
+}
+
+/** Card age: how long since anything happened on it. Quiet at first, amber from a week, red from two. */
+export function AgeChip({ days, since }: { days: number; since: number }) {
+  const tone = ageTone(days)
+  return (
+    <span
+      className={cn(
+        'inline-flex h-5 items-center gap-1 rounded px-1.5 text-[11px] font-medium tabular-nums',
+        tone === 'alert' ? 'bg-destructive/12 text-destructive' : tone === 'warn' ? 'bg-warning/12 text-warning' : 'bg-muted text-muted-foreground',
+      )}
+      title={`No activity for ${days} days (since ${formatDay(new Date(since).toISOString())})`}
+    >
+      <HourglassMedium weight="bold" className="size-3" />
+      {days}d
     </span>
   )
 }

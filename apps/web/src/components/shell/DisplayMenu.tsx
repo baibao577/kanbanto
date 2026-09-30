@@ -115,6 +115,12 @@ export function DisplayMenu() {
           <SwitchRow label="Where it belongs" hint="The parent tasks above the title" checked={has('label')} onChange={(on) => toggle('label', on)} />
           <SwitchRow label="Subtask checklist" checked={has('checklist')} onChange={(on) => toggle('checklist', on)} />
           <SwitchRow label="Progress bar" checked={has('progress')} onChange={(on) => toggle('progress', on)} />
+          <SwitchRow
+            label="Card age"
+            hint="Days since anything happened on it, after 3. Amber from a week, red from two"
+            checked={has('age')}
+            onChange={(on) => toggle('age', on)}
+          />
           {groupedByParent && (
             <SwitchRow
               label="Show parents only as rows"

@@ -72,7 +72,10 @@ Without MCP, use the REST API (see "REST fallback" below).
 - *"What's on my plate?" / "what should I do first?"* → `find_tasks` with `assignee: "me"` and `sort: "priority"` (and
   `due_before` for "this week"); group by board, and point out what's overdue or urgent.
 - *"How's the team doing?" / "what's stuck?"* → `team_overview` for the board or workspace: who has what, what's
-  overdue, blocked, urgent, or in progress but untouched for a week.
+  overdue, blocked, urgent, or in progress with no activity for a week.
+- *"What's gone stale?" / "what hasn't moved in two weeks?"* → `find_tasks` with `idle_days` (e.g. 14) and
+  `sort: "idle"`: open tasks nobody moved, edited or commented on (nor their subtasks), longest first, each with its
+  `idle_days`. Suggest what to do: nudge the assignee, archive it, or move it back.
 - *Meeting notes → tasks* → propose the list first (titles, owners, due dates), then `create_tasks`: a parent task for
   the meeting with the action items as subtasks, on the board the meeting was about.
 - *"What happened last week / in September?"* → `recent_activity` with `since` and `until` (kept 90 days); page with

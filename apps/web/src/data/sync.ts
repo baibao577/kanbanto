@@ -312,7 +312,10 @@ export class BoardSync {
     if (!delta) return
     const per = { ...this.state.counts[kind] }
     per[m.taskId] = Math.max(0, (per[m.taskId] ?? 0) + delta)
-    this.set({ counts: { ...this.state.counts, [kind]: per } })
+    // A new comment is activity on the card (card age).
+    const lastComment =
+      m.type === 'comment' && delta > 0 ? { ...this.state.counts.lastComment, [m.taskId]: new Date().toISOString() } : this.state.counts.lastComment
+    this.set({ counts: { ...this.state.counts, [kind]: per, lastComment } })
   }
 
   private set(patch: Partial<SyncState>) {

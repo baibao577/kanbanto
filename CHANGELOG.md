@@ -43,6 +43,11 @@ then `git pull` (or download the new release) and `docker compose up -d --build`
   delivery log showing what was sent and what came back, with "Send again".
 - **Outline** uses the full width, with columns you choose and compact (or comfortable) rows (Display), indent guides
   and lightly tinted projects; on phones it's a nested list with each task's details underneath.
+- **Card age** (Display → Card age): a chip with the days since anything happened on a card (moved to another list,
+  edited, commented on, or its subtasks), after 3 days; amber from a week, red from two. Filter → "No activity
+  lately" for any number of days; `find_tasks` takes `idle_days` for assistants. Cards' footers are two tidy lines:
+  what needs attention, then the counts and the assignee.
+- **Favourite boards:** star a board on the boards page or from its name menu; favourites come first on both.
 - **Presets** on each board: save the filters and Display options as a named preset ("Focus", "Review") that
   everyone on the board can pick. Editors save, update, rename and delete them.
 - **Public links** say that visitors also see the board's comments and files (and how many files there are).

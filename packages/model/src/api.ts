@@ -142,10 +142,11 @@ export interface BoardAccess {
   archivedAt: string | null
 }
 
-/** Comments and attachments per task (for the badges on cards). */
+/** Comments and attachments per task (for the badges on cards), and each task's latest comment (for card age). */
 export interface TaskCounts {
   comments: Record<string, number>
   attachments: Record<string, number>
+  lastComment: Record<string, string>
 }
 
 /** GET /api/boards/:id */
@@ -279,6 +280,8 @@ export interface BoardSummary {
   updatedAt: string
   /** Archived: shown apart, under "Archived boards". */
   archivedAt: string | null
+  /** When you starred it as a favourite (null: not one). Favourites show first, in the order they were starred. */
+  favoritedAt: string | null
 }
 
 // ── Cards across boards (GET /api/cards) ───────────────────────────────────────

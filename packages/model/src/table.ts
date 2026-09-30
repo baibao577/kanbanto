@@ -1,4 +1,5 @@
 import { isPast, sortTime, todayDay, toDay } from './dates'
+import { idleDays, lastActivity } from './age'
 import { isBlocked, isLeaf, type TaskIndex } from './indexer'
 import { PRIORITIES, PRIORITY_LABEL, type LabelDef, type Member, type Priority, type StatusColumn } from './types'
 
@@ -22,6 +23,8 @@ export interface TableFilter {
   due?: 'overdue' | 'week' | 'none'
   /** Only tasks that are ready to start ("up next"). */
   upNext?: boolean
+  /** Only cards not done with no activity for at least this many days (see age.ts). */
+  idle?: number
 }
 
 /** The Outline's own settings (filters are shared by every tab; see State.filter). */
@@ -44,10 +47,11 @@ export const filterCount = (f: TableFilter) =>
   (f.labels?.length ? 1 : 0) +
   (f.priorities?.length ? 1 : 0) +
   (f.due ? 1 : 0) +
-  (f.upNext ? 1 : 0)
+  (f.upNext ? 1 : 0) +
+  (f.idle ? 1 : 0)
 
-/** Does one task pass the filter (ignoring its parents and subtasks)? */
-export function matchesFilter(idx: TaskIndex, id: string, f: TableFilter): boolean {
+/** Does one task pass the filter (ignoring its parents and subtasks)? `lastComment`: per task, for card age. */
+export function matchesFilter(idx: TaskIndex, id: string, f: TableFilter, lastComment?: Record<string, string>): boolean {
   const t = idx.tasks[id]
   if (f.statuses?.length && !f.statuses.includes(idx.status.get(id)!)) return false
   if (f.assignees?.length && !f.assignees.includes(t.assigneeId ?? '')) return false
@@ -63,6 +67,7 @@ export function matchesFilter(idx: TaskIndex, id: string, f: TableFilter): boole
     }
   }
   if (f.upNext && !(isLeaf(idx, id) && idx.category.get(id) === 'todo' && !isBlocked(idx, id))) return false
+  if (f.idle && (idx.category.get(id) === 'done' || idleDays(lastActivity(idx, id, lastComment)) < f.idle)) return false
   return true
 }
 
@@ -122,5 +127,6 @@ export function filterChips(f: TableFilter, columns: StatusColumn[], labels: Lab
   if (f.priorities?.length)
     chips.push({ key: 'priorities', label: 'Priority:', value: names(f.priorities, (p) => (p ? PRIORITY_LABEL[p as Priority] : 'None')) })
   if (f.due) chips.push({ key: 'due', label: 'Due:', value: { overdue: 'overdue', week: 'this week', none: 'no date' }[f.due] })
+  if (f.idle) chips.push({ key: 'idle', label: 'No activity for', value: `${f.idle}+ ${f.idle === 1 ? 'day' : 'days'}` })
   return chips
 }

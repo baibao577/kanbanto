@@ -98,7 +98,7 @@ function run(data: BoardData, cmd: Command, ctx: Context): Change[] {
   const out: Change[] = []
   const task = (id: string) => data.tasks[id] ?? reject('That task no longer exists.')
   const putTask = (before: Task | null, next: Omit<Task, 'createdAt' | 'updatedAt' | 'version'>) =>
-    out.push({ entity: 'task', id: next.id, before, after: stamp(before, next, now) })
+    out.push({ entity: 'task', id: next.id, before, after: stamp(before, { ...next, activeAt: activeAt(before, next, now) }, now) })
 
   switch (cmd.type) {
     case 'task.create': {
@@ -464,4 +464,27 @@ function listRanks(data: BoardData, order: string[], moved: Set<string>): Record
     i = j
   }
   return out
+}
+
+/** Changes that count as work on a card (the ones the activity feed reports, except moving it in the tree). */
+const ACTIVE_FIELDS = [
+  'title',
+  'status',
+  'assigneeId',
+  'start',
+  'due',
+  'description',
+  'priority',
+  'labels',
+  'blockedBy',
+  'reminders',
+  'archivedAt',
+] as const
+
+/** When a card last saw real work: now, if this change is some; otherwise as it was (reordering doesn't count). */
+function activeAt(before: Task | null, next: Omit<Task, 'createdAt' | 'updatedAt' | 'version'>, now: string) {
+  if (!before) return now
+  const same = (k: (typeof ACTIVE_FIELDS)[number]) => JSON.stringify(before[k] ?? null) === JSON.stringify(next[k] ?? null)
+  // (An older card without one keeps its last change as its last activity, so reordering it doesn't reset its age.)
+  return ACTIVE_FIELDS.every(same) ? (before.activeAt ?? before.updatedAt) : now
 }

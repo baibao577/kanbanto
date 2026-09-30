@@ -89,9 +89,9 @@ function Board({ search }: { search: string }) {
   // Filters (shared by every tab) narrow the cards, like search.
   const filter = prefs.filter
   const view = useMemo(() => {
-    const keep = filterCount(filter) ? (id: string) => matchesFilter(idx, id, filter) : undefined
+    const keep = filterCount(filter) ? (id: string) => matchesFilter(idx, id, filter, counts.lastComment) : undefined
     return buildView(idx, config, { focusId: prefs.focusId, search, keep })
-  }, [idx, config, prefs.focusId, search, filter])
+  }, [idx, config, prefs.focusId, search, filter, counts.lastComment])
   const labelById = useMemo(() => new Map(data.labels.map((l) => [l.id, l])), [data.labels])
 
   const [rowLimit, setRowLimit] = useState(ROWS_STEP)
@@ -256,6 +256,7 @@ function Board({ search }: { search: string }) {
         readOnly={readOnly}
         comments={counts.comments[id]}
         files={counts.attachments[id]}
+        lastComment={counts.lastComment[id]}
         item={item}
       />
     )

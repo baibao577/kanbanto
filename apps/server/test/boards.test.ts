@@ -314,3 +314,28 @@ describe('presets', () => {
     expect((await eve.request('GET', `/api/boards/${id}/presets`)).status).toBe(404)
   })
 })
+
+describe('favourites', () => {
+  it('star boards you’re on; they come back starred, in your own list only', async () => {
+    const ann = await Person.signUp(t.app, 'Ann')
+    const [{ id }] = (await ann.ok('GET', '/api/boards')).boards
+    const bob = await Person.signUp(t.app, 'Bob')
+    await ann.ok('PUT', `/api/boards/${id}/favorite`, { favorite: true })
+    await ann.ok('PUT', `/api/boards/${id}/favorite`, { favorite: true }) // twice: still one
+    expect((await ann.ok('GET', '/api/boards')).boards[0].favoritedAt).toEqual(expect.any(String))
+    // Not a board Bob can open.
+    expect((await bob.request('PUT', `/api/boards/${id}/favorite`, { favorite: true })).status).toBe(404)
+    await ann.ok('POST', `/api/boards/${id}/invitations`, { email: 'bob@example.com', role: 'viewer' })
+    expect((await bob.ok('GET', '/api/boards')).boards.find((b: { id: string }) => b.id === id).favoritedAt).toBeNull()
+    await ann.ok('PUT', `/api/boards/${id}/favorite`, { favorite: false })
+    expect((await ann.ok('GET', '/api/boards')).boards[0].favoritedAt).toBeNull()
+  })
+
+  it('a board sends when each card was last commented on (card age)', async () => {
+    const ann = await Person.signUp(t.app, 'Ann')
+    const [{ id }] = (await ann.ok('GET', '/api/boards')).boards
+    await ann.ok('POST', `/api/boards/${id}/tasks/A3/comments`, { body: 'Hi', mentions: [] })
+    const { counts } = await ann.ok('GET', `/api/boards/${id}`)
+    expect(Object.keys(counts.lastComment)).toEqual(['A3'])
+  })
+})

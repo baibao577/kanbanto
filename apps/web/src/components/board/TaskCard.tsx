@@ -15,7 +15,7 @@ import {
   Prohibit,
 } from '@phosphor-icons/react'
 import { memo } from 'react'
-import { Avatar, DueChip, LabelChip, PriorityChip, ProgressBar, StatusDot, StatusPill } from '@/components/common/bits'
+import { AgeChip, Avatar, DueChip, LabelChip, PriorityChip, ProgressBar, StatusDot, StatusPill } from '@/components/common/bits'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -29,6 +29,7 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 import { formatDay } from '@/lib/format'
+import { AGE_SHOWN, idleDays, lastActivity } from '@kanbanto/model/age'
 import { upcoming } from '@kanbanto/model/reminders'
 import { ancestorsOf, isBlocked, statusCol, type TaskIndex } from '@kanbanto/model/indexer'
 import type { LabelDef, ViewConfig } from '@kanbanto/model/types'
@@ -57,9 +58,10 @@ interface Props {
   item?: boolean
   /** View only: the card can't be dragged. */
   readOnly?: boolean
-  /** How many comments and files it has. */
+  /** How many comments and files it has, and when the latest comment was written (card age). */
   comments?: number
   files?: number
+  lastComment?: string
 }
 
 export const TaskCard = memo(function TaskCard({
@@ -75,6 +77,7 @@ export const TaskCard = memo(function TaskCard({
   readOnly,
   comments = 0,
   files = 0,
+  lastComment,
 }: Props) {
   const t = idx.tasks[id]
   const kids = idx.childrenOf.get(id)
@@ -87,6 +90,13 @@ export const TaskCard = memo(function TaskCard({
   const next = t.reminders ? upcoming(t)[0] : undefined
   const path = d.includes('label') && t.parentId ? ancestorsOf(idx.tasks, id).map((a) => idx.tasks[a].title) : null
   const labels = t.labels.map((l) => labelById.get(l)).filter((l) => !!l)
+  // Card age (Display → Card age): days without activity, once it's been a few, and never on finished cards.
+  const activeAt = lastActivity(idx, id, lastComment ? { [id]: lastComment } : undefined)
+  const idle = idleDays(activeAt)
+  const age = d.includes('age') && col.category !== 'done' && idle >= AGE_SHOWN ? idle : null
+  const chips = config.columns === 'parent' || !!t.priority || blocked || !!t.due || age !== null
+  const meta = !!next || (!!kids && !d.includes('progress')) || comments > 0 || files > 0
+  const assignee = t.assigneeId && <Avatar name={idx.members.get(t.assigneeId)?.name ?? '?'} className="ml-auto size-5 text-[9px]" />
 
   return (
     <article
@@ -129,51 +139,48 @@ export const TaskCard = memo(function TaskCard({
 
       {d.includes('progress') && kids && <ProgressBar done={done} total={total} className="mt-2.5" />}
 
-      {(config.columns === 'parent' ||
-        t.priority ||
-        next ||
-        blocked ||
-        t.due ||
-        (kids && !d.includes('progress')) ||
-        t.assigneeId ||
-        comments > 0 ||
-        files > 0) && (
-        <footer className="mt-2 flex flex-wrap items-center gap-1.5">
-          {config.columns === 'parent' && <StatusPill col={col} />}
-          {t.priority && <PriorityChip priority={t.priority} />}
-          {blocked && (
-            <span className="inline-flex h-5 items-center gap-1 rounded bg-warning/12 px-1.5 text-[11px] font-medium text-warning">
-              <Prohibit weight="bold" className="size-3" /> Waiting
-            </span>
+      {(chips || meta || t.assigneeId) && (
+        <footer className="mt-2 space-y-1.5">
+          {/* What needs attention first (chips), then the quiet counts, with the assignee on the right. */}
+          {chips && (
+            <div className="flex flex-wrap items-center gap-1.5">
+              {config.columns === 'parent' && <StatusPill col={col} />}
+              {t.priority && <PriorityChip priority={t.priority} />}
+              {blocked && (
+                <span className="inline-flex h-5 items-center gap-1 rounded bg-warning/12 px-1.5 text-[11px] font-medium text-warning">
+                  <Prohibit weight="bold" className="size-3" /> Waiting
+                </span>
+              )}
+              {t.due && <DueChip due={t.due} done={col.category === 'done'} />}
+              {age !== null && <AgeChip days={age} since={activeAt} />}
+              {!meta && assignee}
+            </div>
           )}
-          {t.due && <DueChip due={t.due} done={col.category === 'done'} />}
-          {next && (
-            <span className="inline-flex h-5 items-center text-muted-foreground" title={`Reminder: ${formatDay(next.at.toISOString(), true)}`}>
-              <Alarm className="size-3.5" />
-            </span>
+          {(meta || (!chips && t.assigneeId)) && (
+            <div className="flex items-center gap-2.5 text-[11px] text-muted-foreground tabular-nums">
+              {next && (
+                <span className="inline-flex h-5 items-center" title={`Reminder: ${formatDay(next.at.toISOString(), true)}`}>
+                  <Alarm className="size-3.5" />
+                </span>
+              )}
+              {kids && !d.includes('progress') && (
+                <span className="inline-flex h-5 items-center gap-1" title={`${done} of ${total} subtasks done`}>
+                  <ListChecks className="size-3.5" /> {done}/{total}
+                </span>
+              )}
+              {comments > 0 && (
+                <span className="inline-flex h-5 items-center gap-1" title={`${comments} comment${comments === 1 ? '' : 's'}`}>
+                  <ChatCircle className="size-3.5" /> {comments}
+                </span>
+              )}
+              {files > 0 && (
+                <span className="inline-flex h-5 items-center gap-1" title={`${files} file${files === 1 ? '' : 's'}`}>
+                  <Paperclip className="size-3.5" /> {files}
+                </span>
+              )}
+              {assignee}
+            </div>
           )}
-          {kids && !d.includes('progress') && (
-            <span className="inline-flex h-5 items-center gap-1 text-[11px] text-muted-foreground tabular-nums">
-              <ListChecks className="size-3.5" /> {done}/{total}
-            </span>
-          )}
-          {comments > 0 && (
-            <span
-              className="inline-flex h-5 items-center gap-1 text-[11px] text-muted-foreground tabular-nums"
-              title={`${comments} comment${comments === 1 ? '' : 's'}`}
-            >
-              <ChatCircle className="size-3.5" /> {comments}
-            </span>
-          )}
-          {files > 0 && (
-            <span
-              className="inline-flex h-5 items-center gap-1 text-[11px] text-muted-foreground tabular-nums"
-              title={`${files} file${files === 1 ? '' : 's'}`}
-            >
-              <Paperclip className="size-3.5" /> {files}
-            </span>
-          )}
-          {t.assigneeId && <Avatar name={idx.members.get(t.assigneeId)?.name ?? '?'} className="ml-auto size-5 text-[9px]" />}
         </footer>
       )}
 

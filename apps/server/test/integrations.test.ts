@@ -1,7 +1,7 @@
 import { createHmac } from 'node:crypto'
 import { createServer, type Server } from 'node:http'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
-import { webhookDeliveries } from '../src/db/schema'
+import { tasks, webhookDeliveries } from '../src/db/schema'
 import { mid, Person, reset, setPlatformAdmin, setup } from './helpers'
 
 let t: Awaited<ReturnType<typeof setup>>
@@ -493,6 +493,27 @@ describe('MCP', () => {
     expect(tools).toEqual(['list_boards', 'get_board', 'find_tasks', 'team_overview', 'recent_activity', 'reminders', 'get_task'])
     const r = await rpc(mcp, 'tools/call', { name: 'create_tasks', arguments: { board_id: id, tasks: [{ title: 'x' }] } })
     expect(r.body.result?.isError ?? !!r.body.error).toBe(true)
+  })
+
+  it('stale work: find_tasks idle_days and sort, counting comments and subtasks; favourites in list_boards', async () => {
+    const { ann, id } = await site({ apiTokens: true })
+    const mcp = withToken(await makeToken(ann, 'write'))
+    const call = async (name: string, args: object) => toolResult(await rpc(mcp, 'tools/call', { name, arguments: args }))
+    // Everything on the starter board is weeks old; make A3 look fresh through a comment, and A1 through an edit.
+    await t.db.update(tasks).set({ activeAt: new Date(Date.now() - 30 * 86_400_000), updatedAt: new Date(Date.now() - 30 * 86_400_000) })
+    await call('add_comment', { board_id: id, task_id: 'A3', text: 'Still on it' })
+    await call('update_task', { board_id: id, task_id: 'A1', title: 'Pick a logo' })
+    const stale = await call('find_tasks', { board_id: id, idle_days: 7, sort: 'idle' })
+    const ids = stale.tasks.map((x: { id: string }) => x.id)
+    expect(ids).not.toContain('A3')
+    expect(ids).not.toContain('A1')
+    // A1's parent counts its subtask's activity.
+    expect(ids).not.toContain('A')
+    expect(stale.tasks[0].idle_days).toBeGreaterThanOrEqual(29)
+
+    expect((await call('list_boards', {})).boards[0].favorite).toBeUndefined()
+    await ann.ok('PUT', `/api/boards/${id}/favorite`, { favorite: true })
+    expect((await call('list_boards', {})).boards[0].favorite).toBe(true)
   })
 })
 

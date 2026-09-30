@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { BoardSummary } from '@kanbanto/model/api'
+import { toast } from 'sonner'
 import { api, errorMessage } from '@/api/client'
 
 const fetchBoards = () => api<{ boards: BoardSummary[] }>('GET', '/boards').then((r) => r.boards)
@@ -32,5 +33,22 @@ export function useBoards() {
       window.removeEventListener('focus', onFocus)
     }
   }, [reload])
-  return { boards, error, reload }
+  /** Stars or unstars a board as one of your favourites (shown at once; put back if it doesn't save). */
+  const setFavorite = useCallback(
+    async (id: string, on: boolean) => {
+      setBoards((bs) => bs && bs.map((b) => (b.id === id ? { ...b, favoritedAt: on ? new Date().toISOString() : null } : b)))
+      try {
+        await api('PUT', `/boards/${id}/favorite`, { favorite: on })
+      } catch (e) {
+        toast.error(errorMessage(e))
+        void reload()
+      }
+    },
+    [reload],
+  )
+  return { boards, error, reload, setFavorite }
 }
+
+/** Your favourite boards (not archived), in the order you starred them. */
+export const favoritesOf = (boards: BoardSummary[] | null) =>
+  (boards ?? []).filter((b) => b.favoritedAt && !b.archivedAt).sort((a, b) => a.favoritedAt!.localeCompare(b.favoritedAt!))

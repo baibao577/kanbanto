@@ -3,7 +3,7 @@ import { BOARD_BACKGROUNDS, type ColorName } from '@kanbanto/model/colors'
 import { CommandSchema } from '@kanbanto/model/schema'
 import { readBoardFile } from '@kanbanto/model/transfer'
 import { newId } from '@kanbanto/model/ids'
-import { eq, sql } from 'drizzle-orm'
+import { and, eq, sql } from 'drizzle-orm'
 import type { FastifyPluginAsync } from 'fastify'
 import { z } from 'zod'
 import { accessFor, accessOf, requireAccess, type BoardRow } from '../boards/access'
@@ -11,10 +11,10 @@ import { parseMoment, readActivity } from '../boards/activityLog'
 import { createBoard, importBoard } from '../boards/service'
 import { requireWorkspace } from '../boards/workspaces'
 import type { Db } from '../db'
-import { boards, workspaces } from '../db/schema'
+import { boardFavorites, boards, workspaces } from '../db/schema'
 import { HttpError, parse } from '../http'
 import { requireUser } from './auth'
-import { commentCounts } from './comments'
+import { commentCounts, lastComments } from './comments'
 import { attachmentCounts, deleteBoardFiles } from './files'
 
 const background = z.enum(Object.keys(BOARD_BACKGROUNDS) as [ColorName, ...ColorName[]])
@@ -55,15 +55,17 @@ export async function boardsFor(db: Db, userId: string): Promise<BoardSummary[]>
     created_at: Date
     activity_at: Date
     archived_at: Date | null
+    favorited_at: Date | null
   }>(sql`
       select b.id, b.name, b.description, b.background, b.visibility, b.public_link, b.workspace_id, b.workspace_role, m.role,
-        (w.user_id is not null) as in_workspace, b.created_at, b.activity_at, b.archived_at,
+        (w.user_id is not null) as in_workspace, b.created_at, b.activity_at, b.archived_at, f.created_at as favorited_at,
         (select count(*)::int from tasks t where t.board_id = b.id and t.archived_at is null) as task_count,
         (select count(*)::int from tasks t join lists l on l.board_id = t.board_id and l.id = t.status
           where t.board_id = b.id and t.archived_at is null and l.category = 'done') as done_count
       from boards b
       left join board_members m on m.board_id = b.id and m.user_id = ${userId}
       left join workspace_members w on w.workspace_id = b.workspace_id and w.user_id = ${userId}
+      left join board_favorites f on f.board_id = b.id and f.user_id = ${userId}
       where m.role is not null or (b.visibility = 'workspace' and w.user_id is not null)
       order by b.activity_at desc`)
   const summaries: BoardSummary[] = []
@@ -92,6 +94,7 @@ export async function boardsFor(db: Db, userId: string): Promise<BoardSummary[]>
       createdAt: new Date(r.created_at).toISOString(),
       updatedAt: new Date(r.activity_at).toISOString(),
       archivedAt: r.archived_at ? new Date(r.archived_at).toISOString() : null,
+      favoritedAt: r.favorited_at ? new Date(r.favorited_at).toISOString() : null,
     })
   }
   return summaries
@@ -123,7 +126,11 @@ export const boardRoutes: FastifyPluginAsync = async (app) => {
     const { id } = parse(Params, req.params)
     const { board, access } = await requireAccess(app.db, req.user, id, 'viewer')
     const { data, seq } = await app.engine.snapshot(id)
-    const counts = { comments: await commentCounts(app.db, id), attachments: await attachmentCounts(app.db, id) }
+    const counts = {
+      comments: await commentCounts(app.db, id),
+      attachments: await attachmentCounts(app.db, id),
+      lastComment: await lastComments(app.db, id),
+    }
     // Visitors with the public link aren't told which workspace it's in.
     const [workspace] =
       board.workspaceId && access.via !== 'public'
@@ -137,6 +144,18 @@ export const boardRoutes: FastifyPluginAsync = async (app) => {
       archivedAt: board.archivedAt?.toISOString() ?? null,
     }
     return { data, seq, access: shown, counts, canComment: access.via !== 'public' }
+  })
+
+  /** Stars a board as one of your favourites, or unstars it. */
+  app.put('/boards/:id/favorite', async (req) => {
+    const { id } = parse(Params, req.params)
+    const me = requireUser(req.user)
+    const { favorite } = parse(z.object({ favorite: z.boolean() }).strict(), req.body)
+    const { access } = await requireAccess(app.db, me, id, 'viewer', { archived: true })
+    if (access.via === 'public') throw new HttpError(403, 'Only boards you’re on can be favourites.')
+    if (favorite) await app.db.insert(boardFavorites).values({ userId: me.id, boardId: id }).onConflictDoNothing()
+    else await app.db.delete(boardFavorites).where(and(eq(boardFavorites.userId, me.id), eq(boardFavorites.boardId, id)))
+    return { favorite }
   })
 
   /** Archives a board (owners): off the boards page and read-only, until restored. Or restores it. */

@@ -33,6 +33,8 @@ export interface TaskIndex {
   subTotal: Map<string, number>
   /** How many of those are done (by effective status). */
   subDone: Map<string, number>
+  /** Last real work on it or any of its subtasks, in ms (see Task.activeAt). */
+  lastActive: Map<string, number>
 }
 
 // Siblings by outline position; the id breaks ties so the order is always the same.
@@ -116,6 +118,8 @@ export function buildIndex(tasks: TaskMap, mode: StatusMode, columns: StatusColu
   const category = new Map<string, Category>()
   const subTotal = new Map<string, number>()
   const subDone = new Map<string, number>()
+  const lastActive = new Map<string, number>()
+  const ownActive = (id: string) => Date.parse(tasks[id].activeAt ?? tasks[id].updatedAt) || 0
   const set = (id: string, col: string) => {
     status.set(id, col)
     category.set(id, colById.get(col)!.category)
@@ -127,8 +131,10 @@ export function buildIndex(tasks: TaskMap, mode: StatusMode, columns: StatusColu
       set(id, ownColumn(id))
       subTotal.set(id, 0)
       subDone.set(id, 0)
+      lastActive.set(id, ownActive(id))
       continue
     }
+    let active = ownActive(id)
     let total = 0
     let done = 0
     let allDone = true
@@ -139,6 +145,7 @@ export function buildIndex(tasks: TaskMap, mode: StatusMode, columns: StatusColu
       const kc = category.get(k)
       if (!kc) continue // back-edge of a cycle
       total += 1 + subTotal.get(k)!
+      active = Math.max(active, lastActive.get(k)!)
       done += (kc === 'done' ? 1 : 0) + subDone.get(k)!
       if (kc !== 'done') allDone = false
       if (kc === 'doing' || kc === 'done') anyStarted = true
@@ -148,6 +155,7 @@ export function buildIndex(tasks: TaskMap, mode: StatusMode, columns: StatusColu
     }
     subTotal.set(id, total)
     subDone.set(id, done)
+    lastActive.set(id, active)
     if (mode === 'manual') set(id, ownColumn(id))
     // Derived: all children in one column → parent goes there too; otherwise roll up by category.
     else if (sameCol) set(id, sameCol)
@@ -171,6 +179,7 @@ export function buildIndex(tasks: TaskMap, mode: StatusMode, columns: StatusColu
     category,
     subTotal,
     subDone,
+    lastActive,
   }
 }
 
