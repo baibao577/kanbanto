@@ -1,3 +1,4 @@
+import type { PresetSettings } from './prefs'
 import type { Change } from './records'
 import type { BoardData } from './types'
 
@@ -328,6 +329,16 @@ export interface SharingMember {
   role: Role
 }
 
+/** A named set of filters and display settings on a board, shared with everyone on it (GET /api/boards/:id/presets). */
+export interface BoardPreset {
+  id: string
+  name: string
+  settings: PresetSettings
+  /** Who saved it last (null: they've left). */
+  by: string | null
+  updatedAt: string
+}
+
 /** GET /api/boards/:id/sharing */
 export interface Sharing {
   visibility: Visibility
@@ -343,6 +354,8 @@ export interface Sharing {
   code: { code: string; role: 'editor' | 'viewer' } | null
   /** Email invites not accepted yet (owners only). */
   pending: { id: string; email: string; role: 'editor' | 'viewer'; createdAt: string }[]
+  /** Files on the board (on cards and in comments): anyone with the public link can open them too. */
+  fileCount: number
   canManage: boolean
 }
 

@@ -704,3 +704,21 @@ export const pushDevices = pgTable(
   },
   (t) => [index('push_devices_user_idx').on(t.userId)],
 )
+
+/** Named filters and display settings on a board (its presets), shared with everyone on it. */
+export const boardPresets = pgTable(
+  'board_presets',
+  {
+    id: uuid('id').primaryKey(),
+    boardId: text('board_id')
+      .notNull()
+      .references(() => boards.id, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    /** PresetSettings (checked against PresetSettingsSchema when saved). */
+    settings: jsonb('settings').notNull(),
+    updatedBy: uuid('updated_by').references(() => users.id, { onDelete: 'set null' }),
+    createdAt: at('created_at').notNull().defaultNow(),
+    updatedAt: at('updated_at').notNull().defaultNow(),
+  },
+  (t) => [index('board_presets_board_idx').on(t.boardId)],
+)

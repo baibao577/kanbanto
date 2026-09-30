@@ -34,5 +34,5 @@ export const PUBLIC_LINK = {
   icon: Globe,
   title: 'Anyone with the link can view',
   label: 'Anyone with the link can view it',
-  hint: 'Even without an account. Only people who can open it otherwise can change it.',
+  hint: 'Even without an account: they see its cards, comments and files. Only people who can open it otherwise can change it.',
 }

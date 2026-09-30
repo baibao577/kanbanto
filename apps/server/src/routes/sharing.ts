@@ -7,7 +7,7 @@ import { memberRole, requireAccess } from '../boards/access'
 import { announceSharingChange, announceWorkspaceChange } from '../boards/announce'
 import { acceptInvite, activeInvites, findAnyInvite, newCode, newLinkToken, provesEmail, type InviteKind } from '../boards/invites'
 import type { Tx } from '../db'
-import { boardInvites, boardMembers, boards, ROLES, tasks, users, VISIBILITIES, workspaceMembers, workspaces } from '../db/schema'
+import { attachments, boardInvites, boardMembers, boards, ROLES, tasks, users, VISIBILITIES, workspaceMembers, workspaces } from '../db/schema'
 import { env } from '../env'
 import { HttpError, parse, siteUrl } from '../http'
 import { WHY_NOT_SENT } from '../mail/mailer'
@@ -77,6 +77,10 @@ export const sharingRoutes: FastifyPluginAsync = async (app) => {
           .from(workspaces)
           .where(eq(workspaces.id, board.workspaceId))
       : [null]
+    const [files] = await app.db
+      .select({ n: sql<number>`count(*)::int` })
+      .from(attachments)
+      .where(and(eq(attachments.boardId, id), isNull(attachments.deletedAt), eq(attachments.draft, false)))
     return {
       visibility: board.visibility,
       publicLink: board.publicLink,
@@ -84,6 +88,7 @@ export const sharingRoutes: FastifyPluginAsync = async (app) => {
       workspace: workspace ?? null,
       members,
       ...invites,
+      fileCount: files?.n ?? 0,
       canManage: owner,
     }
   })

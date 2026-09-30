@@ -7,7 +7,8 @@ import { Avatar, ProgressBar, StatusDot, StatusPill } from '@/components/common/
 import { Empty } from '@/components/common/Empty'
 import { DisplayMenu } from '@/components/shell/DisplayMenu'
 import { FilterMenu } from '@/components/shell/FilterMenu'
-import { ViewActions } from '@/components/shell/ViewBar'
+import { PresetMenu } from '@/components/shell/PresetMenu'
+import { BarIconButton, ViewActions } from '@/components/shell/ViewBar'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -72,6 +73,7 @@ export function BoardView({ search }: { search: string }) {
   return (
     <>
       <ViewActions>
+        <PresetMenu />
         <FilterMenu />
         <DisplayMenu />
       </ViewActions>
@@ -495,19 +497,19 @@ function Board({ search }: { search: string }) {
   return (
     <>
       {grouped && view.rows.length > 0 && view.columns.length > 0 && (
-        <ViewActions>
-          <RowsToggle
-            label="Collapse all rows"
-            onClick={() => setPrefs({ type: 'setCollapsedRows', keys: [...new Set([...prefs.collapsedRows, ...allKeys])] })}
-          >
-            <ArrowsInSimple />
-          </RowsToggle>
-          <RowsToggle
+        <ViewActions lead>
+          <BarIconButton
             label="Expand all rows"
             onClick={() => setPrefs({ type: 'setCollapsedRows', keys: prefs.collapsedRows.filter((k) => !allKeys.includes(k)) })}
           >
             <ArrowsOutSimple />
-          </RowsToggle>
+          </BarIconButton>
+          <BarIconButton
+            label="Collapse all rows"
+            onClick={() => setPrefs({ type: 'setCollapsedRows', keys: [...new Set([...prefs.collapsedRows, ...allKeys])] })}
+          >
+            <ArrowsInSimple />
+          </BarIconButton>
         </ViewActions>
       )}
       {!view.columns.length && !statusLists ? (
@@ -694,19 +696,6 @@ function HiddenLists({ lists }: { lists: StatusColumn[] }) {
         )}
       </DropdownMenuContent>
     </DropdownMenu>
-  )
-}
-
-function RowsToggle({ label, onClick, children }: { label: string; onClick: () => void; children: React.ReactNode }) {
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <Button variant="ghost" size="icon" className="size-8" aria-label={label} onClick={onClick}>
-          {children}
-        </Button>
-      </TooltipTrigger>
-      <TooltipContent>{label}</TooltipContent>
-    </Tooltip>
   )
 }
 

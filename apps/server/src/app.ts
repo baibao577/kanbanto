@@ -15,6 +15,7 @@ import { HttpError, siteUrl } from './http'
 import { LiveHub } from './live'
 import { Webhooks } from './webhooks'
 import { Push } from './push'
+import { presetRoutes } from './routes/presets'
 import { pushRoutes } from './routes/push'
 import { Mailer } from './mail/mailer'
 import { serverSender, type Sender } from './mail/senders'
@@ -219,6 +220,7 @@ export async function buildApp(
   await app.register(boardRoutes, { prefix: '/api' })
   await app.register(cardRoutes, { prefix: '/api' })
   await app.register(pushRoutes, { prefix: '/api' })
+  await app.register(presetRoutes, { prefix: '/api' })
   await app.register(sharingRoutes, { prefix: '/api' })
   await app.register(workspaceRoutes, { prefix: '/api' })
   await app.register(integrationRoutes, { prefix: '/api' })

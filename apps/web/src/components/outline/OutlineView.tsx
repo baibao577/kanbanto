@@ -21,7 +21,7 @@ import { PRIORITY_LABEL } from '@kanbanto/model/types'
 import { Empty } from '@/components/common/Empty'
 import { StatusMenu } from '@/components/common/StatusMenu'
 import { QuickAdd } from '@/components/board/QuickAdd'
-import { ViewActions } from '@/components/shell/ViewBar'
+import { BarIconButton, ViewActions } from '@/components/shell/ViewBar'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { formatDay } from '@/lib/format'
@@ -30,6 +30,7 @@ import { isBlocked, statusCol } from '@kanbanto/model/indexer'
 import { sortComparator, type OutlineColumn, type Sort, type SortKey } from '@kanbanto/model/table'
 import { afterSubtree, defaultExpanded, flattenTree, treeTop } from '@kanbanto/model/tree'
 import { FilterMenu } from '@/components/shell/FilterMenu'
+import { PresetMenu } from '@/components/shell/PresetMenu'
 import { AddSubtaskRow, DropLine } from '@/components/tree/rows'
 import { useRowDrag } from '@/components/tree/useRowDrag'
 import { useTreeFilter } from '@/components/tree/useTreeFilter'
@@ -122,20 +123,17 @@ export function OutlineView({ search }: { search: string }) {
   return (
     <>
       <ViewActions>
+        <PresetMenu />
         <FilterMenu />
         <OutlineDisplayMenu />
-        <Button
-          variant="ghost"
-          size="sm"
-          className="h-8 gap-1.5 max-sm:px-2"
-          onClick={() => setExpanded(new Set(idx.childrenOf.keys()))}
-          title="Expand all"
-        >
-          <ArrowsOutSimple /> <span className="max-sm:hidden">Expand all</span>
-        </Button>
-        <Button variant="ghost" size="sm" className="h-8 gap-1.5 max-sm:px-2" onClick={() => setExpanded(new Set())} title="Collapse all">
-          <ArrowsInSimple /> <span className="max-sm:hidden">Collapse all</span>
-        </Button>
+      </ViewActions>
+      <ViewActions lead>
+        <BarIconButton label="Expand all" onClick={() => setExpanded(new Set(idx.childrenOf.keys()))}>
+          <ArrowsOutSimple />
+        </BarIconButton>
+        <BarIconButton label="Collapse all" onClick={() => setExpanded(new Set())}>
+          <ArrowsInSimple />
+        </BarIconButton>
       </ViewActions>
 
       <div className="h-full overflow-auto">

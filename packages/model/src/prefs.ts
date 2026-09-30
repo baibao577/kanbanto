@@ -19,6 +19,30 @@ export interface ViewPrefs {
   collapsedRows: string[]
   /** Developer: show timing stats. */
   showPerf: boolean
+  /** The board preset picked last (its name shows on the Presets button). */
+  presetId?: string
+  /** How the view was before picking a preset (turning presets off brings it back). */
+  beforePreset?: PresetSettings
+}
+
+/** What a board preset keeps: the filters, and how the Board and Outline look (not which tab is open). */
+export type PresetSettings = Pick<ViewPrefs, 'filter' | 'display' | 'outline'>
+
+export const presetOf = (p: ViewPrefs): PresetSettings => ({ filter: p.filter, display: p.display, outline: p.outline })
+
+/** Whether the view still looks the way the preset left it (the Presets button shows a dot when not). */
+export const matchesPreset = (p: ViewPrefs, s: PresetSettings) => stable(presetOf(p)) === stable(s)
+
+/** JSON with sorted keys and no empty values, so equal settings compare equal. */
+function stable(v: unknown): string {
+  if (Array.isArray(v)) return `[${v.map(stable).join(',')}]`
+  if (v && typeof v === 'object')
+    return `{${Object.entries(v)
+      .filter(([, x]) => x !== undefined && !(Array.isArray(x) && !x.length))
+      .sort(([a], [b]) => (a < b ? -1 : 1))
+      .map(([k, x]) => `${JSON.stringify(k)}:${stable(x)}`)
+      .join(',')}}`
+  return JSON.stringify(v)
 }
 
 export const DEFAULT_DISPLAY: ViewPrefs['display'] = {
@@ -46,6 +70,9 @@ export type PrefsAction =
   | { type: 'toggleRow'; key: string }
   | { type: 'setCollapsedRows'; keys: string[] }
   | { type: 'setShowPerf'; on: boolean }
+  | { type: 'applyPreset'; id: string; settings: PresetSettings }
+  /** No preset: back to `settings` (or the view as it is, without). */
+  | { type: 'leavePreset'; settings?: PresetSettings }
   | { type: 'replace'; prefs: ViewPrefs }
 
 export function prefsReducer(p: ViewPrefs, a: PrefsAction): ViewPrefs {
@@ -69,6 +96,11 @@ export function prefsReducer(p: ViewPrefs, a: PrefsAction): ViewPrefs {
       return { ...p, collapsedRows: a.keys }
     case 'setShowPerf':
       return { ...p, showPerf: a.on }
+    case 'applyPreset':
+      // Switching from one preset to another keeps the view from before the first.
+      return { ...p, ...a.settings, presetId: a.id, beforePreset: p.presetId ? p.beforePreset : presetOf(p) }
+    case 'leavePreset':
+      return { ...p, ...a.settings, presetId: undefined, beforePreset: undefined }
     case 'replace':
       return a.prefs
   }

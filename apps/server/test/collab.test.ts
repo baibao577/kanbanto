@@ -144,6 +144,8 @@ describe('attachments', () => {
     expect(r.status).toBe(200)
     expect(r.body.attachment).toMatchObject({ name: 'notes.txt', size: 5, image: false, uploader: 'Bob' })
     expect((await upload(vic, id, 'A3', 'x.txt', Buffer.from('x'))).status).toBe(403)
+    // The share dialog counts it (anyone with a public link could open it).
+    expect((await vic.ok('GET', `/api/boards/${id}/sharing`)).fileCount).toBe(1)
     const file = await vic.request('GET', r.body.attachment.url)
     expect(file.raw.toString()).toBe('hello')
     // Not a picture: it downloads (it can never run as a page on this site).

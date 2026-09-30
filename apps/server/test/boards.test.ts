@@ -274,3 +274,43 @@ describe('sharing', () => {
     expect((await ann.ok('GET', `/api/boards/${id}`)).access.role).toBe('owner')
   })
 })
+
+describe('presets', () => {
+  const settings = {
+    filter: { labels: ['x'], due: 'week' },
+    display: { board: { columns: 'status', rows: 'assignee', filter: 'leaves', parentDisplay: ['label'], hiddenColumns: ['backlog'] } },
+    outline: { density: 'compact' },
+  }
+
+  it('everyone on the board sees them; editors save, update and delete them; viewers can’t', async () => {
+    const ann = await Person.signUp(t.app, 'Ann')
+    const [{ id }] = (await ann.ok('GET', '/api/boards')).boards
+    const bob = await Person.signUp(t.app, 'Bob')
+    const vic = await Person.signUp(t.app, 'Vic')
+    await ann.ok('POST', `/api/boards/${id}/invitations`, { email: 'bob@example.com', role: 'editor' })
+    await ann.ok('POST', `/api/boards/${id}/invitations`, { email: 'vic@example.com', role: 'viewer' })
+
+    const made = await bob.ok('POST', `/api/boards/${id}/presets`, { name: ' Focus ', settings })
+    expect(made.presets).toMatchObject([{ id: made.id, name: 'Focus', settings, by: 'Bob' }])
+    expect((await vic.ok('GET', `/api/boards/${id}/presets`)).presets).toHaveLength(1)
+    expect((await vic.request('POST', `/api/boards/${id}/presets`, { name: 'Mine', settings })).status).toBe(403)
+    expect((await vic.request('DELETE', `/api/boards/${id}/presets/${made.id}`)).status).toBe(403)
+    // Settings are checked.
+    expect((await bob.request('POST', `/api/boards/${id}/presets`, { name: 'Bad', settings: { ...settings, filter: { due: 'soon' } } })).status).toBe(
+      400,
+    )
+
+    const renamed = await ann.ok('PATCH', `/api/boards/${id}/presets/${made.id}`, { name: 'Review', settings: { ...settings, outline: {} } })
+    expect(renamed.presets).toMatchObject([{ name: 'Review', settings: { outline: {} }, by: 'Ann' }])
+    // Another board's preset can't be reached through this one.
+    const other =
+      (await ann.ok('POST', '/api/boards', { name: 'Other' })).board?.id ??
+      (await ann.ok('GET', '/api/boards')).boards.find((b: { name: string }) => b.name === 'Other').id
+    expect((await ann.request('PATCH', `/api/boards/${other}/presets/${made.id}`, { name: 'x' })).status).toBe(404)
+
+    expect((await bob.ok('DELETE', `/api/boards/${id}/presets/${made.id}`)).presets).toEqual([])
+    // Strangers see nothing.
+    const eve = await Person.signUp(t.app, 'Eve')
+    expect((await eve.request('GET', `/api/boards/${id}/presets`)).status).toBe(404)
+  })
+})

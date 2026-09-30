@@ -274,7 +274,11 @@ export function ShareDialog({ open, onOpenChange }: { open: boolean; onOpenChang
                 </span>
                 <div className="min-w-0 flex-1">
                   <p className="text-sm font-medium">{PUBLIC_LINK.title}</p>
-                  <p className="truncate text-xs text-muted-foreground">{paused ? 'Not while the board is private.' : 'Even without an account.'}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {paused
+                      ? 'Not while the board is private.'
+                      : `Even without an account. They${sharing.publicLink ? '' : '’d'} see its cards, comments and ${sharing.fileCount ? `${sharing.fileCount} ${sharing.fileCount === 1 ? 'file' : 'files'}` : 'files'}.`}
+                  </p>
                 </div>
                 {sharing.publicLink && !paused && (
                   <Button variant="outline" size="sm" className="h-8 gap-1.5" aria-label="Copy link" onClick={() => void copy(boardLink, 'Link')}>

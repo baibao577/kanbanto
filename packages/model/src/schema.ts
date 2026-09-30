@@ -187,9 +187,8 @@ const viewConfig = z.object({
   groupByParent: z.boolean().optional(),
 })
 
-export const ViewPrefsSchema = z.object({
-  version: z.literal(3),
-  layout: z.enum(LAYOUTS),
+/** A board preset's settings (see PresetSettings): filters, and how the Board and Outline look. */
+export const PresetSettingsSchema = z.object({
   display: z.object({ board: viewConfig }),
   outline: z.object({
     sort: z
@@ -206,7 +205,14 @@ export const ViewPrefsSchema = z.object({
     due: z.enum(['overdue', 'week', 'none']).optional(),
     upNext: z.boolean().optional(),
   }),
+})
+
+export const ViewPrefsSchema = PresetSettingsSchema.extend({
+  version: z.literal(3),
+  layout: z.enum(LAYOUTS),
   focusId: z.string().optional(),
   collapsedRows: z.array(z.string()),
   showPerf: z.boolean(),
+  presetId: z.string().optional(),
+  beforePreset: PresetSettingsSchema.optional(),
 })

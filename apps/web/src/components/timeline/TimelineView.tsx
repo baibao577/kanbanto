@@ -5,7 +5,8 @@ import { StatusDot } from '@/components/common/bits'
 import { Empty } from '@/components/common/Empty'
 import { QuickAdd } from '@/components/board/QuickAdd'
 import { FilterMenu } from '@/components/shell/FilterMenu'
-import { ViewActions } from '@/components/shell/ViewBar'
+import { PresetMenu } from '@/components/shell/PresetMenu'
+import { BarIconButton, ViewActions } from '@/components/shell/ViewBar'
 import { AddSubtaskRow, DropLine } from '@/components/tree/rows'
 import { useRowDrag } from '@/components/tree/useRowDrag'
 import { useTreeFilter } from '@/components/tree/useTreeFilter'
@@ -21,7 +22,6 @@ import {
   ContextMenuTrigger,
 } from '@/components/ui/context-menu'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 import { dayParts, fromDay, shiftDays, taskSpan, todayDay } from '@kanbanto/model/dates'
 import { formatDay } from '@/lib/format'
@@ -194,6 +194,7 @@ export function TimelineView({ search }: { search: string }) {
   return (
     <>
       <ViewActions>
+        <PresetMenu />
         <FilterMenu />
         <ToggleGroup type="single" size="sm" variant="outline" value={zoom} onValueChange={(v) => v && setZoom(v as Zoom)}>
           <ToggleGroupItem value="day" className="px-3">
@@ -209,12 +210,14 @@ export function TimelineView({ search }: { search: string }) {
         <Button variant="outline" size="sm" className="h-8" onClick={() => scroller.current?.scrollTo({ left: todayLeft(), behavior: 'smooth' })}>
           Today
         </Button>
-        <IconAction label="Expand all" onClick={() => setExpanded(new Set(idx.childrenOf.keys()))}>
+      </ViewActions>
+      <ViewActions lead>
+        <BarIconButton label="Expand all" onClick={() => setExpanded(new Set(idx.childrenOf.keys()))}>
           <ArrowsOutSimple />
-        </IconAction>
-        <IconAction label="Collapse all" onClick={() => setExpanded(new Set())}>
+        </BarIconButton>
+        <BarIconButton label="Collapse all" onClick={() => setExpanded(new Set())}>
           <ArrowsInSimple />
-        </IconAction>
+        </BarIconButton>
       </ViewActions>
 
       {rows.length === 0 ? (
@@ -495,18 +498,5 @@ function BarMenu({
         </ContextMenuItem>
       </ContextMenuContent>
     </ContextMenu>
-  )
-}
-
-function IconAction({ label, onClick, children }: { label: string; onClick: () => void; children: React.ReactNode }) {
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <Button variant="ghost" size="icon" className="size-8" aria-label={label} onClick={onClick}>
-          {children}
-        </Button>
-      </TooltipTrigger>
-      <TooltipContent>{label}</TooltipContent>
-    </Tooltip>
   )
 }

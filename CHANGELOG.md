@@ -43,6 +43,9 @@ then `git pull` (or download the new release) and `docker compose up -d --build`
   delivery log showing what was sent and what came back, with "Send again".
 - **Outline** uses the full width, with columns you choose and compact (or comfortable) rows (Display), indent guides
   and lightly tinted projects; on phones it's a nested list with each task's details underneath.
+- **Presets** on each board: save the filters and Display options as a named preset ("Focus", "Review") that
+  everyone on the board can pick. Editors save, update, rename and delete them.
+- **Public links** say that visitors also see the board's comments and files (and how many files there are).
 - **Archive** cards (with their subtasks) and boards instead of deleting them. Archived cards have their own page
   (board ⋯ → Archived cards, or from search) across all your boards, where they can be searched, opened read-only,
   restored where they were, or deleted for good; archived boards are read-only and kept under "Archived boards" on the

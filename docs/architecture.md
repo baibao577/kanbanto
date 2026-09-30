@@ -119,7 +119,7 @@ The app uses hash routing, so any static host or proxy works without rewrite rul
 - **Who can open a board** (`accessFor` in `src/boards/access.ts`): *Private* (owners only), *Only people added*
   (its members), *Everyone in the workspace* (its members, plus everyone in its workspace with the board's workspace
   role: editor by default, or viewer). Someone who's both gets the higher role. *Anyone with the link can view* is a
-  switch on top (not while private).
+  switch on top (not while private); visitors see the cards, comments and files (the share dialog says how many).
 - **Leaving a workspace** closes its boards to you, except ones you were added to. Boards you own there stay in the
   workspace; where you were the only owner, an admin becomes the owner. **Moving a board** into a workspace is up to
   its owner; taking one out also needs that workspace's admin.

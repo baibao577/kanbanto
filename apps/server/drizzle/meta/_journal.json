@@ -141,6 +141,13 @@
       "when": 1790770902890,
       "tag": "0019_push",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1790781395317,
+      "tag": "0020_board_presets",
+      "breakpoints": true
     }
   ]
 }
