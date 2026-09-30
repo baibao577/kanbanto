@@ -10,8 +10,11 @@ Kanbanto is a kanban app where tasks nest: any task can have subtasks, as deep a
 
 ## Connecting
 
-Prefer the MCP tools. If they aren't available, ask the user to connect them (they need an API token from Account
-settings → API tokens on their Kanbanto site):
+Prefer the MCP tools. If they aren't available, ask the user to connect them:
+
+- **Claude on the web or Claude Desktop:** Settings → Connectors → add a custom connector with
+  `https://<their-kanbanto>/api/mcp`, then sign in to Kanbanto when asked.
+- **Claude Code:** with an API token from Account settings → API tokens on their Kanbanto site:
 
 ```bash
 claude mcp add --transport http kanbanto https://<their-kanbanto>/api/mcp --header "Authorization: Bearer <token>"
@@ -76,6 +79,9 @@ Without MCP, use the REST API (see "REST fallback" below).
   `next_until`. For what was created or touched in a period, `find_tasks` with `created_after` / `changed_before` etc.
 - *"Plan X"* → find or create the parent task, then `create_tasks` with its subtasks; offer to set due dates and
   assignees.
+- *"My day" / "what do I need to do today?"* → `reminders` (coming up today, and what went off), `find_tasks` with
+  `assignee: "me"` and `due_before` today (overdue and due today), and `recent_activity` for mentions; lead with
+  what's urgent or overdue, then today's reminders in time order.
 - *"Catch me up" / "what's new"* → `recent_activity` (since the last day, or `since: "3d"`), per workspace; lead with
   what mentions them and what's due soon.
 - *"Standup / status update"* → `recent_activity` for what changed, `find_tasks` for what's in progress, `get_task` for
