@@ -22,14 +22,38 @@ export async function currentSubscription(): Promise<PushSubscription | null> {
 export async function turnOnHere(): Promise<'on' | 'denied'> {
   if ((await Notification.requestPermission()) !== 'granted') return 'denied'
   const { publicKey } = await api<{ publicKey: string }>('GET', '/push/key')
-  const reg = await registration()
-  await navigator.serviceWorker.ready
-  const sub =
-    (await reg.pushManager.getSubscription()) ??
-    (await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: fromBase64Url(publicKey) }))
+  const key = fromBase64Url(publicKey)
+  let sub: PushSubscription
+  try {
+    sub = await subscribe(await registration(), key)
+  } catch (e) {
+    // Blocked by permission: starting over won't help.
+    if (!(e instanceof DOMException) || e.name === 'NotAllowedError') throw e
+    // The browser's own push state for this site is broken ("could not retrieve the public key"): start over once.
+    const old = await navigator.serviceWorker.getRegistration('/')
+    await (await old?.pushManager.getSubscription())?.unsubscribe().catch(() => {})
+    await old?.unregister()
+    sub = await subscribe(await navigator.serviceWorker.register('/sw.js', { scope: '/' }), key)
+  }
   const json = sub.toJSON() as { endpoint: string; keys: { p256dh: string; auth: string } }
   await api('POST', '/push/devices', { endpoint: json.endpoint, keys: json.keys, label: browserLabel() })
   return 'on'
+}
+
+/** This browser's subscription for the server's key: an old one made with another key is replaced. */
+async function subscribe(reg: ServiceWorkerRegistration, key: Uint8Array<ArrayBuffer>) {
+  await navigator.serviceWorker.ready
+  const existing = await reg.pushManager.getSubscription()
+  if (existing) {
+    const had = existing.options.applicationServerKey
+    if (had && sameBytes(new Uint8Array(had), key)) return existing
+    await existing.unsubscribe()
+  }
+  return reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: key })
+}
+
+function sameBytes(a: Uint8Array, b: Uint8Array) {
+  return a.length === b.length && a.every((x, i) => x === b[i])
 }
 
 /** Stops notifications in this browser (and forgets it on the server). */

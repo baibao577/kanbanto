@@ -39,7 +39,19 @@ export function DesktopNotifications() {
       await reload()
     } catch (e) {
       // The browser's push service said no (private windows, some browser settings, no push service).
-      if (e instanceof DOMException) toast.error('This browser couldn’t set up notifications here.', { description: e.message })
+      if (e instanceof DOMException && (e.name === 'NotAllowedError' || /permission denied/i.test(e.message)))
+        toast.error('Notifications may be off for this browser in your computer’s settings (on a Mac: System Settings → Notifications).', {
+          description: e.message,
+        })
+      else if (e instanceof DOMException && /public key/i.test(e.message))
+        // The browser's own push keys (for every site) can't be read: nothing this site can reset.
+        toast.error('This browser couldn’t set up its notification keys. Quit and reopen the browser, then try again.', {
+          description: e.message,
+        })
+      else if (e instanceof DOMException)
+        toast.error('This browser couldn’t set up notifications here. Quit and reopen the browser, then try again.', {
+          description: e.message,
+        })
       else toast.error(errorMessage(e))
     } finally {
       setBusy(false)
