@@ -1,4 +1,4 @@
-import { Desktop, Info, Moon, PaintBrush, PlugsConnected, Sun, Trash, Tray, User, UsersThree, type Icon } from '@phosphor-icons/react'
+import { Archive, Desktop, Info, Moon, PaintBrush, PlugsConnected, Sun, Trash, Tray, User, UsersThree, type Icon } from '@phosphor-icons/react'
 import { toast } from 'sonner'
 import { useState, type ReactNode } from 'react'
 import { api, errorMessage } from '@/api/client'
@@ -46,7 +46,7 @@ export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCh
     { id: 'look', label: 'Background', icon: PaintBrush },
     { id: 'people', label: 'People & apps', icon: UsersThree },
     { id: 'you', label: 'Just for you', icon: User },
-    ...(owner ? [{ id: 'delete' as const, label: 'Delete board', icon: Trash, danger: true }] : []),
+    ...(owner ? [{ id: 'delete' as const, label: 'Archive or delete', icon: Trash, danger: true }] : []),
   ]
 
   return (
@@ -267,7 +267,29 @@ function JustForYou() {
 function DeleteBoard({ onDeleted }: { onDeleted: () => void }) {
   const { data } = useBoard()
   return (
-    <Section title="Delete board" hint="For the board’s owners.">
+    <Section title="Archive or delete" hint="For the board’s owners.">
+      <div className="space-y-3 rounded-xl border bg-card p-4">
+        <p className="text-sm">
+          <span className="font-medium">Archive</span> to put it away: it leaves your boards page (it’s under “Archived boards” at the bottom),
+          becomes read-only for everyone, and keeps everything. You can restore it any time.
+        </p>
+        <Button
+          variant="outline"
+          size="sm"
+          className="gap-1.5"
+          onClick={() =>
+            api('POST', `/boards/${data.board.id}/archive`, { archived: true }).then(
+              () => {
+                onDeleted()
+                toast(`Archived “${data.board.name}”`)
+              },
+              (e) => toast.error(errorMessage(e)),
+            )
+          }
+        >
+          <Archive /> Archive board
+        </Button>
+      </div>
       <div className="space-y-3 rounded-xl border border-destructive/30 bg-destructive/5 p-4">
         <p className="text-sm">
           Deletes “{data.board.name}” and its {Object.keys(data.tasks).length.toLocaleString()} tasks for everyone, with their comments and files.

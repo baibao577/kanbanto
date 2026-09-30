@@ -1,9 +1,9 @@
 import {
   ArrowDown,
+  ArrowUp,
   ArrowsDownUp,
   ArrowsInSimple,
   ArrowsOutSimple,
-  ArrowUp,
   CaretDown,
   CaretRight,
   Crosshair,

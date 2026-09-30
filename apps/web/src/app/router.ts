@@ -8,6 +8,7 @@ import { LAYOUTS, type Layout } from '@kanbanto/model/types'
  *                            Back/Forward and links bring it back. A bare #/b/<id> means "as I left it".
  *   #/join/<token>           a share link (or an email invite), to a board or a workspace
  *   #/w/<id>                 a workspace's people and settings
+ *   #/cards?state=archived&board=<id>&q=<words>   cards across boards (archived ones, for now)
  *   #/authorize?<oauth params>   approving an app that connects with sign-in (from /oauth/authorize)
  *   #/signin, #/signup       (?next=<where to go after>)
  *   #/forgot                 ask for a password reset email
@@ -17,11 +18,14 @@ import { LAYOUTS, type Layout } from '@kanbanto/model/types'
  * Hash addresses work on any static host, with no server rewrite rules.
  */
 export type BoardRoute = { page: 'board'; id: string; layout?: Layout; focus?: string; task?: string }
+/** The Cards page: which cards (archived, for now), on one board or all of them, matching some words. */
+export type CardsRoute = { page: 'cards'; state: 'archived'; board?: string; q?: string }
 export type Route =
   | { page: 'home' }
   | BoardRoute
   | { page: 'join'; token: string }
   | { page: 'workspace'; id: string }
+  | CardsRoute
   | { page: 'authorize'; query: string }
   | { page: 'verify'; token: string }
   | { page: 'reset'; token: string }
@@ -42,6 +46,11 @@ export function parseRoute(hash: string): Route {
   if (/^#\/forgot\/?$/.test(hash)) return { page: 'forgot' }
   const authorize = hash.match(/^#\/authorize\?(.*)$/)
   if (authorize) return { page: 'authorize', query: authorize[1] }
+  const cards = hash.match(/^#\/cards\/?(?:\?(.*))?$/)
+  if (cards) {
+    const p = new URLSearchParams(cards[1] ?? '')
+    return { page: 'cards', state: 'archived', ...(p.get('board') && { board: p.get('board')! }), ...(p.get('q') && { q: p.get('q')! }) }
+  }
   const ws = hash.match(/^#\/w\/([^/?#]+)\/?$/)
   if (ws) return { page: 'workspace', id: decodeURIComponent(ws[1]) }
   const auth = hash.match(/^#\/(signin|signup)(?:\?(.*))?$/)
@@ -78,6 +87,12 @@ export function hrefFor(r: Route) {
   if (r.page === 'admin') return r.section && r.section !== 'overview' ? `#/admin/${r.section}` : '#/admin'
   if (r.page === 'forgot') return '#/forgot'
   if (r.page === 'workspace') return `#/w/${encodeURIComponent(r.id)}`
+  if (r.page === 'cards') {
+    const p = new URLSearchParams({ state: r.state })
+    if (r.board) p.set('board', r.board)
+    if (r.q) p.set('q', r.q)
+    return `#/cards?${p}`
+  }
   if (r.page === 'authorize') return `#/authorize?${r.query}`
   if (r.page === 'join' || r.page === 'verify' || r.page === 'reset') return `#/${r.page}/${encodeURIComponent(r.token)}`
   if (r.page === 'signin' || r.page === 'signup') return `#/${r.page}${r.next ? `?next=${encodeURIComponent(r.next)}` : ''}`

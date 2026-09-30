@@ -171,6 +171,7 @@ function Board({ search }: { search: string }) {
     lists: columns,
     col,
     toBoard: moveToBoard,
+    archive: (id: string) => run({ type: 'task.archive', id }),
     to: (id: string, where: { col: string } | 'top' | 'bottom') => {
       const to = typeof where === 'object' ? where.col : col
       drop(id, row, to, where === 'top' ? 0 : (view.cells.get(cellKey(row, to))?.length ?? 0))

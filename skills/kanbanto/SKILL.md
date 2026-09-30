@@ -45,6 +45,9 @@ Without MCP, use the REST API (see "REST fallback" below).
 - **Setting up a board:** `create_board` (with `about`, in Personal or a workspace), then `manage_lists` for its
   workflow (e.g. add "Review" before Done, counting as in progress) and `manage_labels`. `update_board` renames it or
   changes what it's for. `set_inbox` picks their Inbox.
+- **Putting work away:** `archive_task` archives a finished or paused task (with its subtasks); it's restorable, so
+  prefer it to asking the user to delete. `find_tasks` and `list_boards` include archived things only with
+  `include_archived`.
 - There are no tools for sharing, inviting people or deleting boards and tasks, on purpose. If something should go or
   be shared, say so and point the user to the app.
 

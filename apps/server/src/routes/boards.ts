@@ -54,12 +54,13 @@ export async function boardsFor(db: Db, userId: string): Promise<BoardSummary[]>
     done_count: number
     created_at: Date
     activity_at: Date
+    archived_at: Date | null
   }>(sql`
       select b.id, b.name, b.description, b.background, b.visibility, b.public_link, b.workspace_id, b.workspace_role, m.role,
-        (w.user_id is not null) as in_workspace, b.created_at, b.activity_at,
-        (select count(*)::int from tasks t where t.board_id = b.id) as task_count,
+        (w.user_id is not null) as in_workspace, b.created_at, b.activity_at, b.archived_at,
+        (select count(*)::int from tasks t where t.board_id = b.id and t.archived_at is null) as task_count,
         (select count(*)::int from tasks t join lists l on l.board_id = t.board_id and l.id = t.status
-          where t.board_id = b.id and l.category = 'done') as done_count
+          where t.board_id = b.id and t.archived_at is null and l.category = 'done') as done_count
       from boards b
       left join board_members m on m.board_id = b.id and m.user_id = ${userId}
       left join workspace_members w on w.workspace_id = b.workspace_id and w.user_id = ${userId}
@@ -90,6 +91,7 @@ export async function boardsFor(db: Db, userId: string): Promise<BoardSummary[]>
       doneCount: r.done_count,
       createdAt: new Date(r.created_at).toISOString(),
       updatedAt: new Date(r.activity_at).toISOString(),
+      archivedAt: r.archived_at ? new Date(r.archived_at).toISOString() : null,
     })
   }
   return summaries
@@ -127,13 +129,36 @@ export const boardRoutes: FastifyPluginAsync = async (app) => {
       board.workspaceId && access.via !== 'public'
         ? await app.db.select({ id: workspaces.id, name: workspaces.name }).from(workspaces).where(eq(workspaces.id, board.workspaceId))
         : [null]
-    const shown: BoardAccess = { ...access, visibility: board.visibility, publicLink: board.publicLink, workspace: workspace ?? null }
+    const shown: BoardAccess = {
+      ...access,
+      visibility: board.visibility,
+      publicLink: board.publicLink,
+      workspace: workspace ?? null,
+      archivedAt: board.archivedAt?.toISOString() ?? null,
+    }
     return { data, seq, access: shown, counts, canComment: access.via !== 'public' }
+  })
+
+  /** Archives a board (owners): off the boards page and read-only, until restored. Or restores it. */
+  app.post('/boards/:id/archive', async (req) => {
+    const { id } = parse(Params, req.params)
+    const { archived } = parse(z.object({ archived: z.boolean() }), req.body)
+    const { board } = await requireAccess(app.db, requireUser(req.user), id, 'owner', { archived: true })
+    if (!!board.archivedAt !== archived) {
+      await app.db
+        .update(boards)
+        .set({ archivedAt: archived ? new Date() : null })
+        .where(eq(boards.id, id))
+      // Everyone with it open sees it change (read-only, or back to normal).
+      await app.engine.touch(id)
+      app.hub.broadcast(id, { type: 'reload' })
+    }
+    return { ok: true }
   })
 
   app.delete('/boards/:id', async (req) => {
     const { id } = parse(Params, req.params)
-    await requireAccess(app.db, requireUser(req.user), id, 'owner')
+    await requireAccess(app.db, requireUser(req.user), id, 'owner', { archived: true })
     await deleteBoardFiles(app.db, id)
     await app.db.delete(boards).where(eq(boards.id, id))
     app.engine.forget(id)

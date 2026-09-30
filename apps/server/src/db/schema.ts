@@ -269,6 +269,8 @@ export const boards = pgTable(
     seq: bigint('seq', { mode: 'number' }).notNull().default(0),
     /** Last change of any kind (for "updated 5 minutes ago"). */
     activityAt: at('activity_at').notNull().defaultNow(),
+    /** Archived by an owner: read-only and off the boards page until restored. */
+    archivedAt: at('archived_at'),
   },
   (t) => [index('boards_workspace_idx').on(t.workspaceId)],
 )
@@ -362,6 +364,8 @@ export const tasks = pgTable(
     description: text('description'),
     /** urgent · high · medium · low; null: none. */
     priority: text('priority', { enum: PRIORITIES }),
+    /** Archived (with its subtasks): out of every view and count until restored. */
+    archivedAt: at('archived_at'),
     /** The list it's in. */
     status: text('status').notNull(),
     /** Position among its siblings in the outline. */

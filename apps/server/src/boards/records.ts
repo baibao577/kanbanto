@@ -74,6 +74,7 @@ export function taskFromRow(r: Row<typeof tasks>): Task {
   }
   if (r.description) t.description = r.description
   if (r.priority) t.priority = r.priority
+  if (r.archivedAt) t.archivedAt = r.archivedAt.toISOString()
   if (r.rank) t.rank = r.rank
   if (r.start) t.start = r.start
   if (r.due) t.due = r.due
@@ -88,6 +89,7 @@ export const taskToRow = (boardId: string, t: Task): Row<typeof tasks> => ({
   title: t.title,
   description: t.description ?? null,
   priority: t.priority ?? null,
+  archivedAt: t.archivedAt ? toDate(t.archivedAt) : null,
   status: t.status,
   outlineOrder: t.order,
   rank: t.rank ?? null,
@@ -109,10 +111,20 @@ export const boardFields = (b: Board) => ({
 })
 
 /** Changes that create every record of a new board (lists, labels, tasks). */
-export function creations(data: { columns: StatusColumn[]; labels: LabelDef[]; tasks: Record<string, Task> }): Change[] {
+export function creations(data: {
+  columns: StatusColumn[]
+  labels: LabelDef[]
+  tasks: Record<string, Task>
+  archived?: Record<string, Task>
+}): Change[] {
   return [
     ...data.columns.map((c): Change => ({ entity: 'column', id: c.id, before: null, after: c })),
     ...data.labels.map((l): Change => ({ entity: 'label', id: l.id, before: null, after: l })),
-    ...Object.values(data.tasks).map((t): Change => ({ entity: 'task', id: t.id, before: null, after: t })),
+    ...[...Object.values(data.tasks), ...Object.values(data.archived ?? {})].map((t): Change => ({
+      entity: 'task',
+      id: t.id,
+      before: null,
+      after: t,
+    })),
   ]
 }

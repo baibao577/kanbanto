@@ -54,7 +54,7 @@ export async function userForApiToken(db: Db, token: string): Promise<{ user: Se
  * What API tokens can reach: boards (and their comments and files), workspaces, notifications, joining, the MCP
  * endpoint, and who you are. Never your account, its tokens, or the Platform console.
  */
-export const TOKEN_ROUTES = /^\/api\/(boards|workspaces|notifications|attachments|join|mcp)(\/|\?|$)|^\/api\/auth\/me(\?|$)/
+export const TOKEN_ROUTES = /^\/api\/(boards|cards|workspaces|notifications|attachments|join|mcp)(\/|\?|$)|^\/api\/auth\/me(\?|$)/
 
 export async function deleteExpiredTokens(db: Db) {
   await db.delete(apiTokens).where(lt(apiTokens.expiresAt, new Date()))

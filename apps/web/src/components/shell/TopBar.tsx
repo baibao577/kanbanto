@@ -150,7 +150,7 @@ function BoardSwitcher({ name, currentId, onRename }: { name: string; currentId:
   const [editing, setEditing] = useState(false)
   const [creating, setCreating] = useState(false)
   // Most recently changed first (the server's order).
-  const recent = (boards ?? []).filter((b) => b.id !== currentId).slice(0, 8)
+  const recent = (boards ?? []).filter((b) => b.id !== currentId && !b.archivedAt).slice(0, 8)
 
   if (editing)
     return (

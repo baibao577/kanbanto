@@ -211,7 +211,7 @@ export const fileRoutes: FastifyPluginAsync = async (app) => {
     const { id, taskId } = parse(TaskParams, req.params)
     const me = requireUser(req.user)
     const forComment = req.headers['x-attach-to'] === 'comment'
-    const { board, access } = await requireAccess(app.db, me, id, forComment ? 'viewer' : 'editor')
+    const { board, access } = await requireAccess(app.db, me, id, forComment ? 'viewer' : 'editor', { write: true })
     if (forComment && access.via === 'public') throw new HttpError(403, 'Join this board to comment on it.')
     return { id, taskId, me, forComment, board }
   }

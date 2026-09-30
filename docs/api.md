@@ -36,7 +36,11 @@ curl -X POST https://kanbanto.example.com/api/boards/<board id>/mutations \
 - The answer lists the records that changed (`changes`: each with `before` and `after`).
 - A refused command answers 422 with the reason (for example, moving a task inside its own subtask).
 - `/api/docs` lists every command and its fields: `task.create`, `task.update`, `task.move`, `tasks.moveToList`,
-  `task.delete`, and the ones for lists, labels and the board.
+  `task.archive`, `task.restore`, `task.delete`, and the ones for lists, labels and the board.
+- **Archiving** (`task.archive`) puts a task and its subtasks away: they're out of the board and its counts, kept (with
+  comments and files) under `archived` in `GET /api/boards/<id>`, and come back with `task.restore`. `task.delete` on
+  an archived task deletes it for good. A whole board is archived (read-only) with `POST /api/boards/<id>/archive`.
+  `GET /api/cards?state=archived&board=<id>&q=<words>` lists archived cards across your boards, newest first, in pages.
 
 `GET /api/boards/<id>` returns the whole board: its lists, labels, people and tasks (a task's `status` is its list's id;
 `parentId` makes the tree; `priority` is `urgent`, `high`, `medium` or `low`).
@@ -123,6 +127,7 @@ claude mcp add --transport http kanbanto https://kanbanto.example.com/api/mcp --
 | `create_tasks` | Add tasks, or break one down into subtasks (`parent_id`); without a board they go to your Inbox |
 | `update_task` | Title, description, dates, assignee, priority, labels, list |
 | `move_task` | Change a task's parent or its place among siblings |
+| `archive_task` | Archive a task with its subtasks, or restore it (`restore: true`); nothing is lost |
 | `move_to_board` | Move a task, with its subtasks, comments and files, to another board (say, from the Inbox) |
 | `create_board` | A new board in Personal or a workspace, with what it's for |
 | `update_board` | Name, what it's for, background, how a parent task's status is set |

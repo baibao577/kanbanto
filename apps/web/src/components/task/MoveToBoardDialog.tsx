@@ -39,7 +39,7 @@ export function MoveToBoardDialog({ taskId, onClose, onMoved }: { taskId: string
   const groups = useMemo(() => {
     const out = new Map<string, BoardSummary[]>()
     for (const b of boards ?? []) {
-      if (b.id === data.board.id || b.role === 'viewer') continue
+      if (b.id === data.board.id || b.role === 'viewer' || b.archivedAt) continue
       const place = b.workspaceId
         ? (workspaces?.find((w) => w.id === b.workspaceId)?.name ?? 'Workspace')
         : b.role === 'owner'

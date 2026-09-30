@@ -6,7 +6,9 @@ import type { BoardData, TaskMap } from './types'
 export function applyChanges(data: BoardData, changes: Change[]): BoardData {
   if (!changes.length) return data
   let { board, members, columns, labels, tasks } = data
+  let archived = data.archived ?? {}
   let tasksCopied = false
+  let archivedCopied = false
   const lists: Partial<Record<Exclude<Entity, 'board' | 'task'>, Map<string, unknown>>> = {}
   const listOf = <K extends 'member' | 'column' | 'label'>(entity: K, current: Records[K][]) =>
     (lists[entity] ??= new Map(current.map((r) => [r.id, r]))) as Map<string, Records[K]>
@@ -17,12 +19,18 @@ export function applyChanges(data: BoardData, changes: Change[]): BoardData {
         if (c.after) board = c.after
         break
       case 'task':
-        if (!tasksCopied) {
+        // An archived task lives in `archived`, the rest in `tasks`: a change can move it from one to the other.
+        if (!tasksCopied && (c.id in tasks || (c.after && !c.after.archivedAt))) {
           tasks = { ...tasks }
           tasksCopied = true
         }
-        if (c.after) tasks[c.id] = c.after
-        else delete (tasks as TaskMap)[c.id]
+        if (!archivedCopied && (c.id in archived || c.after?.archivedAt)) {
+          archived = { ...archived }
+          archivedCopied = true
+        }
+        if (tasksCopied) delete (tasks as TaskMap)[c.id]
+        if (archivedCopied) delete (archived as TaskMap)[c.id]
+        if (c.after) (c.after.archivedAt ? archived : tasks)[c.id] = c.after
         break
       case 'member':
         if (c.after) listOf('member', members).set(c.id, c.after)
@@ -41,7 +49,7 @@ export function applyChanges(data: BoardData, changes: Change[]): BoardData {
   if (lists.member) members = [...(lists.member.values() as Iterable<Records['member']>)]
   if (lists.label) labels = [...(lists.label.values() as Iterable<Records['label']>)]
   if (lists.column) columns = [...(lists.column.values() as Iterable<Records['column']>)].sort((a, b) => comparePositions(a.position, b.position))
-  return { board, members, columns, labels, tasks }
+  return { board, members, columns, labels, tasks, ...(Object.keys(archived).length || data.archived ? { archived } : {}) }
 }
 
 /** The record a change is about, as it is now in `data` (null if it doesn't exist). */
@@ -50,7 +58,7 @@ export function current(data: BoardData, entity: Entity, id: string): Records[En
     case 'board':
       return data.board.id === id ? data.board : null
     case 'task':
-      return data.tasks[id] ?? null
+      return data.tasks[id] ?? data.archived?.[id] ?? null
     case 'member':
       return data.members.find((m) => m.id === id) ?? null
     case 'column':

@@ -106,6 +106,8 @@ export interface Task extends Meta {
   blockedBy: string[]
   description?: string
   priority?: Priority
+  /** When it was archived (with its subtasks): then it's in `BoardData.archived`, out of every view and count. */
+  archivedAt?: string
   /** Timeline bar color; unset = its status color. */
   color?: ColorName
   /**
@@ -169,4 +171,9 @@ export interface BoardData {
   columns: StatusColumn[]
   labels: LabelDef[]
   tasks: TaskMap
+  /**
+   * Archived tasks, kept apart so views, counts and rules only ever see `tasks`. They come back with task.restore,
+   * or go for good with task.delete. (Missing: none.)
+   */
+  archived?: TaskMap
 }

@@ -130,6 +130,8 @@ export interface BoardAccess {
   publicLink: boolean
   /** The workspace it's in (null: its owner's Personal space). */
   workspace: { id: string; name: string } | null
+  /** Archived by an owner: read-only until restored. */
+  archivedAt: string | null
 }
 
 /** Comments and attachments per task (for the badges on cards). */
@@ -257,6 +259,48 @@ export interface BoardSummary {
   doneCount: number
   createdAt: string
   updatedAt: string
+  /** Archived: shown apart, under "Archived boards". */
+  archivedAt: string | null
+}
+
+// ── Cards across boards (GET /api/cards) ───────────────────────────────────────
+// One search over cards, for the Cards page (archived cards today; every card later) and, later, assistants.
+
+/** Which cards: archived ones only, for now. (Later: 'active' and 'all'.) */
+export type CardState = 'archived'
+
+export interface CardsQuery {
+  state: CardState
+  /** One board; leave out for every board you can open. */
+  board?: string
+  /** Words in the title or description. */
+  q?: string
+  offset?: number
+  limit?: number
+}
+
+/** A card, as a row: enough to recognise it and act on it, plus where it lives. */
+export interface CardRow {
+  id: string
+  title: string
+  board: { id: string; name: string; background: string | null }
+  /** Its parents' titles, top first. */
+  path: string[]
+  /** The list it's (or was) in; null if that list is gone. */
+  list: string | null
+  assignee: string | null
+  /** Subtasks that go with it (archived with it). */
+  subtasks: number
+  archivedAt: string | null
+  /** You can restore or delete it (an editor, on a board that isn't archived). */
+  canEdit: boolean
+}
+
+export interface CardsPage {
+  cards: CardRow[]
+  total: number
+  /** Pass back as `offset` for the next page; null at the end. */
+  nextOffset: number | null
 }
 
 export interface SharingMember {

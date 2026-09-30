@@ -1,4 +1,4 @@
-import { ArrowSquareRight, CaretRight, CheckCircle, Circle, Crosshair, ListChecks, Plus, Prohibit, Trash, X } from '@phosphor-icons/react'
+import { Archive, ArrowSquareRight, CaretRight, CheckCircle, Circle, Crosshair, ListChecks, Plus, Prohibit, Trash, X } from '@phosphor-icons/react'
 import { formatMoment } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { useEffect, useMemo, useRef, type ReactNode } from 'react'
@@ -24,6 +24,7 @@ import { ancestorsOf, descendantsOf, statusCol } from '@kanbanto/model/indexer'
 import { COLORS, tone } from '@kanbanto/model/colors'
 import type { TaskFields } from '@kanbanto/model/commands'
 import { EPOCH, PRIORITIES, PRIORITY_LABEL, type Priority } from '@kanbanto/model/types'
+import { ArchivedTask } from './ArchivedTask'
 import { AttachmentsSection } from './Attachments'
 import { CommentsSection } from './Comments'
 import { Description } from './Description'
@@ -35,7 +36,8 @@ import { DateField, FieldButton, PersonPicker, TaskPicker } from './pickers'
 /** The card back: everything about one task, Trello-style. */
 export function TaskDialog({ id, onClose }: { id: string | null; onClose: () => void }) {
   const { data } = useBoard()
-  const open = !!id && id in data.tasks
+  const archived = !!id && !!data.archived?.[id]
+  const open = !!id && (id in data.tasks || archived)
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
       <DialogContent
@@ -49,7 +51,7 @@ export function TaskDialog({ id, onClose }: { id: string | null; onClose: () => 
           }
         }}
       >
-        {open && <TaskDetail key={id} id={id} onClose={onClose} />}
+        {open && (archived ? <ArchivedTask key={id} id={id} onClose={onClose} /> : <TaskDetail key={id} id={id} onClose={onClose} />)}
       </DialogContent>
     </Dialog>
   )
@@ -333,6 +335,18 @@ function TaskDetail({ id, onClose }: { id: string; onClose: () => void }) {
             {!readOnly && (
               <Button variant="ghost" size="sm" className="w-full justify-start gap-2" onClick={() => moveToBoard(id)}>
                 <ArrowSquareRight /> Move to another board…
+              </Button>
+            )}
+            {!readOnly && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="w-full justify-start gap-2"
+                onClick={() => {
+                  if (run({ type: 'task.archive', id })) onClose()
+                }}
+              >
+                <Archive /> Archive{kids.length > 0 && ` (with ${kids.length} subtask${kids.length === 1 ? '' : 's'})`}
               </Button>
             )}
             {!readOnly && <DeleteTask id={id} title={t.title} onDeleted={onClose} />}

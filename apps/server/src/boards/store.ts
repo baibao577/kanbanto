@@ -72,7 +72,8 @@ export async function loadBoard(tx: Tx, boardId: string): Promise<{ data: BoardD
       members,
       columns: listRows.map(listFromRow).sort((x, y) => comparePositions(x.position, y.position)),
       labels: labelRows.map(labelFromRow),
-      tasks: Object.fromEntries(taskRows.map((r) => [r.id, taskFromRow(r)])),
+      tasks: Object.fromEntries(taskRows.flatMap((r) => (r.archivedAt ? [] : [[r.id, taskFromRow(r)]]))),
+      archived: Object.fromEntries(taskRows.flatMap((r) => (r.archivedAt ? [[r.id, taskFromRow(r)]] : []))),
     },
   }
 }

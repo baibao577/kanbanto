@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import { describeChanges } from './activity'
-import { applyChanges } from './changes'
+import { applyChanges, invertChanges } from './changes'
 import { matchesFilter, sortComparator } from './table'
 import { execute, type Command } from './commands'
 import { indexFor } from './indexer'
+import type { BoardData } from './types'
 import { exampleData } from './sample'
 
 const data = exampleData('b1', 'ann')
@@ -56,5 +57,48 @@ describe('the activity log, in words', () => {
     const lines = run({ type: 'task.delete', id: 'A' })
     expect(lines[0]).toBe('deleted “Launch website”')
     expect(lines.length).toBeLessThanOrEqual(20)
+  })
+})
+
+describe('archiving', () => {
+  const now = '2026-10-01T00:00:00Z'
+  const exec = (d: BoardData, cmd: Command) => {
+    const r = execute(d, cmd, { now, newId: () => 'n1', idx: indexFor(d) })
+    if ('error' in r) throw new Error(r.error)
+    return r.changes
+  }
+
+  it('puts a task and its subtasks away, out of the index, and brings them back', () => {
+    const put = exec(data, { type: 'task.archive', id: 'A2' })
+    expect(describeChanges(data, put).map((i) => i.text)).toEqual([`archived “${data.tasks.A2.title}”`])
+    const away = applyChanges(data, put)
+    expect(away.tasks.A2).toBeUndefined()
+    expect(away.tasks.A2a).toBeUndefined()
+    expect(Object.keys(away.archived!).sort()).toEqual(['A2', 'A2a', 'A2b'])
+    expect(indexFor(away).preorder).not.toContain('A2a')
+
+    const back = applyChanges(away, exec(away, { type: 'task.restore', id: 'A2' }))
+    expect(back.tasks.A2.parentId).toBe('A')
+    expect(back.tasks.A2a.parentId).toBe('A2')
+    expect(back.tasks.A2.archivedAt).toBeUndefined()
+    expect(Object.keys(back.archived ?? {})).toEqual([])
+  })
+
+  it('restores to the top level (and a list that exists) when its parent or list is gone', () => {
+    let d = applyChanges(data, exec(data, { type: 'task.archive', id: 'A2' }))
+    d = applyChanges(d, exec(d, { type: 'task.delete', id: 'A' }))
+    const back = applyChanges(d, exec(d, { type: 'task.restore', id: 'A2' }))
+    expect(back.tasks.A2.parentId).toBe(null)
+    expect(indexFor(back).roots).toContain('A2')
+  })
+
+  it('undo works, and deleting an archived task is for good', () => {
+    const put = exec(data, { type: 'task.archive', id: 'A3' })
+    const away = applyChanges(data, put)
+    const undone = applyChanges(away, exec(away, { type: 'records.restore', changes: invertChanges(away, put, now) }))
+    expect(undone.tasks.A3.archivedAt).toBeUndefined()
+    const gone = applyChanges(away, exec(away, { type: 'task.delete', id: 'A3' }))
+    expect(gone.archived?.A3).toBeUndefined()
+    expect(gone.tasks.A3).toBeUndefined()
   })
 })

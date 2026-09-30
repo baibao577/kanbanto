@@ -33,7 +33,14 @@ describe('workspaces', () => {
     const listed = (await bob.ok('GET', '/api/boards')).boards.find((b: { id: string }) => b.id === board)
     expect(listed).toMatchObject({ workspaceId: ws, visibility: 'workspace', role: 'editor' })
     const snap = (await open(bob, board)).body
-    expect(snap.access).toEqual({ role: 'editor', via: 'workspace', visibility: 'workspace', publicLink: false, workspace: { id: ws, name: 'Acme' } })
+    expect(snap.access).toEqual({
+      role: 'editor',
+      via: 'workspace',
+      visibility: 'workspace',
+      publicLink: false,
+      workspace: { id: ws, name: 'Acme' },
+      archivedAt: null,
+    })
     expect((await mutate(bob, board, { type: 'task.update', id: 'A', fields: { title: 'Go live' } })).status).toBe(200)
     // Everyone in the workspace can be assigned and @mentioned.
     expect(snap.data.members.map((m: { name: string }) => m.name)).toEqual(['Ann', 'Bob'])

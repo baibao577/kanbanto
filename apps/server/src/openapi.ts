@@ -213,6 +213,32 @@ The answer lists the records that changed.
           },
         },
       },
+      '/api/cards': {
+        get: {
+          tags: ['Boards'],
+          summary: 'Archived cards, across your boards',
+          description: 'Newest first. Only `state=archived` for now. For more, pass `nextOffset` back as `offset`.',
+          parameters: [
+            { name: 'state', in: 'query', schema: { enum: ['archived'], default: 'archived' } },
+            { name: 'board', in: 'query', schema: { ...str, description: 'One board; leave out for all of them.' } },
+            { name: 'q', in: 'query', schema: { ...str, description: 'Words in the title or description.' } },
+            { name: 'offset', in: 'query', schema: { type: 'integer', minimum: 0 } },
+            { name: 'limit', in: 'query', schema: { type: 'integer', minimum: 1, maximum: 100, default: 50 } },
+          ],
+          responses: { 200: json({ type: 'object' }) },
+        },
+      },
+      '/api/boards/{id}/archive': {
+        post: {
+          tags: ['Boards'],
+          summary: 'Archive or restore a board',
+          description:
+            'Owners only. An archived board is left out of `/api/boards` lists in the app (it has `archivedAt`), and is read-only for everyone until restored. Its cards, comments and files are kept.',
+          parameters: [id('id')],
+          requestBody: { content: { 'application/json': { schema: obj({ archived: { type: 'boolean' } }) } } },
+          responses: ok,
+        },
+      },
       '/api/boards/{id}/tasks/{taskId}/move': {
         post: {
           tags: ['Boards'],

@@ -29,6 +29,10 @@ then `git pull` (or download the new release) and `docker compose up -d --build`
   and links, written in a light editor (Markdown shortcuts or a small toolbar) and saved as Markdown. Long text folds
   with "Show more", and a description can be read full page with its headings to jump to. Files and mentions work as
   before.
+- **Archive** cards (with their subtasks) and boards instead of deleting them. Archived cards have their own page
+  (board ⋯ → Archived cards, or from search) across all your boards, where they can be searched, opened read-only,
+  restored where they were, or deleted for good; archived boards are read-only and kept under "Archived boards" on the
+  boards page.
 - Assistants can **set up boards**: create one, change its settings, lists and labels, and choose your Inbox. Sharing
   and deleting stay in the app.
 - **Email** through any SMTP server or Resend, with limits to stay within a free plan. **File storage** on the server's

@@ -1,6 +1,9 @@
 import {
+  Archive,
+  ArrowCounterClockwise,
   ArrowsLeftRight,
   Buildings,
+  CaretRight,
   DotsThree,
   LockSimple,
   Key,
@@ -44,6 +47,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { useBoards } from '@/data/useBoards'
 import { useWorkspaces } from '@/data/useWorkspaces'
 import { formatAgo } from '@/lib/format'
+import { BoardDot } from '@/components/common/bits'
 import { cn } from '@/lib/utils'
 import { CreateBoardDialog } from './CreateBoardDialog'
 import { CreateWorkspaceDialog } from './CreateWorkspaceDialog'
@@ -126,8 +130,22 @@ export function HomeView() {
     }
   }
 
-  const all = boards ?? []
+  // Archived boards are shown apart, at the bottom.
+  const all = (boards ?? []).filter((b) => !b.archivedAt)
+  const archivedBoards = (boards ?? []).filter((b) => b.archivedAt)
   const spaces = workspaces ?? []
+  const setArchived = async (b: BoardSummary, archived: boolean) => {
+    try {
+      await api('POST', `/boards/${b.id}/archive`, { archived })
+      toast(
+        archived ? `Archived “${b.name}”` : `Restored “${b.name}”`,
+        archived ? { action: { label: 'Undo', onClick: () => void setArchived(b, false) } } : undefined,
+      )
+      void reload()
+    } catch (e) {
+      toast.error(errorMessage(e))
+    }
+  }
   const tile = (b: BoardSummary) => {
     const from = spaces.find((w) => w.id === b.workspaceId)
     return (
@@ -137,6 +155,7 @@ export function HomeView() {
         inbox={b.id === user?.inboxBoardId}
         onRename={b.role === 'owner' || b.role === 'editor' ? () => setRenaming(b) : undefined}
         onDelete={b.role === 'owner' ? () => askDelete(b) : undefined}
+        onArchive={b.role === 'owner' ? () => void setArchived(b, true) : undefined}
         onLeave={b.role !== 'owner' && b.via === 'member' ? () => askLeave(b) : undefined}
         move={
           b.role === 'owner' && (spaces.length > 0 || b.workspaceId)
@@ -248,6 +267,7 @@ export function HomeView() {
               )}
             </>
           )}
+          {archivedBoards.length > 0 && <ArchivedBoards boards={archivedBoards} onRestore={(b) => void setArchived(b, false)} onDelete={askDelete} />}
           {workspaces && (
             <div className="border-t pt-6">
               <Button variant="outline" size="sm" className="gap-1.5" onClick={() => setNewWorkspace(true)}>
@@ -275,6 +295,67 @@ export function HomeView() {
       <RenameBoardDialog key={renaming?.id} board={renaming} onClose={() => setRenaming(null)} onSaved={() => void reload()} />
       <ConfirmDialog request={confirm} onClose={() => setConfirm(null)} />
     </div>
+  )
+}
+
+/**
+ * Archived boards, folded at the bottom of the page: open one to look (it's read-only), or bring it back. Owners
+ * can restore or delete; others only look.
+ */
+function ArchivedBoards({
+  boards,
+  onRestore,
+  onDelete,
+}: {
+  boards: BoardSummary[]
+  onRestore: (b: BoardSummary) => void
+  onDelete: (b: BoardSummary) => void
+}) {
+  const [open, setOpen] = useState(false)
+  return (
+    <section>
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        className="flex items-center gap-1.5 text-sm font-medium text-muted-foreground hover:text-foreground"
+      >
+        <CaretRight className={cn('size-3.5 transition-transform', open && 'rotate-90')} />
+        <Archive className="size-4" /> Archived boards
+        <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] tabular-nums">{boards.length}</span>
+      </button>
+      {open && (
+        <ul className="mt-3 divide-y overflow-hidden rounded-xl border bg-card">
+          {boards.map((b) => (
+            <li key={b.id} className="flex items-center gap-3 px-4 py-2.5 text-sm">
+              <BoardDot background={(b.background as ColorName | null) ?? undefined} />
+              <a href={hrefFor({ page: 'board', id: b.id })} className="min-w-0 flex-1 truncate font-medium hover:underline">
+                {b.name}
+              </a>
+              <span className="hidden shrink-0 text-xs text-muted-foreground sm:inline">
+                {b.taskCount.toLocaleString()} {b.taskCount === 1 ? 'task' : 'tasks'} · archived {formatAgo(b.archivedAt!)}
+              </span>
+              {b.role === 'owner' && (
+                <>
+                  <Button variant="outline" size="sm" className="h-7 gap-1.5" onClick={() => onRestore(b)}>
+                    <ArrowCounterClockwise /> Restore
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="size-7 text-muted-foreground hover:text-destructive"
+                    aria-label={`Delete ${b.name}`}
+                    onClick={() => onDelete(b)}
+                  >
+                    <Trash />
+                  </Button>
+                </>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
   )
 }
 
@@ -313,6 +394,7 @@ function BoardTile({
   inbox,
   onRename,
   onDelete,
+  onArchive,
   onLeave,
   move,
 }: {
@@ -320,6 +402,7 @@ function BoardTile({
   /** It's your Inbox. */
   inbox?: boolean
   onRename?: () => void
+  onArchive?: () => void
   onDelete?: () => void
   onLeave?: () => void
   /** Moving it to Personal (null) or another workspace; `blocked` says why it can't be. */
@@ -329,7 +412,7 @@ function BoardTile({
   const pct = board.taskCount ? Math.round((board.doneCount / board.taskCount) * 100) : 0
   const vis = visibilityOf(board.visibility)
   const role = ROLE_LABEL[board.role]
-  const hasMenu = onRename || onDelete || onLeave || move
+  const hasMenu = onRename || onDelete || onLeave || move || onArchive
   return (
     <div className="group relative overflow-hidden rounded-xl border bg-card shadow-xs transition-shadow hover:shadow-md">
       <a href={hrefFor({ page: 'board', id: board.id })} className="flex h-full flex-col outline-none focus-visible:ring-2 focus-visible:ring-ring">
@@ -430,9 +513,14 @@ function BoardTile({
                 <SignOut /> Leave board…
               </DropdownMenuItem>
             )}
+            {onArchive && (
+              <DropdownMenuItem onSelect={onArchive}>
+                <Archive /> Archive board
+              </DropdownMenuItem>
+            )}
             {onDelete && (
               <>
-                {(onRename || onLeave || move) && <DropdownMenuSeparator />}
+                {(onRename || onLeave || move || onArchive) && <DropdownMenuSeparator />}
                 <DropdownMenuItem variant="destructive" onSelect={onDelete}>
                   <Trash /> Delete board…
                 </DropdownMenuItem>

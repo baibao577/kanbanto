@@ -1,5 +1,8 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react'
+import { Archive } from '@phosphor-icons/react'
 import { toast } from 'sonner'
+import { api, errorMessage } from '@/api/client'
+import { Button } from '@/components/ui/button'
 import type { BoardAccess } from '@kanbanto/model/api'
 import { BOARD_BACKGROUNDS, boardGradient } from '@kanbanto/model/colors'
 import type { Command } from '@kanbanto/model/commands'
@@ -26,6 +29,7 @@ import { useBoardStore } from '@/data/useBoardStore'
 // Dialogs load the first time they're opened.
 const TaskDialog = lazy(() => import('@/components/task/TaskDialog').then((m) => ({ default: m.TaskDialog })))
 const MoveToBoardDialog = lazy(() => import('@/components/task/MoveToBoardDialog').then((m) => ({ default: m.MoveToBoardDialog })))
+const CardsView = lazy(() => import('@/components/cards/CardsView').then((m) => ({ default: m.CardsView })))
 const ShareDialog = lazy(() => import('@/components/share/ShareDialog').then((m) => ({ default: m.ShareDialog })))
 const AccountView = lazy(() => import('@/components/account/AccountView').then((m) => ({ default: m.AccountView })))
 const AdminView = lazy(() => import('@/components/admin/AdminView').then((m) => ({ default: m.AdminView })))
@@ -53,8 +57,40 @@ function canvasStyle(bg?: keyof typeof BOARD_BACKGROUNDS): React.CSSProperties |
 /** Commands whose effect is easy to miss, so they get an "Undo" button in their toast. */
 const UNDOABLE_TOAST: Partial<Record<Command['type'], string>> = {
   'task.delete': 'Task deleted',
+  'task.archive': 'Card archived',
   'column.delete': 'List deleted',
   'label.delete': 'Label deleted',
+}
+
+/** Across an archived board: it's read-only, and owners can bring it back. */
+function ArchivedBanner({ boardId, owner }: { boardId: string; owner: boolean }) {
+  const [busy, setBusy] = useState(false)
+  return (
+    <div className="flex shrink-0 items-center gap-2 border-b bg-amber-50 px-4 py-2 text-sm text-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
+      <Archive className="size-4 shrink-0" />
+      <span className="min-w-0 flex-1">This board is archived: it’s read-only{owner ? '' : '. Its owners can restore it'}.</span>
+      {owner && (
+        <Button
+          size="sm"
+          variant="outline"
+          className="h-7 bg-background"
+          disabled={busy}
+          onClick={() => {
+            setBusy(true)
+            api('POST', `/boards/${boardId}/archive`, { archived: false }).then(
+              () => toast('Board restored'),
+              (e) => {
+                setBusy(false)
+                toast.error(errorMessage(e))
+              },
+            )
+          }}
+        >
+          Restore
+        </Button>
+      )}
+    </div>
+  )
 }
 
 /** Goes somewhere else as soon as it renders (replacing the current address). */
@@ -114,6 +150,13 @@ export default function App() {
       return (
         <Suspense fallback={null}>
           <AuthorizeView query={route.query} />
+        </Suspense>
+      )
+    case 'cards':
+      if (!user) return <Redirect to={{ page: 'signin', next: here() }} />
+      return (
+        <Suspense fallback={null}>
+          <CardsView route={route} />
         </Suspense>
       )
     case 'workspace':
@@ -197,7 +240,8 @@ type Store = ReturnType<typeof useBoardStore> & { data: BoardData; access: Board
 function Workspace({ store }: { store: Store }) {
   const { data, access, undo, redo } = store
   const idx = useMemo(() => indexFor(data), [data])
-  const readOnly = access.role === 'viewer'
+  // An archived board is read-only for everyone until an owner restores it.
+  const readOnly = access.role === 'viewer' || !!access.archivedAt
 
   // The tab, focused task and open task come from the address, so Back/Forward and links work.
   // A bare board address falls back to what's remembered in view settings.
@@ -205,7 +249,7 @@ function Workspace({ store }: { store: Store }) {
   const layout = route.layout ?? store.prefs.layout
   const wantedFocus = route.layout ? route.focus : store.prefs.focusId
   const focusId = wantedFocus && data.tasks[wantedFocus] ? wantedFocus : undefined
-  const openId = route.task && data.tasks[route.task] ? route.task : null
+  const openId = route.task && (data.tasks[route.task] || data.archived?.[route.task]) ? route.task : null
   const prefs = useMemo(() => ({ ...store.prefs, layout, focusId }), [store.prefs, layout, focusId])
 
   // Keep the address complete and pointing at things that exist.
@@ -341,6 +385,7 @@ function Workspace({ store }: { store: Store }) {
           onOpenSettings={() => setSettingsOpen(true)}
           onExport={() => exportBoard(data)}
         />
+        {access.archivedAt && <ArchivedBanner boardId={data.board.id} owner={access.role === 'owner'} />}
         <ViewBar search={search} style={prefs.layout === 'board' ? canvasStyle(data.board.background) : undefined}>
           <main className="min-h-0 flex-1">
             <Suspense fallback={null}>

@@ -34,7 +34,12 @@ export type Command =
       /** The target list in its new order. Omit to drop the moved tasks' board positions (outline order). */
       list?: string[]
     }
+  /** Deletes a task and its subtasks (an archived one too: that's for good). */
   | { type: 'task.delete'; id: string }
+  /** Puts a task and its subtasks away: out of every view and count, kept with their comments and files. */
+  | { type: 'task.archive'; id: string }
+  /** Brings an archived task (and its subtasks) back, where it was if it still can be. */
+  | { type: 'task.restore'; id: string }
   | { type: 'column.create'; id?: string; name: string; category: Category }
   | { type: 'column.update'; id: string; fields: { name?: string; category?: Category; color?: ColorName | null } }
   | { type: 'column.move'; id: string; beforeId?: string }
@@ -161,7 +166,44 @@ function run(data: BoardData, cmd: Command, ctx: Context): Change[] {
       break
     }
 
+    case 'task.archive': {
+      const t = task(cmd.id)
+      for (const id of [t.id, ...subtree(data.tasks, t.id)]) putTask(data.tasks[id], { ...data.tasks[id], archivedAt: now })
+      break
+    }
+
+    case 'task.restore': {
+      const archived = data.archived ?? {}
+      const t = archived[cmd.id] ?? reject('That task isn’t archived.')
+      const ids = [t.id, ...subtree(archived, t.id)]
+      const back = new Set(ids)
+      const labels = new Set(data.labels.map((l) => l.id))
+      for (const id of ids) {
+        const { archivedAt: _gone, ...a } = archived[id]
+        const root = id === t.id
+        // Its parent may have gone (or been archived) since: then it comes back at the top level, at the end.
+        const parentId = root ? (a.parentId && data.tasks[a.parentId] ? a.parentId : null) : a.parentId
+        const next: Task = {
+          ...a,
+          parentId,
+          order: root && parentId !== a.parentId ? positionBetween(lastSibling(data, parentId, id)?.order, null) : a.order,
+          status: data.columns.some((c) => c.id === a.status) ? a.status : ctx.idx.firstOf.todo,
+          labels: a.labels.filter((l) => labels.has(l)),
+          blockedBy: a.blockedBy.filter((b) => data.tasks[b] || back.has(b)),
+        }
+        if (next.assigneeId && !data.members.some((m) => m.id === next.assigneeId)) delete next.assigneeId
+        putTask(archived[id], next)
+      }
+      break
+    }
+
     case 'task.delete': {
+      // Deleting an archived task is for good: it and its subtasks.
+      const gone_ = data.archived?.[cmd.id]
+      if (gone_) {
+        for (const id of [gone_.id, ...subtree(data.archived!, gone_.id)]) out.push({ entity: 'task', id, before: data.archived![id], after: null })
+        break
+      }
       const t = task(cmd.id)
       // The task and everything under it; "waiting on" links to them go too.
       const gone = new Set([t.id])
@@ -282,6 +324,8 @@ function restore(data: BoardData, changes: Change[], now: string): Change[] {
   for (const [i, c] of out.entries()) {
     if (c.entity !== 'task' || !c.after) continue
     const t = c.after
+    // An archived task is inert: nothing to check until it's restored (task.restore tidies it then).
+    if (t.archivedAt) continue
     if (t.parentId && !next.tasks[t.parentId]) reject('Its parent task no longer exists.')
     if (t.parentId && wouldCycle(next.tasks, t.id, t.parentId)) reject('A task can’t go inside one of its own subtasks.')
     if (!columns.has(t.status)) reject('Its list no longer exists.')
@@ -347,6 +391,20 @@ const siblingsOf = (data: BoardData, parentId: string | null, except: string) =>
   Object.values(data.tasks)
     .filter((t) => t.parentId === parentId && t.id !== except)
     .sort((a, b) => comparePositions(a.order, b.order))
+
+/** Everything under `id` in a set of tasks (by parent links; for archived tasks, which aren't indexed). */
+function subtree(tasks: Record<string, Task>, id: string): string[] {
+  const kids = new Map<string, string[]>()
+  for (const t of Object.values(tasks)) if (t.parentId) kids.set(t.parentId, [...(kids.get(t.parentId) ?? []), t.id])
+  const out: string[] = []
+  const stack = [...(kids.get(id) ?? [])]
+  while (stack.length) {
+    const c = stack.pop()!
+    out.push(c)
+    stack.push(...(kids.get(c) ?? []))
+  }
+  return out
+}
 
 const lastSibling = (data: BoardData, parentId: string | null, except: string) => siblingsOf(data, parentId, except).at(-1)
 

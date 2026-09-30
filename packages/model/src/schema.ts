@@ -51,6 +51,7 @@ export const TaskSchema = z.object({
   blockedBy: z.array(recordId).max(200),
   description: plain(50_000).optional(),
   priority: priority.optional(),
+  archivedAt: z.string().max(40).optional(),
   color: color.optional(),
   rank: position.optional(),
   ...meta,
@@ -81,6 +82,7 @@ export const BoardDataSchema = z.object({
   columns: z.array(ColumnSchema).min(1),
   labels: z.array(LabelSchema),
   tasks: z.record(z.string(), TaskSchema),
+  archived: z.record(z.string(), TaskSchema).optional(),
 })
 
 // Commands, as they arrive from a client. Sizes are capped so one request can't be enormous.
@@ -134,6 +136,8 @@ export const CommandSchema = z.discriminatedUnion('type', [
   }),
   z.object({ type: z.literal('tasks.moveToList'), ids, status: id, assigneeId: id.nullable().optional(), list: ids.optional() }),
   z.object({ type: z.literal('task.delete'), id }),
+  z.object({ type: z.literal('task.archive'), id }),
+  z.object({ type: z.literal('task.restore'), id }),
   z.object({ type: z.literal('column.create'), id: id.optional(), name: text(200), category }),
   z.object({
     type: z.literal('column.update'),

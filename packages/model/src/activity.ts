@@ -26,6 +26,12 @@ export function describeChanges(before: BoardData, changes: Change[]): ActivityI
   const created = new Map(changes.flatMap((c) => (c.entity === 'task' && c.after ? [[c.id, c.after as Task] as const] : [])))
   const title = (id: string | null) => (id ? (before.tasks[id]?.title ?? created.get(id)?.title ?? 'a task') : null)
 
+  // Archiving or restoring moves a whole subtree: one line for the task at its top.
+  const flipped = new Set(
+    changes.flatMap((c) =>
+      c.entity === 'task' && c.before && c.after && !(c.before as Task).archivedAt !== !(c.after as Task).archivedAt ? [c.id] : [],
+    ),
+  )
   const items: ActivityItem[] = []
   for (const c of changes) {
     if (c.entity === 'task') {
@@ -35,7 +41,9 @@ export function describeChanges(before: BoardData, changes: Change[]): ActivityI
         const parent = title(b.parentId)
         items.push({ taskId: b.id, text: `added ${q(b.title)}${parent ? ` under ${q(parent)}` : ''}` })
       } else if (a && !b) items.push({ taskId: a.id, text: `deleted ${q(a.title)}` })
-      else if (a && b) {
+      else if (a && b && flipped.has(b.id)) {
+        if (!(b.parentId && flipped.has(b.parentId))) items.push({ taskId: b.id, text: `${b.archivedAt ? 'archived' : 'restored'} ${q(b.title)}` })
+      } else if (a && b) {
         const t = q(b.title)
         if (a.title !== b.title) items.push({ taskId: b.id, text: `renamed ${q(a.title)} to ${t}` })
         if (a.status !== b.status) items.push({ taskId: b.id, text: `moved ${t} to ${list(b.status)}` })

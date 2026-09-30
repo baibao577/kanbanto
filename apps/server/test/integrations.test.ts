@@ -207,6 +207,7 @@ describe('MCP', () => {
       'create_tasks',
       'update_task',
       'move_task',
+      'archive_task',
       'move_to_board',
       'create_board',
       'update_board',
@@ -415,6 +416,65 @@ describe('MCP', () => {
     expect((await ann.ok('GET', '/api/auth/me')).user.inboxBoardId).toBe(null)
   })
 
+  it('archives: tasks leave the board (and its counts) but can be found and restored; archived boards are read-only', async () => {
+    const { ann, id } = await site({ apiTokens: true })
+    const mcp = withToken(await makeToken(ann, 'write'))
+    const call = async (name: string, args: object) => toolResult(await rpc(mcp, 'tools/call', { name, arguments: args }))
+    const count = async () => (await ann.ok('GET', '/api/boards')).boards[0].taskCount as number
+    const before = await count()
+
+    // A task with subtasks, archived through the API: gone from the board, kept apart.
+    await ann.ok('POST', `/api/boards/${id}/mutations`, { mutationId: mid(), command: { type: 'task.archive', id: 'A2' } })
+    const snap = await ann.ok('GET', `/api/boards/${id}`)
+    expect(snap.data.tasks.A2).toBeUndefined()
+    expect(Object.keys(snap.data.archived).sort()).toEqual(['A2', 'A2a', 'A2b'])
+    expect(await count()).toBe(before - 3)
+    expect((await ann.ok('GET', `/api/boards/${id}/activity`)).activity[0].items[0].text).toMatch(/^archived “/)
+
+    // Assistants find it only when asked, and can bring it back.
+    const title = snap.data.archived.A2.title
+    const ids = (r: { tasks: { id: string }[] }) => r.tasks.map((x) => x.id)
+    expect(ids(await call('find_tasks', { board_id: id, text: title }))).not.toContain('A2')
+    const found = await call('find_tasks', { board_id: id, text: title, include_archived: true })
+    expect(found.tasks.find((x: { id: string }) => x.id === 'A2')).toMatchObject({ archived: expect.any(String) })
+    expect((await call('get_task', { board_id: id, task_id: 'A2' })).subtasks).toHaveLength(2)
+    expect(await call('archive_task', { board_id: id, task_id: 'A2', restore: true })).toMatchObject({ archived: false })
+    expect((await ann.ok('GET', `/api/boards/${id}`)).data.tasks.A2a.parentId).toBe('A2')
+    expect(await call('archive_task', { board_id: id, task_id: 'A3' })).toMatchObject({ archived: true })
+
+    // The Cards page: archived cards across boards, searchable, in pages; each says where it lives.
+    const { id: other } = await ann.ok('POST', '/api/boards', { name: 'Other' })
+    await ann.ok('POST', `/api/boards/${other}/mutations`, {
+      mutationId: mid(),
+      command: { type: 'task.create', id: 'x1', parentId: null, fields: { title: 'Old idea' } },
+    })
+    await ann.ok('POST', `/api/boards/${other}/mutations`, { mutationId: mid(), command: { type: 'task.archive', id: 'x1' } })
+    const all = await ann.ok('GET', '/api/cards?state=archived')
+    expect(all.cards.map((c: { title: string }) => c.title)).toEqual(['Old idea', snap.data.archived.A3?.title ?? 'Deploy'])
+    expect(all.cards[1]).toMatchObject({ board: { id }, path: ['Launch website'], canEdit: true })
+    expect((await ann.ok('GET', `/api/cards?board=${id}`)).total).toBe(1)
+    expect((await ann.ok('GET', '/api/cards?q=idea')).cards.map((c: { id: string }) => c.id)).toEqual(['x1'])
+    expect(await ann.ok('GET', '/api/cards?limit=1')).toMatchObject({ total: 2, nextOffset: 1 })
+    await ann.ok('DELETE', `/api/boards/${other}`)
+
+    // An archived board: off the list, read-only (comments too), until restored; it can still be deleted.
+    await ann.ok('POST', `/api/boards/${id}/archive`, { archived: true })
+    expect((await ann.ok('GET', `/api/boards/${id}`)).access.archivedAt).toEqual(expect.any(String))
+    expect((await call('list_boards', {})).boards).toEqual([])
+    expect((await call('list_boards', { include_archived: true })).boards[0]).toMatchObject({ id, archived: expect.any(String) })
+    const refused = await ann.request('POST', `/api/boards/${id}/mutations`, {
+      mutationId: mid(),
+      command: { type: 'task.update', id: 'A1', fields: { title: 'x' } },
+    })
+    expect(refused.status).toBe(403)
+    expect(refused.body.error).toContain('archived')
+    expect((await ann.request('POST', `/api/boards/${id}/tasks/A1/comments`, { body: 'hi' })).status).toBe(403)
+    await ann.ok('POST', `/api/boards/${id}/archive`, { archived: false })
+    await ann.ok('POST', `/api/boards/${id}/tasks/A1/comments`, { body: 'hi' })
+    await ann.ok('POST', `/api/boards/${id}/archive`, { archived: true })
+    await ann.ok('DELETE', `/api/boards/${id}`)
+  })
+
   it('read-only tokens get the reading tools only', async () => {
     const { ann, id } = await site({ apiTokens: true })
     const mcp = withToken(await makeToken(ann, 'read'))
@@ -429,7 +489,7 @@ describe('API reference', () => {
   it('describes the API (with every command) and shows it at /api/docs', async () => {
     const spec = await new Person(t.app).ok('GET', '/api/openapi.json')
     expect(spec.openapi).toBe('3.1.0')
-    expect(spec.components.schemas.Command.oneOf).toHaveLength(14)
+    expect(spec.components.schemas.Command.oneOf).toHaveLength(16)
     expect(Object.keys(spec.webhooks)).toEqual(['board.changed', 'comment.added', 'ping'])
     expect((await new Person(t.app).request('GET', '/api/docs')).headers.location).toBe('/api/docs/')
     const page = await new Person(t.app).request('GET', '/api/docs/')

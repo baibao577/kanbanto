@@ -63,7 +63,17 @@ export async function accessOf(tx: Db | Tx, board: BoardRow, userId: string | un
  * Signed out and no access: 401 (so the app can offer to sign in). Signed in and no access: 404, the same as a
  * board that doesn't exist, so private boards can't be discovered. Enough to view but not to edit: 403.
  */
-export async function requireAccess(tx: Db | Tx, user: SessionUser | null, boardId: string, needed: Role) {
+export async function requireAccess(
+  tx: Db | Tx,
+  user: SessionUser | null,
+  boardId: string,
+  needed: Role,
+  /**
+   * write: a change even a viewer may make (comments). archived: allowed on an archived board too (restoring or
+   * deleting it); anything else that changes an archived board is refused.
+   */
+  opts: { write?: boolean; archived?: boolean } = {},
+) {
   if (user?.mustVerify) throw new HttpError(403, 'Confirm your email address first: check your inbox for the link.', 'verify-email')
   const [board] = await tx.select().from(boards).where(eq(boards.id, boardId))
   const access = board ? await accessOf(tx, board, user?.id) : null
@@ -73,5 +83,7 @@ export async function requireAccess(tx: Db | Tx, user: SessionUser | null, board
   }
   if (!atLeast(access.role, needed))
     throw new HttpError(403, needed === 'owner' ? 'Only the board’s owners can do that.' : 'You can view this board, but not change it.')
+  if (board.archivedAt && (needed !== 'viewer' || opts.write) && !opts.archived)
+    throw new HttpError(403, 'This board is archived. Restore it to make changes.', 'archived')
   return { board, access }
 }

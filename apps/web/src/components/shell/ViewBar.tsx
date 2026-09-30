@@ -2,6 +2,7 @@ import { CaretRight, Crosshair, X } from '@phosphor-icons/react'
 import { createContext, useContext, useState, type CSSProperties, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { useBoard } from '@/app/board-context'
+import { navigate } from '@/app/router'
 import { Button } from '@/components/ui/button'
 import { ancestorsOf } from '@kanbanto/model/indexer'
 import { FilterChips } from './FilterChips'
@@ -37,6 +38,11 @@ export function ViewBar({ children, search, style }: { children: ReactNode; sear
 function ScopeTrail({ search }: { search: string }) {
   const { data, prefs, idx, focus } = useBoard()
   const focusId = prefs.focusId && prefs.focusId in data.tasks ? prefs.focusId : undefined
+  // Searching also looks through archived cards, and says so (they're on the Cards page).
+  const words = search.toLowerCase().split(/\s+/).filter(Boolean)
+  const archivedHits = words.length
+    ? Object.values(data.archived ?? {}).filter((t) => words.every((w) => `${t.title} ${t.description ?? ''}`.toLowerCase().includes(w))).length
+    : 0
 
   if (!focusId)
     return (
@@ -44,6 +50,18 @@ function ScopeTrail({ search }: { search: string }) {
         {search.trim() ? (
           <>
             Searching for <span className="font-medium text-foreground">“{search.trim()}”</span>
+            {archivedHits > 0 && (
+              <>
+                <span className="mx-1.5">·</span>
+                <button
+                  type="button"
+                  className="text-primary hover:underline"
+                  onClick={() => navigate({ page: 'cards', state: 'archived', board: data.board.id, q: search.trim() })}
+                >
+                  {archivedHits} archived {archivedHits === 1 ? 'card matches' : 'cards match'}
+                </button>
+              </>
+            )}
           </>
         ) : (
           <>

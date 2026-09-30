@@ -1,4 +1,5 @@
 import {
+  Archive,
   ArrowDown,
   ArrowLineDown,
   ArrowLineUp,
@@ -42,7 +43,13 @@ interface Props {
   /** Set when this task also has its own row on the board. */
   onJumpToRow?: (id: string) => void
   /** Moving without dragging, from the card's menu: the board's columns, the card's column, and what to do. */
-  move?: { lists: Lane[]; col: string; to: (id: string, where: { col: string } | 'top' | 'bottom') => void; toBoard: (id: string) => void }
+  move?: {
+    lists: Lane[]
+    col: string
+    to: (id: string, where: { col: string } | 'top' | 'bottom') => void
+    toBoard: (id: string) => void
+    archive: (id: string) => void
+  }
   /** In a grouped list: the card has no parent header, so it's one of the list's items (see dnd.ts). */
   item?: boolean
   /** View only: the card can't be dragged. */
@@ -283,6 +290,9 @@ function CardMenu({
             <DropdownMenuSeparator />
             <DropdownMenuItem onSelect={() => move.toBoard(id)}>
               <ArrowSquareRight /> Move to another board…
+            </DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => move.archive(id)}>
+              <Archive /> Archive
             </DropdownMenuItem>
           </>
         )}

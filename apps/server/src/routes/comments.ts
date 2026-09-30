@@ -137,7 +137,7 @@ export const commentRoutes: FastifyPluginAsync = async (app) => {
   app.post('/boards/:id/tasks/:taskId/comments', async (req) => {
     const { id, taskId } = parse(TaskParams, req.params)
     const me = requireUser(req.user)
-    const { board, access } = await requireAccess(app.db, me, id, 'viewer')
+    const { board, access } = await requireAccess(app.db, me, id, 'viewer', { write: true })
     if (access.via === 'public') throw new HttpError(403, 'Join this board to comment on it.')
     const body = parse(Body, req.body)
     return { comment: await postComment(app, board, me, taskId, body) }
@@ -147,7 +147,7 @@ export const commentRoutes: FastifyPluginAsync = async (app) => {
   app.patch('/boards/:id/comments/:commentId', async (req) => {
     const { id, commentId } = parse(CommentParams, req.params)
     const me = requireUser(req.user)
-    const { board, access } = await requireAccess(app.db, me, id, 'viewer')
+    const { board, access } = await requireAccess(app.db, me, id, 'viewer', { write: true })
     if (access.via === 'public') throw new HttpError(403, 'Join this board to comment on it.')
     const body = parse(Body, req.body)
     const [c] = await app.db
@@ -175,7 +175,7 @@ export const commentRoutes: FastifyPluginAsync = async (app) => {
   app.delete('/boards/:id/comments/:commentId', async (req) => {
     const { id, commentId } = parse(CommentParams, req.params)
     const me = requireUser(req.user)
-    const { access } = await requireAccess(app.db, me, id, 'viewer')
+    const { access } = await requireAccess(app.db, me, id, 'viewer', { write: true })
     const [c] = await app.db
       .select()
       .from(comments)
