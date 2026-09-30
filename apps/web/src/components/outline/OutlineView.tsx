@@ -410,7 +410,7 @@ export function OutlineView({ search }: { search: string }) {
                       className={height}
                       indent={HANDLE + (idx.depth.get(adding)! - baseDepth + 1) * INDENT + 6}
                       parentTitle={data.tasks[adding].title}
-                      onAdd={(title) => createTask(adding, { title })}
+                      onAdd={(title, fields) => createTask(adding, { ...fields, title })}
                       onClose={() => setAdding(null)}
                     />,
                   ]
@@ -431,7 +431,8 @@ export function OutlineView({ search }: { search: string }) {
               label={focusId ? 'Add a subtask' : 'Add a project'}
               placeholder="Title"
               submitLabel="Add"
-              onAdd={(title) => createTask(focusId ?? null, { title })}
+              dates
+              onAdd={(title, fields) => createTask(focusId ?? null, { ...fields, title })}
             />
           )}
         </div>

@@ -49,6 +49,10 @@ curl -X POST https://kanbanto.example.com/api/boards/<board id>/mutations \
 comments and files, to another board you can edit (optionally `"list": "<list id there>"`). It gets a new id there,
 which the answer gives. Lists and labels are matched by name; people who aren't on that board are unassigned.
 
+**Reminders** live on a task (`reminders`: each `{ id, at }` or `{ id, beforeDue, tz }`, in minutes before its due
+date), set with `task.update`. When one goes off, the task's assignee (or whoever set it, if nobody is assigned) gets
+it under the bell and by email, and the board's webhooks get a `reminder.due` event.
+
 `GET /api/boards/<id>/activity?since=2026-09-01&until=2026-09-15` says what happened in a stretch of time, newest
 first: each change in words ("moved “Deploy” to Done"), who made it and through which app (`via`), and comments.
 `since` and `until` also take `24h`, `3d` or `2w` (back from now). Changes are kept for 90 days. For more, ask again
@@ -101,6 +105,11 @@ Where webhooks may point is the platform admins' choice: public `https://` addre
 sign up to), or also `http://` and private addresses (for tools inside your network, like a self-hosted n8n). Redirects
 are never followed.
 
+
+Each webhook can be set to send only some events (`events`: `board.changed`, `comment.added`, `reminder.due`; all by
+default). Its log (`GET /api/boards/<id>/webhooks/<webhook id>/deliveries`, `?failed=1` for problems only) shows each
+delivery's payload and the start of the answer, and `POST …/deliveries/<delivery id>/resend` sends one again. Deliveries
+are kept for a week.
 ## AI assistants (MCP)
 
 Kanbanto speaks the [Model Context Protocol](https://modelcontextprotocol.io) at **`/api/mcp`**, so assistants can find,
@@ -122,11 +131,13 @@ claude mcp add --transport http kanbanto https://kanbanto.example.com/api/mcp --
 | `get_board` | A board's lists, labels, people and its open tasks as an outline: the top levels, or the part under one task |
 | `find_tasks` | Search one board, one workspace or everything: text, list, label, assignee (`me`, `nobody`), priority, blocked, due, created or changed between two times; sorted and paged |
 | `team_overview` | How a board or workspace is doing: tasks per list, each person's open, overdue and blocked work, and what needs attention |
+| `reminders` | Your reminders coming up in the next days, and the ones that went off today |
 | `recent_activity` | What happened in a stretch of time (default: the last day), optionally by one person: changes, who made them and through which app, and comments |
 | `get_task` | A task with its parents, subtasks, what it waits on, and latest comments |
 | `create_tasks` | Add tasks, or break one down into subtasks (`parent_id`); without a board they go to your Inbox |
 | `update_task` | Title, description, dates, assignee, priority, labels, list |
 | `move_task` | Change a task's parent or its place among siblings |
+| `set_reminder` | Add a reminder (at a time, or some minutes before it's due) or remove one; it goes to the task's assignee |
 | `archive_task` | Archive a task with its subtasks, or restore it (`restore: true`); nothing is lost |
 | `move_to_board` | Move a task, with its subtasks, comments and files, to another board (say, from the Inbox) |
 | `create_board` | A new board in Personal or a workspace, with what it's for |

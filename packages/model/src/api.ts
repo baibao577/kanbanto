@@ -20,6 +20,10 @@ export interface PublicUser {
   emailVerified: boolean
   /** Gets the daily email summary of @mentions. */
   mentionEmails: boolean
+  /** Gets reminders by email as well as under the bell. */
+  reminderEmails: boolean
+  /** Their time zone (IANA), for when "morning" is; null until their browser says. */
+  timeZone: string | null
   /** Their Inbox: the board where tasks go when an app (like Claude) adds one without saying where. */
   inboxBoardId: string | null
 }
@@ -174,6 +178,16 @@ export type NotificationView =
       task: { id: string; title: string }
       /** The start of the comment. */
       excerpt: string
+      createdAt: string
+      read: boolean
+    }
+  | {
+      id: string
+      kind: 'reminder'
+      board: { id: string; name: string }
+      task: { id: string; title: string }
+      /** Who set it (null: they've gone, or it was themselves). */
+      actor: string | null
       createdAt: string
       read: boolean
     }
@@ -440,11 +454,26 @@ export interface WebhookDeliveryView {
   createdAt: string
 }
 
+/** GET /api/boards/:id/webhooks/:hookId/deliveries: one delivery in full, for the webhook's log. */
+export interface WebhookDeliveryDetail extends WebhookDeliveryView {
+  /** What was sent (the JSON body). */
+  payload: unknown
+  /** The start of what the address answered (up to 2 KB). */
+  response: string | null
+  sentAt: string | null
+}
+
 /** GET /api/boards/:id/webhooks (one per webhook) */
+/** What a webhook can be sent (a test `ping` always is). */
+export const WEBHOOK_EVENTS = ['board.changed', 'comment.added', 'reminder.due'] as const
+export type WebhookEventName = (typeof WEBHOOK_EVENTS)[number]
+
 export interface WebhookView {
   id: string
   url: string
   active: boolean
+  /** What it's sent. */
+  events: WebhookEventName[]
   createdAt: string
   lastDeliveryAt: string | null
   lastStatus: number | null

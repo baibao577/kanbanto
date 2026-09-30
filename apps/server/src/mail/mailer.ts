@@ -10,7 +10,7 @@ import { renderEmail, type Brand, type EmailContent } from './templates'
 import { SendError, type Transport } from './transport'
 
 /** Account emails go first; board emails stop first when the budget runs low. */
-const PRIORITY: Record<EmailKind, number> = { verify: 0, reset: 0, test: 0, notice: 0, invite: 1, digest: 1 }
+const PRIORITY: Record<EmailKind, number> = { verify: 0, reset: 0, test: 0, notice: 0, invite: 1, digest: 1, reminder: 1 }
 /** Board emails may use this share of the platform's budget, leaving the rest for sign-up and password emails. */
 const BOARD_EMAIL_SHARE = 0.8
 /** Board emails one person can send per hour, whatever key pays. */

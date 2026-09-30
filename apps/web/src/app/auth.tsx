@@ -32,6 +32,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [refresh])
 
+  // The first time we see someone without a time zone, it's this browser's: "morning" means their morning.
+  const userId = me?.user?.id
+  const needsZone = !!me?.user && !me.user.timeZone
+  useEffect(() => {
+    if (!userId || !needsZone) return
+    const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone
+    api<{ user: PublicUser }>('PATCH', '/auth/me', { timeZone }).then(
+      (r) => setMe((m) => (m ? { ...m, user: r.user } : m)),
+      () => {},
+    )
+  }, [userId, needsZone])
+
   const value = useMemo<AuthValue | null>(
     () =>
       me && {

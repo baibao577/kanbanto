@@ -1,5 +1,5 @@
 import { Bell, Code, EnvelopeSimple, HardDrives, Key, UserCircle } from '@phosphor-icons/react'
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import type { PublicUser } from '@kanbanto/model/api'
 import { api, errorMessage } from '@/api/client'
@@ -140,19 +140,22 @@ function Notifications() {
   if (!user) return null
   return (
     <div className="space-y-6">
-      <PageTitle title="Notifications" description="When someone @mentions you in a comment, it shows under the bell." />
+      <PageTitle
+        title="Notifications"
+        description="Mentions and reminders show under the bell. Choose what’s emailed too, and when your morning is."
+      />
       <SettingsCard
-        title="Email me when I’m mentioned"
-        description="At most one summary a day, only for mentions you haven’t seen in the app."
+        title="Morning summary email"
+        description="Around 8:00 your time: cards due today and overdue, reminders later today, and mentions you haven’t seen. Only when there’s something."
         action={
           <Switch
             checked={user.mentionEmails}
-            aria-label="Email me when I’m mentioned"
+            aria-label="Morning summary email"
             onCheckedChange={(on) =>
               api<{ user: PublicUser }>('PATCH', '/auth/me', { mentionEmails: on }).then(
                 (r) => {
                   setUser(r.user)
-                  toast(on ? 'You’ll get a daily summary of mentions' : 'No more mention emails')
+                  toast(on ? 'You’ll get a morning summary' : 'No more morning summaries')
                 },
                 (e) => toast.error(errorMessage(e)),
               )
@@ -160,8 +163,78 @@ function Notifications() {
           />
         }
       >
-        <p className="text-xs text-muted-foreground">{user.mentionEmails ? 'On: a daily summary.' : 'Off: mentions only show under the bell.'}</p>
+        <p className="text-xs text-muted-foreground">{user.mentionEmails ? 'On.' : 'Off: mentions and reminders still show under the bell.'}</p>
+      </SettingsCard>
+      <TimeZoneCard />
+      <SettingsCard
+        title="Email me reminders"
+        description="When a reminder on a card assigned to you goes off (or one you set on a card nobody is assigned to)."
+        action={
+          <Switch
+            checked={user.reminderEmails}
+            aria-label="Email me reminders"
+            onCheckedChange={(on) =>
+              api<{ user: PublicUser }>('PATCH', '/auth/me', { reminderEmails: on }).then(
+                (r) => {
+                  setUser(r.user)
+                  toast(on ? 'Reminders will be emailed too' : 'Reminders only show under the bell')
+                },
+                (e) => toast.error(errorMessage(e)),
+              )
+            }
+          />
+        }
+      >
+        <p className="text-xs text-muted-foreground">
+          {user.reminderEmails ? 'On: under the bell and by email.' : 'Off: reminders only show under the bell.'}
+        </p>
       </SettingsCard>
     </div>
+  )
+}
+
+/** Your time zone: when "morning" is for the summary, and "9:00" for reminders counted from a due day. */
+function TimeZoneCard() {
+  const { user, setUser } = useAuth()
+  const here = Intl.DateTimeFormat().resolvedOptions().timeZone
+  const zones = useMemo(() => {
+    try {
+      return Intl.supportedValuesOf('timeZone')
+    } catch {
+      return [here]
+    }
+  }, [here])
+  if (!user) return null
+  const save = (timeZone: string) =>
+    api<{ user: PublicUser }>('PATCH', '/auth/me', { timeZone }).then(
+      (r) => {
+        setUser(r.user)
+        toast(`Time zone: ${timeZone.replace(/_/g, ' ')}`)
+      },
+      (e) => toast.error(errorMessage(e)),
+    )
+  const current = user.timeZone ?? here
+  return (
+    <SettingsCard title="Your time zone" description="When your morning summary goes out.">
+      <div className="flex flex-wrap items-center gap-2">
+        <select
+          value={current}
+          onChange={(e) => void save(e.target.value)}
+          aria-label="Time zone"
+          className="h-9 min-w-56 rounded-md border bg-background px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
+        >
+          {(zones.includes(current) ? zones : [current, ...zones]).map((z) => (
+            <option key={z} value={z}>
+              {z.replace(/_/g, ' ')}
+            </option>
+          ))}
+        </select>
+        {current !== here && (
+          <Button variant="outline" size="sm" onClick={() => void save(here)}>
+            Use this computer’s ({here.replace(/_/g, ' ')})
+          </Button>
+        )}
+      </div>
+    </SettingsCard>
   )
 }

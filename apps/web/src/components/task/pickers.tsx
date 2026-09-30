@@ -4,6 +4,7 @@ import { lazy, Suspense, useMemo, useState, type ReactNode } from 'react'
 import { useBoard } from '@/app/board-context'
 import { Avatar } from '@/components/common/bits'
 import { formatDay } from '@/lib/format'
+import { parseWhen } from '@/lib/when'
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -167,6 +168,51 @@ const today = () => fromDay(todayDay())
  * A date with a calendar popover and a clear button. A time is optional (24-hour, in your time zone): "Add time" under
  * the calendar; without one it's a whole day. `defaultTime` is what "Add time" starts with.
  */
+/**
+ * Typing a date in plain words ("tmr", "fri 2pm", "next monday", "12 oct"), above the calendar: Enter sets it. With a
+ * time it's a moment; without, the whole day.
+ */
+function TypedDate({ onPick }: { onPick: (iso: string) => void }) {
+  const [words, setWords] = useState('')
+  const when = words.trim() ? parseWhen(words) : null
+  const iso = when
+    ? when.timed
+      ? momentAt(localDay(when.date), `${pad(when.date.getHours())}:${pad(when.date.getMinutes())}`)
+      : localDay(when.date)
+    : null
+  return (
+    <form
+      className="border-b p-2"
+      onSubmit={(e) => {
+        e.preventDefault()
+        if (iso) onPick(iso)
+      }}
+    >
+      <input
+        autoFocus
+        value={words}
+        onChange={(e) => setWords(e.target.value)}
+        placeholder="Type a date: tmr, fri 2pm, 12 oct"
+        aria-label="Type a date"
+        className="h-8 w-full rounded-md border bg-background px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
+      />
+      {words.trim() && (
+        <p className="mt-1.5 px-1 text-xs text-muted-foreground">
+          {iso ? (
+            <>
+              <span className="text-foreground">{formatDay(iso, true)}</span> · Enter to set
+            </>
+          ) : (
+            'Not a date I know: try “tomorrow” or “fri 14:00”.'
+          )}
+        </p>
+      )}
+    </form>
+  )
+}
+const pad = (n: number) => String(n).padStart(2, '0')
+const localDay = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+
 export function DateField({
   value,
   onChange,
@@ -192,6 +238,12 @@ export function DateField({
           </FieldButton>
         </PopoverTrigger>
         <PopoverContent align="start" className="w-auto p-0">
+          <TypedDate
+            onPick={(iso) => {
+              onChange(iso)
+              setOpen(false)
+            }}
+          />
           <Suspense fallback={<div className="size-72" />}>
             <Calendar
               mode="single"

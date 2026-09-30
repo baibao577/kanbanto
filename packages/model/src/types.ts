@@ -83,6 +83,20 @@ export const EXAMPLE_COLUMNS: StatusColumn[] = [
   ...DEFAULT_COLUMNS,
 ]
 
+/**
+ * A reminder on a task, for whoever is assigned when it fires (or `by`, when nobody is). Either at a moment (`at`, UTC),
+ * or some minutes before the task is due (`beforeDue`, following the due date; a whole-day due date counts as 9:00
+ * in `tz`, the time zone of the person who set it). See reminders.ts.
+ */
+export interface Reminder {
+  id: string
+  at?: string
+  beforeDue?: number
+  tz?: string
+  /** Who set it (a member id). */
+  by?: string
+}
+
 /** How important a task is, most first. Unset: no priority. */
 export const PRIORITIES = ['urgent', 'high', 'medium', 'low'] as const
 export type Priority = (typeof PRIORITIES)[number]
@@ -106,6 +120,7 @@ export interface Task extends Meta {
   blockedBy: string[]
   description?: string
   priority?: Priority
+  reminders?: Reminder[]
   /** When it was archived (with its subtasks): then it's in `BoardData.archived`, out of every view and count. */
   archivedAt?: string
   /** Timeline bar color; unset = its status color. */

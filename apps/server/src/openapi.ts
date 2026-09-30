@@ -349,7 +349,23 @@ The answer lists the records that changed.
           summary: 'Add a webhook',
           description: 'The answer includes its signing secret.',
           parameters: [id('id')],
-          requestBody: { content: { 'application/json': { schema: obj({ url: { ...str, format: 'uri' } }) } } },
+          requestBody: {
+            content: {
+              'application/json': {
+                schema: obj(
+                  {
+                    url: { ...str, format: 'uri' },
+                    events: {
+                      type: 'array',
+                      items: { enum: ['board.changed', 'comment.added', 'reminder.due'] },
+                      description: 'What it’s sent. Default: all (including events added later).',
+                    },
+                  },
+                  ['url'],
+                ),
+              },
+            },
+          },
           responses: { 200: json(obj({ id: str, secret: str })) },
         },
       },
@@ -358,7 +374,20 @@ The answer lists the records that changed.
           tags: ['Webhook settings'],
           summary: 'Pause, resume or change the address',
           parameters: [id('id'), id('hookId')],
-          requestBody: { content: { 'application/json': { schema: obj({ active: { type: 'boolean' }, url: str }, []) } } },
+          requestBody: {
+            content: {
+              'application/json': {
+                schema: obj(
+                  {
+                    active: { type: 'boolean' },
+                    url: str,
+                    events: { type: 'array', items: { enum: ['board.changed', 'comment.added', 'reminder.due'] } },
+                  },
+                  [],
+                ),
+              },
+            },
+          },
           responses: ok,
         },
         delete: { tags: ['Webhook settings'], summary: 'Delete a webhook', parameters: [id('id'), id('hookId')], responses: ok },
@@ -396,6 +425,11 @@ The answer lists the records that changed.
         command: { ...str, description: 'The command’s type, e.g. task.move.' },
         seq: { type: 'integer' },
         changes: { type: 'array', items: ref('Change'), description: 'Up to 200; `truncated` is true when there were more.' },
+      }),
+      'reminder.due': event('reminder.due', {
+        task: obj({ id: str, title: str, due: nullable(str), list: nullable(str) }),
+        reminder: obj({ id: str, at: { ...str, format: 'date-time' } }),
+        for: obj({ id: str, name: str }),
       }),
       'comment.added': event('comment.added', {
         actor: obj({ id: str, name: str }),

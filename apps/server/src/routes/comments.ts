@@ -221,6 +221,14 @@ export const commentRoutes: FastifyPluginAsync = async (app) => {
         const workspace = r.n.workspaceId && r.workspaceName !== null ? { id: r.n.workspaceId, name: r.workspaceName } : null
         return { ...common, kind: 'added', board, workspace }
       }
+      if (r.n.kind === 'reminder')
+        return {
+          ...common,
+          kind: 'reminder',
+          actor: r.actor,
+          board: board ?? { id: '', name: 'A deleted board' },
+          task: { id: r.n.taskId ?? '', title: r.taskTitle ?? 'A deleted task' },
+        }
       return {
         ...common,
         kind: 'mention',

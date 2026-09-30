@@ -381,7 +381,7 @@ export function TimelineView({ search }: { search: string }) {
                     cellWidth={LEFT_W + 240}
                     indent={(idx.depth.get(adding)! - baseDepth + 1) * 16 + 8}
                     parentTitle={idx.tasks[adding].title}
-                    onAdd={(title) => createTask(adding, { title })}
+                    onAdd={(title, fields) => createTask(adding, { ...fields, title })}
                     onClose={() => setAdding(null)}
                   />,
                 ]
@@ -430,7 +430,8 @@ export function TimelineView({ search }: { search: string }) {
                 label={focusId ? 'Add a subtask' : 'Add a project'}
                 placeholder="Title"
                 submitLabel="Add"
-                onAdd={(title) => createTask(focusId ?? null, { title })}
+                dates
+                onAdd={(title, fields) => createTask(focusId ?? null, { ...fields, title })}
               />
             </div>
           )}

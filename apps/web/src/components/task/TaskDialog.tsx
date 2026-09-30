@@ -1,7 +1,7 @@
 import { Archive, ArrowSquareRight, CaretRight, CheckCircle, Circle, Crosshair, ListChecks, Plus, Prohibit, Trash, X } from '@phosphor-icons/react'
 import { formatMoment } from '@/lib/format'
 import { cn } from '@/lib/utils'
-import { useEffect, useMemo, useRef, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useBoard } from '@/app/board-context'
 import { ColorSwatches, LabelChip, PriorityIcon, ProgressBar, StatusDot, StatusPill } from '@/components/common/bits'
 import { QuickAdd } from '@/components/board/QuickAdd'
@@ -30,6 +30,9 @@ import { CommentsSection } from './Comments'
 import { Description } from './Description'
 import { useCardFiles } from '@/data/cardFiles'
 import { LabelPicker } from './LabelPicker'
+import { Reminders } from './Reminders'
+import { TitleDateChip } from '@/components/text/TitleDate'
+import { useTitleDate } from '@/components/text/useTitleDate'
 import { Section } from './Section'
 import { DateField, FieldButton, PersonPicker, TaskPicker } from './pickers'
 
@@ -92,7 +95,15 @@ function TaskDetail({ id, onClose }: { id: string; onClose: () => void }) {
         </nav>
         <DialogTitle className="sr-only">{t.title}</DialogTitle>
         <DialogDescription className="sr-only">Task details</DialogDescription>
-        <TitleField key={`title-${id}`} title={t.title} readOnly={readOnly} onSave={(title) => patch({ title })} />
+        <TitleField
+          key={`title-${id}`}
+          title={t.title}
+          readOnly={readOnly}
+          // A reminder from the title is added to the card's others.
+          onSave={(title, fields) =>
+            patch({ ...fields, title, ...(fields.reminders && { reminders: [...(t.reminders ?? []), ...fields.reminders] }) })
+          }
+        />
       </div>
 
       <div className="grid items-start gap-6 px-6 pt-4 pb-6 md:grid-cols-[1fr_14rem] md:gap-0">
@@ -149,7 +160,14 @@ function TaskDetail({ id, onClose }: { id: string; onClose: () => void }) {
                 {kids.length > 100 && <li className="px-1 text-xs text-muted-foreground">and {kids.length - 100} more</li>}
               </ul>
             )}
-            <QuickAdd label="Add a subtask" submitLabel="Add" placeholder="Subtask title" single onAdd={(title) => createTask(id, { title })} />
+            <QuickAdd
+              label="Add a subtask"
+              submitLabel="Add"
+              placeholder="Subtask title"
+              single
+              dates
+              onAdd={(title, fields) => createTask(id, { ...fields, title })}
+            />
           </Section>
 
           <Section icon={<Prohibit />} title="Waiting on" count={t.blockedBy.filter((b) => b in data.tasks).length}>
@@ -260,6 +278,9 @@ function TaskDetail({ id, onClose }: { id: string; onClose: () => void }) {
               <SideField label="Due">
                 <DateField value={t.due} placeholder="Add a due date" defaultTime="17:00" onChange={(due) => patch({ due: due ?? '' })} />
               </SideField>
+              <SideField label="Reminders">
+                <Reminders task={t} readOnly={readOnly} onChange={(reminders) => patch({ reminders })} />
+              </SideField>
             </div>
             <div>
               <SideField label="Labels">
@@ -365,28 +386,45 @@ function TaskDetail({ id, onClose }: { id: string; onClose: () => void }) {
  * The task's title, edited in place. Only a change you made is saved: if someone renames the task while it's open,
  * their title shows here (unless you're typing), and clicking in and out again doesn't put the old one back.
  */
-function TitleField({ title, readOnly, onSave }: { title: string; readOnly: boolean; onSave: (title: string) => void }) {
+function TitleField({ title, readOnly, onSave }: { title: string; readOnly: boolean; onSave: (title: string, fields: TaskFields) => void }) {
   const ref = useRef<HTMLTextAreaElement>(null)
-  const atFocus = useRef(title)
+  // The title as it was when editing started (so only newly typed date words count).
+  const [atFocus, setAtFocus] = useState(title)
+  const [draft, setDraft] = useState<string | null>(null)
   useEffect(() => {
     if (ref.current && document.activeElement !== ref.current) ref.current.value = title
   }, [title])
+  // A time typed into the title while editing (not one that was already there) can become the due date.
+  const date = useTitleDate(draft ?? '')
+  const fresh = !!date.when && !atFocus.toLowerCase().includes(date.when.text.toLowerCase())
   return (
-    <textarea
-      ref={ref}
-      defaultValue={title}
-      rows={1}
-      aria-label="Title"
-      readOnly={readOnly}
-      onFocus={(e) => (atFocus.current = e.target.value)}
-      onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), e.currentTarget.blur())}
-      onBlur={(e) => {
-        const v = e.target.value.trim()
-        if (v && v !== atFocus.current.trim()) onSave(v)
-        else e.target.value = title
-      }}
-      className="-mx-2 w-[calc(100%+1rem)] resize-none rounded-md px-2 py-1 text-xl font-semibold outline-none [field-sizing:content] hover:bg-accent/60 focus:bg-background focus:ring-2 focus:ring-ring/40"
-    />
+    <div>
+      <textarea
+        ref={ref}
+        defaultValue={title}
+        rows={1}
+        aria-label="Title"
+        readOnly={readOnly}
+        onFocus={(e) => {
+          setAtFocus(e.target.value)
+          setDraft(e.target.value)
+        }}
+        onChange={(e) => setDraft(e.target.value)}
+        onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), e.currentTarget.blur())}
+        onBlur={(e) => {
+          const v = e.target.value.trim()
+          const { title: next, fields } = fresh ? date.apply(v) : { title: v, fields: {} }
+          if (next && (next !== atFocus.trim() || Object.keys(fields).length)) {
+            onSave(next, fields)
+            e.target.value = next
+          } else e.target.value = title
+          setDraft(null)
+          date.reset()
+        }}
+        className="-mx-2 w-[calc(100%+1rem)] resize-none rounded-md px-2 py-1 text-xl font-semibold outline-none [field-sizing:content] hover:bg-accent/60 focus:bg-background focus:ring-2 focus:ring-ring/40"
+      />
+      {fresh && <TitleDateChip state={date} className="mt-1" />}
+    </div>
   )
 }
 

@@ -2,11 +2,19 @@ import { Plus, X } from '@phosphor-icons/react'
 import { useState } from 'react'
 import { useReadOnly } from '@/app/board-context'
 import { Button } from '@/components/ui/button'
+import { TitleDateChip } from '@/components/text/TitleDate'
+import { useTitleDate } from '@/components/text/useTitleDate'
 import { cn } from '@/lib/utils'
+import type { TaskFields } from '@kanbanto/model/commands'
 
 interface Props {
-  /** Called with the typed title. The field stays open for the next one, like Trello. */
-  onAdd: (title: string) => void
+  /**
+   * Called with the typed title. The field stays open for the next one, like Trello. With `dates`, a time typed in the
+   * title comes as fields (due, maybe a reminder) and is taken out of the title.
+   */
+  onAdd: (title: string, fields?: TaskFields) => void
+  /** Read a time from the title ("buy cat next monday 1pm"): for cards, not lists. */
+  dates?: boolean
   label?: string
   placeholder?: string
   submitLabel?: string
@@ -26,20 +34,25 @@ export function QuickAdd({
   className,
   single,
   onCanvas,
+  dates,
 }: Props) {
   const [open, setOpen] = useState(false)
   const [value, setValue] = useState('')
   const readOnly = useReadOnly()
+  const date = useTitleDate(dates ? value : '')
 
   const submit = () => {
     const title = value.trim()
     if (!title) return
-    onAdd(title)
+    const { title: rest, fields } = date.apply(title)
+    onAdd(rest, fields)
     setValue('')
+    date.reset()
   }
   const close = () => {
     setOpen(false)
     setValue('')
+    date.reset()
   }
 
   if (readOnly) return null
@@ -91,6 +104,7 @@ export function QuickAdd({
           className={fieldClass}
         />
       )}
+      {dates && <TitleDateChip state={date} />}
       <div className="flex items-center gap-1">
         {/* mousedown keeps the field from blurring (and closing) before the click lands */}
         <Button size="sm" onMouseDown={(e) => e.preventDefault()} onClick={submit}>

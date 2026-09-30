@@ -1,4 +1,4 @@
-import { PRIORITIES } from '@kanbanto/model/types'
+import { PRIORITIES, type Reminder } from '@kanbanto/model/types'
 import { SETTING_DEFAULTS } from './defaults'
 import {
   type AnyPgColumn,
@@ -38,8 +38,12 @@ export const users = pgTable('users', {
    * once the platform can send email.
    */
   emailVerifiedAt: at('email_verified_at'),
-  /** Email a daily summary of @mentions (they can turn it off). */
+  /** The morning summary email: due today, overdue, today's reminders, unseen mentions (they can turn it off). */
   mentionEmails: boolean('mention_emails').notNull().default(true),
+  /** Their time zone (IANA, e.g. Asia/Bangkok), from their browser: when "morning" is. Null: not known yet (UTC). */
+  timeZone: text('time_zone'),
+  /** Email reminders as they fire, as well as the bell (they can turn it off). */
+  reminderEmails: boolean('reminder_emails').notNull().default(true),
   /** When the last daily summary went out (at most one per 24 hours). */
   lastDigestAt: at('last_digest_at'),
   /** Their Inbox: where apps put tasks they add without naming a board. */
@@ -152,7 +156,7 @@ export const emailTokens = pgTable(
   (t) => [index('email_tokens_user_idx').on(t.userId)],
 )
 
-export const EMAIL_KINDS = ['verify', 'reset', 'invite', 'digest', 'test', 'notice'] as const
+export const EMAIL_KINDS = ['verify', 'reset', 'invite', 'digest', 'test', 'notice', 'reminder'] as const
 export type EmailKind = (typeof EMAIL_KINDS)[number]
 
 /** Every email, queued then sent (with retries). Also what budgets and allowances are counted from. */
@@ -366,6 +370,8 @@ export const tasks = pgTable(
     priority: text('priority', { enum: PRIORITIES }),
     /** Archived (with its subtasks): out of every view and count until restored. */
     archivedAt: at('archived_at'),
+    /** Reminder[] (model/types.ts); null: none. */
+    reminders: jsonb('reminders').$type<Reminder[]>(),
     /** The list it's in. */
     status: text('status').notNull(),
     /** Position among its siblings in the outline. */
@@ -413,7 +419,7 @@ export const notifications = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
     /** mention: in a comment (board, task, comment) · added: to a board or a workspace (one of the two). */
-    kind: text('kind', { enum: ['mention', 'added'] }).notNull(),
+    kind: text('kind', { enum: ['mention', 'added', 'reminder'] }).notNull(),
     boardId: text('board_id').references(() => boards.id, { onDelete: 'cascade' }),
     workspaceId: uuid('workspace_id').references(() => workspaces.id, { onDelete: 'cascade' }),
     taskId: text('task_id'),
@@ -536,6 +542,8 @@ export const webhooks = pgTable(
     /** For signing deliveries (HMAC-SHA256), encrypted like other secrets. */
     secretEncrypted: text('secret_encrypted').notNull(),
     active: boolean('active').notNull().default(true),
+    /** The events it's sent (board.changed, comment.added, reminder.due); null: all of them. */
+    events: text('events').array(),
     createdBy: uuid('created_by').references(() => users.id, { onDelete: 'set null' }),
     createdAt: at('created_at').notNull().defaultNow(),
     /** How the last delivery went. */
@@ -562,6 +570,8 @@ export const webhookDeliveries = pgTable(
     attempts: integer('attempts').notNull().default(0),
     nextAttemptAt: at('next_attempt_at').notNull().defaultNow(),
     responseStatus: integer('response_status'),
+    /** The start of what the address answered (up to 2 KB), for the log. */
+    responseBody: text('response_body'),
     lastError: text('last_error'),
     createdAt: at('created_at').notNull().defaultNow(),
     sentAt: at('sent_at'),
@@ -648,4 +658,23 @@ export const boardActivity = pgTable(
     via: text('via'),
   },
   (t) => [index('board_activity_board_idx').on(t.boardId, t.at)],
+)
+
+/**
+ * Reminders that went out: one row per reminder per moment, so each fires once. (If its moment changes, e.g. the due
+ * date moves, the new moment is a new row and it fires again then.)
+ */
+export const reminderSends = pgTable(
+  'reminder_sends',
+  {
+    boardId: text('board_id')
+      .notNull()
+      .references(() => boards.id, { onDelete: 'cascade' }),
+    taskId: text('task_id').notNull(),
+    reminderId: text('reminder_id').notNull(),
+    fireAt: at('fire_at').notNull(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'set null' }),
+    sentAt: at('sent_at').notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.boardId, t.taskId, t.reminderId, t.fireAt] }), index('reminder_sends_user_idx').on(t.userId, t.sentAt)],
 )

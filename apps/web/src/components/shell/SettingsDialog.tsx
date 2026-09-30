@@ -1,4 +1,4 @@
-import { Archive, Desktop, Info, Moon, PaintBrush, PlugsConnected, Sun, Trash, Tray, User, UsersThree, type Icon } from '@phosphor-icons/react'
+import { Archive, Desktop, Info, Moon, PaintBrush, Sun, Trash, Tray, User, UsersThree, type Icon } from '@phosphor-icons/react'
 import { toast } from 'sonner'
 import { useState, type ReactNode } from 'react'
 import { api, errorMessage } from '@/api/client'
@@ -6,7 +6,7 @@ import { useBoard } from '@/app/board-context'
 import { navigate } from '@/app/router'
 import { useAuth } from '@/app/use-auth'
 import { useTheme } from '@/app/use-theme'
-import { WebhooksDialog } from '@/components/board/WebhooksDialog'
+import { WebhookDetail, WebhookList } from '@/components/board/Webhooks'
 import { Avatar, BackgroundSwatches } from '@/components/common/bits'
 import {
   AlertDialog,
@@ -173,7 +173,9 @@ function Look() {
 
 function People({ onClose }: { onClose: () => void }) {
   const { data, access, openShare } = useBoard()
-  const [webhooks, setWebhooks] = useState(false)
+  // A webhook's own page (its settings and delivery log), inside this tab.
+  const [hook, setHook] = useState<string | null>(null)
+  if (hook) return <WebhookDetail id={hook} onBack={() => setHook(null)} />
   return (
     <Section title="People & apps" hint="Who can work on this board, and what it tells other apps.">
       <Card>
@@ -204,20 +206,12 @@ function People({ onClose }: { onClose: () => void }) {
             ))}
           </div>
         </Row>
-        {access.role === 'owner' && (
-          <Row
-            label="Webhooks"
-            icon={PlugsConnected}
-            hint="Send this board’s changes to another app as they happen (Slack, n8n, Zapier…)."
-            action={
-              <Button variant="outline" size="sm" onClick={() => setWebhooks(true)}>
-                Manage…
-              </Button>
-            }
-          />
-        )}
       </Card>
-      <WebhooksDialog open={webhooks} onOpenChange={setWebhooks} />
+      {access.role === 'owner' && (
+        <Card title="Webhooks: send changes, comments and reminders to another app (Slack, n8n, Zapier…)">
+          <WebhookList onOpen={setHook} />
+        </Card>
+      )}
     </Section>
   )
 }

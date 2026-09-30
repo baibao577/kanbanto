@@ -23,6 +23,7 @@ import { cn } from '@/lib/utils'
 import { tone } from '@kanbanto/model/colors'
 import { ancestorsOf, statusCol } from '@kanbanto/model/indexer'
 import { filterCount, matchesFilter } from '@kanbanto/model/table'
+import type { TaskFields } from '@kanbanto/model/commands'
 import type { StatusColumn } from '@kanbanto/model/types'
 import { buildView, cellKey, groupCell, groupsSubtasks, NO_ROW, UNASSIGNED, type Lane } from '@kanbanto/model/view'
 import { cardIndexAt, dragging, itemIndexAt, listIndexAt, type GroupDrag } from './dnd'
@@ -179,9 +180,9 @@ function Board({ search }: { search: string }) {
   })
 
   /** New card typed into a cell: it takes that cell's status / parent / person. */
-  const addIn = (row: string, col: string) => (title: string) => {
+  const addIn = (row: string, col: string) => (title: string, extra?: TaskFields) => {
     const { parentId, fields, rankAfter } = newCardIn(rules, prefs.focusId, row, col, title)
-    createTask(parentId, fields, { rankAfter })
+    createTask(parentId, { ...fields, ...extra }, { rankAfter })
   }
 
   const jumpToRow = (key: string) => {
@@ -534,7 +535,7 @@ function Board({ search }: { search: string }) {
                     {renderCards(NO_ROW, c.key)}
                   </div>
                   <div className="p-1.5 pt-1">
-                    <QuickAdd onAdd={addIn(NO_ROW, c.key)} />
+                    <QuickAdd dates onAdd={addIn(NO_ROW, c.key)} />
                   </div>
                 </section>
               )
@@ -595,7 +596,7 @@ function Board({ search }: { search: string }) {
                       >
                         {renderCards(r.key, c.key)}
                         <div className="opacity-0 transition-opacity group-hover/cell:opacity-100 focus-within:opacity-100">
-                          <QuickAdd onAdd={addIn(r.key, c.key)} label="Add" className="h-7" />
+                          <QuickAdd dates onAdd={addIn(r.key, c.key)} label="Add" className="h-7" />
                         </div>
                       </div>
                     ))}

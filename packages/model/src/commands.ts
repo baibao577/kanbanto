@@ -3,7 +3,7 @@ import { applyChanges, current } from './changes'
 import { isLeaf, wouldCycle, type TaskIndex } from './indexer'
 import { comparePositions, positionBetween, positionsBetween } from './position'
 import { stamp, type Change } from './records'
-import type { Board, BoardData, Category, LabelDef, Priority, StatusColumn, Task } from './types'
+import type { Board, BoardData, Category, LabelDef, Priority, Reminder, StatusColumn, Task } from './types'
 import type { ColorName } from './colors'
 
 /**
@@ -59,6 +59,8 @@ export type TaskFields = Partial<
   Pick<Task, 'title' | 'description' | 'status' | 'start' | 'due' | 'labels' | 'blockedBy'> & {
     assigneeId: string | null
     priority: Priority | null
+    /** Replaces the task's reminders ([] removes them all). */
+    reminders: Reminder[]
     color: ColorName | null
   }
 >
@@ -371,6 +373,19 @@ function cleanFields(data: BoardData, id: string, f: TaskFields): Partial<Task> 
   if (f.labels) out.labels = [...new Set(f.labels)].filter((l) => data.labels.some((x) => x.id === l))
   if (f.blockedBy) out.blockedBy = [...new Set(f.blockedBy)].filter((b) => b !== id && data.tasks[b])
   if (f.priority !== undefined) out.priority = f.priority ?? undefined
+  if (f.reminders) {
+    const clean = f.reminders.map((r): Reminder => {
+      const at = r.at ? (normalizeTaskDate(r.at) ?? reject('A reminder’s time looks like 2026-10-31T14:30:00Z.')) : undefined
+      if (at && at.length <= 10) reject('A reminder needs a time of day.')
+      if (!at && r.beforeDue === undefined) reject('A reminder is either at a time or before the due date.')
+      return {
+        id: r.id,
+        ...(at ? { at } : { beforeDue: r.beforeDue, ...(r.tz && { tz: r.tz }) }),
+        ...(r.by && data.members.some((m) => m.id === r.by) && { by: r.by }),
+      }
+    })
+    out.reminders = clean.length ? clean : undefined
+  }
   if (f.color !== undefined) out.color = f.color ?? undefined
   return out
 }

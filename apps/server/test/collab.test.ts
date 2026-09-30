@@ -5,11 +5,12 @@ import { eq, sql } from 'drizzle-orm'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { Readable } from 'node:stream'
 import { fetch } from 'undici'
-import { attachments, notifications, users } from '../src/db/schema'
+import { attachments, users } from '../src/db/schema'
 import { env } from '../src/env'
 import { isPublicAddress, PrivateAddressError, publicLookup, publicOnly } from '../src/storage/egress'
 import { S3Store } from '../src/storage/stores'
 import { sendDigests } from '../src/mail/digest'
+import { sendReminders } from '../src/reminders'
 import { tidyFiles } from '../src/routes/files'
 import { flushMail, mid, Person, reset, setPlatformAdmin, setup } from './helpers'
 
@@ -103,27 +104,36 @@ describe('comments', () => {
     expect((await ann.ok('GET', '/api/notifications')).unread).toBe(0)
   })
 
-  it('the daily email summary: once a day at most, and people can turn it off', async () => {
+  it('the morning summary: around 8:00 in each person’s time zone, once a day, only when there’s something, and it can be turned off', async () => {
     const { ann, bob, vic, id } = await team()
     await setPlatformAdmin(t.db, 'ann@example.com', true)
     await ann.ok('PUT', '/api/admin/email/sender', { apiKey: 're_platform_1234567890abcd', from: 'Kanbanto <noreply@kanbanto.example>' })
+    await t.db.update(users).set({ emailVerifiedAt: new Date() })
+    await ann.ok('PATCH', '/api/auth/me', { timeZone: 'Asia/Bangkok' })
+    expect((await ann.request('PATCH', '/api/auth/me', { timeZone: 'Mars/Olympus' })).status).toBe(400)
     await vic.ok('PATCH', '/api/auth/me', { mentionEmails: false })
-    // Now that the site sends email, Bob has to have confirmed his.
-    await t.db.update(users).set({ emailVerifiedAt: new Date() }).where(eq(users.email, 'bob@example.com'))
-    await bob.ok('POST', `/api/boards/${id}/tasks/A3/comments`, { body: '@Ann and @Vic please review', mentions: [ann.user.id, vic.user.id] })
-    // Nothing yet: mentions wait an hour so people can see them in the app first.
-    expect(await sendDigests(t.app)).toBe(0)
-    await t.db.update(notifications).set({ createdAt: sql`now() - interval '2 hours'` })
-    expect(await sendDigests(t.app)).toBe(1)
+    const run = (command: object) => ann.ok('POST', `/api/boards/${id}/mutations`, { mutationId: mid(), command })
+
+    // Thu 1 Oct 2026, 08:05 in Bangkok = 01:05 UTC. Ann: one due today, one overdue, a reminder at 15:00, a mention.
+    const morning = new Date('2026-10-01T01:05:00Z')
+    await run({ type: 'task.update', id: 'A3', fields: { assigneeId: ann.user.id, due: '2026-10-01' } })
+    await run({ type: 'task.update', id: 'A1', fields: { assigneeId: ann.user.id, due: '2026-09-28', status: 'todo' } })
+    await run({ type: 'task.update', id: 'B1', fields: { assigneeId: ann.user.id, reminders: [{ id: 'r', at: '2026-10-01T08:00:00Z' }] } })
+    await bob.ok('POST', `/api/boards/${id}/tasks/A3/comments`, { body: '@Ann please review', mentions: [ann.user.id] })
+
+    // Too early (07:30 there): nothing. Then the morning: one, once.
+    expect(await sendDigests(t.app, new Date('2026-10-01T00:30:00Z'))).toBe(0)
+    expect(await sendDigests(t.app, morning)).toBe(1)
+    expect(await sendDigests(t.app, new Date('2026-10-01T02:00:00Z'))).toBe(0)
     await flushMail(t.app)
     const email = t.mail.last('ann@example.com')!
-    expect(email.subject).toBe('Bob mentioned you on Kanbanto')
+    expect(email.subject).toBe('Your day, Thu 1 Oct: 1 due today, 1 overdue, 1 reminder, 1 mention')
+    expect(email.text).toContain('was due Mon 28 Sep')
+    expect(email.text).toContain('15:00')
     expect(email.text).toContain('please review')
+    // Bob has nothing (no time zone: UTC, so it's 01:05 for him anyway); Vic turned it off.
+    expect(t.mail.last('bob@example.com')).toBeUndefined()
     expect(t.mail.last('vic@example.com')).toBeUndefined()
-    // Another mention the same day waits for tomorrow's summary.
-    await bob.ok('POST', `/api/boards/${id}/tasks/A3/comments`, { body: '@Ann ping', mentions: [ann.user.id] })
-    await t.db.update(notifications).set({ createdAt: sql`now() - interval '2 hours'` })
-    expect(await sendDigests(t.app)).toBe(0)
   })
 })
 
@@ -437,5 +447,53 @@ describe('moving a task to another board', () => {
     expect((await log(home))[0]).toMatch(/here from another board$/)
     // A move to the same board is refused.
     expect((await ann.request('POST', `/api/boards/${home}/tasks/${moved.id}/move`, { boardId: home })).status).toBe(422)
+  })
+})
+
+describe('reminders', () => {
+  it('go off once, to whoever is assigned (bell and email), follow the due date, and wait while archived', async () => {
+    const { ann, bob, vic, id } = await team()
+    await setPlatformAdmin(t.db, 'ann@example.com', true)
+    await ann.ok('PUT', '/api/admin/email/sender', { apiKey: 're_platform_1234567890abcd', from: 'Kanbanto <noreply@kanbanto.example>' })
+    await t.db.update(users).set({ emailVerifiedAt: new Date() })
+    await vic.ok('PATCH', '/api/auth/me', { reminderEmails: false })
+    const run = (command: object) => ann.ok('POST', `/api/boards/${id}/mutations`, { mutationId: mid(), command })
+    const now = Date.now()
+    const iso = (ms: number) => new Date(ms).toISOString().replace(/\.\d+Z$/, 'Z')
+
+    // Assigned to Bob, set by Ann, a minute ago: Bob gets it (not Ann), once.
+    await run({
+      type: 'task.update',
+      id: 'A3',
+      fields: { assigneeId: bob.user.id, reminders: [{ id: 'r1', at: iso(now - 60_000), by: ann.user.id }] },
+    })
+    expect(await sendReminders(t.app)).toBe(1)
+    expect(await sendReminders(t.app)).toBe(0)
+    const [n] = (await bob.ok('GET', '/api/notifications')).notifications
+    expect(n).toMatchObject({ kind: 'reminder', actor: 'Ann', task: { id: 'A3' } })
+    expect((await ann.ok('GET', '/api/notifications')).notifications.some((x: { kind: string }) => x.kind === 'reminder')).toBe(false)
+    await flushMail(t.app)
+    expect(t.mail.last('bob@example.com')?.subject).toMatch(/^Reminder: /)
+
+    // Nobody assigned: it goes to whoever set it; Vic turned emails off, so only the bell.
+    await run({ type: 'task.update', id: 'A1', fields: { assigneeId: null, reminders: [{ id: 'r2', at: iso(now - 60_000), by: vic.user.id }] } })
+    // (Vic can only view, but that's enough to be reminded.)
+    expect(await sendReminders(t.app)).toBe(1)
+    expect((await vic.ok('GET', '/api/notifications')).notifications[0]).toMatchObject({ kind: 'reminder', task: { id: 'A1' } })
+    await flushMail(t.app)
+    expect(t.mail.last('vic@example.com')).toBeUndefined()
+
+    // "An hour before it's due": moving the due date moves it; archived cards wait.
+    await run({
+      type: 'task.update',
+      id: 'A2a',
+      fields: { assigneeId: bob.user.id, due: iso(now + 3 * 3_600_000), reminders: [{ id: 'r3', beforeDue: 60 }] },
+    })
+    expect(await sendReminders(t.app)).toBe(0)
+    await run({ type: 'task.update', id: 'A2a', fields: { due: iso(now + 30 * 60_000) } })
+    await run({ type: 'task.archive', id: 'A2' })
+    expect(await sendReminders(t.app)).toBe(0)
+    await run({ type: 'task.restore', id: 'A2' })
+    expect(await sendReminders(t.app)).toBe(1)
   })
 })

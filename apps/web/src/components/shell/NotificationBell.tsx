@@ -42,7 +42,7 @@ export function NotificationBell() {
   const openOne = (n: NotificationView) => {
     setOpen(false)
     if (!n.read) void api('POST', '/notifications/read', { ids: [n.id] }).then(refresh)
-    if (n.kind === 'mention') navigate({ page: 'board', id: n.board.id, task: n.task.id })
+    if (n.kind === 'mention' || n.kind === 'reminder') navigate({ page: 'board', id: n.board.id, task: n.task.id })
     else if (n.board) navigate({ page: 'board', id: n.board.id })
     else if (n.workspace) navigate({ page: 'workspace', id: n.workspace.id })
   }
@@ -90,6 +90,15 @@ export function NotificationBell() {
                       </p>
                       {n.excerpt && <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">{n.excerpt}</p>}
                     </>
+                  ) : n.kind === 'reminder' ? (
+                    <p className="text-xs">
+                      ⏰ Reminder: <span className="font-medium">“{n.task.title}”</span>
+                      <span className="text-muted-foreground">
+                        {' '}
+                        · {n.board.name}
+                        {n.actor && ` · set by ${n.actor}`}
+                      </span>
+                    </p>
                   ) : (
                     <p className="text-xs">
                       <span className="font-semibold">{n.actor}</span> added you to{' '}

@@ -29,6 +29,16 @@ then `git pull` (or download the new release) and `docker compose up -d --build`
   and links, written in a light editor (Markdown shortcuts or a small toolbar) and saved as Markdown. Long text folds
   with "Show more", and a description can be read full page with its headings to jump to. Files and mentions work as
   before.
+- **Reminders** on cards: at a time you type in plain words ("tmr 10:00", "fri 2pm") or pick, or before the due date
+  (following it). They go to whoever is assigned, under the bell and by email (which can be turned off), and to
+  webhooks as `reminder.due`. Assistants can set and list them.
+- **Morning summary email** around 8:00 in your own time zone (set from your browser, changeable): cards due today and
+  overdue, reminders later today, and mentions you haven't seen. Only when there's something; it replaces the daily
+  mention email.
+- **Times in plain words** when adding or renaming a card ("buy cat next monday 1pm" becomes "buy cat", due then, with
+  a reminder if you like) and in the Due and Start pickers.
+- **Webhooks** live in Board settings: each can send only some events (card changes, comments, reminders), and has a
+  delivery log showing what was sent and what came back, with "Send again".
 - **Outline** uses the full width, with columns you choose and compact (or comfortable) rows (Display), indent guides
   and lightly tinted projects; on phones it's a nested list with each task's details underneath.
 - **Archive** cards (with their subtasks) and boards instead of deleting them. Archived cards have their own page

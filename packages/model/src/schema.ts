@@ -32,6 +32,21 @@ const recordId = z
   .refine((s) => !CONTROL.test(s), 'Not a valid id.')
 const position = z.string().refine(isPosition, 'Not a valid position.')
 const priority = z.enum(PRIORITIES)
+const reminder = z
+  .object({
+    id: recordId,
+    at: z.string().max(40).optional(),
+    beforeDue: z
+      .number()
+      .int()
+      .min(0)
+      .max(60 * 24 * 30)
+      .optional(),
+    tz: z.string().max(64).optional(),
+    by: recordId.optional(),
+  })
+  .refine((r) => !!r.at !== (r.beforeDue !== undefined), 'A reminder is either at a time or before the due date.')
+const reminders = z.array(reminder).max(20)
 const meta = {
   createdAt: z.string().max(40),
   updatedAt: z.string().max(40),
@@ -52,6 +67,7 @@ export const TaskSchema = z.object({
   description: plain(50_000).optional(),
   priority: priority.optional(),
   archivedAt: z.string().max(40).optional(),
+  reminders: reminders.optional(),
   color: color.optional(),
   rank: position.optional(),
   ...meta,
@@ -101,6 +117,7 @@ const taskFields = z
     blockedBy: z.array(id).max(200),
     assigneeId: id.nullable(),
     priority: priority.nullable(),
+    reminders,
     color: color.nullable(),
   })
   .partial()

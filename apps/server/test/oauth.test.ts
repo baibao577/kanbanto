@@ -139,7 +139,7 @@ describe('apps connecting with sign-in (OAuth, for MCP)', () => {
     })
     expect(got.body.scope).toBe('kanbanto:read')
     const tools = (await rpc(got.body.access_token, 'tools/list')).body.result.tools.map((x: { name: string }) => x.name)
-    expect(tools).toEqual(['list_boards', 'get_board', 'find_tasks', 'team_overview', 'recent_activity', 'get_task'])
+    expect(tools).toEqual(['list_boards', 'get_board', 'find_tasks', 'team_overview', 'recent_activity', 'reminders', 'get_task'])
   })
 
   it('known AI apps only: Claude and apps on the computer yes, other sites no; any app: yes', async () => {

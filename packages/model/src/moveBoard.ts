@@ -110,6 +110,10 @@ export function planMove(
       labels: t.labels.flatMap((l) => (labelIds.has(l) ? [labelIds.get(l)!] : [])),
       blockedBy: t.blockedBy.filter((b) => inMove.has(b)).map((b) => ids.get(b)!),
       ...(keep && { assigneeId }),
+      // Reminders go too; who set one is kept only if they're on the other board.
+      ...(t.reminders && {
+        reminders: t.reminders.map(({ by, ...r }) => ({ ...r, ...(by && onTarget.has(by) && { by }) })),
+      }),
       updatedAt: ctx.now,
       version: 1,
     }

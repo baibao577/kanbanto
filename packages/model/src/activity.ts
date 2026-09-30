@@ -54,6 +54,12 @@ export function describeChanges(before: BoardData, changes: Change[]): ActivityI
         if (a.due !== b.due) items.push({ taskId: b.id, text: b.due ? `set ${t} due ${b.due}` : `cleared the due date of ${t}` })
         if (a.start !== b.start) items.push({ taskId: b.id, text: b.start ? `set ${t} to start ${b.start}` : `cleared the start date of ${t}` })
         if ((a.description ?? '') !== (b.description ?? '')) items.push({ taskId: b.id, text: `edited the description of ${t}` })
+        const ra = a.reminders?.length ?? 0
+        const rb = b.reminders?.length ?? 0
+        if (rb > ra) items.push({ taskId: b.id, text: `set a reminder on ${t}` })
+        else if (rb < ra) items.push({ taskId: b.id, text: rb ? `removed a reminder from ${t}` : `removed the reminders from ${t}` })
+        else if (JSON.stringify(a.reminders ?? []) !== JSON.stringify(b.reminders ?? []))
+          items.push({ taskId: b.id, text: `changed a reminder on ${t}` })
         if (a.priority !== b.priority)
           items.push({ taskId: b.id, text: b.priority ? `set the priority of ${t} to ${b.priority}` : `cleared the priority of ${t}` })
         if (a.labels.join() !== b.labels.join()) items.push({ taskId: b.id, text: `changed the labels of ${t}` })

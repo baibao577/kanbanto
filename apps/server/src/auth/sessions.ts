@@ -16,6 +16,10 @@ export interface SessionUser {
   emailVerified: boolean
   /** Wants the daily email summary of @mentions. */
   mentionEmails: boolean
+  /** Wants reminders by email too. */
+  reminderEmails: boolean
+  /** IANA time zone, or null when not known yet. */
+  timeZone: string | null
   /** Their Inbox board (see users.inboxBoardId). */
   inboxBoardId: string | null
   /** Has to confirm their email before using the app (set per request: only once the site can send email). */
@@ -57,6 +61,8 @@ export const sessionUser = (u: typeof users.$inferSelect): SessionUser => ({
   isAdmin: u.isAdmin,
   emailVerified: !!u.emailVerifiedAt,
   mentionEmails: u.mentionEmails,
+  reminderEmails: u.reminderEmails,
+  timeZone: u.timeZone,
   inboxBoardId: u.inboxBoardId,
 })
 

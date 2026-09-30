@@ -21,7 +21,7 @@ import { assertPublicEndpoint, PrivateAddressError, publicOnly } from './storage
  * with 2xx. Platform admins choose whether webhooks may go to public addresses only, or anywhere (a company network).
  */
 
-export type WebhookEvent = 'board.changed' | 'comment.added' | 'ping'
+export type WebhookEvent = 'board.changed' | 'comment.added' | 'reminder.due' | 'ping'
 export type WebhookMode = 'off' | 'public' | 'any'
 
 /** Delays before each retry, in minutes: six tries over about eight hours, then the delivery is given up. */
@@ -85,10 +85,12 @@ export class Webhooks {
 
   /** Queues an event for the board's active webhooks (if the site allows webhooks). */
   async emit(boardId: string, event: WebhookEvent, data: object) {
-    const hooks = await this.db
-      .select({ id: webhooks.id })
-      .from(webhooks)
-      .where(and(eq(webhooks.boardId, boardId), eq(webhooks.active, true)))
+    const hooks = (
+      await this.db
+        .select({ id: webhooks.id, events: webhooks.events })
+        .from(webhooks)
+        .where(and(eq(webhooks.boardId, boardId), eq(webhooks.active, true)))
+    ).filter((h) => !h.events || h.events.includes(event))
     if (!hooks.length || (await loadSettings(this.db)).webhooks === 'off') return
     const at = new Date().toISOString()
     await this.db.insert(webhookDeliveries).values(
@@ -150,6 +152,7 @@ export class Webhooks {
     const body = JSON.stringify(d.payload)
     let status: number | null = null
     let error: string | null = null
+    let answer: string | null = null
     try {
       if (mode === 'off') throw new Error('Webhooks are turned off on this site.')
       if (!h.active) throw new Error('This webhook is paused.')
@@ -169,7 +172,7 @@ export class Webhooks {
         dispatcher: mode === 'public' ? publicOnly : undefined,
         signal: AbortSignal.timeout(TIMEOUT_MS),
       })
-      await res.arrayBuffer().catch(() => {})
+      answer = await readStart(res)
       status = res.status
       if (status < 200 || status >= 300) error = `The address answered ${status}.`
     } catch (e) {
@@ -192,6 +195,7 @@ export class Webhooks {
       .set({
         attempts,
         responseStatus: status,
+        responseBody: answer,
         lastError: error,
         status: ok ? 'sent' : last ? 'failed' : 'pending',
         sentAt: ok ? now : null,
@@ -202,8 +206,26 @@ export class Webhooks {
     return { ok, status, error }
   }
 
+  /** Sends a delivery again (a new one, with the same event and data), right away. */
+  async resend(d: Delivery, h: Hook) {
+    const id = newId()
+    const payload = { ...(d.payload as object), delivery: id, at: new Date().toISOString(), resent_from: d.id }
+    const [fresh] = await this.db.insert(webhookDeliveries).values({ id, webhookId: h.id, event: d.event, payload }).returning()
+    return this.deliver(fresh, h, (await loadSettings(this.db)).webhooks, { retry: true })
+  }
+
   /** Deliveries are kept a week, for the webhook's recent log. */
   async prune() {
     await this.db.delete(webhookDeliveries).where(lt(webhookDeliveries.createdAt, new Date(Date.now() - KEEP_DAYS * 24 * 60 * 60 * 1000)))
+  }
+}
+
+/** The start of a reply (up to 2 KB of text), for the delivery log. */
+async function readStart(res: Response): Promise<string | null> {
+  try {
+    const text = await res.text()
+    return text ? text.slice(0, 2048) : null
+  } catch {
+    return null
   }
 }

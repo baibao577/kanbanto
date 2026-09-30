@@ -1,4 +1,5 @@
 import {
+  Alarm,
   Archive,
   ArrowDown,
   ArrowLineDown,
@@ -27,6 +28,8 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
+import { formatDay } from '@/lib/format'
+import { upcoming } from '@kanbanto/model/reminders'
 import { ancestorsOf, isBlocked, statusCol, type TaskIndex } from '@kanbanto/model/indexer'
 import type { LabelDef, ViewConfig } from '@kanbanto/model/types'
 import type { Lane } from '@kanbanto/model/view'
@@ -80,6 +83,8 @@ export const TaskCard = memo(function TaskCard({
   const total = idx.subTotal.get(id)!
   const col = statusCol(idx, id)
   const blocked = isBlocked(idx, id)
+  // The next reminder still to go off (shown as a small alarm).
+  const next = t.reminders ? upcoming(t)[0] : undefined
   const path = d.includes('label') && t.parentId ? ancestorsOf(idx.tasks, id).map((a) => idx.tasks[a].title) : null
   const labels = t.labels.map((l) => labelById.get(l)).filter((l) => !!l)
 
@@ -126,6 +131,7 @@ export const TaskCard = memo(function TaskCard({
 
       {(config.columns === 'parent' ||
         t.priority ||
+        next ||
         blocked ||
         t.due ||
         (kids && !d.includes('progress')) ||
@@ -141,6 +147,11 @@ export const TaskCard = memo(function TaskCard({
             </span>
           )}
           {t.due && <DueChip due={t.due} done={col.category === 'done'} />}
+          {next && (
+            <span className="inline-flex h-5 items-center text-muted-foreground" title={`Reminder: ${formatDay(next.at.toISOString(), true)}`}>
+              <Alarm className="size-3.5" />
+            </span>
+          )}
           {kids && !d.includes('progress') && (
             <span className="inline-flex h-5 items-center gap-1 text-[11px] text-muted-foreground tabular-nums">
               <ListChecks className="size-3.5" /> {done}/{total}

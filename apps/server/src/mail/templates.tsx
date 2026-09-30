@@ -140,6 +140,17 @@ export async function renderEmail(brand: Brand, content: EmailContent) {
 const ROLE_WORDS = { owner: 'manage', editor: 'add and update tasks on', viewer: 'view' } as const
 
 /** The wording of each email. */
+/** One line of the morning summary: a card, its board, and a short note (a time, "was due…", a mention). */
+export interface DigestItem {
+  task: string
+  board: string
+  note?: string
+}
+export interface DigestList {
+  items: DigestItem[]
+  more: number
+}
+
 export const emails = {
   verify: (brand: Brand, d: { name: string; email: string; url: string }): EmailContent => ({
     subject: `Confirm your email address for ${brand.name}`,
@@ -217,24 +228,58 @@ export const emails = {
     }
   },
 
+  /** The morning summary: what's due today, overdue, reminders later today, and unseen mentions. */
   digest: (
     brand: Brand,
-    d: { name: string; site: string; items: { actor: string; task: string; board: string; excerpt: string }[]; more: number },
+    d: {
+      name: string
+      site: string
+      /** Today, in words ("Thu 1 Oct"). */
+      day: string
+      due: DigestList
+      overdue: DigestList
+      reminders: DigestList
+      mentions: DigestList
+    },
   ): EmailContent => {
-    const n = d.items.length + d.more
+    const count = (l: DigestList) => l.items.length + l.more
+    const parts = [
+      count(d.due) && `${count(d.due)} due today`,
+      count(d.overdue) && `${count(d.overdue)} overdue`,
+      count(d.reminders) && `${count(d.reminders)} ${count(d.reminders) === 1 ? 'reminder' : 'reminders'}`,
+      count(d.mentions) && `${count(d.mentions)} ${count(d.mentions) === 1 ? 'mention' : 'mentions'}`,
+    ].filter(Boolean) as string[]
+    const section = (title: string, l: DigestList) =>
+      count(l)
+        ? [title, ...l.items.map((i) => `• ${i.task} (${i.board})${i.note ? ` · ${i.note}` : ''}`), ...(l.more ? [`…and ${l.more} more.`] : [])]
+        : []
     return {
-      subject: n === 1 ? `${d.items[0].actor} mentioned you on ${brand.name}` : `You were mentioned ${n} times on ${brand.name}`,
-      preview: d.items.map((i) => `${i.actor} on “${i.task}”`).join(', '),
-      heading: n === 1 ? 'You were mentioned' : `You were mentioned ${n} times`,
+      subject: `Your day, ${d.day}: ${parts.join(', ')}`,
+      preview: parts.join(' · '),
+      heading: `Good morning, ${d.name}`,
       paragraphs: [
-        `Hi ${d.name}, here’s what you missed:`,
-        ...d.items.map((i) => `${i.actor} on “${i.task}” (${i.board}): “${i.excerpt}”`),
-        ...(d.more ? [`…and ${d.more} more.`] : []),
+        ...section('Due today', d.due),
+        ...section('Overdue', d.overdue),
+        ...section('Reminders later today', d.reminders),
+        ...section('You were mentioned', d.mentions),
       ],
       button: { label: `Open ${brand.name}`, href: d.site },
-      reason: `You’re receiving this daily summary because you were mentioned in comments on ${brand.name}. You can turn it off in Account settings → Notifications.`,
+      reason: `You’re receiving this morning summary from ${brand.name} because it’s on in Account settings → Notifications, where you can turn it off.`,
     }
   },
+
+  /** A reminder on a card fired (for its assignee, or whoever set it). `due`: the card's due date, in words. */
+  reminder: (brand: Brand, d: { name: string; task: string; board: string; due: string | null; by: string | null; url: string }): EmailContent => ({
+    subject: `Reminder: ${d.task}`,
+    preview: d.due ? `Due ${d.due}, on ${d.board}.` : `On ${d.board}.`,
+    heading: `⏰ ${d.task}`,
+    paragraphs: [
+      `Hi ${d.name},`,
+      `${d.by ? `${d.by} set a reminder` : 'A reminder was set'} for now on “${d.task}” (${d.board})${d.due ? `, which is due ${d.due}` : ''}.`,
+    ],
+    button: { label: 'Open the card', href: d.url },
+    reason: `You’re receiving this because the card is assigned to you (or you set the reminder) on ${brand.name}. You can turn reminder emails off in Account settings → Notifications.`,
+  }),
 
   test: (brand: Brand, d: { from: string; to: string; site?: string }): EmailContent => ({
     subject: `Your ${brand.name} email settings are working`,
@@ -302,15 +347,24 @@ export function sampleEmail(kind: EmailKind, brand: Brand, appUrl: string): Emai
       return emails.digest(brand, {
         name: 'Sam',
         site: `${appUrl}/`,
-        items: [
-          { actor: 'Alex', task: 'Homepage copy', board: 'Website launch', excerpt: '@Sam can you check the pricing section before Friday?' },
-          { actor: 'Jo', task: 'Logo', board: 'Website launch', excerpt: 'Two options attached, @Sam which one do you prefer?' },
-        ],
-        more: 0,
+        day: 'Thu 1 Oct',
+        due: { items: [{ task: 'Homepage copy', board: 'Website launch', note: '17:00' }], more: 0 },
+        overdue: { items: [{ task: 'Send the invoices', board: 'Studio admin', note: 'was due Mon 28 Sep' }], more: 0 },
+        reminders: { items: [{ task: 'Call the printer', board: 'Studio admin', note: '14:00' }], more: 0 },
+        mentions: { items: [{ task: 'Logo', board: 'Website launch', note: 'Jo: “Two options attached, @Sam which one do you prefer?”' }], more: 0 },
       })
     case 'test':
       return emails.test(brand, { from: `${brand.name} <noreply@example.com>`, to: 'you@example.com', site: appUrl })
     case 'notice':
       return emails.notice(brand, { name: 'Sam', what: 'account-exists', site: appUrl })
+    case 'reminder':
+      return emails.reminder(brand, {
+        name: 'Sam',
+        task: 'Send the invoices',
+        board: 'Studio admin',
+        due: 'Fri 3 Oct',
+        by: 'Alex',
+        url: `${appUrl}/#/`,
+      })
   }
 }

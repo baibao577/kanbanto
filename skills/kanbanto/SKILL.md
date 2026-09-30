@@ -45,6 +45,9 @@ Without MCP, use the REST API (see "REST fallback" below).
 - **Setting up a board:** `create_board` (with `about`, in Personal or a workspace), then `manage_lists` for its
   workflow (e.g. add "Review" before Done, counting as in progress) and `manage_labels`. `update_board` renames it or
   changes what it's for. `set_inbox` picks their Inbox.
+- **Reminders:** `set_reminder` with `at` ("remind me Monday 1pm") or `before_due_minutes` (e.g. 1440 for a day
+  before; pass the user's `time_zone`). They go to the task's assignee, or the user if nobody is assigned. `reminders`
+  lists what's coming up: good for a morning check-in.
 - **Putting work away:** `archive_task` archives a finished or paused task (with its subtasks); it's restorable, so
   prefer it to asking the user to delete. `find_tasks` and `list_boards` include archived things only with
   `include_archived`.

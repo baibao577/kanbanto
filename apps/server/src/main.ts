@@ -8,6 +8,7 @@ import { createDb, migrateDb } from './db'
 import { env } from './env'
 import { loggable } from './errors'
 import { sendDigests } from './mail/digest'
+import { sendReminders } from './reminders'
 import { logTransport } from './mail/transport'
 import { tidyFiles } from './routes/files'
 import { moveSecretsOffDevKey } from './secrets'
@@ -64,10 +65,13 @@ const cleanup = setInterval(
   },
   6 * 60 * 60 * 1000,
 )
-// The daily @mention summaries: checked every hour (each person gets at most one a day).
-const digests = setInterval(() => void sendDigests(app).catch((e) => app.log.error({ err: loggable(e) }, 'mention digests')), 60 * 60 * 1000)
+// Morning summaries (~8:00 in each person's time zone): checked every 10 minutes, at most one a day each.
+// Reminders whose moment has come: checked every minute.
+const reminders = setInterval(() => void sendReminders(app).catch((e) => app.log.error({ err: loggable(e) }, 'reminders')), 60 * 1000)
+const digests = setInterval(() => void sendDigests(app).catch((e) => app.log.error({ err: loggable(e) }, 'morning summaries')), 10 * 60 * 1000)
 const shutdown = async () => {
   clearInterval(cleanup)
+  clearInterval(reminders)
   clearInterval(digests)
   await app.close()
   await client.end()

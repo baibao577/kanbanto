@@ -1,6 +1,7 @@
 import { createHmac } from 'node:crypto'
 import { createServer, type Server } from 'node:http'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
+import { webhookDeliveries } from '../src/db/schema'
 import { mid, Person, reset, setPlatformAdmin, setup } from './helpers'
 
 let t: Awaited<ReturnType<typeof setup>>
@@ -203,10 +204,12 @@ describe('MCP', () => {
       'find_tasks',
       'team_overview',
       'recent_activity',
+      'reminders',
       'get_task',
       'create_tasks',
       'update_task',
       'move_task',
+      'set_reminder',
       'archive_task',
       'move_to_board',
       'create_board',
@@ -352,6 +355,14 @@ describe('MCP', () => {
     expect(rest.nextUntil).toBe(rest.activity[0].at)
     expect((await bob.request('GET', `/api/boards/${personal}/activity`)).status).toBe(404)
 
+    // A reminder, set by Claude: it shows on the task and in "what's coming up".
+    const soon = new Date(Date.now() + 3_600_000).toISOString()
+    const set = await call('set_reminder', { board_id: personal, task_id: 'A3', at: soon })
+    expect(set.reminders).toEqual([expect.objectContaining({ fires: expect.any(String) })])
+    expect((await call('get_task', { board_id: personal, task_id: 'A3' })).reminders).toHaveLength(1)
+    expect((await call('reminders', {})).upcoming.map((r: { task_id: string }) => r.task_id)).toEqual(['A3'])
+    expect((await call('set_reminder', { board_id: personal, task_id: 'A3', remove: 'all' })).reminders).toEqual([])
+
     // Filing it away: from the Inbox to where it belongs.
     const { id: errands } = await ann.ok('POST', '/api/boards', { name: 'Errands' })
     const filed = await call('move_to_board', { board_id: personal, task_id: added.created[0].id, to_board_id: errands, list: 'doing' })
@@ -479,9 +490,44 @@ describe('MCP', () => {
     const { ann, id } = await site({ apiTokens: true })
     const mcp = withToken(await makeToken(ann, 'read'))
     const tools = (await rpc(mcp, 'tools/list')).body.result.tools.map((x: { name: string }) => x.name)
-    expect(tools).toEqual(['list_boards', 'get_board', 'find_tasks', 'team_overview', 'recent_activity', 'get_task'])
+    expect(tools).toEqual(['list_boards', 'get_board', 'find_tasks', 'team_overview', 'recent_activity', 'reminders', 'get_task'])
     const r = await rpc(mcp, 'tools/call', { name: 'create_tasks', arguments: { board_id: id, tasks: [{ title: 'x' }] } })
     expect(r.body.result?.isError ?? !!r.body.error).toBe(true)
+  })
+})
+
+describe('webhook events', () => {
+  it('each webhook gets only the events it was set to (all of them, unless chosen)', async () => {
+    const { ann, id } = await site({ webhooks: 'any' })
+    const all = await ann.ok('POST', `/api/boards/${id}/webhooks`, { url: 'http://127.0.0.1:9/all' })
+    const some = await ann.ok('POST', `/api/boards/${id}/webhooks`, { url: 'http://127.0.0.1:9/comments', events: ['comment.added'] })
+    const list = (await ann.ok('GET', `/api/boards/${id}/webhooks`)).webhooks
+    expect(list.find((h: { id: string }) => h.id === all.id).events).toEqual(['board.changed', 'comment.added', 'reminder.due'])
+    expect(list.find((h: { id: string }) => h.id === some.id).events).toEqual(['comment.added'])
+    expect((await ann.request('PATCH', `/api/boards/${id}/webhooks/${some.id}`, { events: [] })).status).toBe(400)
+
+    await ann.ok('POST', `/api/boards/${id}/mutations`, { mutationId: mid(), command: { type: 'task.update', id: 'A3', fields: { title: 'Ship' } } })
+    await ann.ok('POST', `/api/boards/${id}/tasks/A3/comments`, { body: 'done' })
+    await new Promise((r) => setTimeout(r, 100))
+    const queued = await t.db.select({ webhookId: webhookDeliveries.webhookId, event: webhookDeliveries.event }).from(webhookDeliveries)
+    const events = (hook: string) =>
+      queued
+        .filter((d) => d.webhookId === hook)
+        .map((d) => d.event)
+        .sort()
+    expect(events(all.id)).toEqual(['board.changed', 'comment.added'])
+    expect(events(some.id)).toEqual(['comment.added'])
+
+    // The log: each delivery in full (what was sent and what came back), only the failed ones, and sending one again.
+    await t.app.webhooks.process()
+    const log = (await ann.ok('GET', `/api/boards/${id}/webhooks/${some.id}/deliveries`)).deliveries
+    expect(log[0]).toMatchObject({ event: 'comment.added', status: 'pending', payload: { event: 'comment.added' } })
+    expect((await ann.ok('GET', `/api/boards/${id}/webhooks/${some.id}/deliveries?failed=1`)).deliveries).toHaveLength(1)
+    const again = await ann.ok('POST', `/api/boards/${id}/webhooks/${some.id}/deliveries/${log[0].id}/resend`)
+    expect(again.ok).toBe(false)
+    const after = (await ann.ok('GET', `/api/boards/${id}/webhooks/${some.id}/deliveries`)).deliveries
+    expect(after).toHaveLength(2)
+    expect(after[0].payload).toMatchObject({ resent_from: log[0].id })
   })
 })
 
@@ -490,7 +536,7 @@ describe('API reference', () => {
     const spec = await new Person(t.app).ok('GET', '/api/openapi.json')
     expect(spec.openapi).toBe('3.1.0')
     expect(spec.components.schemas.Command.oneOf).toHaveLength(16)
-    expect(Object.keys(spec.webhooks)).toEqual(['board.changed', 'comment.added', 'ping'])
+    expect(Object.keys(spec.webhooks)).toEqual(['board.changed', 'reminder.due', 'comment.added', 'ping'])
     expect((await new Person(t.app).request('GET', '/api/docs')).headers.location).toBe('/api/docs/')
     const page = await new Person(t.app).request('GET', '/api/docs/')
     expect(page.status).toBe(200)
