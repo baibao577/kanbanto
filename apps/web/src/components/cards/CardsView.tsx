@@ -3,7 +3,6 @@ import { formatDistanceToNow, parseISO } from 'date-fns'
 import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import type { CardRow, CardsPage } from '@kanbanto/model/api'
-import type { ColorName } from '@kanbanto/model/colors'
 import { newId } from '@kanbanto/model/ids'
 import { api, errorMessage } from '@/api/client'
 import { hrefFor, navigate, type CardsRoute } from '@/app/router'
@@ -126,7 +125,7 @@ export function CardsView({ route }: { route: CardsRoute }) {
                 <SelectItem value={ALL}>All boards</SelectItem>
                 {(boards ?? []).map((b) => (
                   <SelectItem key={b.id} value={b.id}>
-                    <BoardDot background={(b.background as ColorName | null) ?? undefined} /> {b.name}
+                    <BoardDot background={b.background} /> {b.name}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -160,7 +159,7 @@ export function CardsView({ route }: { route: CardsRoute }) {
                     <span className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
                       {!route.board && (
                         <>
-                          <BoardDot background={(c.board.background as ColorName | null) ?? undefined} />
+                          <BoardDot background={c.board.background} />
                           <span className="truncate">{c.board.name}</span>
                           {c.path.length > 0 && <span>›</span>}
                         </>

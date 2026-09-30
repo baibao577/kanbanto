@@ -1,5 +1,5 @@
 import type { BoardAccess, BoardSummary, Role } from '@kanbanto/model/api'
-import { BOARD_BACKGROUNDS, type ColorName } from '@kanbanto/model/colors'
+import { isBackground, type BoardBackground } from '@kanbanto/model/colors'
 import { CommandSchema } from '@kanbanto/model/schema'
 import { readBoardFile } from '@kanbanto/model/transfer'
 import { newId } from '@kanbanto/model/ids'
@@ -17,7 +17,11 @@ import { requireUser } from './auth'
 import { commentCounts, lastComments } from './comments'
 import { attachmentCounts, deleteBoardFiles } from './files'
 
-const background = z.enum(Object.keys(BOARD_BACKGROUNDS) as [ColorName, ...ColorName[]])
+const background = z
+  .string()
+  .max(40)
+  .refine(isBackground, 'That isn’t a board background.')
+  .transform((v) => v as BoardBackground)
 const CreateBoard = z.object({
   name: z
     .string()

@@ -4,7 +4,7 @@ import { toast } from 'sonner'
 import { api, errorMessage } from '@/api/client'
 import { Button } from '@/components/ui/button'
 import type { BoardAccess } from '@kanbanto/model/api'
-import { BOARD_BACKGROUNDS, boardGradient } from '@kanbanto/model/colors'
+import { backgroundOf, boardGradient } from '@kanbanto/model/colors'
 import type { Command } from '@kanbanto/model/commands'
 import { newId } from '@kanbanto/model/ids'
 import { indexFor } from '@kanbanto/model/indexer'
@@ -40,9 +40,10 @@ const WorkspaceView = lazy(() => import('@/components/workspace/WorkspaceView').
  * The Board tab's background: a vivid gradient, plus text colors for anything drawn straight on it
  * (white on dark gradients, dark on light ones). Lists and cards keep their own colors on top.
  */
-function canvasStyle(bg?: keyof typeof BOARD_BACKGROUNDS): React.CSSProperties | undefined {
+function canvasStyle(background?: string): React.CSSProperties | undefined {
+  const bg = backgroundOf(background)
   if (!bg) return undefined
-  const light = BOARD_BACKGROUNDS[bg].text === 'light'
+  const light = bg.text === 'light'
   const gradient = boardGradient(bg)
   return {
     background: gradient,

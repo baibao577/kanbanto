@@ -20,7 +20,7 @@ import { formatDistanceToNow, parseISO } from 'date-fns'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { toast } from 'sonner'
 import type { BoardSummary, WorkspaceSummary } from '@kanbanto/model/api'
-import { BOARD_BACKGROUNDS, type ColorName } from '@kanbanto/model/colors'
+import { backgroundOf, gradientCss } from '@kanbanto/model/colors'
 import { newId } from '@kanbanto/model/ids'
 import { parseBoard } from '@kanbanto/model/transfer'
 import { api, errorMessage } from '@/api/client'
@@ -337,7 +337,7 @@ function ArchivedBoards({
         <ul className="mt-3 divide-y overflow-hidden rounded-xl border bg-card">
           {boards.map((b) => (
             <li key={b.id} className="flex items-center gap-3 px-4 py-2.5 text-sm">
-              <BoardDot background={(b.background as ColorName | null) ?? undefined} />
+              <BoardDot background={b.background} />
               <a href={hrefFor({ page: 'board', id: b.id })} className="min-w-0 flex-1 truncate font-medium hover:underline">
                 {b.name}
               </a>
@@ -419,7 +419,7 @@ function BoardTile({
   /** Moving it to Personal (null) or another workspace; `blocked` says why it can't be. */
   move?: { places: (WorkspaceSummary | null)[]; blocked: string | null; onMove: (to: WorkspaceSummary | null) => void }
 }) {
-  const bg = board.background ? BOARD_BACKGROUNDS[board.background as ColorName] : null
+  const bg = backgroundOf(board.background)
   const pct = board.taskCount ? Math.round((board.doneCount / board.taskCount) * 100) : 0
   const vis = visibilityOf(board.visibility)
   const role = ROLE_LABEL[board.role]
@@ -427,10 +427,7 @@ function BoardTile({
   return (
     <div className="group relative overflow-hidden rounded-xl border bg-card shadow-xs transition-shadow hover:shadow-md">
       <a href={hrefFor({ page: 'board', id: board.id })} className="flex h-full flex-col outline-none focus-visible:ring-2 focus-visible:ring-ring">
-        <div
-          className={cn('relative flex h-20 items-end px-4 pb-3', !bg && 'bg-lane')}
-          style={bg ? { background: `linear-gradient(135deg, ${bg.from}, ${bg.to})` } : undefined}
-        >
+        <div className={cn('relative flex h-20 items-end px-4 pb-3', !bg && 'bg-lane')} style={bg ? { background: gradientCss(bg) } : undefined}>
           {inbox && (
             <span
               className="absolute top-2 left-2 inline-flex items-center gap-1 rounded-md border border-white/30 bg-white/60 px-1.5 py-0.5 text-[10px] font-medium text-black/75 backdrop-blur-sm dark:bg-black/40 dark:text-white/90"

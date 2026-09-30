@@ -13,7 +13,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useBoards } from '@/data/useBoards'
 import { useWorkspaces } from '@/data/useWorkspaces'
 import type { BoardSnapshot, BoardSummary } from '@kanbanto/model/api'
-import type { ColorName } from '@kanbanto/model/colors'
 import { descendantsOf } from '@kanbanto/model/indexer'
 import { planMove } from '@kanbanto/model/moveBoard'
 import { EPOCH } from '@kanbanto/model/types'
@@ -124,7 +123,7 @@ export function MoveToBoardDialog({ taskId, onClose, onMoved }: { taskId: string
                       }}
                       className="gap-2.5"
                     >
-                      <BoardDot background={(b.background as ColorName | null) ?? undefined} />
+                      <BoardDot background={b.background} />
                       <span className="truncate">{b.name}</span>
                       {b.id === user?.inboxBoardId && (
                         <span className="rounded bg-secondary px-1.5 text-[10px] font-medium text-muted-foreground">Inbox</span>

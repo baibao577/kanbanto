@@ -1,6 +1,6 @@
 import type { Change } from '@kanbanto/model/records'
 import type { Board, LabelDef, Meta, StatusColumn, Task } from '@kanbanto/model/types'
-import type { ColorName } from '@kanbanto/model/colors'
+import type { BoardBackground, ColorName } from '@kanbanto/model/colors'
 import { boards, labels, lists, tasks } from '../db/schema'
 
 // Converting between database rows and the model's records. Optional fields are NULL in the database
@@ -24,7 +24,7 @@ export const boardFromRow = (r: Row<typeof boards>): Board => ({
   id: r.id,
   name: r.name,
   mode: r.mode,
-  ...(r.background ? { background: r.background as ColorName } : {}),
+  ...(r.background ? { background: r.background as BoardBackground } : {}),
   ...(r.description ? { description: r.description } : {}),
   ...toMeta(r),
 })

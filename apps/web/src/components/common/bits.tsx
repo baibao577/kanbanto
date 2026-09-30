@@ -8,10 +8,27 @@ import {
   Prohibit,
   WarningCircle,
 } from '@phosphor-icons/react'
+import { useState } from 'react'
 import { formatDay, initials } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { ageTone } from '@kanbanto/model/age'
-import { BOARD_BACKGROUNDS, COLORS, statusTone, tone, type ColorName } from '@kanbanto/model/colors'
+import {
+  backgroundOf,
+  BOARD_BACKGROUNDS,
+  BOARD_DESIGNS,
+  COLORS,
+  customBackground,
+  gradientCss,
+  parseCustom,
+  SHADES,
+  statusTone,
+  tone,
+  type BoardBackground,
+  type BoardDesign,
+  type ColorName,
+  type Gradient,
+  type Shade,
+} from '@kanbanto/model/colors'
 import { isPast } from '@kanbanto/model/dates'
 import { PRIORITY_LABEL, type Category, type LabelDef, type Priority, type StatusColumn } from '@kanbanto/model/types'
 
@@ -53,28 +70,75 @@ export function LabelChip({ label, className }: { label: Pick<LabelDef, 'name' |
   )
 }
 
-/** Pick a board background: 12 gradient tiles plus the plain default. */
-export function BackgroundSwatches({ value, onChange }: { value?: ColorName; onChange: (c: ColorName | undefined) => void }) {
+/** Pick a board background: the 12 colors, 12 designs, or any hue in a shade (custom); or the plain default. */
+export function BackgroundSwatches({ value, onChange }: { value?: string; onChange: (v: BoardBackground | undefined) => void }) {
+  const custom = parseCustom(value)
+  const [hue, setHue] = useState(custom?.hue ?? 210)
+  const [shade, setShade] = useState<Shade>(custom?.shade ?? 'medium')
+  const preview = backgroundOf(customBackground(hue, shade))!
+  const pickCustom = (h: number, s: Shade) => onChange(customBackground(h, s))
+  const swatch = (id: BoardBackground, name: string, g: Gradient) => (
+    <button
+      key={id}
+      type="button"
+      title={name}
+      aria-label={`${name} background`}
+      aria-pressed={value === id}
+      onClick={() => onChange(id)}
+      className="grid h-8 place-items-center rounded-md ring-offset-2 ring-offset-popover outline-none transition-transform hover:scale-[1.06] focus-visible:ring-2 focus-visible:ring-ring aria-pressed:ring-2 aria-pressed:ring-ring"
+      style={{ background: gradientCss(g) }}
+    >
+      {value === id && <Check weight="bold" className={cn('size-3.5 drop-shadow', g.text === 'light' ? 'text-white' : 'text-black/70')} />}
+    </button>
+  )
   return (
-    <div className="space-y-2">
-      <div className="grid grid-cols-4 gap-1.5">
-        {COLORS.map((c) => {
-          const g = BOARD_BACKGROUNDS[c.id]
-          return (
+    <div className="space-y-3">
+      <SwatchGroup title="Colors">{COLORS.map((c) => swatch(c.id, c.name, BOARD_BACKGROUNDS[c.id]))}</SwatchGroup>
+      <SwatchGroup title="Designs">{Object.entries(BOARD_DESIGNS).map(([id, d]) => swatch(id as BoardDesign, d.name, d))}</SwatchGroup>
+      <div className="space-y-1.5">
+        <p className="text-[11px] font-medium text-muted-foreground">Custom</p>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            aria-label="Custom background"
+            aria-pressed={!!custom}
+            onClick={() => pickCustom(hue, shade)}
+            className="grid h-8 w-10 shrink-0 place-items-center rounded-md ring-offset-2 ring-offset-popover outline-none focus-visible:ring-2 focus-visible:ring-ring aria-pressed:ring-2 aria-pressed:ring-ring"
+            style={{ background: gradientCss(preview) }}
+          >
+            {custom && <Check weight="bold" className={cn('size-3.5 drop-shadow', preview.text === 'light' ? 'text-white' : 'text-black/70')} />}
+          </button>
+          {/* Saved when you let go, not on every step of the drag. */}
+          <input
+            type="range"
+            min={0}
+            max={359}
+            value={hue}
+            aria-label="Custom background hue"
+            onChange={(e) => setHue(Number(e.target.value))}
+            onPointerUp={() => pickCustom(hue, shade)}
+            onKeyUp={(e) => e.key.startsWith('Arrow') && pickCustom(hue, shade)}
+            onKeyDown={(e) => e.stopPropagation()}
+            className="h-3 min-w-0 flex-1 cursor-pointer appearance-none rounded-full [&::-moz-range-thumb]:size-4 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:border-2 [&::-moz-range-thumb]:border-white [&::-moz-range-thumb]:bg-transparent [&::-webkit-slider-thumb]:size-4 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:border-2 [&::-webkit-slider-thumb]:border-white [&::-webkit-slider-thumb]:shadow"
+            style={{ background: HUE_TRACK }}
+          />
+        </div>
+        <div className="grid grid-cols-3 gap-1">
+          {SHADES.map((s) => (
             <button
-              key={c.id}
+              key={s}
               type="button"
-              title={c.name}
-              aria-label={`${c.name} background`}
-              aria-pressed={value === c.id}
-              onClick={() => onChange(c.id)}
-              className="grid h-10 place-items-center rounded-md outline-none ring-offset-2 ring-offset-popover transition-transform hover:scale-[1.04] focus-visible:ring-2 focus-visible:ring-ring aria-pressed:ring-2 aria-pressed:ring-ring"
-              style={{ background: `linear-gradient(135deg, ${g.from}, ${g.to})` }}
+              aria-pressed={shade === s}
+              onClick={() => {
+                setShade(s)
+                pickCustom(hue, s)
+              }}
+              className="h-7 rounded-md border bg-background text-xs text-muted-foreground capitalize hover:bg-accent hover:text-foreground aria-pressed:border-ring aria-pressed:text-foreground"
             >
-              {value === c.id && <Check weight="bold" className={cn('size-4 drop-shadow', g.text === 'light' ? 'text-white' : 'text-black/70')} />}
+              {s}
             </button>
-          )
-        })}
+          ))}
+        </div>
       </div>
       <button
         type="button"
@@ -86,6 +150,18 @@ export function BackgroundSwatches({ value, onChange }: { value?: ColorName; onC
       >
         Default (no color)
       </button>
+    </div>
+  )
+}
+
+/** The hue slider's rainbow, at the medium shade. */
+const HUE_TRACK = `linear-gradient(to right, ${Array.from({ length: 13 }, (_, i) => `oklch(0.68 0.16 ${i * 30})`).join(', ')})`
+
+function SwatchGroup({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div className="space-y-1.5">
+      <p className="text-[11px] font-medium text-muted-foreground">{title}</p>
+      <div className="grid grid-cols-6 gap-1.5">{children}</div>
     </div>
   )
 }
@@ -242,14 +318,9 @@ export function PriorityChip({ priority }: { priority: Priority }) {
 }
 
 /** A small swatch of a board's background (or the plain canvas). */
-export function BoardDot({ background }: { background?: ColorName }) {
-  const bg = background ? BOARD_BACKGROUNDS[background] : null
-  return (
-    <span
-      className="size-4 shrink-0 rounded border"
-      style={bg ? { background: `linear-gradient(135deg, ${bg.from}, ${bg.to})`, borderColor: 'transparent' } : undefined}
-    />
-  )
+export function BoardDot({ background }: { background?: string | null }) {
+  const bg = backgroundOf(background)
+  return <span className="size-4 shrink-0 rounded border" style={bg ? { background: gradientCss(bg), borderColor: 'transparent' } : undefined} />
 }
 
 export function Kbd({ children }: { children: React.ReactNode }) {

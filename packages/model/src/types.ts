@@ -1,4 +1,4 @@
-import type { ColorName } from './colors'
+import type { BoardBackground, ColorName } from './colors'
 
 /**
  * What a status column means. Roll-up, progress and "up next" read this, never the column name.
@@ -41,7 +41,7 @@ export interface Board extends Meta {
   /** How a parent's status is decided. */
   mode: StatusMode
   /** Board background; unset = the default canvas. */
-  background?: ColorName
+  background?: BoardBackground
   /** What the board is for, in a sentence or two (also how assistants tell boards apart). */
   description?: string
 }

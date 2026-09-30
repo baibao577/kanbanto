@@ -339,3 +339,17 @@ describe('favourites', () => {
     expect(Object.keys(counts.lastComment)).toEqual(['A3'])
   })
 })
+
+describe('backgrounds', () => {
+  it('a board can have a design or a custom hue; nonsense is refused', async () => {
+    const ann = await Person.signUp(t.app, 'Ann')
+    const { id } = await ann.ok('POST', '/api/boards', { name: 'Trip', background: 'sunset' })
+    expect((await ann.ok('GET', `/api/boards/${id}`)).data.board.background).toBe('sunset')
+    await ann.ok('POST', `/api/boards/${id}/mutations`, {
+      mutationId: mid(),
+      command: { type: 'board.update', fields: { background: 'custom-140-deep' } },
+    })
+    expect((await ann.ok('GET', '/api/boards')).boards.find((b: { id: string }) => b.id === id).background).toBe('custom-140-deep')
+    expect((await ann.request('POST', '/api/boards', { name: 'X', background: 'custom-999-deep' })).status).toBe(400)
+  })
+})

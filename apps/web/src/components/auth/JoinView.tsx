@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Buildings } from '@phosphor-icons/react'
 import { toast } from 'sonner'
 import type { InvitePreview, JoinResult } from '@kanbanto/model/api'
-import { BOARD_BACKGROUNDS, type ColorName } from '@kanbanto/model/colors'
+import { backgroundOf, gradientCss } from '@kanbanto/model/colors'
 import { api, ApiError, errorMessage } from '@/api/client'
 import { hrefFor, navigate } from '@/app/router'
 import { useAuth } from '@/app/use-auth'
@@ -53,7 +53,7 @@ export function JoinView({ token }: { token: string }) {
 
   const next = hrefFor({ page: 'join', token })
   const forWorkspace = preview.kind === 'workspace'
-  const bg = !forWorkspace && preview.board.background ? BOARD_BACKGROUNDS[preview.board.background as ColorName] : null
+  const bg = forWorkspace ? null : backgroundOf(preview.board.background)
   return (
     <AuthLayout
       title={forWorkspace ? `Join “${preview.workspace.name}”` : `Join “${preview.board.name}”`}
@@ -65,7 +65,7 @@ export function JoinView({ token }: { token: string }) {
     >
       <div
         className="mb-5 grid h-16 place-items-center rounded-lg bg-muted text-muted-foreground"
-        style={bg ? { background: `linear-gradient(135deg, ${bg.from}, ${bg.to})` } : undefined}
+        style={bg ? { background: gradientCss(bg) } : undefined}
         aria-hidden
       >
         {forWorkspace && <Buildings className="size-7" />}

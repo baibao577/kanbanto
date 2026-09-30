@@ -14,7 +14,6 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { favoritesOf, useBoards } from '@/data/useBoards'
 import type { BoardSummary } from '@kanbanto/model/api'
-import type { ColorName } from '@kanbanto/model/colors'
 import { BoardDot, Kbd } from '@/components/common/bits'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
@@ -156,7 +155,7 @@ function BoardSwitcher({ name, currentId, onRename }: { name: string; currentId:
   const recent = (boards ?? []).filter((b) => b.id !== currentId && !b.archivedAt && !b.favoritedAt).slice(0, 8)
   const item = (b: BoardSummary) => (
     <DropdownMenuItem key={b.id} onSelect={() => navigate({ page: 'board', id: b.id })}>
-      <BoardDot background={(b.background as ColorName | null) ?? undefined} />
+      <BoardDot background={b.background} />
       <span className="truncate">{b.name}</span>
     </DropdownMenuItem>
   )

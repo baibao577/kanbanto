@@ -28,7 +28,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { cn } from '@/lib/utils'
 import type { PublicUser } from '@kanbanto/model/api'
-import { BOARD_BACKGROUNDS } from '@kanbanto/model/colors'
+import { backgroundOf, gradientCss } from '@kanbanto/model/colors'
 import type { StatusMode } from '@kanbanto/model/types'
 
 type Tab = 'general' | 'look' | 'people' | 'you' | 'delete'
@@ -151,13 +151,13 @@ function General() {
 
 function Look() {
   const { data, run } = useBoard()
-  const bg = data.board.background ? BOARD_BACKGROUNDS[data.board.background] : null
+  const bg = backgroundOf(data.board.background)
   return (
     <Section title="Background" hint="Behind the Board tab, for everyone on it.">
       <div
         aria-hidden
         className={cn('flex h-24 items-end gap-2 rounded-xl border p-3', !bg && 'bg-lane')}
-        style={bg ? { background: `linear-gradient(135deg, ${bg.from}, ${bg.to})` } : undefined}
+        style={bg ? { background: gradientCss(bg) } : undefined}
       >
         {[0.9, 0.7, 0.8].map((w, i) => (
           <div key={i} className="h-14 flex-1 rounded-md bg-card/90 p-1.5 shadow-xs">

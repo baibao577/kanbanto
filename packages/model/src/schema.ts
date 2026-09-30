@@ -1,6 +1,6 @@
 import { normalizeTaskDate } from './dates'
 import { z } from 'zod'
-import { COLORS, type ColorName } from './colors'
+import { COLORS, isBackground, type BoardBackground, type ColorName } from './colors'
 import type { Command } from './commands'
 import { isPosition } from './position'
 import { CATEGORIES, LAYOUTS, PRIORITIES } from './types'
@@ -11,6 +11,12 @@ import { CATEGORIES, LAYOUTS, PRIORITIES } from './types'
  * same ones the commands enforce, so a record can't come back in a shape no command could have made.
  */
 const color = z.enum(COLORS.map((c) => c.id) as [ColorName, ...ColorName[]])
+/** A palette color, a designed background, or custom-<hue>-<shade> (see colors.ts). */
+const boardBackground = z
+  .string()
+  .max(40)
+  .refine(isBackground, 'That isn’t a board background.')
+  .transform((v) => v as BoardBackground)
 /** A whole day (2026-10-15), or a date-time with its time zone (2026-10-15T14:30:00+07:00), stored as a UTC moment. */
 const date = z
   .string()
@@ -78,7 +84,7 @@ export const BoardSchema = z.object({
   id: recordId,
   name: plain(200),
   mode: z.enum(['manual', 'derived']),
-  background: color.optional(),
+  background: boardBackground.optional(),
   description: plain(1000).optional(),
   ...meta,
 })
@@ -169,7 +175,9 @@ export const CommandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('label.delete'), id }),
   z.object({
     type: z.literal('board.update'),
-    fields: z.object({ name: text(200), mode: z.enum(['manual', 'derived']), background: color.nullable(), description: text(1000) }).partial(),
+    fields: z
+      .object({ name: text(200), mode: z.enum(['manual', 'derived']), background: boardBackground.nullable(), description: text(1000) })
+      .partial(),
   }),
   z.object({ type: z.literal('records.restore'), changes: z.array(ChangeSchema).max(20_000) }),
 ])

@@ -1,4 +1,4 @@
-import type { ColorName } from '@kanbanto/model/colors'
+import type { BoardBackground } from '@kanbanto/model/colors'
 import { newId } from '@kanbanto/model/ids'
 import { emptyBoard, exampleData } from '@kanbanto/model/sample'
 import type { BoardData, Meta } from '@kanbanto/model/types'
@@ -45,7 +45,7 @@ export type Template = 'empty' | 'example'
 export async function createBoard(
   db: Db,
   ownerId: string,
-  opts: { name: string; background?: ColorName; template: Template; workspaceId?: string | null; description?: string },
+  opts: { name: string; background?: BoardBackground; template: Template; workspaceId?: string | null; description?: string },
 ): Promise<string> {
   const id = newId()
   const now = new Date().toISOString()

@@ -47,7 +47,7 @@ export type Command =
   | { type: 'label.create'; id?: string; name: string; color: ColorName }
   | { type: 'label.update'; id: string; fields: { name?: string; color?: ColorName } }
   | { type: 'label.delete'; id: string }
-  | { type: 'board.update'; fields: { name?: string; mode?: Board['mode']; background?: ColorName | null; description?: string } }
+  | { type: 'board.update'; fields: { name?: string; mode?: Board['mode']; background?: Board['background'] | null; description?: string } }
   /**
    * Puts records back the way they were (undo/redo). Each change says what the record should become
    * (`after`) and what it's expected to be now (`before`): if someone changed it since, the restore is refused.

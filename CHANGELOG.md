@@ -47,6 +47,8 @@ then `git pull` (or download the new release) and `docker compose up -d --build`
   edited, commented on, or its subtasks), after 3 days; amber from a week, red from two. Filter → "No activity
   lately" for any number of days; `find_tasks` takes `idle_days` for assistants. Cards' footers are two tidy lines:
   what needs attention, then the counts and the assignee.
+- **More board backgrounds:** 12 designs besides the 12 colors (sunset, ocean, aurora, forest, midnight, …), and a
+  custom one: pick any hue and a light, medium or deep shade, and the gradient and text colors are made for you.
 - **Favourite boards:** star a board on the boards page or from its name menu; favourites come first on both.
 - **Presets** on each board: save the filters and Display options as a named preset ("Focus", "Review") that
   everyone on the board can pick. Editors save, update, rename and delete them.

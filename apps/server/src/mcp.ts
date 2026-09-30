@@ -1,7 +1,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
 import type { Command, TaskFields } from '@kanbanto/model/commands'
-import { COLORS, LABEL_COLOR_CYCLE, type ColorName } from '@kanbanto/model/colors'
+import { BOARD_DESIGNS, COLORS, isBackground, LABEL_COLOR_CYCLE, type BoardBackground, type ColorName } from '@kanbanto/model/colors'
 import { newId } from '@kanbanto/model/ids'
 import { idleDays, lastActivity } from '@kanbanto/model/age'
 import { isPast, sortTime } from '@kanbanto/model/dates'
@@ -844,6 +844,13 @@ function buildServer(app: FastifyInstance, me: SessionUser, token: TokenAccess) 
     // ── Boards: making one, and its settings (sharing and deleting are left to people, in the app) ──
 
     const COLOR = z.enum(COLORS.map((c) => c.id) as [ColorName, ...ColorName[]])
+    const BACKGROUND = z
+      .string()
+      .refine(isBackground, 'Use a color, a design or custom-<hue>-<shade>.')
+      .transform((v) => v as BoardBackground)
+      .describe(
+        `A color (${COLORS.map((c) => c.id).join(', ')}), a design (${Object.keys(BOARD_DESIGNS).join(', ')}), or custom-<hue 0–359>-<light|medium|deep> (e.g. custom-210-medium).`,
+      )
     const KIND = z.enum(['backlog', 'todo', 'doing', 'done'])
     const change = (boardId: string, command: Command) => run(boardId, command).then(() => open(boardId, 'viewer'))
     const lists = (idx: TaskIndex) => idx.columns.map((c) => ({ id: c.id, name: c.name, counts_as: c.category }))
@@ -858,12 +865,12 @@ function buildServer(app: FastifyInstance, me: SessionUser, token: TokenAccess) 
           name: z.string().trim().min(1).max(200),
           about: z.string().max(1000).optional().describe('What the board is for, in a sentence.'),
           workspace: z.string().optional().describe('A workspace’s name, or "Personal" (the default).'),
-          background: COLOR.optional(),
+          background: BACKGROUND.optional(),
           example: z.boolean().optional().describe('Start with example tasks, to show how it works.'),
         },
         annotations: { destructiveHint: false, openWorldHint: false },
       },
-      tool(async (a: { name: string; about?: string; workspace?: string; background?: ColorName; example?: boolean }) => {
+      tool(async (a: { name: string; about?: string; workspace?: string; background?: BoardBackground; example?: boolean }) => {
         let workspaceId: string | null = null
         const w = a.workspace?.trim()
         if (w && w.toLowerCase() !== 'personal') {
@@ -898,7 +905,7 @@ function buildServer(app: FastifyInstance, me: SessionUser, token: TokenAccess) 
           board_id: z.string(),
           name: z.string().trim().min(1).max(200).optional(),
           about: z.string().max(1000).optional().describe('What the board is for. "" clears it.'),
-          background: COLOR.nullable().optional().describe('null: the plain background.'),
+          background: BACKGROUND.nullable().optional().describe('null: the plain background.'),
           parent_status: z
             .enum(['follows_subtasks', 'set_by_hand'])
             .optional()
@@ -913,7 +920,7 @@ function buildServer(app: FastifyInstance, me: SessionUser, token: TokenAccess) 
           board_id: string
           name?: string
           about?: string
-          background?: ColorName | null
+          background?: BoardBackground | null
           parent_status?: 'follows_subtasks' | 'set_by_hand'
         }) => {
           await open(a.board_id, 'editor')

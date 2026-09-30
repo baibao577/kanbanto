@@ -10,7 +10,7 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { toast } from 'sonner'
 import { api, errorMessage } from '@/api/client'
-import type { ColorName } from '@kanbanto/model/colors'
+import type { BoardBackground } from '@kanbanto/model/colors'
 
 const PERSONAL = 'personal'
 
@@ -44,7 +44,7 @@ export function CreateBoardDialog({
   // Until you pick, it follows where you started from ("New board" in a workspace's section).
   const place = picked ?? where ?? PERSONAL
   const workspace = workspaces.find((w) => w.id === place)
-  const [background, setBackground] = useState<ColorName | undefined>('blue')
+  const [background, setBackground] = useState<BoardBackground | undefined>('blue')
   const [start, setStart] = useState<'empty' | 'example'>('empty')
 
   const [busy, setBusy] = useState(false)
