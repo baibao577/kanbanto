@@ -45,7 +45,46 @@ const MAX_DRAFTS = 10
 const MAX_DRAFT_FILES_OF_SPACE = 3
 /** Pictures shown in the app; everything else downloads (so nothing uploaded can run as a web page). */
 const IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/avif'])
-const BLOCKED = /\.(exe|bat|cmd|com|scr|msi|msp|vbs|ps1|jar)$/i
+/**
+ * Files that run when double-clicked, refused by name. Kanbanto never runs files (they download, sandboxed), and
+ * computers warn about downloaded programs; this just stops the obvious ones being passed around by accident.
+ * (A zipped program isn't caught: that's for a virus scanner.)
+ */
+const RUNNABLE = [
+  // Windows: programs, installers, scripts, shortcuts, settings
+  ...[
+    'exe',
+    'com',
+    'scr',
+    'pif',
+    'msi',
+    'msp',
+    'appx',
+    'msix',
+    'appinstaller',
+    'bat',
+    'cmd',
+    'ps1',
+    'vbs',
+    'vbe',
+    'js',
+    'jse',
+    'wsf',
+    'wsh',
+    'hta',
+    'lnk',
+    'reg',
+    'cpl',
+    'msc',
+  ],
+  // Mac: installers and scripts (.app is a folder, so it arrives zipped)
+  ...['pkg', 'mpkg', 'command', 'terminal', 'workflow'],
+  // Linux and anywhere: shell scripts and launchers (not .bin: that's often plain data)
+  ...['sh', 'bash', 'run', 'desktop'],
+  // Java and Android apps
+  ...['jar', 'apk', 'xapk', 'aab'],
+]
+const BLOCKED = new RegExp(`\\.(${RUNNABLE.join('|')})$`, 'i')
 
 const cleanName = (raw: string) =>
   raw
@@ -244,7 +283,7 @@ export const fileRoutes: FastifyPluginAsync = async (app) => {
       const { maxFileMb, quotaMb } = await storageSettings(app.db)
       if (body.length > maxFileMb * MB) throw new HttpError(413, `Files can be up to ${maxFileMb} MB.`)
       const name = cleanName(decodeURIComponent(String(req.headers['x-file-name'] ?? 'file')))
-      if (BLOCKED.test(name)) throw new HttpError(400, 'Programs and scripts can’t be attached.')
+      if (BLOCKED.test(name)) throw new HttpError(400, 'Programs and scripts can’t be attached. Zip it if you need to share it.')
       const { data } = await app.engine.snapshot(id)
       if (!data.tasks[taskId]) throw new HttpError(404, 'That task no longer exists.')
 

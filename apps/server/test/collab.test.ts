@@ -146,10 +146,17 @@ describe('attachments', () => {
     expect((await bob.ok('GET', `/api/boards/${id}`)).counts.attachments).toEqual({ A3: 2 })
   })
 
+  it('ordinary files (and a zipped program) are fine; only runnable names are refused', async () => {
+    const { bob, id } = await team()
+    for (const name of ['notes.json', 'report.pdf', 'tool.zip', 'script.js.txt', 'data.bin'])
+      expect((await upload(bob, id, 'A3', name, Buffer.from('x'))).status, name).toBe(200)
+  })
+
   it('refuses programs, files over the size limit, and anything over the owner’s space', async () => {
     const { ann, bob, id } = await team()
     await setPlatformAdmin(t.db, 'ann@example.com', true)
-    expect((await upload(bob, id, 'A3', 'setup.exe', Buffer.from('MZ'))).body.error).toMatch(/Programs/)
+    for (const name of ['setup.exe', 'run.JS', 'install.sh', 'app.apk', 'Open me.lnk', 'fix.hta'])
+      expect((await upload(bob, id, 'A3', name, Buffer.from('x'))).body.error, name).toMatch(/Programs and scripts/)
     await ann.ok('PATCH', '/api/admin/storage/settings', { maxFileMb: 1, quotaMb: 1 })
     const big = await upload(bob, id, 'A3', 'big.bin', Buffer.alloc(1.5 * 1024 * 1024))
     expect(big).toMatchObject({ status: 413, body: { error: 'Files can be up to 1 MB.' } })
