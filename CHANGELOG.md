@@ -25,6 +25,10 @@ then `git pull` (or download the new release) and `docker compose up -d --build`
   can say **what they're for**.
 - **Move a task to another board**, with its subtasks, comments and files (from its menu, or the card's panel). You see
   what fits before it moves: lists and labels are matched by name, and people who aren't on that board are named.
+- **Descriptions and comments are formatted:** headings, bold, lists, checklists you can tick, code, quotes, tables
+  and links, written in a light editor (Markdown shortcuts or a small toolbar) and saved as Markdown. Long text folds
+  with "Show more", and a description can be read full page with its headings to jump to. Files and mentions work as
+  before.
 - Assistants can **set up boards**: create one, change its settings, lists and labels, and choose your Inbox. Sharing
   and deleting stay in the app.
 - **Email** through any SMTP server or Resend, with limits to stay within a free plan. **File storage** on the server's

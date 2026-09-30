@@ -206,3 +206,122 @@ html.dragging * {
   -webkit-user-select: none;
   -webkit-touch-callout: none;
 }
+
+/*
+ * Written text (descriptions, comments): Markdown when shown (.md) and in the editor (.md.ProseMirror), styled the
+ * same so what you type looks like what you'll read. Compact, for a card's panel.
+ */
+@layer components {
+  .md {
+    @apply text-sm leading-relaxed break-words;
+  }
+  .md > * + * {
+    @apply mt-2;
+  }
+  .md :is(h2, h3, h4, h5, h6) {
+    @apply mt-4 font-semibold tracking-tight first:mt-0;
+  }
+  .md h2 {
+    @apply text-base;
+  }
+  .md h3 {
+    @apply text-[0.95rem];
+  }
+  .md :is(h4, h5, h6) {
+    @apply text-sm;
+  }
+  .md a {
+    @apply text-primary underline decoration-primary/40 underline-offset-2 hover:decoration-primary;
+  }
+  .md :is(ul, ol) {
+    @apply pl-5;
+  }
+  .md ul {
+    @apply list-disc;
+  }
+  .md ol {
+    @apply list-decimal;
+  }
+  .md li + li,
+  .md li > :is(ul, ol) {
+    @apply mt-0.5;
+  }
+  .md li::marker {
+    @apply text-muted-foreground;
+  }
+  .md code {
+    @apply rounded bg-muted px-1 py-0.5 font-mono text-[0.85em];
+  }
+  .md pre {
+    @apply overflow-x-auto rounded-lg bg-muted px-3 py-2 font-mono text-[0.8rem] leading-snug;
+  }
+  .md pre code {
+    @apply bg-transparent p-0 text-inherit;
+  }
+  .md blockquote {
+    @apply border-l-2 pl-3 text-muted-foreground;
+  }
+  .md hr {
+    @apply my-3 border-border;
+  }
+  .md .md-table,
+  .md .tableWrapper {
+    @apply overflow-x-auto;
+  }
+  .md table {
+    @apply w-full border-collapse text-[0.85em];
+  }
+  .md :is(th, td) {
+    @apply border px-2 py-1 text-left align-top;
+  }
+  .md th {
+    @apply bg-muted/60 font-medium;
+  }
+  /* Checklists: the box, then the text, with no bullet. */
+  .md :is(ul[data-tasks], ul[data-type='taskList']) {
+    @apply list-none pl-0.5;
+  }
+  .md :is(ul[data-tasks], ul[data-type='taskList']) > li {
+    @apply flex items-start gap-2;
+  }
+  .md :is(ul[data-tasks], ul[data-type='taskList']) > li > div {
+    @apply min-w-0 flex-1;
+  }
+  .md :is(ul[data-tasks], ul[data-type='taskList']) > li > :is(label, input) {
+    @apply mt-[0.3em] flex shrink-0;
+  }
+  .md :is(ul[data-tasks], ul[data-type='taskList']) input[type='checkbox'] {
+    @apply size-3.5 cursor-pointer accent-primary disabled:cursor-default;
+  }
+  .md :is(li[data-task='done'], li[data-checked='true']) > div {
+    @apply text-muted-foreground line-through decoration-muted-foreground/50;
+  }
+
+  /* Reading full page: bigger, with more air. */
+  .md.md-reader {
+    @apply text-[15px] leading-7;
+  }
+  .md.md-reader > * + * {
+    @apply mt-3;
+  }
+  .md.md-reader :is(h2, h3, h4) {
+    @apply mt-8 scroll-mt-6;
+  }
+  .md.md-reader h2 {
+    @apply text-xl;
+  }
+  .md.md-reader h3 {
+    @apply text-lg;
+  }
+  .md.md-reader h4 {
+    @apply text-base;
+  }
+
+  /* The editor. */
+  .md.ProseMirror {
+    @apply min-h-16 outline-none;
+  }
+  .md.ProseMirror p.is-editor-empty:first-child::before {
+    @apply pointer-events-none float-left h-0 text-muted-foreground content-[attr(data-placeholder)];
+  }
+}

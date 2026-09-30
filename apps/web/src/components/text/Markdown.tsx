@@ -1,0 +1,180 @@
+import type { Token, Tokens } from 'marked'
+import { Fragment, useMemo, type ReactNode } from 'react'
+import type { AttachmentView } from '@kanbanto/model/api'
+import { RichText } from '@/components/task/RichText'
+import { cn } from '@/lib/utils'
+import { lex } from './mdText'
+
+export interface MarkdownProps {
+  text: string
+  /** The card's files, for "📎name" references. */
+  files?: AttachmentView[]
+  /** People mentioned, highlighted where their "@Name" appears. */
+  mentions?: { name: string }[]
+  /** Makes checklist items tickable: called with the item's number, in order (see toggleTask). */
+  onToggleTask?: (n: number) => void
+  /** Gives headings ids (h-0, h-1…), for a table of contents. */
+  headingIds?: boolean
+  className?: string
+}
+
+const ENTITIES: Record<string, string> = { amp: '&', lt: '<', gt: '>', quot: '"', '#39': "'", nbsp: ' ' }
+const decode = (s: string) => s.replace(/&(amp|lt|gt|quot|#39|nbsp);/g, (_, e: string) => ENTITIES[e])
+
+/** Only links that can't run code. */
+const safeHref = (href: string) => (/^(https?:|mailto:|\/|#)/i.test(href.trim()) ? href : null)
+
+/**
+ * Markdown, shown safely: built as React elements from marked's tokens, so HTML in the text is shown as text, never
+ * run. "📎name" file references and @mentions work anywhere in the text.
+ */
+export function Markdown({ text, files, mentions, onToggleTask, headingIds, className }: MarkdownProps) {
+  const tokens = useMemo(() => lex(text), [text])
+  let task = 0
+  let heading = 0
+
+  const inline = (ts: Token[] | undefined, key = ''): ReactNode =>
+    ts?.map((t, i) => {
+      const k = `${key}${i}`
+      switch (t.type) {
+        case 'strong':
+          return <strong key={k}>{inline(t.tokens, k)}</strong>
+        case 'em':
+          return <em key={k}>{inline(t.tokens, k)}</em>
+        case 'del':
+          return <del key={k}>{inline(t.tokens, k)}</del>
+        case 'codespan':
+          return <code key={k}>{decode(t.text)}</code>
+        case 'br':
+          return <br key={k} />
+        case 'link': {
+          const href = safeHref(t.href)
+          return href ? (
+            <a key={k} href={href} target="_blank" rel="noreferrer noopener" onClick={(e) => e.stopPropagation()}>
+              {inline(t.tokens, k)}
+            </a>
+          ) : (
+            <Fragment key={k}>{inline(t.tokens, k)}</Fragment>
+          )
+        }
+        case 'image':
+          // Pictures from elsewhere aren't loaded (they'd tell that site who's reading): a link instead.
+          return safeHref(t.href) ? (
+            <a key={k} href={t.href} target="_blank" rel="noreferrer noopener" onClick={(e) => e.stopPropagation()}>
+              {t.text || t.href}
+            </a>
+          ) : (
+            <Fragment key={k}>{t.text}</Fragment>
+          )
+        case 'text':
+          return 'tokens' in t && t.tokens?.length ? (
+            <Fragment key={k}>{inline(t.tokens, k)}</Fragment>
+          ) : (
+            <RichText key={k} text={decode(t.text)} files={files} mentions={mentions} />
+          )
+        case 'escape':
+          return <Fragment key={k}>{decode(t.text)}</Fragment>
+        case 'checkbox':
+          // A checklist item's box (shown by the list, not here).
+          return null
+        default:
+          // HTML and anything unknown: as the text it is.
+          return <Fragment key={k}>{'raw' in t ? t.raw : ''}</Fragment>
+      }
+    })
+
+  const block = (ts: Token[], key = ''): ReactNode =>
+    ts.map((t, i) => {
+      const k = `${key}${i}`
+      switch (t.type) {
+        case 'space':
+          return null
+        case 'heading': {
+          const H = `h${Math.min(t.depth + 1, 6)}` as 'h2'
+          return (
+            <H key={k} id={headingIds && !key ? `h-${heading++}` : undefined}>
+              {inline(t.tokens, k)}
+            </H>
+          )
+        }
+        case 'paragraph':
+          return <p key={k}>{inline(t.tokens, k)}</p>
+        case 'text':
+          return <Fragment key={k}>{t.tokens ? inline(t.tokens, k) : <RichText text={decode(t.text)} files={files} mentions={mentions} />}</Fragment>
+        case 'code':
+          return (
+            <pre key={k}>
+              <code>{t.text}</code>
+            </pre>
+          )
+        case 'blockquote':
+          return <blockquote key={k}>{block(t.tokens ?? [], k)}</blockquote>
+        case 'hr':
+          return <hr key={k} />
+        case 'list': {
+          const L = t.ordered ? 'ol' : 'ul'
+          const tasks = (t.items as Tokens.ListItem[]).some((it) => it.task)
+          return (
+            <L key={k} start={t.ordered && t.start !== 1 ? Number(t.start) : undefined} data-tasks={tasks || undefined}>
+              {(t.items as Tokens.ListItem[]).map((it, j) => {
+                if (!it.task) return <li key={j}>{block(it.tokens, `${k}.${j}.`)}</li>
+                const n = task++
+                return (
+                  <li key={j} data-task={it.checked ? 'done' : 'open'}>
+                    <input
+                      type="checkbox"
+                      checked={!!it.checked}
+                      disabled={!onToggleTask}
+                      aria-label={it.checked ? 'Done' : 'Not done'}
+                      onClick={(e) => e.stopPropagation()}
+                      onChange={() => onToggleTask?.(n)}
+                    />
+                    {/* (The checkbox token itself is the first thing marked puts in the item.) */}
+                    <div>
+                      {block(
+                        it.tokens.filter((x) => x.type !== 'checkbox'),
+                        `${k}.${j}.`,
+                      )}
+                    </div>
+                  </li>
+                )
+              })}
+            </L>
+          )
+        }
+        case 'table':
+          return (
+            <div key={k} className="md-table">
+              <table>
+                <thead>
+                  <tr>
+                    {t.header.map((c: Tokens.TableCell, j: number) => (
+                      <th key={j} style={{ textAlign: t.align[j] ?? undefined }}>
+                        {inline(c.tokens, `${k}h${j}`)}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {t.rows.map((row: Tokens.TableCell[], r: number) => (
+                    <tr key={r}>
+                      {row.map((c, j) => (
+                        <td key={j} style={{ textAlign: t.align[j] ?? undefined }}>
+                          {inline(c.tokens, `${k}r${r}c${j}`)}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )
+        case 'html':
+          return <p key={k}>{t.raw}</p>
+        default:
+          return null
+      }
+    })
+
+  return <div className={cn('md', className)}>{block(tokens)}</div>
+}

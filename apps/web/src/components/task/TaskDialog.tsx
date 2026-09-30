@@ -1,16 +1,4 @@
-import {
-  ArrowSquareRight,
-  CaretRight,
-  CheckCircle,
-  Circle,
-  Crosshair,
-  ListChecks,
-  Plus,
-  Prohibit,
-  TextAlignLeft,
-  Trash,
-  X,
-} from '@phosphor-icons/react'
+import { ArrowSquareRight, CaretRight, CheckCircle, Circle, Crosshair, ListChecks, Plus, Prohibit, Trash, X } from '@phosphor-icons/react'
 import { formatMoment } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { useEffect, useMemo, useRef, type ReactNode } from 'react'
@@ -108,15 +96,14 @@ function TaskDetail({ id, onClose }: { id: string; onClose: () => void }) {
       <div className="grid items-start gap-6 px-6 pt-4 pb-6 md:grid-cols-[1fr_14rem] md:gap-0">
         {/* Main column */}
         <div className="min-w-0 divide-y md:pr-6 [&>*]:py-5 [&>*:first-child]:pt-0 [&>*:last-child]:pb-0">
-          <Section icon={<TextAlignLeft />} title="Description">
-            <Description
-              key={`desc-${id}-${t.version}`}
-              value={t.description ?? ''}
-              readOnly={readOnly}
-              cardFiles={cardFiles}
-              onSave={(description) => patch({ description })}
-            />
-          </Section>
+          <Description
+            key={`desc-${id}`}
+            title={t.title}
+            value={t.description ?? ''}
+            readOnly={readOnly}
+            cardFiles={cardFiles}
+            onSave={(description) => patch({ description })}
+          />
 
           <AttachmentsSection cardFiles={cardFiles} />
 

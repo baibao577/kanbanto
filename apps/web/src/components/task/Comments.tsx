@@ -1,6 +1,6 @@
 import { ChatCircle, File, Paperclip, X } from '@phosphor-icons/react'
 import { formatDistanceToNow, parseISO } from 'date-fns'
-import { useEffect, useRef, useState } from 'react'
+import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import type { AttachmentView, CommentView } from '@kanbanto/model/api'
 import { api, errorMessage } from '@/api/client'
@@ -10,9 +10,11 @@ import { Avatar } from '@/components/common/bits'
 import { Button } from '@/components/ui/button'
 import { uploadFile, type CardFiles } from '@/data/cardFiles'
 import { formatSize } from '@/lib/format'
-import { RichText } from './RichText'
+import { Markdown } from '@/components/text/Markdown'
+import { Folded } from './Description'
 import { Section } from './Section'
-import { SmartTextarea } from './SmartTextarea'
+
+const Editor = lazy(() => import('@/components/text/Editor'))
 
 type Member = { id: string; name: string }
 
@@ -107,8 +109,10 @@ export function CommentsSection({ taskId, cardFiles }: { taskId: string; cardFil
                   />
                 ) : (
                   <>
-                    <div className="mt-1 rounded-lg bg-muted/60 px-3 py-2 text-sm break-words whitespace-pre-wrap">
-                      <RichText text={c.body} mentions={data.members.filter((m) => c.mentions.includes(m.id))} files={cardFiles.files} />
+                    <div className="mt-1 rounded-lg bg-muted/60">
+                      <Folded height={220}>
+                        <Markdown text={c.body} mentions={data.members.filter((m) => c.mentions.includes(m.id))} files={cardFiles.files} />
+                      </Folded>
                     </div>
                     <FileList files={c.attachments} />
                     {(mine || access.role === 'owner') && (
@@ -205,6 +209,9 @@ function Composer({
   const [drafts, setDrafts] = useState<AttachmentView[]>([])
   const [uploading, setUploading] = useState(0)
   const [busy, setBusy] = useState(false)
+  // The editor loads when you start writing; a new one (empty) after each comment is posted.
+  const [opened, setOpened] = useState(!!initial)
+  const [round, setRound] = useState(0)
   const input = useRef<HTMLInputElement>(null)
 
   const attach = async (list: File[]) => {
@@ -240,6 +247,7 @@ function Composer({
         setText('')
         setPicked([])
         setDrafts([])
+        setRound((r) => r + 1)
       }
     } catch (e) {
       toast.error(errorMessage(e))
@@ -251,25 +259,33 @@ function Composer({
   const active = !!(text.trim() || initial || drafts.length || uploading)
   return (
     <div className="relative min-w-0 flex-1">
-      <SmartTextarea
-        value={text}
-        onChange={setText}
-        members={members}
-        files={[...files, ...drafts]}
-        onMention={(id) => setPicked((p) => (p.includes(id) ? p : [...p, id]))}
-        onFiles={(fs) => void attach(fs)}
-        autoFocus={!!initial}
-        rows={initial ? 3 : 2}
-        placeholder={placeholder}
-        aria-label={initial ? 'Edit comment' : 'Write a comment'}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
-            e.preventDefault()
-            void submit()
-          }
-        }}
-        className="w-full resize-none rounded-lg border bg-background px-3 py-2 text-sm outline-none [field-sizing:content] focus-visible:ring-2 focus-visible:ring-ring/30"
-      />
+      {opened ? (
+        <Suspense fallback={<div className="min-h-[5.5rem] rounded-lg border bg-background" />}>
+          <Editor
+            key={round}
+            value={initial?.body ?? ''}
+            onChange={setText}
+            members={members}
+            files={[...files, ...drafts]}
+            onMention={(id) => setPicked((p) => (p.includes(id) ? p : [...p, id]))}
+            onFiles={(fs) => void attach(fs)}
+            onSubmit={() => void submit()}
+            onEscape={onCancel}
+            autoFocus
+            placeholder={placeholder}
+            aria-label={initial ? 'Edit comment' : 'Write a comment'}
+            className="min-h-12"
+          />
+        </Suspense>
+      ) : (
+        <button
+          type="button"
+          onClick={() => setOpened(true)}
+          className="block w-full rounded-lg border bg-background px-3 py-2 text-left text-sm text-muted-foreground hover:bg-muted/40"
+        >
+          {placeholder}
+        </button>
+      )}
       <FileList files={drafts} onRemove={(f) => setDrafts((d) => d.filter((x) => x.id !== f.id))} />
       {uploading > 0 && <p className="mt-1 animate-pulse text-xs text-muted-foreground">Uploading…</p>}
       <div className="mt-2 flex items-center gap-2">
