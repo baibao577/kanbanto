@@ -55,6 +55,8 @@ export const publicUser = (u: SessionUser) => ({
   mentionEmails: u.mentionEmails,
   reminderEmails: u.reminderEmails,
   timeZone: u.timeZone,
+  pushReminders: u.pushReminders,
+  pushMentions: u.pushMentions,
   inboxBoardId: u.inboxBoardId,
 })
 
@@ -165,6 +167,8 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
         mentionEmails: true,
         reminderEmails: true,
         timeZone: null,
+        pushReminders: true,
+        pushMentions: true,
         inboxBoardId: null,
       }
       await tx.insert(users).values({ id: user.id, email: user.email, name: user.name, passwordHash, emailVerifiedAt: verified ? new Date() : null })
@@ -229,6 +233,8 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
           name,
           mentionEmails: z.boolean(),
           reminderEmails: z.boolean(),
+          pushReminders: z.boolean(),
+          pushMentions: z.boolean(),
           inboxBoardId: z.string().max(100).nullable(),
           timeZone: z.string().max(64).refine(validZone, 'That isn’t a time zone this server knows (e.g. Asia/Bangkok).').nullable(),
         })

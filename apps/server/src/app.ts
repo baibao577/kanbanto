@@ -14,6 +14,8 @@ import { dbErrorCode, loggable } from './errors'
 import { HttpError, siteUrl } from './http'
 import { LiveHub } from './live'
 import { Webhooks } from './webhooks'
+import { Push } from './push'
+import { pushRoutes } from './routes/push'
 import { Mailer } from './mail/mailer'
 import { serverSender, type Sender } from './mail/senders'
 import { providerTransport, type Transport } from './mail/transport'
@@ -47,6 +49,7 @@ declare module 'fastify' {
     hub: LiveHub
     mail: Mailer
     webhooks: Webhooks
+    push: Push
   }
 }
 
@@ -99,6 +102,7 @@ export async function buildApp(
   app.decorate('engine', engine)
   app.decorate('mail', mail)
   app.decorate('webhooks', webhooks)
+  app.decorate('push', new Push(db, () => mail.siteUrl ?? env.appUrl ?? null, app.log))
   if (opts.mailWorker) {
     await mail.start(app.log)
     webhooks.start(app.log)
@@ -214,6 +218,7 @@ export async function buildApp(
   await app.register(authRoutes, { prefix: '/api/auth' })
   await app.register(boardRoutes, { prefix: '/api' })
   await app.register(cardRoutes, { prefix: '/api' })
+  await app.register(pushRoutes, { prefix: '/api' })
   await app.register(sharingRoutes, { prefix: '/api' })
   await app.register(workspaceRoutes, { prefix: '/api' })
   await app.register(integrationRoutes, { prefix: '/api' })

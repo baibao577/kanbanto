@@ -88,6 +88,18 @@ async function deliver(
         }),
     })
 
+  if (u.pushReminders)
+    await app.push.toUser(
+      u.id,
+      {
+        title: `⏰ ${t.title}`,
+        body: `${board.name}${t.due ? ` · due ${dueInWords(t.due, r.tz)}` : ''}${by ? ` · set by ${by}` : ''}`,
+        url: `/#/b/${encodeURIComponent(t.boardId)}?task=${encodeURIComponent(t.id)}`,
+        tag: `reminder:${t.boardId}:${t.id}`,
+      },
+      3600,
+    )
+
   const [list] = await app.db
     .select({ name: lists.name })
     .from(lists)

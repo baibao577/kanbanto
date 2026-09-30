@@ -497,3 +497,47 @@ describe('reminders', () => {
     expect(await sendReminders(t.app)).toBe(1)
   })
 })
+
+describe('desktop notifications', () => {
+  it('reach the browsers people turned them on in, for reminders and mentions (if they want), and forget gone ones', async () => {
+    const { ann, bob, id } = await team()
+    const sent: { endpoint: string; body: { title: string; url: string } }[] = []
+    let gone = false
+    t.app.push.transport = async (sub, payload) => {
+      if (gone) throw Object.assign(new Error('Gone'), { statusCode: 410 })
+      sent.push({ endpoint: sub.endpoint, body: JSON.parse(payload) })
+    }
+    const sub = { endpoint: 'https://push.example.com/ann-1', keys: { p256dh: 'BPk', auth: 'aa' }, label: 'Chrome on Mac' }
+    expect((await ann.ok('GET', '/api/push/key')).publicKey).toMatch(/^[A-Za-z0-9_-]{80,}$/)
+    await ann.ok('POST', '/api/push/devices', sub)
+    await ann.ok('POST', '/api/push/devices', sub) // the same browser again: still one
+    expect((await ann.ok('GET', '/api/push/devices')).devices).toMatchObject([{ label: 'Chrome on Mac' }])
+    expect((await ann.request('POST', '/api/push/devices', { ...sub, endpoint: 'http://evil.example/x' })).status).toBe(400)
+
+    expect(await ann.ok('POST', '/api/push/test')).toEqual({ sent: 1 })
+    // A mention, and a reminder.
+    await bob.ok('POST', `/api/boards/${id}/tasks/A3/comments`, { body: '@Ann look', mentions: [ann.user.id] })
+    await new Promise((r) => setTimeout(r, 100))
+    await ann.ok('POST', `/api/boards/${id}/mutations`, {
+      mutationId: mid(),
+      command: {
+        type: 'task.update',
+        id: 'A3',
+        fields: { assigneeId: ann.user.id, reminders: [{ id: 'r', at: new Date(Date.now() - 60_000).toISOString().replace(/\.\d+Z$/, 'Z') }] },
+      },
+    })
+    await sendReminders(t.app)
+    expect(sent.map((s) => s.body.title)).toEqual(['Desktop notifications work', 'Bob mentioned you', expect.stringMatching(/^⏰ /)])
+    expect(sent[2].body.url).toBe(`/#/b/${id}?task=A3`)
+
+    // Mentions switched off: no push for them.
+    await ann.ok('PATCH', '/api/auth/me', { pushMentions: false })
+    await bob.ok('POST', `/api/boards/${id}/tasks/A3/comments`, { body: '@Ann again', mentions: [ann.user.id] })
+    await new Promise((r) => setTimeout(r, 100))
+    expect(sent).toHaveLength(3)
+    // The browser unsubscribed: it's forgotten.
+    gone = true
+    await ann.ok('POST', '/api/push/test')
+    expect((await ann.ok('GET', '/api/push/devices')).devices).toEqual([])
+  })
+})

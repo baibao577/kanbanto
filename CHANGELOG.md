@@ -32,6 +32,8 @@ then `git pull` (or download the new release) and `docker compose up -d --build`
 - **Reminders** on cards: at a time you type in plain words ("tmr 10:00", "fri 2pm") or pick, or before the due date
   (following it). They go to whoever is assigned, under the bell and by email (which can be turned off), and to
   webhooks as `reminder.due`. Assistants can set and list them.
+- **Desktop notifications** (Web Push, no app to install), turned on per computer in Account → Notifications:
+  reminders and @mentions pop up even when Kanbanto isn't open; clicking one opens the card.
 - **Morning summary email** around 8:00 in your own time zone (set from your browser, changeable): cards due today and
   overdue, reminders later today, and mentions you haven't seen. Only when there's something; it replaces the daily
   mention email.

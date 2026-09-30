@@ -42,6 +42,9 @@ export const users = pgTable('users', {
   mentionEmails: boolean('mention_emails').notNull().default(true),
   /** Their time zone (IANA, e.g. Asia/Bangkok), from their browser: when "morning" is. Null: not known yet (UTC). */
   timeZone: text('time_zone'),
+  /** Desktop notifications (on computers where they turned them on) for reminders, and for @mentions. */
+  pushReminders: boolean('push_reminders').notNull().default(true),
+  pushMentions: boolean('push_mentions').notNull().default(true),
   /** Email reminders as they fire, as well as the bell (they can turn it off). */
   reminderEmails: boolean('reminder_emails').notNull().default(true),
   /** When the last daily summary went out (at most one per 24 hours). */
@@ -91,6 +94,9 @@ export const siteSettings = pgTable('site_settings', {
   oauthApps: text('oauth_apps', { enum: ['off', 'known', 'any'] })
     .notNull()
     .default(SETTING_DEFAULTS.oauthApps),
+  /** The site's key pair for desktop notifications (Web Push, "VAPID"): made on first use; the private half encrypted. */
+  vapidPublicKey: text('vapid_public_key'),
+  vapidPrivateKeyEncrypted: text('vapid_private_key_encrypted'),
 })
 
 // ── Email ──────────────────────────────────────────────────────────────────────
@@ -677,4 +683,24 @@ export const reminderSends = pgTable(
     sentAt: at('sent_at').notNull().defaultNow(),
   },
   (t) => [primaryKey({ columns: [t.boardId, t.taskId, t.reminderId, t.fireAt] }), index('reminder_sends_user_idx').on(t.userId, t.sentAt)],
+)
+
+/** Browsers where someone turned on desktop notifications (Web Push subscriptions). */
+export const pushDevices = pgTable(
+  'push_devices',
+  {
+    id: uuid('id').primaryKey(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    /** Where the browser's push service takes messages for it (unique per browser). */
+    endpoint: text('endpoint').notNull().unique(),
+    p256dh: text('p256dh').notNull(),
+    auth: text('auth').notNull(),
+    /** Which browser, in words ("Chrome on Mac"), to tell devices apart. */
+    label: text('label').notNull(),
+    createdAt: at('created_at').notNull().defaultNow(),
+    lastUsedAt: at('last_used_at'),
+  },
+  (t) => [index('push_devices_user_idx').on(t.userId)],
 )

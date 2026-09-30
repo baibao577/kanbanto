@@ -111,6 +111,21 @@ export async function postComment(
   })
   const [comment] = await commentViews(app.db, and(eq(comments.id, commentId)))
   app.hub.broadcast(id, { type: 'comment', taskId, action: 'added', commentId, comment })
+  // Desktop notifications for the people mentioned (who want them).
+  for (const userId of mentions)
+    void (async () => {
+      if (!(await app.push.wants(userId, 'mentions'))) return
+      await app.push.toUser(
+        userId,
+        {
+          title: `${me.name} mentioned you`,
+          body: `“${data.tasks[taskId].title}”: ${excerpt(body.body, 120)}`,
+          url: `/#/b/${encodeURIComponent(id)}?task=${encodeURIComponent(taskId)}`,
+          tag: `mention:${commentId}`,
+        },
+        24 * 3600,
+      )
+    })().catch((e) => app.log.error({ err: e instanceof Error ? e.message : e }, 'push'))
   void app.webhooks
     .emit(id, 'comment.added', {
       board: { id, name: board.name },

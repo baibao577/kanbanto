@@ -12,6 +12,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { ApiTokensSection } from './ApiTokens'
+import { DesktopNotifications } from './DesktopNotifications'
 import { AccountEmailSection } from './EmailSending'
 import { AccountStorageSection } from './FileStorage'
 
@@ -166,6 +167,7 @@ function Notifications() {
         <p className="text-xs text-muted-foreground">{user.mentionEmails ? 'On.' : 'Off: mentions and reminders still show under the bell.'}</p>
       </SettingsCard>
       <TimeZoneCard />
+      <DesktopNotifications />
       <SettingsCard
         title="Email me reminders"
         description="When a reminder on a card assigned to you goes off (or one you set on a card nobody is assigned to)."

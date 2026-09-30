@@ -24,6 +24,9 @@ export interface PublicUser {
   reminderEmails: boolean
   /** Their time zone (IANA), for when "morning" is; null until their browser says. */
   timeZone: string | null
+  /** Desktop notifications (on computers where they're turned on) for reminders, and for @mentions. */
+  pushReminders: boolean
+  pushMentions: boolean
   /** Their Inbox: the board where tasks go when an app (like Claude) adds one without saying where. */
   inboxBoardId: string | null
 }

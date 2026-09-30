@@ -41,14 +41,15 @@ export function GroupHeader({ parentId, ids, row }: Props) {
       data-drag={readOnly ? undefined : 'group'}
       data-parent-id={parentId}
       title={`${[...path, t.title].join(' › ')}\nDrag to move these ${ids.length} ${ids.length === 1 ? 'card' : 'cards'} together`}
-      className="group/gh drag-handle flex h-7 cursor-grab items-center gap-1 pr-0.5 pl-0.5 active:cursor-grabbing"
+      className="group/gh drag-handle flex h-7 min-w-0 cursor-grab items-center gap-1 pr-0.5 pl-0.5 active:cursor-grabbing"
     >
       {!readOnly && <DotsSixVertical weight="bold" className="size-3.5 shrink-0 text-muted-foreground/70" />}
       <span className="flex min-w-0 items-baseline gap-1">
-        {path.length > 0 && <span className="max-w-24 shrink truncate text-[11px] text-muted-foreground">{path.join(' › ')} ›</span>}
+        {/* A long title shortens with "…"; the path before it gives way first. */}
+        {path.length > 0 && <span className="max-w-24 min-w-0 shrink-[3] truncate text-[11px] text-muted-foreground">{path.join(' › ')} ›</span>}
         <button
           onClick={() => openTask(parentId)}
-          className="min-w-0 shrink-0 truncate text-left text-xs font-semibold text-foreground/85 hover:underline"
+          className="min-w-0 shrink truncate text-left text-xs font-semibold text-foreground/85 hover:underline"
         >
           {t.title}
         </button>
