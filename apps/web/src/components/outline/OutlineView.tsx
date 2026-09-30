@@ -14,7 +14,9 @@ import {
 } from '@phosphor-icons/react'
 import { useMemo, useState, type ReactNode } from 'react'
 import { useBoard } from '@/app/board-context'
-import { Avatar, DueChip, LabelChip, PriorityIcon, ProgressBar } from '@/components/common/bits'
+import { Avatar, DueChip, LabelChip, PriorityIcon, ProgressBar, StatusDot } from '@/components/common/bits'
+import { useMediaQuery } from '@/lib/useMediaQuery'
+import { OutlineDisplayMenu } from './OutlineDisplayMenu'
 import { PRIORITY_LABEL } from '@kanbanto/model/types'
 import { Empty } from '@/components/common/Empty'
 import { StatusMenu } from '@/components/common/StatusMenu'
@@ -24,8 +26,8 @@ import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { formatDay } from '@/lib/format'
 import { cn } from '@/lib/utils'
-import { isBlocked } from '@kanbanto/model/indexer'
-import { sortComparator, type Sort, type SortKey } from '@kanbanto/model/table'
+import { isBlocked, statusCol } from '@kanbanto/model/indexer'
+import { sortComparator, type OutlineColumn, type Sort, type SortKey } from '@kanbanto/model/table'
 import { afterSubtree, defaultExpanded, flattenTree, treeTop } from '@kanbanto/model/tree'
 import { FilterMenu } from '@/components/shell/FilterMenu'
 import { AddSubtaskRow, DropLine } from '@/components/tree/rows'
@@ -34,19 +36,21 @@ import { useTreeFilter } from '@/components/tree/useTreeFilter'
 
 const ROWS_STEP = 500
 
-/** The table's columns. The task column stretches; the rest are fixed so values line up for scanning. */
-const COLUMNS: { key: SortKey; label: string }[] = [
-  { key: 'title', label: 'Task' },
-  { key: 'status', label: 'Status' },
-  { key: 'progress', label: 'Progress' },
-  { key: 'assignee', label: 'Assignee' },
-  { key: 'priority', label: 'Priority' },
-  { key: 'start', label: 'Start' },
-  { key: 'due', label: 'Due' },
-  { key: 'labels', label: 'Labels' },
+/**
+ * The table's columns. The task column takes the room that's left; the rest are fixed (in rem) so values line up for
+ * scanning. Property columns can be switched off in Display.
+ */
+const COLUMNS: { key: SortKey; label: string; width: number }[] = [
+  { key: 'title', label: 'Task', width: 18 },
+  { key: 'status', label: 'Status', width: 8.5 },
+  { key: 'progress', label: 'Progress', width: 9.5 },
+  { key: 'assignee', label: 'Assignee', width: 9 },
+  { key: 'priority', label: 'Priority', width: 6.5 },
+  { key: 'start', label: 'Start', width: 6.5 },
+  { key: 'due', label: 'Due', width: 6.5 },
+  { key: 'labels', label: 'Labels', width: 11 },
 ]
-// Fixed columns add up to 57.5rem; with the 18rem minimum for Task, the table never gets narrower than 75.5rem.
-const GRID = 'grid grid-cols-[minmax(18rem,1fr)_8.5rem_9.5rem_9rem_6.5rem_6.5rem_6.5rem_11rem]'
+const COLUMN_LABEL = Object.fromEntries(COLUMNS.map((c) => [c.key, c.label])) as Record<SortKey, string>
 const INDENT = 20
 /** Width of the drag handle before the indent. */
 const HANDLE = 28
@@ -96,6 +100,22 @@ export function OutlineView({ search }: { search: string }) {
 
   const { dragId, zoneOf, dragProps, dropProps } = useRowDrag(expand)
 
+  // Phones get a nested list instead of the table (no sideways scrolling).
+  const narrow = useMediaQuery('(max-width: 767px)')
+  const hidden = new Set(cfg.hidden ?? [])
+  const columns = COLUMNS.filter((c) => c.key === 'title' || !hidden.has(c.key as OutlineColumn))
+  const grid = {
+    display: 'grid',
+    gridTemplateColumns: `minmax(18rem, 1fr) ${columns
+      .slice(1)
+      .map((c) => `${c.width}rem`)
+      .join(' ')}`,
+  }
+  const minWidth = `${columns.reduce((sum, c) => sum + c.width, 0)}rem`
+  // Compact unless chosen otherwise.
+  const compact = cfg.density !== 'comfortable'
+  const height = compact ? 'h-8' : 'h-10'
+
   // Where the inline "add a subtask" field goes: right after the parent's last visible descendant.
   const addAfter = adding ? afterSubtree(idx, rows, adding) : -1
 
@@ -103,23 +123,30 @@ export function OutlineView({ search }: { search: string }) {
     <>
       <ViewActions>
         <FilterMenu />
-        <Button variant="ghost" size="sm" className="h-8 gap-1.5" onClick={() => setExpanded(new Set(idx.childrenOf.keys()))}>
-          <ArrowsOutSimple /> Expand all
+        <OutlineDisplayMenu />
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-8 gap-1.5 max-sm:px-2"
+          onClick={() => setExpanded(new Set(idx.childrenOf.keys()))}
+          title="Expand all"
+        >
+          <ArrowsOutSimple /> <span className="max-sm:hidden">Expand all</span>
         </Button>
-        <Button variant="ghost" size="sm" className="h-8 gap-1.5" onClick={() => setExpanded(new Set())}>
-          <ArrowsInSimple /> Collapse all
+        <Button variant="ghost" size="sm" className="h-8 gap-1.5 max-sm:px-2" onClick={() => setExpanded(new Set())} title="Collapse all">
+          <ArrowsInSimple /> <span className="max-sm:hidden">Collapse all</span>
         </Button>
       </ViewActions>
 
       <div className="h-full overflow-auto">
-        <div className="mx-auto max-w-7xl px-4 py-4">
+        <div className="px-3 py-4 sm:px-6">
           {(cfg.sort || matched) && (
             <div className="mb-3 flex flex-wrap items-center gap-1.5">
               {cfg.sort && (
                 <span className="inline-flex h-7 items-center gap-1 rounded-full border bg-card pr-1 pl-3 text-xs">
                   <span className="text-muted-foreground">Sorted by</span>
                   <span className="font-medium">
-                    {COLUMNS.find((c) => c.key === cfg.sort!.key)!.label.toLowerCase()} {cfg.sort.dir === 'asc' ? '↑' : '↓'}
+                    {COLUMN_LABEL[cfg.sort.key].toLowerCase()} {cfg.sort.dir === 'asc' ? '↑' : '↓'}
                   </span>
                   <button
                     aria-label="Stop sorting"
@@ -141,14 +168,82 @@ export function OutlineView({ search }: { search: string }) {
 
           {rows.length === 0 ? (
             <Empty>{search || filtering ? 'No tasks match.' : 'No tasks here yet.'}</Empty>
+          ) : narrow ? (
+            <ul className="divide-y overflow-hidden rounded-xl border bg-card" aria-label="Tasks">
+              {rows.map((id) => {
+                const t = data.tasks[id]
+                const kids = idx.childrenOf.get(id)
+                const open = !!keep || expanded.has(id)
+                const depth = idx.depth.get(id)! - baseDepth
+                const done = idx.category.get(id) === 'done'
+                const col = statusCol(idx, id)
+                const context = matched && !matched.has(id)
+                const zone = zoneOf(id)
+                return (
+                  <li
+                    key={id}
+                    {...dragProps(id)}
+                    {...dropProps(id)}
+                    className={cn(
+                      'drag-handle relative flex items-start gap-1 py-2 pr-3',
+                      !depth && kids && 'bg-muted/40',
+                      dragId === id && 'opacity-40',
+                      zone === 'inside' && 'bg-primary/8',
+                    )}
+                    style={{ paddingLeft: 6 + depth * 16 }}
+                  >
+                    <button
+                      disabled={!kids || !!keep}
+                      onClick={() => toggle(id)}
+                      aria-label={open ? 'Collapse' : 'Expand'}
+                      className="grid size-6 shrink-0 place-items-center rounded text-muted-foreground disabled:opacity-0"
+                    >
+                      {open ? <CaretDown className="size-3.5" /> : <CaretRight className="size-3.5" />}
+                    </button>
+                    <div className="min-w-0 flex-1">
+                      <button
+                        onClick={() => openTask(id)}
+                        className={cn(
+                          'line-clamp-2 text-left text-sm',
+                          kids && 'font-semibold',
+                          done && !kids && 'text-muted-foreground line-through',
+                          context && 'font-normal text-muted-foreground',
+                        )}
+                      >
+                        {t.title}
+                      </button>
+                      <div className="mt-1 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-xs text-muted-foreground">
+                        <span className="inline-flex items-center gap-1.5">
+                          <StatusDot category={col.category} color={col.color} /> {col.name}
+                        </span>
+                        {t.priority && <PriorityIcon priority={t.priority} />}
+                        {t.assigneeId && (
+                          <span className="inline-flex items-center gap-1">
+                            <Avatar name={memberName(t.assigneeId)} className="size-4 text-[8px]" /> {memberName(t.assigneeId)}
+                          </span>
+                        )}
+                        {t.due && <DueChip due={t.due} done={done} />}
+                        {isBlocked(idx, id) && <Prohibit weight="bold" className="size-3.5 text-warning" aria-label="Waiting on another task" />}
+                      </div>
+                    </div>
+                    {kids && (
+                      <span className="mt-0.5 shrink-0 text-xs text-muted-foreground tabular-nums">
+                        {idx.subDone.get(id)}/{idx.subTotal.get(id)}
+                      </span>
+                    )}
+                    <DropLine zone={zone} left={6 + depth * 16} />
+                  </li>
+                )
+              })}
+            </ul>
           ) : (
             // One scroll area (the page) for both directions, so the header and task column can both stay pinned.
             // overflow-clip rounds the corners without becoming a scroll container.
-            <div className="w-full min-w-[75.5rem] overflow-clip rounded-xl border bg-card">
+            <div className="w-full overflow-clip rounded-xl border bg-card" style={{ minWidth }}>
               <div role="table" aria-label="Tasks">
                 {/* Header row, pinned while you scroll. Click a column to sort by it. */}
-                <div role="row" className={cn(GRID, 'sticky top-0 z-20 border-b bg-muted')}>
-                  {COLUMNS.map((c, i) => {
+                <div role="row" className="sticky top-0 z-20 border-b bg-muted" style={grid}>
+                  {columns.map((c, i) => {
                     const on = cfg.sort?.key === c.key ? cfg.sort.dir : undefined
                     return (
                       <div
@@ -201,22 +296,29 @@ export function OutlineView({ search }: { search: string }) {
                       role="row"
                       {...dragProps(id)}
                       {...dropProps(id)}
+                      style={grid}
                       className={cn(
-                        GRID,
-                        'group drag-handle relative border-b hover:bg-[color-mix(in_oklab,var(--accent)_45%,var(--card))]',
+                        // The row's color is a variable, so the pinned Task cell can match it (hover included).
+                        'group drag-handle relative border-b bg-(--row) [--row:var(--card)] hover:[--row:color-mix(in_oklab,var(--accent)_45%,var(--card))]',
+                        !depth && kids && '[--row:color-mix(in_oklab,var(--muted)_55%,var(--card))]',
                         i === rows.length - 1 && addAfter !== i && 'border-b-0',
                         dragId === id && 'opacity-40',
-                        zone === 'inside' && 'bg-primary/8',
+                        zone === 'inside' && '[--row:color-mix(in_oklab,var(--primary)_8%,var(--card))]',
                       )}
                     >
                       {/* Task: drag handle, tree indent, caret, title, add-subtask */}
                       <div
                         role="cell"
                         className={cn(
-                          'sticky left-0 z-10 flex h-10 min-w-0 items-center gap-1 bg-card pr-2 shadow-[inset_-1px_0_0_var(--border)] group-hover:bg-[color-mix(in_oklab,var(--accent)_45%,var(--card))]',
-                          zone === 'inside' && 'bg-[color-mix(in_oklab,var(--primary)_8%,var(--card))] ring-2 ring-primary/40 ring-inset',
+                          'sticky left-0 z-10 flex min-w-0 items-center gap-1 bg-(--row) pr-2 shadow-[inset_-1px_0_0_var(--border)]',
+                          height,
+                          zone === 'inside' && 'ring-2 ring-primary/40 ring-inset',
                         )}
                       >
+                        {/* Indent guides: a faint line per level, so deep trees are easy to follow. */}
+                        {Array.from({ length: depth }, (_, l) => (
+                          <span key={l} aria-hidden className="absolute inset-y-0 w-px bg-border/60" style={{ left: HANDLE + l * INDENT + 11 }} />
+                        ))}
                         <span className="grid shrink-0 place-items-center" style={{ width: HANDLE - 4 }} title="Drag to move">
                           {!readOnly && (
                             <DotsSixVertical
@@ -262,42 +364,40 @@ export function OutlineView({ search }: { search: string }) {
                         </span>
                       </div>
 
-                      <Cell first>
-                        <StatusMenu id={id} />
-                      </Cell>
-                      <Cell>{kids ? <ProgressBar done={idx.subDone.get(id)!} total={idx.subTotal.get(id)!} className="w-full" /> : <Blank />}</Cell>
-                      <Cell>
-                        {t.assigneeId ? (
-                          <span className="flex min-w-0 items-center gap-2">
-                            <Avatar name={memberName(t.assigneeId)} className="size-5 text-[9px]" />
-                            <span className="truncate text-sm">{memberName(t.assigneeId)}</span>
-                          </span>
-                        ) : (
-                          <Blank />
-                        )}
-                      </Cell>
-                      <Cell>
-                        {t.priority ? (
-                          <span className="flex items-center gap-1.5 text-xs">
-                            <PriorityIcon priority={t.priority} /> {PRIORITY_LABEL[t.priority]}
-                          </span>
-                        ) : (
-                          <Blank />
-                        )}
-                      </Cell>
-                      <Cell>{t.start ? <span className="text-xs text-muted-foreground tabular-nums">{formatDay(t.start)}</span> : <Blank />}</Cell>
-                      <Cell>{t.due ? <DueChip due={t.due} done={done} /> : <Blank />}</Cell>
-                      <Cell>
-                        {labels.length ? (
-                          <span className="flex min-w-0 gap-1 overflow-hidden">
-                            {labels.map((l) => (
-                              <LabelChip key={l.id} label={l} className="shrink-0" />
-                            ))}
-                          </span>
-                        ) : (
-                          <Blank />
-                        )}
-                      </Cell>
+                      {columns.slice(1).map((c, n) => (
+                        <Cell key={c.key} first={n === 0} height={height}>
+                          {c.key === 'status' ? (
+                            <StatusMenu id={id} />
+                          ) : c.key === 'progress' ? (
+                            kids && <ProgressBar done={idx.subDone.get(id)!} total={idx.subTotal.get(id)!} className="w-full" />
+                          ) : c.key === 'assignee' ? (
+                            t.assigneeId && (
+                              <span className="flex min-w-0 items-center gap-2">
+                                <Avatar name={memberName(t.assigneeId)} className="size-5 text-[9px]" />
+                                <span className="truncate text-sm">{memberName(t.assigneeId)}</span>
+                              </span>
+                            )
+                          ) : c.key === 'priority' ? (
+                            t.priority && (
+                              <span className="flex items-center gap-1.5 text-xs">
+                                <PriorityIcon priority={t.priority} /> {PRIORITY_LABEL[t.priority]}
+                              </span>
+                            )
+                          ) : c.key === 'start' ? (
+                            t.start && <span className="text-xs text-muted-foreground tabular-nums">{formatDay(t.start)}</span>
+                          ) : c.key === 'due' ? (
+                            t.due && <DueChip due={t.due} done={done} />
+                          ) : (
+                            labels.length > 0 && (
+                              <span className="flex min-w-0 gap-1 overflow-hidden">
+                                {labels.map((l) => (
+                                  <LabelChip key={l.id} label={l} className="shrink-0" />
+                                ))}
+                              </span>
+                            )
+                          )}
+                        </Cell>
+                      ))}
 
                       <DropLine zone={zone} left={HANDLE + depth * INDENT} />
                     </div>
@@ -307,7 +407,7 @@ export function OutlineView({ search }: { search: string }) {
                     row,
                     <AddSubtaskRow
                       key="__add"
-                      className="h-10"
+                      className={height}
                       indent={HANDLE + (idx.depth.get(adding)! - baseDepth + 1) * INDENT + 6}
                       parentTitle={data.tasks[adding].title}
                       onAdd={(title) => createTask(adding, { title })}
@@ -357,16 +457,14 @@ function RowAction({ label, onClick, children }: { label: string; onClick: () =>
   )
 }
 
-/** A property cell. The first one sits right after the pinned Task column, which already draws the divider. */
-function Cell({ children, first }: { children: ReactNode; first?: boolean }) {
+/**
+ * A property cell (empty ones stay blank, so what's filled in stands out). The first sits right after the pinned
+ * Task column, which already draws the divider.
+ */
+function Cell({ children, first, height }: { children: ReactNode; first?: boolean; height: string }) {
   return (
-    <div role="cell" className={cn('flex h-10 min-w-0 items-center px-3', !first && 'border-l')}>
+    <div role="cell" className={cn('flex min-w-0 items-center border-border/60 px-3', height, !first && 'border-l')}>
       {children}
     </div>
   )
-}
-
-/** An empty cell: a faint dash keeps the column readable. */
-function Blank() {
-  return <span className="text-muted-foreground/40">–</span>
 }

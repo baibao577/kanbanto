@@ -178,6 +178,8 @@ export const ViewPrefsSchema = z.object({
     sort: z
       .object({ key: z.enum(['title', 'status', 'progress', 'assignee', 'priority', 'start', 'due', 'labels']), dir: z.enum(['asc', 'desc']) })
       .optional(),
+    hidden: z.array(z.enum(['status', 'progress', 'assignee', 'priority', 'start', 'due', 'labels'])).optional(),
+    density: z.enum(['comfortable', 'compact']).optional(),
   }),
   filter: z.object({
     statuses: z.array(z.string()).optional(),

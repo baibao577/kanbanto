@@ -29,6 +29,8 @@ then `git pull` (or download the new release) and `docker compose up -d --build`
   and links, written in a light editor (Markdown shortcuts or a small toolbar) and saved as Markdown. Long text folds
   with "Show more", and a description can be read full page with its headings to jump to. Files and mentions work as
   before.
+- **Outline** uses the full width, with columns you choose and compact (or comfortable) rows (Display), indent guides
+  and lightly tinted projects; on phones it's a nested list with each task's details underneath.
 - **Archive** cards (with their subtasks) and boards instead of deleting them. Archived cards have their own page
   (board ⋯ → Archived cards, or from search) across all your boards, where they can be searched, opened read-only,
   restored where they were, or deleted for good; archived boards are read-only and kept under "Archived boards" on the

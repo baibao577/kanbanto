@@ -25,8 +25,16 @@ export interface TableFilter {
 }
 
 /** The Outline's own settings (filters are shared by every tab; see State.filter). */
+/** The Outline's property columns (Task is always there). */
+export const OUTLINE_COLUMNS = ['status', 'progress', 'assignee', 'priority', 'start', 'due', 'labels'] as const
+export type OutlineColumn = (typeof OUTLINE_COLUMNS)[number]
+
 export interface OutlineConfig {
   sort?: Sort
+  /** Property columns switched off (Display → Columns). */
+  hidden?: OutlineColumn[]
+  /** Row height: compact (the default) or comfortable. */
+  density?: 'comfortable' | 'compact'
 }
 
 /** How many separate filters are on. */
