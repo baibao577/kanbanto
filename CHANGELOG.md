@@ -47,6 +47,13 @@ then `git pull` (or download the new release) and `docker compose up -d --build`
   edited, commented on, or its subtasks), after 3 days; amber from a week, red from two. Filter → "No activity
   lately" for any number of days; `find_tasks` takes `idle_days` for assistants. Cards' footers are two tidy lines:
   what needs attention, then the counts and the assignee.
+- **Complete and archive** (a card's menu): finishes it and its subtasks, then archives it. Every archived card keeps
+  the list it was archived from and whether it was completed, whatever happens to the lists later. The Archived
+  cards page filters Completed / Not completed and opens a card right there (the usual card, read-only, with
+  Restore and Delete); assistants can archive as completed too.
+- **Done cards out of the way:** Display → Done lists shows only cards done or touched lately (14 days, or the
+  number you choose), with "12 older · Show". The Outline and Timeline can hide done tasks, with a line saying how
+  many.
 - **More board backgrounds:** 12 designs besides the 12 colors (sunset, ocean, aurora, forest, midnight, …), and a
   custom one: pick any hue and a light, medium or deep shade, and the gradient and text colors are made for you.
 - **Favourite boards:** star a board on the boards page or from its name menu; favourites come first on both.

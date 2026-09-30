@@ -9,6 +9,7 @@ import { PresetMenu } from '@/components/shell/PresetMenu'
 import { BarIconButton, ViewActions } from '@/components/shell/ViewBar'
 import { AddSubtaskRow, DropLine } from '@/components/tree/rows'
 import { useRowDrag } from '@/components/tree/useRowDrag'
+import { HiddenDoneNote, HideDoneToggle } from '@/components/tree/HiddenDone'
 import { useTreeFilter } from '@/components/tree/useTreeFilter'
 import { Button } from '@/components/ui/button'
 import {
@@ -72,7 +73,7 @@ export function TimelineView({ search }: { search: string }) {
   const focusId = prefs.focusId && prefs.focusId in data.tasks ? prefs.focusId : undefined
   const { top, baseDepth } = treeTop(idx, focusId)
   // Search and filters (shared with every tab) keep the matches plus their parents, muted, for context.
-  const { keep, matched, filtering } = useTreeFilter(search)
+  const { keep, matched, filtering, hiddenDone } = useTreeFilter(search)
   const { rows, truncated } = useMemo(() => flattenTree(idx, top, expanded, limit, keep), [idx, top, expanded, limit, keep])
 
   const expand = (id: string) => {
@@ -196,6 +197,7 @@ export function TimelineView({ search }: { search: string }) {
       <ViewActions>
         <PresetMenu />
         <FilterMenu />
+        <HideDoneToggle />
         <ToggleGroup type="single" size="sm" variant="outline" value={zoom} onValueChange={(v) => v && setZoom(v as Zoom)}>
           <ToggleGroupItem value="day" className="px-3">
             Days
@@ -221,7 +223,9 @@ export function TimelineView({ search }: { search: string }) {
       </ViewActions>
 
       {rows.length === 0 ? (
-        <Empty>{search || filtering ? 'No tasks match.' : 'No tasks here yet.'}</Empty>
+        <Empty action={hiddenDone ? <HiddenDoneNote count={hiddenDone} /> : undefined}>
+          {search || filtering ? 'No tasks match.' : hiddenDone ? 'Everything here is done.' : 'No tasks here yet.'}
+        </Empty>
       ) : (
         <div ref={scroller} className="h-full overflow-auto">
           <div className="relative" style={{ width: LEFT_W + width }}>
@@ -426,6 +430,7 @@ export function TimelineView({ search }: { search: string }) {
               Show more rows
             </Button>
           )}
+          <HiddenDoneNote count={hiddenDone} className="sticky left-0 mx-3 mt-3" />
           {!search && (
             <div className="sticky left-0 w-72 p-2">
               <QuickAdd

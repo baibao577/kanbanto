@@ -31,12 +31,14 @@ export async function searchCards(app: FastifyInstance, me: SessionUser, q: Card
       // A card archived with its parent goes with it: only the one that was archived is a row.
       if (t.parentId && archived[t.parentId]) continue
       if (!matches(t)) continue
+      if (q.completed !== undefined && !!t.archivedDone !== q.completed) continue
       rows.push({
         id: t.id,
         title: t.title,
         board: { id: b.id, name: b.name, background: b.background },
         path: pathOf(data, t),
-        list: data.columns.find((c) => c.id === t.status)?.name ?? null,
+        list: t.archivedList ?? data.columns.find((c) => c.id === t.status)?.name ?? null,
+        completed: t.archivedDone ?? null,
         assignee: t.assigneeId ? (data.members.find((m) => m.id === t.assigneeId)?.name ?? null) : null,
         subtasks: countUnder(archived, t.id),
         archivedAt: t.archivedAt ?? null,
@@ -84,11 +86,15 @@ const Query = z.object({
   state: z.enum(['archived']).default('archived'),
   board: z.string().max(100).optional(),
   q: z.string().max(200).optional(),
+  completed: z
+    .enum(['true', 'false'])
+    .transform((v) => v === 'true')
+    .optional(),
   offset: z.coerce.number().int().min(0).optional(),
   limit: z.coerce.number().int().min(1).max(100).optional(),
 })
 
-/** GET /api/cards?state=archived&board=…&q=…&offset=… */
+/** GET /api/cards?state=archived&board=…&q=…&completed=true|false&offset=… */
 export const cardRoutes: FastifyPluginAsync = async (app) => {
   app.get('/cards', async (req) => searchCards(app, requireUser(req.user), parse(Query, req.query)))
 }

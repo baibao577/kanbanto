@@ -5,7 +5,7 @@ import { execute, type Command } from './commands'
 import { indexFor } from './indexer'
 import { exampleData } from './sample'
 import { matchesFilter } from './table'
-import type { BoardData } from './types'
+import type { BoardData, ViewConfig } from './types'
 
 const at = (d: string) => `2026-05-${d}T10:00:00.000Z`
 function exec(data: BoardData, cmd: Command, now: string) {
@@ -48,5 +48,30 @@ describe('card age', () => {
     expect(matchesFilter(idx, old, { idle: 1 })).toBe(true)
     expect(matchesFilter(idx, done, { idle: 1 })).toBe(false)
     expect(matchesFilter(idx, old, { idle: 1 }, { [old]: new Date().toISOString() })).toBe(false)
+  })
+})
+
+describe('done lists', () => {
+  it('recent done lists leave out cards done a while ago, and count them; the rest keep everything', async () => {
+    const { buildView, cellKey, NO_ROW } = await import('./view')
+    let data = exampleData('b1')
+    const idx0 = indexFor(data)
+    const doneCol = idx0.columns.find((c) => c.category === 'done')!.id
+    const old = idx0.preorder.find((id) => idx0.status.get(id) === doneCol)!
+    // One more done card, finished just now.
+    data = exec(data, { type: 'task.update', id: 'A3', fields: { status: doneCol } }, new Date().toISOString())
+    const idx = indexFor(data)
+    const cfg: ViewConfig = { columns: 'status', rows: 'none', filter: 'leaves', parentDisplay: [] }
+    const cell = (v: ReturnType<typeof buildView>) => v.cells.get(cellKey(NO_ROW, doneCol)) ?? []
+    const now = Date.now()
+
+    const recent = buildView(idx, cfg, { now })
+    expect(cell(recent)).toContain('A3')
+    expect(cell(recent)).not.toContain(old)
+    expect(recent.olderDone.get(doneCol)).toBeGreaterThanOrEqual(1)
+    // "Show" brings them back; so does a longer window, or "All".
+    expect(cell(buildView(idx, cfg, { now, showOlder: new Set([doneCol]) }))).toContain(old)
+    expect(cell(buildView(idx, { ...cfg, doneDays: 3650 }, { now }))).toContain(old)
+    expect(cell(buildView(idx, { ...cfg, doneLists: 'all' }, { now }))).toContain(old)
   })
 })

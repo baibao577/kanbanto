@@ -75,6 +75,8 @@ export function taskFromRow(r: Row<typeof tasks>): Task {
   if (r.description) t.description = r.description
   if (r.priority) t.priority = r.priority
   if (r.archivedAt) t.archivedAt = r.archivedAt.toISOString()
+  if (r.archivedAt && r.archivedList !== null) t.archivedList = r.archivedList
+  if (r.archivedAt && r.archivedDone !== null) t.archivedDone = r.archivedDone
   if (r.activeAt) t.activeAt = r.activeAt.toISOString()
   if (r.reminders?.length) t.reminders = r.reminders
   if (r.rank) t.rank = r.rank
@@ -92,6 +94,8 @@ export const taskToRow = (boardId: string, t: Task): Row<typeof tasks> => ({
   description: t.description ?? null,
   priority: t.priority ?? null,
   archivedAt: t.archivedAt ? toDate(t.archivedAt) : null,
+  archivedList: t.archivedAt ? (t.archivedList ?? null) : null,
+  archivedDone: t.archivedAt ? (t.archivedDone ?? null) : null,
   activeAt: t.activeAt ? toDate(t.activeAt) : null,
   reminders: t.reminders?.length ? t.reminders : null,
   status: t.status,

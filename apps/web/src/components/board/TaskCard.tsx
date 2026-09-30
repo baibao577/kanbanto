@@ -8,6 +8,7 @@ import {
   ArrowSquareRight,
   ArrowsLeftRight,
   ChatCircle,
+  CheckCircle,
   Crosshair,
   DotsThree,
   ListChecks,
@@ -52,7 +53,7 @@ interface Props {
     col: string
     to: (id: string, where: { col: string } | 'top' | 'bottom') => void
     toBoard: (id: string) => void
-    archive: (id: string) => void
+    archive: (id: string, complete?: boolean) => void
   }
   /** In a grouped list: the card has no parent header, so it's one of the list's items (see dnd.ts). */
   item?: boolean
@@ -309,6 +310,11 @@ function CardMenu({
             <DropdownMenuItem onSelect={() => move.toBoard(id)}>
               <ArrowSquareRight /> Move to another board…
             </DropdownMenuItem>
+            {statusCol(idx, id).category !== 'done' && (
+              <DropdownMenuItem onSelect={() => move.archive(id, true)}>
+                <CheckCircle /> Complete and archive
+              </DropdownMenuItem>
+            )}
             <DropdownMenuItem onSelect={() => move.archive(id)}>
               <Archive /> Archive
             </DropdownMenuItem>

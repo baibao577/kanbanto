@@ -1,9 +1,10 @@
 import { Alarm, Plus, X } from '@phosphor-icons/react'
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { useBoard } from '@/app/board-context'
 import { useAuth } from '@/app/use-auth'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { formatDay } from '@/lib/format'
+import { useNow } from '@/lib/useNow'
 import { cn } from '@/lib/utils'
 import { parseWhen } from '@/lib/when'
 import { newId } from '@kanbanto/model/ids'
@@ -17,15 +18,6 @@ const BEFORE_DUE = [
   { label: '1 day before', minutes: 24 * 60 },
   { label: '2 days before', minutes: 2 * 24 * 60 },
 ]
-/** The time now, to the minute (so "went off" updates while the card is open). */
-function useNow() {
-  const [now, setNow] = useState(() => Date.now())
-  useEffect(() => {
-    const t = setInterval(() => setNow(Date.now()), 60_000)
-    return () => clearInterval(t)
-  }, [])
-  return now
-}
 
 const beforeWords = (m: number) => BEFORE_DUE.find((b) => b.minutes === m)?.label ?? `${m} minutes before`
 

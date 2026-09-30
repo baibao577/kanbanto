@@ -2,13 +2,16 @@ import { SlidersHorizontal } from '@phosphor-icons/react'
 import type { ReactNode } from 'react'
 import { useBoard } from '@/app/board-context'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Separator } from '@/components/ui/separator'
 import { Switch } from '@/components/ui/switch'
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { StatusDot } from '@/components/common/bits'
 import { DEFAULT_DISPLAY } from '@kanbanto/model/prefs'
+import { DONE_DAYS, type DoneLists } from '@kanbanto/model/types'
 import type { Filter, ParentDisplay, RowsBy, ViewConfig } from '@kanbanto/model/types'
 
 // Hidden lists have their own controls, so they don't count as a changed display (and reset keeps them).
@@ -18,7 +21,9 @@ const sameConfig = (a: ViewConfig, b: ViewConfig) =>
   a.filter === b.filter &&
   !!a.groupByParent === !!b.groupByParent &&
   a.parentDisplay.length === b.parentDisplay.length &&
-  a.parentDisplay.every((p) => b.parentDisplay.includes(p))
+  a.parentDisplay.every((p) => b.parentDisplay.includes(p)) &&
+  (a.doneLists ?? 'recent') === (b.doneLists ?? 'recent') &&
+  (a.doneLists === 'recent' || !a.doneLists ? (a.doneDays ?? DONE_DAYS) === (b.doneDays ?? DONE_DAYS) : true)
 
 /** "Display" popover: the settings that shape the board, in plain words. */
 export function DisplayMenu() {
@@ -130,6 +135,54 @@ export function DisplayMenu() {
             />
           )}
         </div>
+
+        {cfg.columns === 'status' && (
+          <>
+            <Separator />
+            <div className="space-y-2.5 p-4">
+              <p className="text-xs font-medium text-muted-foreground">Done lists</p>
+              <ToggleGroup
+                type="single"
+                variant="outline"
+                size="sm"
+                value={cfg.doneLists ?? 'recent'}
+                onValueChange={(v) => v && set({ doneLists: v as DoneLists })}
+                className="w-full"
+              >
+                <ToggleGroupItem value="all" className="flex-1 text-xs">
+                  All
+                </ToggleGroupItem>
+                <ToggleGroupItem value="recent" className="flex-1 text-xs">
+                  Recent
+                </ToggleGroupItem>
+              </ToggleGroup>
+              {(cfg.doneLists ?? 'recent') === 'recent' ? (
+                <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                  Cards done or touched in the last
+                  <Input
+                    key={cfg.doneDays ?? DONE_DAYS}
+                    type="number"
+                    inputMode="numeric"
+                    min={1}
+                    max={365}
+                    aria-label="Days to show in done lists"
+                    defaultValue={cfg.doneDays ?? DONE_DAYS}
+                    onBlur={(e) => {
+                      const n = Math.round(Number(e.target.value))
+                      if (n >= 1 && n <= 365) set({ doneDays: n === DONE_DAYS ? undefined : n })
+                      else e.target.value = String(cfg.doneDays ?? DONE_DAYS)
+                    }}
+                    onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
+                    className="h-7 w-14 px-2 text-xs"
+                  />
+                  days
+                </label>
+              ) : (
+                <p className="text-xs text-muted-foreground">Every finished card shows.</p>
+              )}
+            </div>
+          </>
+        )}
 
         {(cfg.columns === 'status' || hiddenCount > 0) && (
           <>

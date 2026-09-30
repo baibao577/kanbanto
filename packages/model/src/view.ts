@@ -1,6 +1,6 @@
 import { descendantsOf, isBlocked, isLeaf, type TaskIndex } from './indexer'
 import { comparePositions } from './position'
-import type { Scope, ViewConfig } from './types'
+import { DONE_DAYS, type Scope, type ViewConfig } from './types'
 
 /** A column or a row. `taskId` is set when the lane stands for a task (a parent). */
 export interface Lane {
@@ -16,6 +16,8 @@ export interface BoardView {
   cells: Map<string, string[]>
   /** Every task that passed the filter, in tree order (used by list layout). */
   ids: string[]
+  /** Recent done lists: how many older cards each one leaves out (list id → count). */
+  olderDone: Map<string, number>
 }
 
 export const NO_ROW = '_'
@@ -140,6 +142,17 @@ export function buildView(idx: TaskIndex, cfg: ViewConfig, scope: Scope = {}): B
   // Step 4 — parent display "row header": a task that is already a row header isn't also a card.
   // Grouping turns parents into headers inside lists, so only tasks without subtasks stay cards.
   if (groupsSubtasks(cfg)) cards = cards.filter((c) => isLeaf(idx, c.id))
+
+  // Recent done lists leave out cards with no activity for a while (see ViewConfig.doneLists), counting them.
+  const olderDone = new Map<string, number>()
+  if (cfg.columns === 'status' && (cfg.doneLists ?? 'recent') === 'recent' && scope.now !== undefined) {
+    const since = scope.now - (cfg.doneDays ?? DONE_DAYS) * 86_400_000
+    cards = cards.filter(({ id, col }) => {
+      if (idx.colById.get(col)?.category !== 'done' || scope.showOlder?.has(col) || idx.lastActive.get(id)! >= since) return true
+      olderDone.set(col, (olderDone.get(col) ?? 0) + 1)
+      return false
+    })
+  }
   const rowKeys = new Set(cards.map((c) => rowOf(c.id)))
   const hideRowHeaders = cfg.parentDisplay.includes('rowHeader') && cfg.rows !== 'none' && cfg.rows !== 'assignee'
 
@@ -192,7 +205,7 @@ export function buildView(idx: TaskIndex, cfg: ViewConfig, scope: Scope = {}): B
   })
   rows.sort((a, b) => laneRank(idx, a, cfg) - laneRank(idx, b, cfg) || a.title.localeCompare(b.title))
 
-  return { columns, rows, cells, ids: match ? filtered.filter((id) => match(tasks[id].title)) : filtered }
+  return { columns, rows, cells, ids: match ? filtered.filter((id) => match(tasks[id].title)) : filtered, olderDone }
 }
 
 function laneRank(idx: TaskIndex, lane: Lane, cfg: ViewConfig): number {

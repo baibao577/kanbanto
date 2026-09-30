@@ -1,6 +1,6 @@
 import { normalizeTaskDate } from './dates'
 import { applyChanges, current } from './changes'
-import { isLeaf, wouldCycle, type TaskIndex } from './indexer'
+import { buildIndex, isLeaf, statusCol, wouldCycle, type TaskIndex } from './indexer'
 import { comparePositions, positionBetween, positionsBetween } from './position'
 import { stamp, type Change } from './records'
 import type { Board, BoardData, Category, LabelDef, Priority, Reminder, StatusColumn, Task } from './types'
@@ -36,8 +36,11 @@ export type Command =
     }
   /** Deletes a task and its subtasks (an archived one too: that's for good). */
   | { type: 'task.delete'; id: string }
-  /** Puts a task and its subtasks away: out of every view and count, kept with their comments and files. */
-  | { type: 'task.archive'; id: string }
+  /**
+   * Puts a task and its subtasks away: out of every view and count, kept with their comments and files. `complete`:
+   * finish it first (it and its unfinished subtasks go to the first done list), so it's archived as completed.
+   */
+  | { type: 'task.archive'; id: string; complete?: boolean }
   /** Brings an archived task (and its subtasks) back, where it was if it still can be. */
   | { type: 'task.restore'; id: string }
   | { type: 'column.create'; id?: string; name: string; category: Category }
@@ -170,7 +173,24 @@ function run(data: BoardData, cmd: Command, ctx: Context): Change[] {
 
     case 'task.archive': {
       const t = task(cmd.id)
-      for (const id of [t.id, ...subtree(data.tasks, t.id)]) putTask(data.tasks[id], { ...data.tasks[id], archivedAt: now })
+      const ids = [t.id, ...subtree(data.tasks, t.id)]
+      let tasks = data.tasks
+      let idx = ctx.idx
+      if (cmd.complete) {
+        if (!data.columns.some((c) => c.category === 'done')) reject('This board has no list for finished work.')
+        // Unfinished tasks go to the first done list (in "decided by subtasks" boards, only tasks without subtasks:
+        // their parents follow).
+        tasks = { ...data.tasks }
+        for (const id of ids)
+          if (ctx.idx.category.get(id) !== 'done' && (data.board.mode === 'manual' || isLeaf(ctx.idx, id)))
+            tasks[id] = { ...tasks[id], status: ctx.idx.firstOf.done }
+        idx = buildIndex(tasks, data.board.mode, data.columns, data.members)
+      }
+      // Each keeps where it was archived from, and whether that was finished, for good.
+      for (const id of ids) {
+        const col = statusCol(idx, id)
+        putTask(data.tasks[id], { ...tasks[id], archivedAt: now, archivedList: col.name, archivedDone: col.category === 'done' })
+      }
       break
     }
 
@@ -181,7 +201,7 @@ function run(data: BoardData, cmd: Command, ctx: Context): Change[] {
       const back = new Set(ids)
       const labels = new Set(data.labels.map((l) => l.id))
       for (const id of ids) {
-        const { archivedAt: _gone, ...a } = archived[id]
+        const { archivedAt: _gone, archivedList: _list, archivedDone: done, ...a } = archived[id]
         const root = id === t.id
         // Its parent may have gone (or been archived) since: then it comes back at the top level, at the end.
         const parentId = root ? (a.parentId && data.tasks[a.parentId] ? a.parentId : null) : a.parentId
@@ -189,7 +209,8 @@ function run(data: BoardData, cmd: Command, ctx: Context): Change[] {
           ...a,
           parentId,
           order: root && parentId !== a.parentId ? positionBetween(lastSibling(data, parentId, id)?.order, null) : a.order,
-          status: data.columns.some((c) => c.id === a.status) ? a.status : ctx.idx.firstOf.todo,
+          // Its list may have gone: then the first list of the kind it was archived from (finished or not).
+          status: data.columns.some((c) => c.id === a.status) ? a.status : ctx.idx.firstOf[done ? 'done' : 'todo'],
           labels: a.labels.filter((l) => labels.has(l)),
           blockedBy: a.blockedBy.filter((b) => data.tasks[b] || back.has(b)),
         }

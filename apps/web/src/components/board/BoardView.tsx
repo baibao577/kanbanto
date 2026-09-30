@@ -20,6 +20,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { pointerDrag } from '@/lib/pointerDrag'
+import { useNow } from '@/lib/useNow'
 import { cn } from '@/lib/utils'
 import { tone } from '@kanbanto/model/colors'
 import { ancestorsOf, statusCol } from '@kanbanto/model/indexer'
@@ -88,10 +89,13 @@ function Board({ search }: { search: string }) {
   const config = prefs.display.board
   // Filters (shared by every tab) narrow the cards, like search.
   const filter = prefs.filter
+  // Recent done lists showing their older cards too: just for now, not saved.
+  const [showOlder, setShowOlder] = useState<ReadonlySet<string>>(new Set())
+  const now = useNow(3_600_000)
   const view = useMemo(() => {
     const keep = filterCount(filter) ? (id: string) => matchesFilter(idx, id, filter, counts.lastComment) : undefined
-    return buildView(idx, config, { focusId: prefs.focusId, search, keep })
-  }, [idx, config, prefs.focusId, search, filter, counts.lastComment])
+    return buildView(idx, config, { focusId: prefs.focusId, search, keep, now, showOlder })
+  }, [idx, config, prefs.focusId, search, filter, counts.lastComment, now, showOlder])
   const labelById = useMemo(() => new Map(data.labels.map((l) => [l.id, l])), [data.labels])
 
   const [rowLimit, setRowLimit] = useState(ROWS_STEP)
@@ -103,6 +107,12 @@ function Board({ search }: { search: string }) {
   const [listDrop, setListDrop] = useState<number | null>(null)
 
   const statusLists = config.columns === 'status'
+  const toggleIn = (set: ReadonlySet<string>, key: string) => {
+    const next = new Set(set)
+    if (!next.delete(key)) next.add(key)
+    return next
+  }
+  const isDone = (key: string) => statusLists && idx.colById.get(key)?.category === 'done'
   const grouping = groupsSubtasks(config)
   // With subtasks grouped under headers, the header already says where a card belongs.
   const cardConfig = useMemo(
@@ -174,7 +184,7 @@ function Board({ search }: { search: string }) {
     lists: columns,
     col,
     toBoard: moveToBoard,
-    archive: (id: string) => run({ type: 'task.archive', id }),
+    archive: (id: string, complete?: boolean) => run({ type: 'task.archive', id, complete }),
     to: (id: string, where: { col: string } | 'top' | 'bottom') => {
       const to = typeof where === 'object' ? where.col : col
       drop(id, row, to, where === 'top' ? 0 : (view.cells.get(cellKey(row, to))?.length ?? 0))
@@ -448,15 +458,35 @@ function Board({ search }: { search: string }) {
     return out
   }
 
+  /** Under a recent done list's header: its older cards, and showing or hiding them. */
+  const doneLine = (key: string) => {
+    if (!isDone(key)) return null
+    const older = view.olderDone.get(key)
+    const line = (text: string, action: string, onClick: () => void) => (
+      <p className="px-3 pb-1.5 text-xs text-muted-foreground">
+        {text}
+        {' · '}
+        <button onClick={onClick} className="font-medium text-foreground/80 hover:text-foreground hover:underline">
+          {action}
+        </button>
+      </p>
+    )
+    if (older) return line(`${older} older`, 'Show', () => setShowOlder(toggleIn(showOlder, key)))
+    if (showOlder.has(key)) return line('Showing older cards', 'Hide', () => setShowOlder(toggleIn(showOlder, key)))
+    return null
+  }
   const columnHead = (c: Lane, joined: boolean) =>
     statusLists ? (
-      <ListHeader
-        col={idx.colById.get(c.key)!}
-        count={colCount(c.key)}
-        editing={editingList === c.key}
-        setEditing={setEditingList}
-        className={joined ? 'rounded-t-xl' : 'rounded-xl bg-lane'}
-      />
+      <div className={cn(!joined && 'rounded-xl bg-lane')}>
+        <ListHeader
+          col={idx.colById.get(c.key)!}
+          count={colCount(c.key)}
+          editing={editingList === c.key}
+          setEditing={setEditingList}
+          className={joined ? 'rounded-t-xl' : 'rounded-xl'}
+        />
+        {doneLine(c.key)}
+      </div>
     ) : (
       <header className={cn('flex h-10 items-center gap-2 px-3', !joined && 'rounded-xl bg-lane')}>
         <button onClick={() => openTask(c.taskId!)} className="min-w-0 truncate text-left text-sm font-semibold hover:underline">

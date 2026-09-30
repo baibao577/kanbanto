@@ -73,6 +73,8 @@ export const TaskSchema = z.object({
   description: plain(50_000).optional(),
   priority: priority.optional(),
   archivedAt: z.string().max(40).optional(),
+  archivedList: plain(200).optional(),
+  archivedDone: z.boolean().optional(),
   activeAt: z.string().max(40).optional(),
   reminders: reminders.optional(),
   color: color.optional(),
@@ -160,7 +162,7 @@ export const CommandSchema = z.discriminatedUnion('type', [
   }),
   z.object({ type: z.literal('tasks.moveToList'), ids, status: id, assigneeId: id.nullable().optional(), list: ids.optional() }),
   z.object({ type: z.literal('task.delete'), id }),
-  z.object({ type: z.literal('task.archive'), id }),
+  z.object({ type: z.literal('task.archive'), id, complete: z.boolean().optional() }),
   z.object({ type: z.literal('task.restore'), id }),
   z.object({ type: z.literal('column.create'), id: id.optional(), name: text(200), category }),
   z.object({
@@ -194,6 +196,9 @@ const viewConfig = z.object({
   parentDisplay: z.array(z.enum(['label', 'checklist', 'progress', 'rowHeader', 'age'])),
   hiddenColumns: z.array(z.string()).optional(),
   groupByParent: z.boolean().optional(),
+  // (A value this version doesn't know reads as the default.)
+  doneLists: z.enum(['all', 'recent']).optional().catch(undefined),
+  doneDays: z.number().int().min(1).max(365).optional(),
 })
 
 /** A board preset's settings (see PresetSettings): filters, and how the Board and Outline look. */
@@ -205,6 +210,7 @@ export const PresetSettingsSchema = z.object({
       .optional(),
     hidden: z.array(z.enum(['status', 'progress', 'assignee', 'priority', 'start', 'due', 'labels'])).optional(),
     density: z.enum(['comfortable', 'compact']).optional(),
+    hideDone: z.boolean().optional(),
   }),
   filter: z.object({
     statuses: z.array(z.string()).optional(),

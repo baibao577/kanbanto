@@ -52,7 +52,8 @@ Without MCP, use the REST API (see "REST fallback" below).
   before; pass the user's `time_zone`). They go to the task's assignee, or the user if nobody is assigned. `reminders`
   lists what's coming up: good for a morning check-in.
 - **Putting work away:** `archive_task` archives a finished or paused task (with its subtasks); it's restorable, so
-  prefer it to asking the user to delete. `find_tasks` and `list_boards` include archived things only with
+  prefer it to asking the user to delete. For finished work, pass `completed: true` ("archived as completed": it moves
+  to the done list first); archived results say `completed` and the list they were archived from. `find_tasks` and `list_boards` include archived things only with
   `include_archived`.
 - There are no tools for sharing, inviting people or deleting boards and tasks, on purpose. If something should go or
   be shared, say so and point the user to the app.

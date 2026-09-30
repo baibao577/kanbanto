@@ -124,6 +124,12 @@ export interface Task extends Meta {
   /** When it was archived (with its subtasks): then it's in `BoardData.archived`, out of every view and count. */
   archivedAt?: string
   /**
+   * Kept from the moment it was archived, whatever happens to the lists later: the list it was in (by name), and
+   * whether that meant finished (a done list): "archived as completed".
+   */
+  archivedList?: string
+  archivedDone?: boolean
+  /**
    * The last real work on it: moved to another list or edited (see ACTIVE_FIELDS). Reordering doesn't count. Unset on
    * older cards: `updatedAt` stands in. Card age also counts its subtasks and comments (see age.ts).
    */
@@ -167,7 +173,17 @@ export interface ViewConfig {
    * Only tasks without subtasks are cards; a parent appears as a header in every list where its subtasks are.
    */
   groupByParent?: boolean
+  /**
+   * Lists of finished work (category done): every card, or only cards done or touched in the last `doneDays` days
+   * (the rest behind "N older · Show"). Unset: recent.
+   */
+  doneLists?: DoneLists
+  /** For recent done lists; unset: DONE_DAYS. */
+  doneDays?: number
 }
+
+export type DoneLists = 'all' | 'recent'
+export const DONE_DAYS = 14
 
 /** Where you are, what you searched for and how you filtered; shared by every tab. */
 export interface Scope {
@@ -176,6 +192,10 @@ export interface Scope {
   search?: string
   /** Only tasks that pass this test are shown as cards (see model/table.ts). */
   keep?: (id: string) => boolean
+  /** The time now (ms), for recent done lists; without it, done lists show every card. */
+  now?: number
+  /** Done lists opened to show their older cards too (list ids). */
+  showOlder?: ReadonlySet<string>
 }
 
 export type TaskMap = Record<string, Task>

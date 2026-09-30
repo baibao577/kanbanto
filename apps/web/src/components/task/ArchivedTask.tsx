@@ -1,78 +1,57 @@
-import { Archive, ArrowCounterClockwise, Trash } from '@phosphor-icons/react'
+import { Archive, ArrowCounterClockwise, CheckCircle, Trash } from '@phosphor-icons/react'
 import { formatDistanceToNow, parseISO } from 'date-fns'
 import { useBoard } from '@/app/board-context'
-import { Markdown } from '@/components/text/Markdown'
 import { Button } from '@/components/ui/button'
-import { DialogDescription, DialogTitle } from '@/components/ui/dialog'
-import { useCardFiles } from '@/data/cardFiles'
-import type { Task } from '@kanbanto/model/types'
 
 /**
- * An archived card, opened from a link, a notification or the Outline's "Archived" part: read-only, with what it
- * said and where it was, and Restore (back where it was, when it can be) or Delete for good.
+ * Over an archived card (which shows read-only below it): when it was archived, from which list, whether it was
+ * completed then (kept for good, whatever happens to the lists), and Restore or Delete for good.
  */
-export function ArchivedTask({ id, onClose }: { id: string; onClose: () => void }) {
-  const { data, run, readOnly, onActivity } = useBoard()
+export function ArchivedBanner({ id, onClose }: { id: string; onClose: () => void }) {
+  const { data, run, readOnly } = useBoard()
   const archived = data.archived ?? {}
   const t = archived[id]
-  const cardFiles = useCardFiles(data.board.id, id, onActivity)
   if (!t) return null
-  const parent = t.parentId ? (data.tasks[t.parentId] ?? archived[t.parentId]) : null
-  const list = data.columns.find((c) => c.id === t.status)
-  const subtasks = Object.values(archived).filter((x: Task) => x.parentId === id)
+  const subtasks = Object.values(archived).filter((x) => x.parentId === id).length
+  const from = t.archivedList ?? data.columns.find((c) => c.id === t.status)?.name
 
   return (
-    <div>
-      <div className="flex flex-wrap items-center gap-2 border-b bg-muted/60 px-6 py-3 pr-12 text-sm">
-        <Archive className="size-4 shrink-0 text-muted-foreground" />
-        <span className="min-w-0 flex-1 text-muted-foreground">
-          Archived {t.archivedAt ? formatDistanceToNow(parseISO(t.archivedAt), { addSuffix: true }) : ''}. It’s out of the board until it’s restored.
-        </span>
-        {!readOnly && (
-          <>
-            <Button
-              size="sm"
-              className="h-7 gap-1.5"
-              onClick={() => {
-                run({ type: 'task.restore', id })
-              }}
-            >
-              <ArrowCounterClockwise /> Restore
-            </Button>
-            <Button
-              size="sm"
-              variant="ghost"
-              className="h-7 gap-1.5 text-destructive hover:text-destructive"
-              onClick={() => {
-                if (!confirm(`Delete “${t.title}”${subtasks.length ? ' and its subtasks' : ''} for good? This can’t be undone.`)) return
-                if (run({ type: 'task.delete', id })) onClose()
-              }}
-            >
-              <Trash /> Delete for good
-            </Button>
-          </>
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b bg-muted/60 px-6 py-3 pr-12 text-sm">
+      <Archive className="size-4 shrink-0 text-muted-foreground" />
+      <span className="min-w-0 flex-1 text-muted-foreground">
+        Archived {t.archivedAt ? formatDistanceToNow(parseISO(t.archivedAt), { addSuffix: true }) : ''}
+        {from && <> from “{from}”</>}
+        {t.archivedDone !== undefined && (
+          <span
+            className={
+              t.archivedDone
+                ? 'ml-2 inline-flex items-center gap-1 rounded bg-status-done/12 px-1.5 py-0.5 text-xs font-medium text-status-done'
+                : 'ml-2 inline-flex items-center rounded bg-muted px-1.5 py-0.5 text-xs font-medium text-muted-foreground'
+            }
+          >
+            {t.archivedDone && <CheckCircle weight="fill" className="size-3" />}
+            {t.archivedDone ? 'Completed' : 'Not completed'}
+          </span>
         )}
-      </div>
-      <div className="space-y-5 px-6 py-5">
-        <div>
-          {parent && <p className="text-xs text-muted-foreground">{parent.title}</p>}
-          <DialogTitle className="text-xl font-semibold">{t.title}</DialogTitle>
-          <DialogDescription className="mt-1 text-xs">Was in {list ? `“${list.name}”` : 'a list that’s gone'}.</DialogDescription>
-        </div>
-        {t.description ? <Markdown text={t.description} files={cardFiles.files} /> : <p className="text-sm text-muted-foreground">No description.</p>}
-        {subtasks.length > 0 && (
-          <div>
-            <p className="mb-1.5 text-xs font-medium text-muted-foreground">Subtasks (archived with it)</p>
-            <ul className="space-y-1 text-sm">
-              {subtasks.map((s) => (
-                <li key={s.id} className="rounded-md bg-muted/50 px-2.5 py-1.5">
-                  {s.title}
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-      </div>
+      </span>
+      {!readOnly && (
+        <>
+          <Button size="sm" className="h-7 gap-1.5" onClick={() => run({ type: 'task.restore', id })}>
+            <ArrowCounterClockwise /> Restore
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-7 gap-1.5 text-destructive hover:text-destructive"
+            onClick={() => {
+              if (!confirm(`Delete “${t.title}”${subtasks ? ' and its subtasks' : ''} for good? This can’t be undone.`)) return
+              if (run({ type: 'task.delete', id })) onClose()
+            }}
+          >
+            <Trash /> Delete for good
+          </Button>
+        </>
+      )}
     </div>
   )
 }

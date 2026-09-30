@@ -42,7 +42,11 @@ export function describeChanges(before: BoardData, changes: Change[]): ActivityI
         items.push({ taskId: b.id, text: `added ${q(b.title)}${parent ? ` under ${q(parent)}` : ''}` })
       } else if (a && !b) items.push({ taskId: a.id, text: `deleted ${q(a.title)}` })
       else if (a && b && flipped.has(b.id)) {
-        if (!(b.parentId && flipped.has(b.parentId))) items.push({ taskId: b.id, text: `${b.archivedAt ? 'archived' : 'restored'} ${q(b.title)}` })
+        if (!(b.parentId && flipped.has(b.parentId)))
+          items.push({
+            taskId: b.id,
+            text: b.archivedAt ? `archived ${q(b.title)}${b.archivedDone ? ' as completed' : ''}` : `restored ${q(b.title)}`,
+          })
       } else if (a && b) {
         const t = q(b.title)
         if (a.title !== b.title) items.push({ taskId: b.id, text: `renamed ${q(a.title)} to ${t}` })

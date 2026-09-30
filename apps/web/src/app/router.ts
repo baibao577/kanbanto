@@ -19,7 +19,7 @@ import { LAYOUTS, type Layout } from '@kanbanto/model/types'
  */
 export type BoardRoute = { page: 'board'; id: string; layout?: Layout; focus?: string; task?: string }
 /** The Cards page: which cards (archived, for now), on one board or all of them, matching some words. */
-export type CardsRoute = { page: 'cards'; state: 'archived'; board?: string; q?: string }
+export type CardsRoute = { page: 'cards'; state: 'archived'; board?: string; q?: string; completed?: boolean }
 export type Route =
   | { page: 'home' }
   | BoardRoute
@@ -49,7 +49,14 @@ export function parseRoute(hash: string): Route {
   const cards = hash.match(/^#\/cards\/?(?:\?(.*))?$/)
   if (cards) {
     const p = new URLSearchParams(cards[1] ?? '')
-    return { page: 'cards', state: 'archived', ...(p.get('board') && { board: p.get('board')! }), ...(p.get('q') && { q: p.get('q')! }) }
+    const done = p.get('completed')
+    return {
+      page: 'cards',
+      state: 'archived',
+      ...(p.get('board') && { board: p.get('board')! }),
+      ...(p.get('q') && { q: p.get('q')! }),
+      ...((done === 'yes' || done === 'no') && { completed: done === 'yes' }),
+    }
   }
   const ws = hash.match(/^#\/w\/([^/?#]+)\/?$/)
   if (ws) return { page: 'workspace', id: decodeURIComponent(ws[1]) }
@@ -91,6 +98,7 @@ export function hrefFor(r: Route) {
     const p = new URLSearchParams({ state: r.state })
     if (r.board) p.set('board', r.board)
     if (r.q) p.set('q', r.q)
+    if (r.completed !== undefined) p.set('completed', r.completed ? 'yes' : 'no')
     return `#/cards?${p}`
   }
   if (r.page === 'authorize') return `#/authorize?${r.query}`

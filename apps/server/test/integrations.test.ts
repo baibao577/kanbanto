@@ -451,7 +451,11 @@ describe('MCP', () => {
     expect((await call('get_task', { board_id: id, task_id: 'A2' })).subtasks).toHaveLength(2)
     expect(await call('archive_task', { board_id: id, task_id: 'A2', restore: true })).toMatchObject({ archived: false })
     expect((await ann.ok('GET', `/api/boards/${id}`)).data.tasks.A2a.parentId).toBe('A2')
-    expect(await call('archive_task', { board_id: id, task_id: 'A3' })).toMatchObject({ archived: true })
+    expect(await call('archive_task', { board_id: id, task_id: 'A3' })).toMatchObject({ archived: true, completed: false })
+    await call('archive_task', { board_id: id, task_id: 'A1', completed: true }).then((r) =>
+      expect(r).toMatchObject({ completed: true, archived_from: 'Done' }),
+    )
+    await call('archive_task', { board_id: id, task_id: 'A1', restore: true })
 
     // The Cards page: archived cards across boards, searchable, in pages; each says where it lives.
     const { id: other } = await ann.ok('POST', '/api/boards', { name: 'Other' })
@@ -459,13 +463,18 @@ describe('MCP', () => {
       mutationId: mid(),
       command: { type: 'task.create', id: 'x1', parentId: null, fields: { title: 'Old idea' } },
     })
-    await ann.ok('POST', `/api/boards/${other}/mutations`, { mutationId: mid(), command: { type: 'task.archive', id: 'x1' } })
+    await ann.ok('POST', `/api/boards/${other}/mutations`, { mutationId: mid(), command: { type: 'task.archive', id: 'x1', complete: true } })
     const all = await ann.ok('GET', '/api/cards?state=archived')
     expect(all.cards.map((c: { title: string }) => c.title)).toEqual(['Old idea', snap.data.archived.A3?.title ?? 'Deploy'])
     expect(all.cards[1]).toMatchObject({ board: { id }, path: ['Launch website'], canEdit: true })
     expect((await ann.ok('GET', `/api/cards?board=${id}`)).total).toBe(1)
     expect((await ann.ok('GET', '/api/cards?q=idea')).cards.map((c: { id: string }) => c.id)).toEqual(['x1'])
     expect(await ann.ok('GET', '/api/cards?limit=1')).toMatchObject({ total: 2, nextOffset: 1 })
+    // Archived as completed or not, kept from then (and filterable).
+    expect(all.cards[0]).toMatchObject({ completed: true, list: 'Done' })
+    expect(all.cards[1]).toMatchObject({ completed: false })
+    expect((await ann.ok('GET', '/api/cards?completed=true')).cards.map((c: { id: string }) => c.id)).toEqual(['x1'])
+    expect((await ann.ok('GET', '/api/cards?completed=false')).total).toBe(1)
     await ann.ok('DELETE', `/api/boards/${other}`)
 
     // An archived board: off the list, read-only (comments too), until restored; it can still be deleted.

@@ -38,6 +38,8 @@ export interface OutlineConfig {
   hidden?: OutlineColumn[]
   /** Row height: compact (the default) or comfortable. */
   density?: 'comfortable' | 'compact'
+  /** Leave finished tasks out (the Outline and the Timeline both follow this). */
+  hideDone?: boolean
 }
 
 /** How many separate filters are on. */

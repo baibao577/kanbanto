@@ -85,7 +85,8 @@ function archivedBrief(data: BoardData, t: Task) {
     id: t.id,
     title: t.title,
     archived: t.archivedAt,
-    list: data.columns.find((c) => c.id === t.status)?.name ?? 'a list that’s gone',
+    list: t.archivedList ?? data.columns.find((c) => c.id === t.status)?.name ?? 'a list that’s gone',
+    ...(t.archivedDone !== undefined && { completed: t.archivedDone }),
     ...(t.parentId && { parent_id: t.parentId }),
     ...(t.assigneeId && { assignee: data.members.find((m) => m.id === t.assigneeId)?.name ?? t.assigneeId }),
     ...(t.due && { due: t.due }),
@@ -792,17 +793,19 @@ function buildServer(app: FastifyInstance, me: SessionUser, token: TokenAccess) 
       {
         title: 'Archive or restore a task',
         description:
-          'Archives a task with its subtasks: out of the board and its counts, kept with comments and files, and restorable. restore: true brings an archived one back (where it was, if its parent and list still exist). Safer than deleting: nothing is lost.',
-        inputSchema: { board_id: z.string(), task_id: z.string(), restore: z.boolean().optional() },
+          'Archives a task with its subtasks: out of the board and its counts, kept with comments and files, and restorable. completed: true finishes it first (it and its unfinished subtasks move to the done list), so it’s archived as completed; otherwise it keeps its list (archived as not completed unless it was already done). Either way the list it was archived from stays on it. restore: true brings an archived one back (where it was, if its parent and list still exist). Safer than deleting: nothing is lost.',
+        inputSchema: { board_id: z.string(), task_id: z.string(), completed: z.boolean().optional(), restore: z.boolean().optional() },
         annotations: { destructiveHint: false, idempotentHint: true, openWorldHint: false },
       },
-      tool(async (a: { board_id: string; task_id: string; restore?: boolean }) => {
+      tool(async (a: { board_id: string; task_id: string; completed?: boolean; restore?: boolean }) => {
         const { data } = await open(a.board_id, 'editor')
         const t = data.tasks[a.task_id] ?? data.archived?.[a.task_id]
         if (!t) throw new HttpError(404, 'There’s no such task on this board.')
         if (!!t.archivedAt === !a.restore) return { task_id: t.id, title: t.title, archived: !!t.archivedAt, note: 'Nothing to do.' }
-        await run(a.board_id, { type: a.restore ? 'task.restore' : 'task.archive', id: t.id })
-        return { task_id: t.id, title: t.title, archived: !a.restore }
+        await run(a.board_id, a.restore ? { type: 'task.restore', id: t.id } : { type: 'task.archive', id: t.id, complete: !!a.completed })
+        const after = (await open(a.board_id, 'viewer')).data
+        const now = after.archived?.[t.id]
+        return { task_id: t.id, title: t.title, archived: !a.restore, ...(now && { completed: !!now.archivedDone, archived_from: now.archivedList }) }
       }),
     )
 

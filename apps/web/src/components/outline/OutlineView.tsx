@@ -33,6 +33,7 @@ import { FilterMenu } from '@/components/shell/FilterMenu'
 import { PresetMenu } from '@/components/shell/PresetMenu'
 import { AddSubtaskRow, DropLine } from '@/components/tree/rows'
 import { useRowDrag } from '@/components/tree/useRowDrag'
+import { HiddenDoneNote } from '@/components/tree/HiddenDone'
 import { useTreeFilter } from '@/components/tree/useTreeFilter'
 
 const ROWS_STEP = 500
@@ -74,7 +75,7 @@ export function OutlineView({ search }: { search: string }) {
   const { top, baseDepth } = treeTop(idx, focusId)
 
   // Search and filters show the matching tasks plus their parents (muted) for context.
-  const { keep, matched, filtering } = useTreeFilter(search)
+  const { keep, matched, filtering, hiddenDone } = useTreeFilter(search)
 
   const order = useMemo(() => {
     if (!cfg.sort) return undefined
@@ -165,7 +166,7 @@ export function OutlineView({ search }: { search: string }) {
           )}
 
           {rows.length === 0 ? (
-            <Empty>{search || filtering ? 'No tasks match.' : 'No tasks here yet.'}</Empty>
+            <Empty>{search || filtering ? 'No tasks match.' : hiddenDone ? 'Everything here is done.' : 'No tasks here yet.'}</Empty>
           ) : narrow ? (
             <ul className="divide-y overflow-hidden rounded-xl border bg-card" aria-label="Tasks">
               {rows.map((id) => {
@@ -422,6 +423,7 @@ export function OutlineView({ search }: { search: string }) {
               Show more
             </Button>
           )}
+          <HiddenDoneNote count={hiddenDone} className="mt-3" />
           {!search && (
             <QuickAdd
               className="mt-2"

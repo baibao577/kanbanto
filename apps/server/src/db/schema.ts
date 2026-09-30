@@ -376,6 +376,9 @@ export const tasks = pgTable(
     priority: text('priority', { enum: PRIORITIES }),
     /** Archived (with its subtasks): out of every view and count until restored. */
     archivedAt: at('archived_at'),
+    /** Kept from when it was archived: the list it was in (by name), and whether that was a done list. */
+    archivedList: text('archived_list'),
+    archivedDone: boolean('archived_done'),
     /** The last real work on it (moved or edited; see model Task.activeAt). Null on older cards: updated_at stands in. */
     activeAt: at('active_at'),
     /** Reminder[] (model/types.ts); null: none. */

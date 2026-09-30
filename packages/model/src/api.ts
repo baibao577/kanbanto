@@ -296,6 +296,8 @@ export interface CardsQuery {
   board?: string
   /** Words in the title or description. */
   q?: string
+  /** Archived as completed (true) or not (false); leave out for both. */
+  completed?: boolean
   offset?: number
   limit?: number
 }
@@ -307,8 +309,10 @@ export interface CardRow {
   board: { id: string; name: string; background: string | null }
   /** Its parents' titles, top first. */
   path: string[]
-  /** The list it's (or was) in; null if that list is gone. */
+  /** The list it was archived from (its name then); null if that's unknown. */
   list: string | null
+  /** Archived as completed: it was in a done list then. null: unknown (archived before this was kept). */
+  completed: boolean | null
   assignee: string | null
   /** Subtasks that go with it (archived with it). */
   subtasks: number

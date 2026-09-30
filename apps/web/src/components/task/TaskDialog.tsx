@@ -2,7 +2,7 @@ import { Archive, ArrowSquareRight, CaretRight, CheckCircle, Circle, Crosshair, 
 import { formatMoment } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { useBoard } from '@/app/board-context'
+import { BoardContext, useBoard } from '@/app/board-context'
 import { ColorSwatches, LabelChip, PriorityIcon, ProgressBar, StatusDot, StatusPill } from '@/components/common/bits'
 import { QuickAdd } from '@/components/board/QuickAdd'
 import {
@@ -20,11 +20,11 @@ import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { ancestorsOf, descendantsOf, statusCol } from '@kanbanto/model/indexer'
+import { ancestorsOf, descendantsOf, indexFor, statusCol } from '@kanbanto/model/indexer'
 import { COLORS, tone } from '@kanbanto/model/colors'
 import type { TaskFields } from '@kanbanto/model/commands'
 import { EPOCH, PRIORITIES, PRIORITY_LABEL, type Priority } from '@kanbanto/model/types'
-import { ArchivedTask } from './ArchivedTask'
+import { ArchivedBanner } from './ArchivedTask'
 import { AttachmentsSection } from './Attachments'
 import { CommentsSection } from './Comments'
 import { Description } from './Description'
@@ -54,9 +54,29 @@ export function TaskDialog({ id, onClose }: { id: string | null; onClose: () => 
           }
         }}
       >
-        {open && (archived ? <ArchivedTask key={id} id={id} onClose={onClose} /> : <TaskDetail key={id} id={id} onClose={onClose} />)}
+        {open && (archived ? <ArchivedCard key={id} id={id} onClose={onClose} /> : <TaskDetail key={id} id={id} onClose={onClose} />)}
       </DialogContent>
     </Dialog>
+  )
+}
+
+/**
+ * An archived card: the same card, read-only (with the subtasks archived with it), under a banner that says where it
+ * was archived from and whether it was completed, with Restore and Delete.
+ */
+function ArchivedCard({ id, onClose }: { id: string; onClose: () => void }) {
+  const ctx = useBoard()
+  const view = useMemo(() => {
+    const data = { ...ctx.data, tasks: { ...ctx.data.tasks, ...ctx.data.archived } }
+    return { ...ctx, data, idx: indexFor(data), readOnly: true, canComment: false }
+  }, [ctx])
+  return (
+    <>
+      <ArchivedBanner id={id} onClose={onClose} />
+      <BoardContext.Provider value={view}>
+        <TaskDetail id={id} onClose={onClose} />
+      </BoardContext.Provider>
+    </>
   )
 }
 
@@ -356,6 +376,19 @@ function TaskDetail({ id, onClose }: { id: string; onClose: () => void }) {
             {!readOnly && (
               <Button variant="ghost" size="sm" className="w-full justify-start gap-2" onClick={() => moveToBoard(id)}>
                 <ArrowSquareRight /> Move to another board…
+              </Button>
+            )}
+            {!readOnly && col.category !== 'done' && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="w-full justify-start gap-2"
+                title="Moves it (and its unfinished subtasks) to the done list, then archives it"
+                onClick={() => {
+                  if (run({ type: 'task.archive', id, complete: true })) onClose()
+                }}
+              >
+                <CheckCircle /> Complete and archive
               </Button>
             )}
             {!readOnly && (

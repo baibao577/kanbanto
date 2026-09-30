@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Separator } from '@/components/ui/separator'
+import { Switch } from '@/components/ui/switch'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { OUTLINE_COLUMNS, type OutlineColumn } from '@kanbanto/model/table'
 
@@ -22,7 +23,7 @@ export function OutlineDisplayMenu() {
   const { prefs, setPrefs } = useBoard()
   const cfg = prefs.outline
   const hidden = new Set(cfg.hidden ?? [])
-  const changed = hidden.size > 0 || cfg.density === 'comfortable'
+  const changed = hidden.size > 0 || cfg.density === 'comfortable' || !!cfg.hideDone
   const toggle = (c: OutlineColumn, on: boolean) => {
     const next = OUTLINE_COLUMNS.filter((x) => (x === c ? !on : hidden.has(x)))
     setPrefs({ type: 'setOutline', config: { ...cfg, hidden: next.length ? next : undefined } })
@@ -68,6 +69,17 @@ export function OutlineDisplayMenu() {
             </ToggleGroupItem>
           </ToggleGroup>
         </div>
+        <Separator />
+        <label className="flex cursor-pointer items-center justify-between gap-3 p-4">
+          <span>
+            <span className="block text-sm">Hide done tasks</span>
+            <span className="block text-xs text-muted-foreground">On the Timeline too. A line says how many are hidden.</span>
+          </span>
+          <Switch
+            checked={!!cfg.hideDone}
+            onCheckedChange={(on) => setPrefs({ type: 'setOutline', config: { ...cfg, hideDone: on || undefined } })}
+          />
+        </label>
         {changed && (
           <>
             <Separator />
@@ -76,7 +88,7 @@ export function OutlineDisplayMenu() {
                 variant="ghost"
                 size="sm"
                 className="text-muted-foreground"
-                onClick={() => setPrefs({ type: 'setOutline', config: { ...cfg, hidden: undefined, density: undefined } })}
+                onClick={() => setPrefs({ type: 'setOutline', config: { ...cfg, hidden: undefined, density: undefined, hideDone: undefined } })}
               >
                 Reset
               </Button>

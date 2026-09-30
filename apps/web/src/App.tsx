@@ -308,7 +308,7 @@ function Workspace({ store }: { store: Store }) {
         toast(error, { id: 'refused' })
         return false
       }
-      const done = UNDOABLE_TOAST[cmd.type]
+      const done = cmd.type === 'task.archive' && cmd.complete ? 'Card completed and archived' : UNDOABLE_TOAST[cmd.type]
       if (done) toast(done, { id: 'undo', action: { label: 'Undo', onClick: () => say(undo()) } })
       return true
     },

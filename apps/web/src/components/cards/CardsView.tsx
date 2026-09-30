@@ -1,4 +1,4 @@
-import { Archive, ArrowCounterClockwise, ArrowLeft, MagnifyingGlass, Trash } from '@phosphor-icons/react'
+import { Archive, ArrowCounterClockwise, ArrowLeft, CheckCircle, MagnifyingGlass, Trash } from '@phosphor-icons/react'
 import { formatDistanceToNow, parseISO } from 'date-fns'
 import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
@@ -12,6 +12,8 @@ import { AccountMenu } from '@/components/shell/AccountMenu'
 import { NotificationBell } from '@/components/shell/NotificationBell'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
+import { CardPeek } from './CardPeek'
 import { useBoards } from '@/data/useBoards'
 
 const ALL = '__all'
@@ -27,6 +29,8 @@ export function CardsView({ route }: { route: CardsRoute }) {
   const [more, setMore] = useState<CardRow[]>([])
   const [words, setWords] = useState(route.q ?? '')
   const [reload, setReload] = useState(0)
+  // The card open in place (its board is loaded while it's open).
+  const [peek, setPeek] = useState<CardRow | null>(null)
   const board = boards?.find((b) => b.id === route.board)
 
   useEffect(() => {
@@ -46,6 +50,7 @@ export function CardsView({ route }: { route: CardsRoute }) {
     const p = new URLSearchParams({ state: route.state })
     if (route.board) p.set('board', route.board)
     if (route.q) p.set('q', route.q)
+    if (route.completed !== undefined) p.set('completed', String(route.completed))
     api<CardsPage>('GET', `/cards?${p}`).then(
       (r) => {
         if (!alive) return
@@ -57,13 +62,14 @@ export function CardsView({ route }: { route: CardsRoute }) {
     return () => {
       alive = false
     }
-  }, [route.state, route.board, route.q, reload])
+  }, [route.state, route.board, route.q, route.completed, reload])
 
   const loadMore = async () => {
     if (!page) return
     const p = new URLSearchParams({ state: route.state, offset: String(page.cards.length + more.length) })
     if (route.board) p.set('board', route.board)
     if (route.q) p.set('q', route.q)
+    if (route.completed !== undefined) p.set('completed', String(route.completed))
     try {
       const r = await api<CardsPage>('GET', `/cards?${p}`)
       setMore((m) => [...m, ...r.cards])
@@ -130,6 +136,23 @@ export function CardsView({ route }: { route: CardsRoute }) {
                 ))}
               </SelectContent>
             </Select>
+            <ToggleGroup
+              type="single"
+              variant="outline"
+              value={route.completed === undefined ? 'all' : route.completed ? 'yes' : 'no'}
+              onValueChange={(v) => v && navigate({ ...route, completed: v === 'all' ? undefined : v === 'yes' }, { replace: true })}
+              aria-label="Completed or not"
+            >
+              <ToggleGroupItem value="all" className="px-3 text-xs">
+                All
+              </ToggleGroupItem>
+              <ToggleGroupItem value="yes" className="px-3 text-xs">
+                Completed
+              </ToggleGroupItem>
+              <ToggleGroupItem value="no" className="px-3 text-xs">
+                Not completed
+              </ToggleGroupItem>
+            </ToggleGroup>
             <label className="relative min-w-48 flex-1">
               <MagnifyingGlass className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
               <input
@@ -149,13 +172,15 @@ export function CardsView({ route }: { route: CardsRoute }) {
 
           {page && !rows.length ? (
             <div className="rounded-xl border border-dashed px-6 py-12 text-center text-sm text-muted-foreground">
-              {route.q ? `No archived cards match “${route.q}”.` : 'No archived cards. Archive a card from its ⋯ menu when it’s done or on hold.'}
+              {route.q || route.completed !== undefined
+                ? 'No archived cards match.'
+                : 'No archived cards. Archive a card from its ⋯ menu when it’s done or on hold.'}
             </div>
           ) : (
             <ul className="divide-y overflow-hidden rounded-xl border bg-card">
               {rows.map((c) => (
                 <li key={`${c.board.id}:${c.id}`} className="flex items-center gap-3 px-4 py-3">
-                  <a href={hrefFor({ page: 'board', id: c.board.id, task: c.id })} className="group min-w-0 flex-1">
+                  <button type="button" onClick={() => setPeek(c)} className="group min-w-0 flex-1 text-left">
                     <span className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
                       {!route.board && (
                         <>
@@ -166,13 +191,20 @@ export function CardsView({ route }: { route: CardsRoute }) {
                       )}
                       <span className="truncate">{c.path.join(' › ')}</span>
                     </span>
-                    <span className="block truncate text-sm font-medium group-hover:underline">{c.title}</span>
+                    <span className="flex min-w-0 items-center gap-2">
+                      <span className="truncate text-sm font-medium group-hover:underline">{c.title}</span>
+                      {c.completed && (
+                        <span className="inline-flex shrink-0 items-center gap-1 rounded bg-status-done/12 px-1.5 py-0.5 text-[11px] font-medium text-status-done">
+                          <CheckCircle weight="fill" className="size-3" /> Completed
+                        </span>
+                      )}
+                    </span>
                     <span className="mt-0.5 block truncate text-xs text-muted-foreground">
-                      {[c.list && `was in ${c.list}`, c.assignee, c.subtasks > 0 && `${c.subtasks} subtask${c.subtasks === 1 ? '' : 's'}`]
+                      {[c.list && `from ${c.list}`, c.assignee, c.subtasks > 0 && `${c.subtasks} subtask${c.subtasks === 1 ? '' : 's'}`]
                         .filter(Boolean)
                         .join(' · ')}
                     </span>
-                  </a>
+                  </button>
                   <span className="hidden shrink-0 text-xs text-muted-foreground sm:inline" title={c.archivedAt ?? undefined}>
                     {c.archivedAt && `archived ${formatDistanceToNow(parseISO(c.archivedAt), { addSuffix: true })}`}
                   </span>
@@ -195,6 +227,17 @@ export function CardsView({ route }: { route: CardsRoute }) {
                 </li>
               ))}
             </ul>
+          )}
+          {peek && (
+            <CardPeek
+              key={`${peek.board.id}:${peek.id}`}
+              boardId={peek.board.id}
+              taskId={peek.id}
+              onClose={() => {
+                setPeek(null)
+                setReload((n) => n + 1)
+              }}
+            />
           )}
           {page && page.total > shown && (
             <div className="flex justify-center">
