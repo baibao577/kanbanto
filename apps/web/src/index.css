@@ -192,7 +192,7 @@
   }
 }
 
-/* While something is being dragged (lib/pointerDrag.ts). */
+/* While something is being dragged (lib/pointerDrag.ts), or a board is moved by its background (lib/panScroll.ts). */
 html.dragging,
 html.dragging * {
   cursor: grabbing !important;

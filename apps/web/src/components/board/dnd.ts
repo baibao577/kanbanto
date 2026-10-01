@@ -52,3 +52,31 @@ export function listIndexAt(container: HTMLElement, x: number): number {
   }
   return lists.length
 }
+
+/** How far beside a list the pointer still counts as on it (the gap between lists, the board's edge). */
+const NEAR = 24
+
+/**
+ * The cell (`[data-cell]`) of `board` a pointer at (x, y) is on. Off the cells but still on the board, it's the
+ * nearest one sideways: in the gap between two lists, or below a list that's shorter than the board.
+ */
+export function cellAt(board: HTMLElement, x: number, y: number): HTMLElement | null {
+  const hit = document.elementFromPoint(x, y)
+  if (!hit || !board.contains(hit)) return null
+  const on = hit.closest<HTMLElement>('[data-cell]')
+  if (on) return on
+  // Lists side by side each reach down the whole board; in rows, only the row at the pointer's height counts.
+  const lists = board.matches('[data-list-row]')
+  let best: HTMLElement | null = null
+  let nearest = NEAR
+  for (const el of board.querySelectorAll<HTMLElement>('[data-cell]')) {
+    const r = el.getBoundingClientRect()
+    if (!lists && (y < r.top || y > r.bottom)) continue
+    const d = Math.max(r.left - x, x - r.right, 0)
+    if (d < nearest) {
+      best = el
+      nearest = d
+    }
+  }
+  return best
+}

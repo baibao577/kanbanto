@@ -19,6 +19,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { panScroll } from '@/lib/panScroll'
 import { pointerDrag } from '@/lib/pointerDrag'
 import { useNow } from '@/lib/useNow'
 import { cn } from '@/lib/utils'
@@ -28,7 +29,7 @@ import { filterCount, matchesFilter } from '@kanbanto/model/table'
 import type { TaskFields } from '@kanbanto/model/commands'
 import type { StatusColumn } from '@kanbanto/model/types'
 import { buildView, cellKey, groupCell, groupsSubtasks, NO_ROW, UNASSIGNED, type Lane } from '@kanbanto/model/view'
-import { cardIndexAt, dragging, itemIndexAt, listIndexAt, type GroupDrag } from './dnd'
+import { cardIndexAt, cellAt, dragging, itemIndexAt, listIndexAt, type GroupDrag } from './dnd'
 import { BLOCKED, blockReason as blockReasonIn, dropCommand, dropGroupCommand, groupOf as groupOfIn, newCardIn, type DropContext } from './dropRules'
 import { GroupHeader } from './GroupHeader'
 import { ListHeader } from './ListHeader'
@@ -222,8 +223,8 @@ function Board({ search }: { search: string }) {
   // ---- dropping cards ----
   /** Where a dragged card (or group) would land with the pointer at (x, y). */
   const cardDropAt = (x: number, y: number): CardDrop | null => {
-    const el = document.elementFromPoint(x, y)?.closest<HTMLElement>('[data-cell]')
-    if (!el || !boardRef.current?.contains(el)) return null
+    const el = boardRef.current && cellAt(boardRef.current, x, y)
+    if (!el) return null
     const { row = NO_ROW, col = '' } = el.dataset
     const cell = cellKey(row, col)
     const g = dragging.group
@@ -338,11 +339,17 @@ function Board({ search }: { search: string }) {
     live.current = { cardDropAt, listDropAt, drop, dropGroup, moveList }
   })
 
-  /** Cards, parent groups and lists are picked up here (they're marked with `data-drag`). */
+  /**
+   * Cards, parent groups and lists are picked up here (they're marked with `data-drag`). Anywhere else, a mouse
+   * drags the board itself.
+   */
   const onPointerDown = (e: React.PointerEvent<HTMLElement>) => {
     const handle = (e.target as HTMLElement).closest<HTMLElement>('[data-drag]')
-    if (readOnly || !handle || !e.currentTarget.contains(handle)) return
+    if (!handle || !e.currentTarget.contains(handle)) return panScroll(e, e.currentTarget)
+    if (readOnly) return
     const kind = handle.dataset.drag
+    // Under a finger the board holds still sideways, and moves a list at a time (see pointerDrag.ts).
+    const paged = { area: e.currentTarget, stops: '[data-list-id]' }
     // Shared by cards and groups: follow the pointer, and drop where the marker was last shown. A card's marker
     // goes back to where it came from (`home`) when the pointer isn't over a list.
     const trackCards = (onDrop: (at: CardDrop) => void, onEnd: () => void, home: CardDrop | null = null) => {
@@ -365,6 +372,7 @@ function Board({ search }: { search: string }) {
       const id = handle.dataset.cardId!
       pointerDrag(e, {
         ghost: handle,
+        paged,
         start: () => {
           dragging.card = id
           dragging.height = handle.offsetHeight
@@ -403,6 +411,7 @@ function Board({ search }: { search: string }) {
       const ids = groupCell(idx, cellIds(cell), row).find((g) => g.parentId === parentId)?.ids ?? []
       pointerDrag(e, {
         ghost: box,
+        paged,
         start: () => {
           const g: GroupDrag = { parentId, ids, row, cell }
           dragging.group = g
@@ -428,6 +437,7 @@ function Board({ search }: { search: string }) {
       if (!list || !id) return
       pointerDrag(e, {
         ghost: list,
+        paged,
         start: () => {
           dragging.list = id
           setListDrag({ id, height: list.offsetHeight })
@@ -547,7 +557,7 @@ function Board({ search }: { search: string }) {
         <Empty>{search ? 'No cards match your search.' : 'Nothing to show with these display settings.'}</Empty>
       ) : !grouped || !view.columns.length ? (
         // Trello-style: each list is one rounded column that scrolls on its own.
-        <div ref={boardRef} onPointerDown={onPointerDown} data-list-row className="flex h-full items-start gap-3 overflow-x-auto p-4">
+        <div ref={boardRef} onPointerDown={onPointerDown} data-list-row className="flex h-full cursor-grab items-start gap-3 overflow-x-auto p-4">
           {!view.columns.length && <AllListsHidden lists={hiddenLists} />}
           {withListSlot(
             columns.map((c) => {
@@ -585,7 +595,7 @@ function Board({ search }: { search: string }) {
         </div>
       ) : (
         // Rows: list headers stay on top; each row is a band of cells.
-        <div ref={boardRef} onPointerDown={onPointerDown} className="h-full overflow-auto">
+        <div ref={boardRef} onPointerDown={onPointerDown} className="h-full cursor-grab overflow-auto">
           <div className="w-max min-w-full px-4 pb-8">
             <div
               className="sticky top-0 z-10 flex gap-3 pt-4 pb-2"
