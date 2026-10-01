@@ -28,7 +28,8 @@ export const presetRoutes: FastifyPluginAsync = async (app) => {
     return rows.map(({ p, by }) => ({
       id: p.id,
       name: p.name,
-      settings: p.settings as PresetSettings,
+      // Read through the schema: a setting saved by an older version that's gone now (a removed filter) is left out.
+      settings: PresetSettingsSchema.safeParse(p.settings).data ?? (p.settings as PresetSettings),
       by: by ?? null,
       updatedAt: p.updatedAt.toISOString(),
     }))

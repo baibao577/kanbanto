@@ -17,12 +17,12 @@ describe('presets', () => {
   })
 
   it('turning presets off brings back the view from before the first one was picked', () => {
-    const before = { ...defaultPrefs(), filter: { upNext: true } }
+    const before = { ...defaultPrefs(), filter: { changed: 3 } }
     let p = prefsReducer(before, { type: 'applyPreset', id: 'a', settings: presetOf({ ...defaultPrefs(), filter: { due: 'week' } }) })
     p = prefsReducer(p, { type: 'applyPreset', id: 'b', settings: presetOf({ ...defaultPrefs(), filter: { due: 'overdue' } }) })
-    expect(p.beforePreset?.filter).toEqual({ upNext: true })
+    expect(p.beforePreset?.filter).toEqual({ changed: 3 })
     p = prefsReducer(p, { type: 'leavePreset', settings: p.beforePreset })
-    expect(p).toMatchObject({ filter: { upNext: true }, presetId: undefined, beforePreset: undefined })
+    expect(p).toMatchObject({ filter: { changed: 3 }, presetId: undefined, beforePreset: undefined })
   })
 })
 

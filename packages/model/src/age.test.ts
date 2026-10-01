@@ -49,6 +49,19 @@ describe('card age', () => {
     expect(matchesFilter(idx, done, { idle: 1 })).toBe(false)
     expect(matchesFilter(idx, old, { idle: 1 }, { [old]: new Date().toISOString() })).toBe(false)
   })
+
+  it('the filter keeps cards with activity in the last that many days, done ones too', () => {
+    const data = exampleData('b1')
+    const idx = indexFor(data)
+    const old = [...idx.preorder].find((id) => idx.category.get(id) !== 'done')!
+    const done = [...idx.preorder].find((id) => idx.category.get(id) === 'done')!
+    const now = new Date().toISOString()
+    expect(matchesFilter(idx, old, { changed: 1 })).toBe(false)
+    expect(matchesFilter(idx, old, { changed: 1 }, { [old]: now })).toBe(true)
+    expect(matchesFilter(idx, done, { changed: 1 }, { [done]: now })).toBe(true)
+    // Long enough a window takes in the sample board's own dates.
+    expect(matchesFilter(idx, old, { changed: 3650 })).toBe(true)
+  })
 })
 
 describe('done lists', () => {

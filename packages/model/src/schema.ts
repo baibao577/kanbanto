@@ -220,7 +220,7 @@ export const PresetSettingsSchema = z.object({
     labels: z.array(z.string()).optional(),
     priorities: z.array(z.enum([...PRIORITIES, ''])).optional(),
     due: z.enum(['overdue', 'week', 'none']).optional(),
-    upNext: z.boolean().optional(),
+    changed: z.number().int().min(1).max(3650).optional(),
     idle: z.number().int().min(1).max(3650).optional(),
   }),
 })

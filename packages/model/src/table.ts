@@ -1,6 +1,6 @@
 import { isPast, sortTime, todayDay, toDay } from './dates'
 import { idleDays, lastActivity } from './age'
-import { isBlocked, isLeaf, type TaskIndex } from './indexer'
+import type { TaskIndex } from './indexer'
 import { PRIORITIES, PRIORITY_LABEL, type LabelDef, type Member, type Priority, type StatusColumn } from './types'
 
 /** Columns the Outline table can sort by. */
@@ -21,8 +21,8 @@ export interface TableFilter {
   /** '' means "no priority". */
   priorities?: (Priority | '')[]
   due?: 'overdue' | 'week' | 'none'
-  /** Only tasks that are ready to start ("up next"). */
-  upNext?: boolean
+  /** Only cards with activity in the last this many days (see age.ts); done ones too. */
+  changed?: number
   /** Only cards not done with no activity for at least this many days (see age.ts). */
   idle?: number
 }
@@ -49,7 +49,7 @@ export const filterCount = (f: TableFilter) =>
   (f.labels?.length ? 1 : 0) +
   (f.priorities?.length ? 1 : 0) +
   (f.due ? 1 : 0) +
-  (f.upNext ? 1 : 0) +
+  (f.changed ? 1 : 0) +
   (f.idle ? 1 : 0)
 
 /** Does one task pass the filter (ignoring its parents and subtasks)? `lastComment`: per task, for card age. */
@@ -68,7 +68,7 @@ export function matchesFilter(idx: TaskIndex, id: string, f: TableFilter, lastCo
       if (!(d >= 0 && d <= 7)) return false
     }
   }
-  if (f.upNext && !(isLeaf(idx, id) && idx.category.get(id) === 'todo' && !isBlocked(idx, id))) return false
+  if (f.changed && idleDays(lastActivity(idx, id, lastComment)) >= f.changed) return false
   if (f.idle && (idx.category.get(id) === 'done' || idleDays(lastActivity(idx, id, lastComment)) < f.idle)) return false
   return true
 }
@@ -120,7 +120,6 @@ export function sortComparator(idx: TaskIndex, sort: Sort, labelById: Map<string
 export function filterChips(f: TableFilter, columns: StatusColumn[], labels: LabelDef[], members: Member[]) {
   const chips: { key: keyof TableFilter; label: string; value: string }[] = []
   const names = (ids: string[], name: (id: string) => string | undefined) => ids.map(name).filter(Boolean).join(', ')
-  if (f.upNext) chips.push({ key: 'upNext', label: 'Showing', value: 'ready to start' })
   if (f.statuses?.length) chips.push({ key: 'statuses', label: 'Status:', value: names(f.statuses, (id) => columns.find((c) => c.id === id)?.name) })
   if (f.assignees?.length)
     chips.push({ key: 'assignees', label: 'Assignee:', value: names(f.assignees, (id) => (id ? members.find((m) => m.id === id)?.name : 'No one')) })
@@ -129,6 +128,7 @@ export function filterChips(f: TableFilter, columns: StatusColumn[], labels: Lab
   if (f.priorities?.length)
     chips.push({ key: 'priorities', label: 'Priority:', value: names(f.priorities, (p) => (p ? PRIORITY_LABEL[p as Priority] : 'None')) })
   if (f.due) chips.push({ key: 'due', label: 'Due:', value: { overdue: 'overdue', week: 'this week', none: 'no date' }[f.due] })
+  if (f.changed) chips.push({ key: 'changed', label: 'Changed in the last', value: f.changed === 1 ? 'day' : `${f.changed} days` })
   if (f.idle) chips.push({ key: 'idle', label: 'No activity for', value: `${f.idle}+ ${f.idle === 1 ? 'day' : 'days'}` })
   return chips
 }

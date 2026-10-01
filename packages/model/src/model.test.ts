@@ -223,13 +223,11 @@ describe('outline table: sort and filter', () => {
     expect(kidsBy('desc')).toEqual(['A3', 'A1', 'A2'])
   })
 
-  it('filters by status, person and "up next", keeping parents for context', () => {
+  it('filters by status and person, keeping parents for context', () => {
     const f = { statuses: ['todo'], assignees: ['ton'] }
     const { keep, matched } = keepMatching(idx, (id) => matchesFilter(idx, id, f))
     expect([...matched]).toEqual(['A2b'])
     expect([...keep].sort()).toEqual(['A', 'A2', 'A2b'])
-    const upNext = keepMatching(idx, (id) => matchesFilter(idx, id, { upNext: true })).matched
-    expect([...upNext]).toEqual(['A2b', 'A3'])
     // "No one assigned" is the empty string.
     const t = sampleTasks()
     delete t.A3.assigneeId

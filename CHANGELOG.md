@@ -45,7 +45,8 @@ then `git pull` (or download the new release) and `docker compose up -d --build`
   and lightly tinted projects; on phones it's a nested list with each task's details underneath.
 - **Card age** (Display → Card age): a chip with the days since anything happened on a card (moved to another list,
   edited, commented on, or its subtasks), after 3 days; amber from a week, red from two. Filter → "No activity
-  lately" for any number of days; `find_tasks` takes `idle_days` for assistants. Cards' footers are two tidy lines:
+  lately" for any number of days, and "Recently changed" for the opposite (the last 3 days, or the number you choose);
+  `find_tasks` takes `idle_days` for assistants. Cards' footers are two tidy lines:
   what needs attention, then the counts and the assignee.
 - **Complete and archive** (a card's menu): finishes it and its subtasks, then archives it. Every archived card keeps
   the list it was archived from and whether it was completed, whatever happens to the lists later. The Archived

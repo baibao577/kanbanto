@@ -9,9 +9,12 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Separator } from '@/components/ui/separator'
 import { Switch } from '@/components/ui/switch'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
+import { AGE_SHOWN } from '@kanbanto/model/age'
 import { filterCount, type TableFilter } from '@kanbanto/model/table'
 import { PRIORITIES, PRIORITY_LABEL } from '@kanbanto/model/types'
 
+// "Recently" ends where a card starts showing its age (Display → Card age).
+const CHANGED_DEFAULT = AGE_SHOWN
 const IDLE_DEFAULT = 7
 
 const toggleIn = (list: string[] | undefined, v: string) => {
@@ -19,7 +22,7 @@ const toggleIn = (list: string[] | undefined, v: string) => {
   return next.length ? next : undefined
 }
 
-/** "Filter" popover, shared by every tab: status, people, priority, labels, due date and "ready to start". */
+/** "Filter" popover, shared by every tab: recent or no activity, status, people, priority, labels and due date. */
 export function FilterMenu() {
   const { data, prefs, setPrefs } = useBoard()
   const f = prefs.filter
@@ -41,13 +44,16 @@ export function FilterMenu() {
       </PopoverTrigger>
       <PopoverContent align="end" className="max-h-[calc(100dvh-7rem)] w-80 overflow-y-auto p-0">
         <div className="p-4">
-          <label className="flex cursor-pointer items-center justify-between gap-3">
-            <span>
-              <span className="block text-sm">Only tasks ready to start</span>
-              <span className="block text-xs text-muted-foreground">Not started, no subtasks, not waiting on anything</span>
-            </span>
-            <Switch checked={!!f.upNext} onCheckedChange={(on) => set({ upNext: on || undefined })} />
-          </label>
+          <div className="flex items-center justify-between gap-3">
+            <label htmlFor="filter-changed" className="cursor-pointer">
+              <span className="block text-sm">Recently changed</span>
+              <span className="block text-xs text-muted-foreground">Moved, edited or commented on (or its subtasks)</span>
+            </label>
+            <Switch id="filter-changed" checked={!!f.changed} onCheckedChange={(on) => set({ changed: on ? CHANGED_DEFAULT : undefined })} />
+          </div>
+          {!!f.changed && (
+            <Days label="Days since the last change" value={f.changed} onChange={(n) => set({ changed: n })} before="In the last" after="days" />
+          )}
           <div className="mt-3 flex items-center justify-between gap-3">
             <label htmlFor="filter-idle" className="cursor-pointer">
               <span className="block text-sm">No activity lately</span>
@@ -55,25 +61,7 @@ export function FilterMenu() {
             </label>
             <Switch id="filter-idle" checked={!!f.idle} onCheckedChange={(on) => set({ idle: on ? IDLE_DEFAULT : undefined })} />
           </div>
-          {!!f.idle && (
-            <label className="mt-2 flex items-center gap-2 text-sm text-muted-foreground">
-              For
-              <Input
-                type="number"
-                inputMode="numeric"
-                min={1}
-                max={365}
-                aria-label="Days without activity"
-                defaultValue={f.idle}
-                onChange={(e) => {
-                  const n = Math.round(Number(e.target.value))
-                  if (n >= 1 && n <= 365) set({ idle: n })
-                }}
-                className="h-7 w-16 px-2 text-sm"
-              />
-              days or more
-            </label>
-          )}
+          {!!f.idle && <Days label="Days without activity" value={f.idle} onChange={(n) => set({ idle: n })} before="For" after="days or more" />}
         </div>
         <Separator />
 
@@ -160,6 +148,41 @@ export function FilterMenu() {
         )}
       </PopoverContent>
     </Popover>
+  )
+}
+
+/** A number of days, typed into a sentence ("In the last 3 days"). */
+function Days({
+  label,
+  value,
+  onChange,
+  before,
+  after,
+}: {
+  label: string
+  value: number
+  onChange: (n: number) => void
+  before: string
+  after: string
+}) {
+  return (
+    <label className="mt-2 flex items-center gap-2 text-sm text-muted-foreground">
+      {before}
+      <Input
+        type="number"
+        inputMode="numeric"
+        min={1}
+        max={365}
+        aria-label={label}
+        defaultValue={value}
+        onChange={(e) => {
+          const n = Math.round(Number(e.target.value))
+          if (n >= 1 && n <= 365) onChange(n)
+        }}
+        className="h-7 w-16 px-2 text-sm"
+      />
+      {after}
+    </label>
   )
 }
 
