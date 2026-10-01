@@ -108,7 +108,7 @@ export const TaskCard = memo(function TaskCard({
       aria-label={t.title}
       onClick={() => onOpen(id)}
       onKeyDown={(e) => e.key === 'Enter' && e.target === e.currentTarget && onOpen(id)}
-      className="group/card drag-handle relative cursor-pointer rounded-lg border border-(--card-edge) bg-(--tile) px-3 py-2.5 text-card-foreground shadow-xs transition-[border-color,box-shadow,opacity] outline-none hover:border-foreground/20 hover:shadow-sm focus-visible:ring-2 focus-visible:ring-ring/50"
+      className="group/card drag-handle relative cursor-pointer rounded-lg border border-(--card-edge) bg-(--tile) px-3 py-2.5 text-card-foreground shadow-tile transition-[border-color,box-shadow,opacity] outline-none hover:border-foreground/20 hover:shadow-tile-hover focus-visible:ring-2 focus-visible:ring-ring/50"
     >
       {labels.length > 0 && (
         <div className="mb-1.5 flex flex-wrap gap-1 pr-12">

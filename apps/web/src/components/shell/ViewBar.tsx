@@ -48,8 +48,11 @@ export function ViewBar({ children, search, style }: { children: ReactNode; sear
         <div className="relative z-10 flex min-h-11 shrink-0 flex-wrap items-center gap-2 border-b border-white/25 bg-background/35 px-3 py-1.5 shadow-[0_6px_16px_-12px_oklch(0_0_0/0.25)] backdrop-blur-md backdrop-saturate-[1.15] sm:px-4 dark:border-white/[0.06] dark:bg-background/40">
           <ScopeTrail search={search} />
           <FilterChips />
-          {/* On a phone the buttons wrap onto a second line rather than push the page sideways. */}
-          <div className="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-1.5">
+          {/*
+           * On a phone the buttons wrap onto a second line rather than push the page sideways. Outlined buttons are
+           * see-through here, like the bar they sit on, rather than solid white (`:where`: hover still wins).
+           */}
+          <div className="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-1.5 [&_:where(button[data-variant=outline])]:bg-background/40 [&_:where(button[data-variant=outline])]:shadow-none">
             {/* `contents`: both slots' buttons flow as one row, so they wrap together. */}
             <div ref={setLead} className="contents" />
             <div ref={setMain} className="contents" />
@@ -90,11 +93,9 @@ function ScopeTrail({ search }: { search: string }) {
             )}
           </>
         ) : (
-          <>
-            <span className="font-medium text-foreground">All projects</span>
-            <span className="mx-1.5">·</span>
+          <span className="text-xs text-foreground/80">
             {idx.preorder.length.toLocaleString()} {idx.preorder.length === 1 ? 'task' : 'tasks'}
-          </>
+          </span>
         )}
       </p>
     )

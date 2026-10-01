@@ -27,6 +27,9 @@
   /* task cards on the board, and their outline */
   --tile: var(--card);
   --card-edge: color-mix(in oklab, var(--border) 70%, transparent);
+  /* …and their shadow: how far they lift off the list (a little more when pointed at) */
+  --tile-shadow: 0 1px 2px 0 oklch(0 0 0 / 0.05);
+  --tile-shadow-hover: 0 1px 3px 0 oklch(0 0 0 / 0.1), 0 1px 2px -1px oklch(0 0 0 / 0.1);
   /* how strongly a list's own color shows: in its body, and in its header */
   --tint-lane: 7%;
   --tint-header: 42%;
@@ -98,6 +101,9 @@
   --well: color-mix(in oklab, white 6%, transparent);
   --tile: oklch(0.335 0.009 265);
   --card-edge: color-mix(in oklab, var(--foreground) 11%, transparent);
+  /* A shadow has to be much darker to show on a dark list; a faint line of light along the top edge does the rest. */
+  --tile-shadow: inset 0 1px 0 0 oklch(1 0 0 / 0.06), 0 1px 2px 0 oklch(0 0 0 / 0.5), 0 4px 8px -2px oklch(0 0 0 / 0.4);
+  --tile-shadow-hover: inset 0 1px 0 0 oklch(1 0 0 / 0.08), 0 2px 4px 0 oklch(0 0 0 / 0.5), 0 8px 16px -4px oklch(0 0 0 / 0.5);
   /* Colors need more of themselves to show on a dark surface. */
   --tint-lane: 13%;
   --tint-header: 50%;
@@ -150,6 +156,9 @@
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
+
+  --shadow-tile: var(--tile-shadow);
+  --shadow-tile-hover: var(--tile-shadow-hover);
 
   --color-background: var(--background);
   --color-foreground: var(--foreground);

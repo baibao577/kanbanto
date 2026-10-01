@@ -71,7 +71,7 @@ export function QuickAdd({
     )
 
   const fieldClass =
-    'w-full resize-none rounded-lg border border-input bg-(--tile) px-3 py-2 text-sm shadow-xs outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring/40'
+    'w-full resize-none rounded-lg border border-input bg-(--tile) px-3 py-2 text-sm shadow-tile outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring/40'
   const keys = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
