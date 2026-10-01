@@ -52,6 +52,10 @@
   --status-done: oklch(0.62 0.15 152);
   --warning: oklch(0.6 0.19 35);
 
+  /* charts (Board stats): cards made, cards done. Checked as a pair for color-blind readers, in both themes. */
+  --chart-made: oklch(0.53 0.19 268);
+  --chart-done: oklch(0.62 0.15 152);
+
   /* things drawn straight on the board background (row headers, "Add another list", …) */
   --canvas-fg: var(--foreground);
   --canvas-muted: var(--muted-foreground);
@@ -116,6 +120,9 @@
   --status-doing: oklch(0.78 0.14 75);
   --status-done: oklch(0.72 0.14 152);
   --warning: oklch(0.72 0.16 45);
+
+  --chart-made: oklch(0.66 0.15 268);
+  --chart-done: oklch(0.66 0.14 152);
 
   --canvas-dim: 0.28;
 

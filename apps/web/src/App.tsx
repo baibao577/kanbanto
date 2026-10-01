@@ -27,6 +27,7 @@ import { exportBoard } from '@/data/transfer'
 import { useBoardStore } from '@/data/useBoardStore'
 
 // Dialogs load the first time they're opened.
+const StatsDialog = lazy(() => import('@/components/shell/StatsDialog').then((m) => ({ default: m.StatsDialog })))
 const TaskDialog = lazy(() => import('@/components/task/TaskDialog').then((m) => ({ default: m.TaskDialog })))
 const MoveToBoardDialog = lazy(() => import('@/components/task/MoveToBoardDialog').then((m) => ({ default: m.MoveToBoardDialog })))
 const CardsView = lazy(() => import('@/components/cards/CardsView').then((m) => ({ default: m.CardsView })))
@@ -295,6 +296,7 @@ function Workspace({ store }: { store: Store }) {
   )
   const [search, setSearch] = useState('')
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [statsOpen, setStatsOpen] = useState(false)
   const [shareOpen, setShareOpen] = useState(false)
   const [movingId, setMovingId] = useState<string | null>(null)
 
@@ -390,6 +392,7 @@ function Workspace({ store }: { store: Store }) {
           connection={store.connection}
           unsaved={store.unsaved}
           onOpenSettings={() => setSettingsOpen(true)}
+          onOpenStats={() => setStatsOpen(true)}
           onExport={() => exportBoard(data)}
         />
         {access.archivedAt && <ArchivedBanner boardId={data.board.id} owner={access.role === 'owner'} />}
@@ -413,6 +416,11 @@ function Workspace({ store }: { store: Store }) {
         </Suspense>
       )}
       <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
+      {statsOpen && (
+        <Suspense fallback={null}>
+          <StatsDialog open onOpenChange={setStatsOpen} />
+        </Suspense>
+      )}
       {movingId && (
         <Suspense fallback={null}>
           <MoveToBoardDialog

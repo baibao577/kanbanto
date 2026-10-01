@@ -1,4 +1,4 @@
-import { Archive, ArrowsLeftRight, Buildings, DotsThree, DownloadSimple, GearSix, LockSimple, PaintBucket } from '@phosphor-icons/react'
+import { Archive, ArrowsLeftRight, Buildings, ChartBar, DotsThree, DownloadSimple, GearSix, LockSimple, PaintBucket } from '@phosphor-icons/react'
 import { useState } from 'react'
 import { toast } from 'sonner'
 import type { WorkspaceSummary } from '@kanbanto/model/api'
@@ -21,11 +21,12 @@ import {
 
 export interface MoreMenuProps {
   onOpenSettings: () => void
+  onOpenStats: () => void
   onExport: () => void
 }
 
-/** The board's ⋯ menu: settings, background, moving it (owners), export. */
-export function MoreMenu({ onOpenSettings, onExport }: MoreMenuProps) {
+/** The board's ⋯ menu: settings, background, stats, moving it (owners), export. */
+export function MoreMenu({ onOpenSettings, onOpenStats, onExport }: MoreMenuProps) {
   const { data, run, readOnly, access } = useBoard()
   const archived = Object.values(data.archived ?? {}).filter((t) => !(t.parentId && data.archived?.[t.parentId])).length
   const owner = access.role === 'owner'
@@ -82,6 +83,9 @@ export function MoreMenu({ onOpenSettings, onExport }: MoreMenuProps) {
             <DropdownMenuSeparator />
           </>
         )}
+        <DropdownMenuItem onSelect={onOpenStats}>
+          <ChartBar /> Board stats
+        </DropdownMenuItem>
         {owner && (from || !!spaces?.length) && (
           <DropdownMenuSub>
             <DropdownMenuSubTrigger>
