@@ -3,7 +3,7 @@ import { z } from 'zod'
 import { COLORS, isBackground, type BoardBackground, type ColorName } from './colors'
 import type { Command } from './commands'
 import { isPosition } from './position'
-import { CATEGORIES, LAYOUTS, PRIORITIES } from './types'
+import { CATEGORIES, LAYOUTS, LIST_ORDERS, PRIORITIES } from './types'
 
 /**
  * Runtime checks for data coming from outside the code: imported files, and records a client asks to put back
@@ -199,6 +199,7 @@ const viewConfig = z.object({
   // (A value this version doesn't know reads as the default.)
   doneLists: z.enum(['all', 'recent']).optional().catch(undefined),
   doneDays: z.number().int().min(1).max(365).optional(),
+  listOrder: z.record(z.string(), z.enum(LIST_ORDERS)).optional().catch(undefined),
 })
 
 /** A board preset's settings (see PresetSettings): filters, and how the Board and Outline look. */

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { defaultPrefs, matchesPreset, prefsReducer, presetOf } from './prefs'
+import { cleanPrefs, DEFAULT_DISPLAY, defaultPrefs, matchesPreset, prefsReducer, presetOf } from './prefs'
+import { exampleData } from './sample'
 
 describe('presets', () => {
   it('picking one copies its settings in and remembers it; the view then matches until something changes', () => {
@@ -22,5 +23,17 @@ describe('presets', () => {
     expect(p.beforePreset?.filter).toEqual({ upNext: true })
     p = prefsReducer(p, { type: 'leavePreset', settings: p.beforePreset })
     expect(p).toMatchObject({ filter: { upNext: true }, presetId: undefined, beforePreset: undefined })
+  })
+})
+
+describe('cleaning up', () => {
+  it('forgets the card order of a list that is gone, and nothing else', () => {
+    const data = exampleData('b1')
+    const board = { ...DEFAULT_DISPLAY.board, listOrder: { todo: 'priority' as const, gone: 'due' as const } }
+    const p = cleanPrefs({ ...defaultPrefs(), display: { board } }, data)
+    expect(p.display.board.listOrder).toEqual({ todo: 'priority' })
+    expect(cleanPrefs(p, data)).toBe(p)
+    const none = cleanPrefs({ ...defaultPrefs(), display: { board: { ...board, listOrder: { gone: 'due' as const } } } }, data)
+    expect(none.display.board.listOrder).toBeUndefined()
   })
 })

@@ -1,5 +1,6 @@
 import { descendantsOf, isBlocked, isLeaf, type TaskIndex } from './indexer'
 import { comparePositions } from './position'
+import { sortComparator } from './table'
 import { DONE_DAYS, type Scope, type ViewConfig } from './types'
 
 /** A column or a row. `taskId` is set when the lane stands for a task (a parent). */
@@ -25,6 +26,20 @@ export const TOP_LEVEL = '__top'
 export const UNASSIGNED = '__unassigned'
 
 export const cellKey = (row: string, col: string) => `${row}\u0000${col}`
+
+/**
+ * A status list's cards in the order made by hand: the order they were dragged into; cards never dragged follow, in
+ * outline order.
+ */
+export function byHand(idx: TaskIndex, ids: string[]): string[] {
+  const byRank = (a: string, b: string) => {
+    const ra = idx.tasks[a].rank
+    const rb = idx.tasks[b].rank
+    if (ra === undefined || rb === undefined) return ra === rb ? 0 : ra === undefined ? 1 : -1
+    return comparePositions(ra, rb)
+  }
+  return [...ids].sort((a, b) => byRank(a, b) || idx.position.get(a)! - idx.position.get(b)!)
+}
 
 /** Whether subtasks are grouped under parent headers (only for status lists, and not when the cards are the parents). */
 export const groupsSubtasks = (cfg: ViewConfig) =>
@@ -169,16 +184,13 @@ export function buildView(idx: TaskIndex, cfg: ViewConfig, scope: Scope = {}): B
     else cells.set(k, [id])
   }
 
-  // Status lists keep the order you dragged cards into; cards never dragged follow, in outline order.
+  // Status lists keep the order you dragged cards into, unless the list is shown in another order (ties keep it).
   if (cfg.columns === 'status') {
-    const byRank = (a: string, b: string) => {
-      const ra = tasks[a].rank
-      const rb = tasks[b].rank
-      if (ra === undefined || rb === undefined) return ra === rb ? 0 : ra === undefined ? 1 : -1
-      return comparePositions(ra, rb)
+    for (const [k, list] of cells) {
+      const sorted = byHand(idx, list)
+      const by = cfg.listOrder?.[idx.status.get(list[0])!]
+      cells.set(k, by ? [...sorted].sort(sortComparator(idx, { key: by, dir: 'asc' }, new Map())) : sorted)
     }
-    for (const list of cells.values())
-      if (list.some((id) => tasks[id].rank !== undefined)) list.sort((a, b) => byRank(a, b) || idx.position.get(a)! - idx.position.get(b)!)
   }
 
   // Rows per parent task are nested, so every row needs its parent's row above it, even when that

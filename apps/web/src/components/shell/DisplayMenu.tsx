@@ -14,7 +14,8 @@ import { DEFAULT_DISPLAY } from '@kanbanto/model/prefs'
 import { DONE_DAYS, type DoneLists } from '@kanbanto/model/types'
 import type { Filter, ParentDisplay, RowsBy, ViewConfig } from '@kanbanto/model/types'
 
-// Hidden lists have their own controls, so they don't count as a changed display (and reset keeps them).
+// Hidden lists and the order of a list's cards have their own controls, so they don't count as a changed display
+// (and reset keeps them).
 const sameConfig = (a: ViewConfig, b: ViewConfig) =>
   a.columns === b.columns &&
   a.rows === b.rows &&
@@ -215,7 +216,9 @@ export function DisplayMenu() {
                 variant="ghost"
                 size="sm"
                 className="text-muted-foreground"
-                onClick={() => setPrefs({ type: 'setDisplay', config: { ...DEFAULT_DISPLAY.board, hiddenColumns: cfg.hiddenColumns } })}
+                onClick={() =>
+                  setPrefs({ type: 'setDisplay', config: { ...DEFAULT_DISPLAY.board, hiddenColumns: cfg.hiddenColumns, listOrder: cfg.listOrder } })
+                }
               >
                 Reset to default
               </Button>

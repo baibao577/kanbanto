@@ -1,5 +1,6 @@
-import { ArrowLeft, ArrowRight, DotsThree, EyeSlash, PencilSimple, Trash } from '@phosphor-icons/react'
+import { ArrowLeft, ArrowRight, DotsThree, EyeSlash, PencilSimple, SortAscending, Trash } from '@phosphor-icons/react'
 import { useState } from 'react'
+import { toast } from 'sonner'
 import { useBoard } from '@/app/board-context'
 import { ColorSwatches, StatusDot } from '@/components/common/bits'
 import {
@@ -28,7 +29,10 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { cn } from '@/lib/utils'
 import { tone } from '@kanbanto/model/colors'
-import { CATEGORIES, CATEGORY_HINT, CATEGORY_LABEL, type Category, type StatusColumn } from '@kanbanto/model/types'
+import { sortComparator } from '@kanbanto/model/table'
+import { CATEGORIES, CATEGORY_HINT, CATEGORY_LABEL, LIST_ORDERS, type Category, type ListOrder, type StatusColumn } from '@kanbanto/model/types'
+import { byHand } from '@kanbanto/model/view'
+import { ORDER_LABEL, withListOrder } from './listOrder'
 
 interface Props {
   col: StatusColumn
@@ -38,9 +42,9 @@ interface Props {
   className?: string
 }
 
-/** A status list's header: rename in place, color, what it counts as, reorder, hide, delete. */
+/** A status list's header: rename in place, color, the order of its cards, what it counts as, reorder, hide, delete. */
 export function ListHeader({ col, count, editing, setEditing, className }: Props) {
-  const { data, prefs, setPrefs, run, readOnly } = useBoard()
+  const { data, idx, prefs, setPrefs, run, undo, readOnly } = useBoard()
   const [deleting, setDeleting] = useState(false)
   const columns = data.columns
   const i = columns.findIndex((c) => c.id === col.id)
@@ -50,6 +54,23 @@ export function ListHeader({ col, count, editing, setEditing, className }: Props
   const rename = (name: string) => {
     setEditing(null)
     if (name.trim() && name.trim() !== col.name) run({ type: 'column.update', id: col.id, fields: { name } })
+  }
+  // Shown in another order than the one made by hand (which is kept, and comes back with "By hand").
+  const order = board.listOrder?.[col.id]
+  const setOrder = (by: ListOrder | undefined) => setPrefs({ type: 'setDisplay', config: withListOrder(board, col.id, by) })
+  /** The order shown becomes the order by hand (replacing the one made before), so cards can be dragged from there. */
+  const keepOrder = () => {
+    if (!order) return
+    // (A parent whose status follows its subtasks isn't placed by hand in a list.)
+    const mine = Object.keys(data.tasks).filter((id) => idx.status.get(id) === col.id && data.tasks[id].status === col.id)
+    const list = byHand(idx, mine).sort(sortComparator(idx, { key: order, dir: 'asc' }, new Map()))
+    if (!run({ type: 'tasks.moveToList', ids: list, status: col.id, list })) return
+    setOrder(undefined)
+    const back = () => {
+      undo()
+      setOrder(order)
+    }
+    toast('This order is now the list’s order by hand', { id: 'undo', action: { label: 'Undo', onClick: back } })
   }
   const hide = () => setPrefs({ type: 'setDisplay', config: { ...board, hiddenColumns: [...(board.hiddenColumns ?? []), col.id] } })
 
@@ -85,6 +106,15 @@ export function ListHeader({ col, count, editing, setEditing, className }: Props
         </button>
       )}
       <span className={cn('text-xs tabular-nums', col.color ? 'text-foreground/70' : 'text-muted-foreground')}>{count}</span>
+      {order && (
+        <span
+          title={`Ordered by ${ORDER_LABEL[order][0].toLowerCase()}`}
+          className={cn('flex items-center gap-1 text-xs', col.color ? 'text-foreground/70' : 'text-muted-foreground')}
+        >
+          <SortAscending className="size-3.5" />
+          {ORDER_LABEL[order][0]}
+        </span>
+      )}
 
       {!readOnly && (
         <DropdownMenu>
@@ -117,6 +147,36 @@ export function ListHeader({ col, count, editing, setEditing, className }: Props
                   noneLabel="No color"
                   onChange={(color) => run({ type: 'column.update', id: col.id, fields: { color: color ?? null } })}
                 />
+              </DropdownMenuSubContent>
+            </DropdownMenuSub>
+            <DropdownMenuSub>
+              <DropdownMenuSubTrigger>
+                <SortAscending /> Order cards by
+              </DropdownMenuSubTrigger>
+              <DropdownMenuSubContent className="w-60">
+                <DropdownMenuRadioGroup value={order ?? ''} onValueChange={(v) => setOrder((v || undefined) as ListOrder | undefined)}>
+                  <DropdownMenuRadioItem value="">
+                    By hand
+                    <span className="ml-auto text-xs text-muted-foreground">As you dragged them</span>
+                  </DropdownMenuRadioItem>
+                  {LIST_ORDERS.map((by) => (
+                    <DropdownMenuRadioItem key={by} value={by}>
+                      {ORDER_LABEL[by][0]}
+                      <span className="ml-auto text-xs text-muted-foreground">{ORDER_LABEL[by][1]}</span>
+                    </DropdownMenuRadioItem>
+                  ))}
+                </DropdownMenuRadioGroup>
+                {order && (
+                  <>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onSelect={keepOrder} className="items-start">
+                      <span>
+                        <span className="block">Keep this order</span>
+                        <span className="block text-xs text-muted-foreground">Replaces the order by hand, so you can drag cards from here</span>
+                      </span>
+                    </DropdownMenuItem>
+                  </>
+                )}
               </DropdownMenuSubContent>
             </DropdownMenuSub>
             <DropdownMenuItem disabled={i === 0} onSelect={() => run({ type: 'column.move', id: col.id, beforeId: columns[i - 1]?.id })}>

@@ -1,7 +1,7 @@
 import type { Command, TaskFields } from '@kanbanto/model/commands'
 import { isLeaf, wouldCycle, type TaskIndex } from '@kanbanto/model/indexer'
 import type { BoardData, ViewConfig } from '@kanbanto/model/types'
-import { cellKey, groupCell, groupsSubtasks, TOP_LEVEL, UNASSIGNED, type CardGroup } from '@kanbanto/model/view'
+import { byHand, cellKey, groupCell, groupsSubtasks, TOP_LEVEL, UNASSIGNED, type CardGroup } from '@kanbanto/model/view'
 import type { GroupDrag } from './dnd'
 
 /**
@@ -27,6 +27,8 @@ export const BLOCKED = {
 export type Blocked = (typeof BLOCKED)[keyof typeof BLOCKED]
 
 const statusLists = (c: DropContext) => c.config.columns === 'status'
+/** A status list shown in another order than the one made by hand: where a card is dropped in it doesn't matter. */
+const ordered = (c: DropContext, col: string) => statusLists(c) && !!c.config.listOrder?.[col]
 const nestedRows = (c: DropContext) => c.config.rows === 'directParent'
 
 /** Which parent group a card sits in within a row (null = no header: top level, or the row's own task). */
@@ -53,6 +55,9 @@ export function blockReason(c: DropContext, id: string, row: string, col: string
  * With subtasks grouped under their parent (see `groupCell`), `at` is a position inside the card's parent group when
  * that group is in the list, and otherwise a position among the list's items (cards without a header, and groups):
  * where the card goes, or where its new group starts.
+ *
+ * In a list shown by priority, due date or title, the position isn't the user's to choose: a card arriving there goes
+ * to the end of the order made by hand (kept underneath), and moving one within the list changes nothing.
  */
 export function dropCommand(c: DropContext, id: string, row: string, col: string, at: number): Command | null {
   const t = c.data.tasks[id]
@@ -72,6 +77,10 @@ export function dropCommand(c: DropContext, id: string, row: string, col: string
   }
 
   const cell = c.cells.get(cellKey(row, col)) ?? []
+  if (ordered(c, col)) {
+    const changed = move.status || move.parentId !== undefined || move.assigneeId !== undefined
+    return changed ? { ...move, list: [...byHand(c.idx, cell).filter((x) => x !== id), id] } : null
+  }
   if (statusLists(c)) {
     // Status lists: free order, like Trello. Re-number this list's cards with the dropped card in place.
     let order: string[]
@@ -125,13 +134,23 @@ export function dropGroupCommand(c: DropContext, g: GroupDrag, row: string, col:
   const k = cellKey(row, col)
   if (c.config.rows === 'rootParent' && row !== g.row) return BLOCKED.project
   const cell = c.cells.get(k) ?? []
+  const assignee = c.config.rows === 'assignee' ? { assigneeId: row === UNASSIGNED ? null : row } : {}
+  if (ordered(c, col)) {
+    if (g.cell === k) return null
+    return {
+      type: 'tasks.moveToList',
+      ids: g.ids,
+      status: col,
+      list: [...byHand(c.idx, cell).filter((x) => !g.ids.includes(x)), ...g.ids],
+      ...assignee,
+    }
+  }
   const items = groupCell(c.idx, cell, row)
   // Its subtasks already in that list (or, in its own list, any not shown) go with it.
   const mine = (x: CardGroup) => x.parentId === g.parentId
   const others = items.find(mine)?.ids.filter((x) => !g.ids.includes(x)) ?? []
   const list = placeItem(items, mine, at, { parentId: g.parentId, ids: [...others, ...g.ids] }).flatMap((x) => x.ids)
   if (g.cell === k && list.join() === cell.join()) return null
-  const assignee = c.config.rows === 'assignee' ? { assigneeId: row === UNASSIGNED ? null : row } : {}
   return { type: 'tasks.moveToList', ids: g.ids, status: col, list, ...assignee }
 }
 
@@ -144,5 +163,6 @@ export function newCardIn(c: DropContext, focusId: string | undefined, row: stri
   if (c.config.rows === 'assignee') fields.assigneeId = row === UNASSIGNED ? null : row
   if (statusLists(c)) fields.status = col
   else parentId = col
-  return { parentId, fields, rankAfter: (c.cells.get(cellKey(row, col)) ?? []).at(-1) }
+  const cell = c.cells.get(cellKey(row, col)) ?? []
+  return { parentId, fields, rankAfter: (ordered(c, col) ? byHand(c.idx, cell) : cell).at(-1) }
 }

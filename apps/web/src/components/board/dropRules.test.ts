@@ -86,6 +86,28 @@ describe('dropping a card on the board', () => {
     expect(dropCommand(rows, 'A3', 'A', 'todo', 2)).toBeNull()
   })
 
+  it('a list shown by priority keeps the order made by hand underneath: moving a card within it changes nothing, and one arriving goes to its end', () => {
+    const base = exampleData('b1')
+    const data = {
+      ...base,
+      tasks: { ...base.tasks, A4: { ...base.tasks.A4, priority: 'low' as const }, B2: { ...base.tasks.B2, priority: 'urgent' as const } },
+    }
+    const idx = indexFor(data)
+    const cfg: ViewConfig = { ...DEFAULT_DISPLAY.board, groupByParent: false, hiddenColumns: [], listOrder: { backlog: 'priority' } }
+    const c: DropContext = { data, idx, config: cfg, cells: buildView(idx, cfg).cells }
+    const shown = c.cells.get(cellKey(NO_ROW, 'backlog'))!
+    const hand = buildView(idx, { ...cfg, listOrder: {} }).cells.get(cellKey(NO_ROW, 'backlog'))!
+    // Most important first; cards without a priority after them, as they were.
+    expect(shown.slice(0, 2)).toEqual(['B2', 'A4'])
+    expect(shown.slice(2)).toEqual(hand.filter((id) => id !== 'B2' && id !== 'A4'))
+    expect(hand.indexOf('A4')).toBeLessThan(hand.indexOf('B2'))
+    expect(dropCommand(c, 'A4', NO_ROW, 'backlog', 0)).toBeNull()
+    const cmd = dropCommand(c, 'A3', NO_ROW, 'backlog', 0) as { status: string; list: string[] }
+    expect(cmd.status).toBe('backlog')
+    expect(cmd.list).toEqual([...hand, 'A3'])
+    expect(newCardIn(c, undefined, NO_ROW, 'backlog', 'New').rankAfter).toBe(hand.at(-1))
+  })
+
   it('a new card takes its cell’s list, parent and person, and lands at the bottom', () => {
     const byPerson = newCardIn(board({ rows: 'assignee' }), undefined, 'ploy', 'doing', 'Call the venue')
     expect(byPerson).toMatchObject({ parentId: null, fields: { title: 'Call the venue', status: 'doing', assigneeId: 'ploy' } })

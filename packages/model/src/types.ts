@@ -180,7 +180,16 @@ export interface ViewConfig {
   doneLists?: DoneLists
   /** For recent done lists; unset: DONE_DAYS. */
   doneDays?: number
+  /**
+   * Status lists shown in another order than the one their cards were dragged into (list id → what by). Only how
+   * the list is shown: the order made by hand is kept, and is back when the entry is removed.
+   */
+  listOrder?: Record<string, ListOrder>
 }
+
+/** What a list's cards can be ordered by: most important first, soonest due first, A to Z. Without one: last. */
+export const LIST_ORDERS = ['priority', 'due', 'title'] as const
+export type ListOrder = (typeof LIST_ORDERS)[number]
 
 export type DoneLists = 'all' | 'recent'
 export const DONE_DAYS = 14

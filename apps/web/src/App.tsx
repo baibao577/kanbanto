@@ -332,6 +332,7 @@ function Workspace({ store }: { store: Store }) {
     setPrefs,
     idx,
     run,
+    undo: () => say(undo()),
     access,
     readOnly,
     openTask,

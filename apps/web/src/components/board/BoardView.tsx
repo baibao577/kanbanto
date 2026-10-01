@@ -33,6 +33,7 @@ import { cardIndexAt, cellAt, dragging, itemIndexAt, listIndexAt, type GroupDrag
 import { BLOCKED, blockReason as blockReasonIn, dropCommand, dropGroupCommand, groupOf as groupOfIn, newCardIn, type DropContext } from './dropRules'
 import { GroupHeader } from './GroupHeader'
 import { ListHeader } from './ListHeader'
+import { ORDER_LABEL, withListOrder } from './listOrder'
 import { QuickAdd } from './QuickAdd'
 import { TaskCard } from './TaskCard'
 
@@ -152,18 +153,33 @@ function Board({ search }: { search: string }) {
 
   const blockReason = (id: string, row: string, col: string) => blockReasonIn(rules, id, row, col)
 
+  /** Tried to move cards by hand within a list shown in another order: says why nothing moved, and the way out. */
+  const orderedHint = (col: string) => {
+    const by = statusLists ? config.listOrder?.[col] : undefined
+    if (!by) return
+    toast(`This list is ordered by ${ORDER_LABEL[by][0].toLowerCase()}`, {
+      id: 'ordered',
+      description: 'Cards can’t be moved by hand here. Your own order is kept under “By hand”.',
+      action: { label: 'Switch to By hand', onClick: () => setPrefs({ type: 'setDisplay', config: withListOrder(config, col, undefined) }) },
+    })
+  }
+
   /** A parent's header dropped at position `at` of a list: its subtasks from the list it came from move there. */
-  const dropGroup = (g: GroupDrag, row: string, col: string, at: number) => {
+  const dropGroup = (g: GroupDrag, row: string, col: string, at: number, moved = true) => {
     const cmd = dropGroupCommand(rules, g, row, col, at)
     if (cmd === BLOCKED.project)
       toast('Cards can’t be dragged between projects here', {
         description: 'Open the parent to change where it belongs, or show a row for each parent task instead.',
       })
     else if (cmd) run(cmd)
+    else if (moved && g.cell === cellKey(row, col)) orderedHint(col)
   }
 
-  /** A card dropped in cell (row, col) at position `at` (see dropRules.ts for what that means). */
-  const drop = (id: string, row: string, col: string, at: number) => {
+  /**
+   * A card dropped in cell (row, col) at position `at` (see dropRules.ts for what that means). `moved`: it was let go
+   * somewhere other than where it was picked up.
+   */
+  const drop = (id: string, row: string, col: string, at: number, moved = true) => {
     const blocked = blockReason(id, row, col)
     if (blocked === BLOCKED.derived)
       toast(`“${data.tasks[id].title}” follows its subtasks`, {
@@ -177,6 +193,7 @@ function Board({ search }: { search: string }) {
     else {
       const cmd = dropCommand(rules, id, row, col, at)
       if (cmd) run(cmd)
+      else if (moved) orderedHint(col)
     }
   }
 
@@ -352,7 +369,7 @@ function Board({ search }: { search: string }) {
     const paged = { area: e.currentTarget, stops: '[data-list-id]' }
     // Shared by cards and groups: follow the pointer, and drop where the marker was last shown. A card's marker
     // goes back to where it came from (`home`) when the pointer isn't over a list.
-    const trackCards = (onDrop: (at: CardDrop) => void, onEnd: () => void, home: CardDrop | null = null) => {
+    const trackCards = (onDrop: (at: CardDrop, moved: boolean) => void, onEnd: () => void, home: CardDrop | null = null) => {
       let last = home
       return {
         move: (x: number, y: number) => {
@@ -360,7 +377,7 @@ function Board({ search }: { search: string }) {
           last = next
           setCardDrop((c) => (next && sameDrop(c, next) ? c : next))
         },
-        drop: () => last && onDrop(last),
+        drop: () => last && onDrop(last, !sameDrop(home, last)),
         end: () => {
           onEnd()
           setCardDrop(null)
@@ -394,7 +411,7 @@ function Board({ search }: { search: string }) {
           flushSync(() => setCardDrop(home))
           handle.style.display = 'none'
           return trackCards(
-            (at) => live.current.drop(id, at.row, at.col, at.index),
+            (at, moved) => live.current.drop(id, at.row, at.col, at.index, moved),
             () => {
               handle.style.display = ''
               dragging.card = null
@@ -422,7 +439,7 @@ function Board({ search }: { search: string }) {
           flushSync(() => setCardDrop(home))
           box.style.display = 'none'
           return trackCards(
-            (at) => live.current.dropGroup(g, at.row, at.col, at.index),
+            (at, moved) => live.current.dropGroup(g, at.row, at.col, at.index, moved),
             () => {
               box.style.display = ''
               dragging.group = null

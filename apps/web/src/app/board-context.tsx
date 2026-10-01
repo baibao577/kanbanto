@@ -16,6 +16,8 @@ export interface BoardContextValue {
   idx: TaskIndex
   /** Runs a command. If it isn't allowed, shows why and returns false. */
   run: (cmd: Command) => boolean
+  /** Takes back your last change to the board, and says what it was. */
+  undo: () => void
   /** Your role on this board, and why you have it. */
   access: BoardAccess
   /** You can view but not change this board: editing controls are hidden. */

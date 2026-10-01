@@ -128,9 +128,18 @@ export function cleanPrefs(p: ViewPrefs, data: BoardData): ViewPrefs {
   }
   const hidden = p.display.board.hiddenColumns
   const nextHidden = keepIn(hidden, cols)
+  const order = p.display.board.listOrder
+  const gone = order && Object.keys(order).some((id) => !cols.has(id))
+  const kept = gone ? Object.fromEntries(Object.entries(order).filter(([id]) => cols.has(id))) : order
+  const nextOrder = kept && !Object.keys(kept).length ? undefined : kept
   const focusId = p.focusId && data.tasks[p.focusId] ? p.focusId : undefined
   const changed =
-    filter.statuses !== f.statuses || filter.labels !== f.labels || filter.assignees !== f.assignees || nextHidden !== hidden || focusId !== p.focusId
+    filter.statuses !== f.statuses ||
+    filter.labels !== f.labels ||
+    filter.assignees !== f.assignees ||
+    nextHidden !== hidden ||
+    nextOrder !== order ||
+    focusId !== p.focusId
   if (!changed) return p
-  return { ...p, filter, focusId, display: { ...p.display, board: { ...p.display.board, hiddenColumns: nextHidden } } }
+  return { ...p, filter, focusId, display: { ...p.display, board: { ...p.display.board, hiddenColumns: nextHidden, listOrder: nextOrder } } }
 }
