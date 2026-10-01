@@ -32,12 +32,14 @@ import { buildView, cellKey, groupCell, groupsSubtasks, NO_ROW, UNASSIGNED, type
 import { cardIndexAt, cellAt, dragging, itemIndexAt, listIndexAt, type GroupDrag } from './dnd'
 import { BLOCKED, blockReason as blockReasonIn, dropCommand, dropGroupCommand, groupOf as groupOfIn, newCardIn, type DropContext } from './dropRules'
 import { GroupHeader } from './GroupHeader'
-import { ListHeader } from './ListHeader'
+import { CollapsedList, ListHeader } from './ListHeader'
 import { ORDER_LABEL, withListOrder } from './listOrder'
 import { QuickAdd } from './QuickAdd'
 import { TaskCard } from './TaskCard'
 
 // Render caps keep the page light however many tasks there are.
+/** A position past the last card of any list: the end. */
+const END = 1_000_000
 const CARDS_STEP = 100
 const ROWS_STEP = 40
 const COLS_STEP = 30
@@ -109,6 +111,9 @@ function Board({ search }: { search: string }) {
   const [listDrop, setListDrop] = useState<number | null>(null)
 
   const statusLists = config.columns === 'status'
+  /** A list folded to a narrow strip: its cards aren't shown, and one dropped on it goes to its end. */
+  const isCollapsed = (col: string) => statusLists && !!config.collapsedColumns?.includes(col)
+  const dropping = (cell: string) => (cardDrop?.cell !== cell ? undefined : cardDrop.blocked ? 'blocked' : 'ok')
   const toggleIn = (set: ReadonlySet<string>, key: string) => {
     const next = new Set(set)
     if (!next.delete(key)) next.add(key)
@@ -245,6 +250,14 @@ function Board({ search }: { search: string }) {
     const { row = NO_ROW, col = '' } = el.dataset
     const cell = cellKey(row, col)
     const g = dragging.group
+    if (isCollapsed(col)) {
+      const blocked = g
+        ? config.rows === 'rootParent' && row !== g.row
+          ? BLOCKED.project
+          : undefined
+        : (blockReason(dragging.card ?? '', row, col) ?? undefined)
+      return g || dragging.card ? { row, col, cell, index: END, blocked, moving: g ? 'group' : undefined } : null
+    }
     if (g) {
       const blocked = config.rows === 'rootParent' && row !== g.row ? BLOCKED.project : undefined
       return { row, col, cell, index: itemIndexAt(el, y), blocked, moving: 'group' }
@@ -579,6 +592,19 @@ function Board({ search }: { search: string }) {
           {withListSlot(
             columns.map((c) => {
               const col = idx.colById.get(c.key)
+              if (col && isCollapsed(c.key))
+                return (
+                  <CollapsedList
+                    key={c.key}
+                    col={col}
+                    count={colCount(c.key)}
+                    tall
+                    dropping={dropping(cellKey(NO_ROW, c.key))}
+                    style={laneTint(col)}
+                    className={cn(listDrag?.id === c.key && 'opacity-40')}
+                    {...cellProps(NO_ROW, c.key)}
+                  />
+                )
               return (
                 <section
                   key={c.key}
@@ -621,11 +647,21 @@ function Board({ search }: { search: string }) {
               data-list-row
             >
               {withListSlot(
-                columns.map((c) => (
-                  <div key={c.key} data-list-id={c.key} className={cn('w-68 shrink-0 rounded-xl', listDrag?.id === c.key && 'opacity-40')}>
-                    {columnHead(c, false)}
-                  </div>
-                )),
+                columns.map((c) =>
+                  isCollapsed(c.key) ? (
+                    <CollapsedList
+                      key={c.key}
+                      col={idx.colById.get(c.key)!}
+                      count={colCount(c.key)}
+                      style={laneTint(idx.colById.get(c.key))}
+                      className={cn(listDrag?.id === c.key && 'opacity-40')}
+                    />
+                  ) : (
+                    <div key={c.key} data-list-id={c.key} className={cn('w-68 shrink-0 rounded-xl', listDrag?.id === c.key && 'opacity-40')}>
+                      {columnHead(c, false)}
+                    </div>
+                  ),
+                ),
                 // A thin marker that takes no room, so headers stay lined up with the cells below.
                 (key) => (
                   <div key={key} className="relative -mx-1.5 w-0 shrink-0">
@@ -647,19 +683,35 @@ function Board({ search }: { search: string }) {
                 />
                 {!collapsed.has(r.key) && (
                   <div className="flex gap-3">
-                    {columns.map((c) => (
-                      <div
-                        key={c.key}
-                        {...cellProps(r.key, c.key)}
-                        style={laneTint(idx.colById.get(c.key))}
-                        className="group/cell flex min-h-14 w-68 shrink-0 flex-col gap-2 rounded-xl bg-lane p-2"
-                      >
-                        {renderCards(r.key, c.key)}
-                        <div className="opacity-0 transition-opacity group-hover/cell:opacity-100 focus-within:opacity-100">
-                          <QuickAdd dates onAdd={addIn(r.key, c.key)} label="Add" className="h-7" />
+                    {columns.map((c) =>
+                      isCollapsed(c.key) ? (
+                        // A folded list's part of the row: how many cards, and somewhere to drop one.
+                        <div
+                          key={c.key}
+                          {...cellProps(r.key, c.key)}
+                          style={laneTint(idx.colById.get(c.key))}
+                          className={cn(
+                            'flex min-h-14 w-10 shrink-0 justify-center rounded-xl bg-lane pt-3 text-xs text-muted-foreground tabular-nums',
+                            dropping(cellKey(r.key, c.key)) === 'ok' && 'ring-2 ring-primary/60',
+                            dropping(cellKey(r.key, c.key)) === 'blocked' && 'ring-2 ring-destructive/50',
+                          )}
+                        >
+                          {view.cells.get(cellKey(r.key, c.key))?.length || ''}
                         </div>
-                      </div>
-                    ))}
+                      ) : (
+                        <div
+                          key={c.key}
+                          {...cellProps(r.key, c.key)}
+                          style={laneTint(idx.colById.get(c.key))}
+                          className="flex min-h-14 w-68 shrink-0 flex-col gap-2 rounded-xl bg-lane p-2"
+                        >
+                          {renderCards(r.key, c.key)}
+                          <div className="-mx-0.5 mt-auto -mb-0.5">
+                            <QuickAdd dates onAdd={addIn(r.key, c.key)} />
+                          </div>
+                        </div>
+                      ),
+                    )}
                   </div>
                 )}
               </section>

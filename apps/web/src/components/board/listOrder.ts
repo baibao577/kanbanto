@@ -1,8 +1,8 @@
 import type { ListOrder, ViewConfig } from '@kanbanto/model/types'
 
 /**
- * A list shown in another order than the one made by hand (set from the list's menu). It's a display setting: the
- * order by hand is kept underneath.
+ * How one list is shown (set from the list itself, saved with the display settings): in another order than the one
+ * made by hand, which is kept underneath; or folded to a narrow strip.
  */
 
 /** How a list's cards can be ordered, and which come first. */
@@ -18,4 +18,11 @@ export function withListOrder(board: ViewConfig, id: string, by: ListOrder | und
   const next = by ? { ...rest, [id]: by } : rest
   // (No entry at all when every list is by hand, so the view still matches a preset saved that way.)
   return { ...board, listOrder: Object.keys(next).length ? next : undefined }
+}
+
+/** The board's display settings with list `id` folded to a narrow strip, or opened again. */
+export function withListCollapsed(board: ViewConfig, id: string, collapsed: boolean): ViewConfig {
+  const rest = (board.collapsedColumns ?? []).filter((x) => x !== id)
+  const next = collapsed ? [...rest, id] : rest
+  return { ...board, collapsedColumns: next.length ? next : undefined }
 }

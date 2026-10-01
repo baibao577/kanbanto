@@ -315,12 +315,17 @@ function Workspace({ store }: { store: Store }) {
     [store, undo, say],
   )
 
+  // The card made and opened just now: its dialog starts in the title.
+  const [justMade, setNewId] = useState<string | null>(null)
   const createTask = useCallback<BoardContextValue['createTask']>(
     (parentId, fields, opts) => {
       const id = newId()
       const parent = parentId !== undefined ? parentId : (prefs.focusId ?? null)
       if (!run({ type: 'task.create', id, parentId: parent, fields, rankAfter: opts?.rankAfter })) return null
-      if (opts?.open) openTask(id)
+      if (opts?.open) {
+        setNewId(id)
+        openTask(id)
+      }
       return id
     },
     [run, prefs.focusId],
@@ -399,7 +404,7 @@ function Workspace({ store }: { store: Store }) {
 
       {openId && (
         <Suspense fallback={null}>
-          <TaskDialog id={openId} onClose={closeTask} />
+          <TaskDialog id={openId} onClose={closeTask} editTitle={openId === justMade} />
         </Suspense>
       )}
       {shareOpen && (

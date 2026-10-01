@@ -63,9 +63,10 @@ export function PresetMenu() {
         }}
       >
         <DropdownMenuTrigger asChild>
-          <Button variant="outline" size="sm" className="h-8 max-w-44 gap-1.5 max-sm:max-w-28">
+          <Button variant="outline" size="sm" className="h-8 max-w-44 gap-1.5 max-sm:px-2" title={active ? `Preset: ${active.name}` : 'Presets'}>
             <BookmarkSimple weight={active ? 'fill' : 'regular'} />
-            <span className="truncate">{active?.name ?? 'Presets'}</span>
+            {/* On a phone: just the icon (filled while a preset is on). */}
+            <span className="truncate max-sm:hidden">{active?.name ?? 'Presets'}</span>
             {drifted && <span className="size-1.5 shrink-0 rounded-full bg-primary" aria-label="changed since" />}
           </Button>
         </DropdownMenuTrigger>

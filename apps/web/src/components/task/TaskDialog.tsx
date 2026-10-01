@@ -37,7 +37,15 @@ import { Section } from './Section'
 import { DateField, FieldButton, PersonPicker, TaskPicker } from './pickers'
 
 /** The card back: everything about one task, Trello-style. */
-export function TaskDialog({ id, onClose }: { id: string | null; onClose: () => void }) {
+export function TaskDialog({
+  id,
+  onClose,
+  editTitle,
+}: {
+  id: string | null
+  onClose: () => void
+  /** Start in the title: for a card made just now. */ editTitle?: boolean
+}) {
   const { data } = useBoard()
   const archived = !!id && !!data.archived?.[id]
   const open = !!id && (id in data.tasks || archived)
@@ -45,6 +53,15 @@ export function TaskDialog({ id, onClose }: { id: string | null; onClose: () => 
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
       <DialogContent
         className="max-h-[calc(100dvh-4rem)] gap-0 overflow-y-auto p-0 sm:max-w-3xl"
+        // Opening a card is for reading it: nothing in it is put into editing (on a phone, a focused title brings up
+        // the keyboard). A card made just now starts in its title, so its name can be typed straight away.
+        onOpenAutoFocus={(e) => {
+          e.preventDefault()
+          const box = e.currentTarget as HTMLElement
+          const title = editTitle ? box.querySelector<HTMLTextAreaElement>('textarea[aria-label="Title"]') : null
+          if (title) title.select()
+          else box.focus()
+        }}
         // Esc while typing leaves the field; a second Esc closes the dialog.
         onEscapeKeyDown={(e) => {
           const el = document.activeElement as HTMLElement | null

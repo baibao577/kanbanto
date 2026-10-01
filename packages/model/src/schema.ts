@@ -195,6 +195,7 @@ const viewConfig = z.object({
   filter: z.enum(['all', 'leaves', 'main', 'topLevel', 'actionable']),
   parentDisplay: z.array(z.enum(['label', 'checklist', 'progress', 'rowHeader', 'age'])),
   hiddenColumns: z.array(z.string()).optional(),
+  collapsedColumns: z.array(z.string()).optional(),
   groupByParent: z.boolean().optional(),
   // (A value this version doesn't know reads as the default.)
   doneLists: z.enum(['all', 'recent']).optional().catch(undefined),

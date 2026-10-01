@@ -14,7 +14,7 @@ import { DEFAULT_DISPLAY } from '@kanbanto/model/prefs'
 import { DONE_DAYS, type DoneLists } from '@kanbanto/model/types'
 import type { Filter, ParentDisplay, RowsBy, ViewConfig } from '@kanbanto/model/types'
 
-// Hidden lists and the order of a list's cards have their own controls, so they don't count as a changed display
+// Hidden and folded lists, and the order of a list's cards, have their own controls, so they don't count as a changed display
 // (and reset keeps them).
 const sameConfig = (a: ViewConfig, b: ViewConfig) =>
   a.columns === b.columns &&
@@ -41,9 +41,9 @@ export function DisplayMenu() {
   return (
     <Popover>
       <PopoverTrigger asChild>
-        <Button variant="outline" size="sm" className="relative h-8 gap-1.5">
+        <Button variant="outline" size="sm" className="relative h-8 gap-1.5 max-sm:px-2" title="Display">
           <SlidersHorizontal />
-          Display
+          <span className="max-sm:hidden">Display</span>
           {changed && <span className="absolute -top-0.5 -right-0.5 size-2 rounded-full bg-primary" aria-label="Changed" />}
         </Button>
       </PopoverTrigger>
@@ -217,7 +217,15 @@ export function DisplayMenu() {
                 size="sm"
                 className="text-muted-foreground"
                 onClick={() =>
-                  setPrefs({ type: 'setDisplay', config: { ...DEFAULT_DISPLAY.board, hiddenColumns: cfg.hiddenColumns, listOrder: cfg.listOrder } })
+                  setPrefs({
+                    type: 'setDisplay',
+                    config: {
+                      ...DEFAULT_DISPLAY.board,
+                      hiddenColumns: cfg.hiddenColumns,
+                      collapsedColumns: cfg.collapsedColumns,
+                      listOrder: cfg.listOrder,
+                    },
+                  })
                 }
               >
                 Reset to default

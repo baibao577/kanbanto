@@ -27,11 +27,12 @@ describe('presets', () => {
 })
 
 describe('cleaning up', () => {
-  it('forgets the card order of a list that is gone, and nothing else', () => {
+  it('forgets the card order and the folding of a list that is gone, and nothing else', () => {
     const data = exampleData('b1')
-    const board = { ...DEFAULT_DISPLAY.board, listOrder: { todo: 'priority' as const, gone: 'due' as const } }
+    const board = { ...DEFAULT_DISPLAY.board, listOrder: { todo: 'priority' as const, gone: 'due' as const }, collapsedColumns: ['gone', 'done'] }
     const p = cleanPrefs({ ...defaultPrefs(), display: { board } }, data)
     expect(p.display.board.listOrder).toEqual({ todo: 'priority' })
+    expect(p.display.board.collapsedColumns).toEqual(['done'])
     expect(cleanPrefs(p, data)).toBe(p)
     const none = cleanPrefs({ ...defaultPrefs(), display: { board: { ...board, listOrder: { gone: 'due' as const } } } }, data)
     expect(none.display.board.listOrder).toBeUndefined()

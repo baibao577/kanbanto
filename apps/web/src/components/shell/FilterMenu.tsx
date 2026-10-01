@@ -29,9 +29,9 @@ export function FilterMenu() {
   return (
     <Popover>
       <PopoverTrigger asChild>
-        <Button variant="outline" size="sm" className="h-8 gap-1.5">
+        <Button variant="outline" size="sm" className="h-8 gap-1.5 max-sm:px-2" title="Filter">
           <FunnelSimple />
-          Filter
+          <span className="max-sm:hidden">Filter</span>
           {n > 0 && (
             <span className="grid h-4 min-w-4 place-items-center rounded-full bg-primary px-1 text-[10px] font-semibold text-primary-foreground">
               {n}

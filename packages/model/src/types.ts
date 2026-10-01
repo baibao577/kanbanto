@@ -168,6 +168,8 @@ export interface ViewConfig {
   parentDisplay: ParentDisplay[]
   /** Status lists hidden from this view (and the cards in them). */
   hiddenColumns?: string[]
+  /** Status lists folded to a narrow strip (their name and how many cards), to make room for the others. */
+  collapsedColumns?: string[]
   /**
    * Inside each list, show subtasks under a header for their parent instead of showing the parent as a card.
    * Only tasks without subtasks are cards; a parent appears as a header in every list where its subtasks are.

@@ -128,6 +128,8 @@ export function cleanPrefs(p: ViewPrefs, data: BoardData): ViewPrefs {
   }
   const hidden = p.display.board.hiddenColumns
   const nextHidden = keepIn(hidden, cols)
+  const folded = p.display.board.collapsedColumns
+  const nextFolded = keepIn(folded, cols)
   const order = p.display.board.listOrder
   const gone = order && Object.keys(order).some((id) => !cols.has(id))
   const kept = gone ? Object.fromEntries(Object.entries(order).filter(([id]) => cols.has(id))) : order
@@ -138,8 +140,14 @@ export function cleanPrefs(p: ViewPrefs, data: BoardData): ViewPrefs {
     filter.labels !== f.labels ||
     filter.assignees !== f.assignees ||
     nextHidden !== hidden ||
+    nextFolded !== folded ||
     nextOrder !== order ||
     focusId !== p.focusId
   if (!changed) return p
-  return { ...p, filter, focusId, display: { ...p.display, board: { ...p.display.board, hiddenColumns: nextHidden, listOrder: nextOrder } } }
+  return {
+    ...p,
+    filter,
+    focusId,
+    display: { ...p.display, board: { ...p.display.board, hiddenColumns: nextHidden, collapsedColumns: nextFolded, listOrder: nextOrder } },
+  }
 }

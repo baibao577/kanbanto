@@ -1,4 +1,4 @@
-import { ArrowLeft, ArrowRight, DotsThree, EyeSlash, PencilSimple, SortAscending, Trash } from '@phosphor-icons/react'
+import { ArrowLeft, ArrowRight, ArrowsInLineHorizontal, DotsThree, EyeSlash, PencilSimple, SortAscending, Trash } from '@phosphor-icons/react'
 import { useState } from 'react'
 import { toast } from 'sonner'
 import { useBoard } from '@/app/board-context'
@@ -32,7 +32,7 @@ import { tone } from '@kanbanto/model/colors'
 import { sortComparator } from '@kanbanto/model/table'
 import { CATEGORIES, CATEGORY_HINT, CATEGORY_LABEL, LIST_ORDERS, type Category, type ListOrder, type StatusColumn } from '@kanbanto/model/types'
 import { byHand } from '@kanbanto/model/view'
-import { ORDER_LABEL, withListOrder } from './listOrder'
+import { ORDER_LABEL, withListCollapsed, withListOrder } from './listOrder'
 
 interface Props {
   col: StatusColumn
@@ -116,13 +116,25 @@ export function ListHeader({ col, count, editing, setEditing, className }: Props
         </span>
       )}
 
+      {/* Folding a list is only how you see it, so people who can't edit can do it too. */}
+      <button
+        aria-label={`Collapse ${col.name}`}
+        title="Collapse list"
+        onClick={() => setPrefs({ type: 'setDisplay', config: withListCollapsed(board, col.id, true) })}
+        className={cn(
+          'ml-auto grid size-7 shrink-0 place-items-center rounded-md hover:bg-foreground/8 hover:text-foreground',
+          col.color ? 'text-foreground/70' : 'text-muted-foreground',
+        )}
+      >
+        <ArrowsInLineHorizontal className="size-4" />
+      </button>
       {!readOnly && (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button
               aria-label={`${col.name} list options`}
               className={cn(
-                'ml-auto grid size-7 shrink-0 place-items-center rounded-md hover:bg-foreground/8 hover:text-foreground',
+                '-ml-1.5 grid size-7 shrink-0 place-items-center rounded-md hover:bg-foreground/8 hover:text-foreground',
                 col.color ? 'text-foreground/70' : 'text-muted-foreground',
               )}
             >
@@ -219,6 +231,43 @@ export function ListHeader({ col, count, editing, setEditing, className }: Props
 
       <DeleteListDialog col={col} open={deleting} onOpenChange={setDeleting} />
     </header>
+  )
+}
+
+/**
+ * A folded list: a narrow strip with what it counts as, how many cards and (given the height, `tall`) its name. Click
+ * to open it again; it can still be dragged to another place, and cards can be dropped on it (`dropping`).
+ */
+export function CollapsedList({
+  col,
+  count,
+  tall,
+  dropping,
+  className,
+  ...rest
+}: { col: StatusColumn; count: number; tall?: boolean; dropping?: 'ok' | 'blocked' } & React.ComponentProps<'button'>) {
+  const { prefs, setPrefs, readOnly } = useBoard()
+  return (
+    <button
+      {...rest}
+      data-list-id={col.id}
+      data-drag={readOnly ? undefined : 'list'}
+      aria-label={`Expand ${col.name}`}
+      aria-expanded={false}
+      title={`${col.name} · ${count} ${count === 1 ? 'card' : 'cards'}\nClick to expand`}
+      onClick={() => setPrefs({ type: 'setDisplay', config: withListCollapsed(prefs.display.board, col.id, false) })}
+      className={cn(
+        'drag-handle flex w-10 shrink-0 cursor-pointer items-center rounded-xl bg-lane text-sm font-semibold transition-[opacity,box-shadow] hover:bg-lane-hover',
+        tall ? 'max-h-full min-h-36 flex-col gap-2 py-3' : 'h-10 justify-center gap-1',
+        dropping === 'ok' && 'ring-2 ring-primary/60',
+        dropping === 'blocked' && 'ring-2 ring-destructive/50',
+        className,
+      )}
+    >
+      <StatusDot category={col.category} className={col.color ? 'ring-2 ring-card/70' : undefined} />
+      <span className="text-xs font-normal text-muted-foreground tabular-nums">{count}</span>
+      {tall && <span className="min-h-0 truncate [writing-mode:vertical-rl]">{col.name}</span>}
+    </button>
   )
 }
 
