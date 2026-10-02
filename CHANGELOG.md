@@ -11,7 +11,8 @@ then `git pull` (or download the new release) and `docker compose up -d --build`
 - **Dates with or without a time:** start and due are whole days by default; add a time (24-hour) when it matters.
   Everyone sees it in their own time zone, and dates read day first ("Mon 12 Oct · 14:30").
 - **Works on phones and tablets:** press and hold a card, list or row to drag it. Each card's menu can also move it to
-  another list, or to the top or bottom of its own.
+  another list, or to the top or bottom of its own. It installs as an app too (the browser's "Install" or "Add to Home
+  screen"): its own icon and window. It still needs a connection, and a site served over HTTPS.
 - **Sharing:** workspaces for teams (everyone in one can open its boards, without being invited to each), or boards
   shared one by one; owners, editors and viewers; share links, access codes and invites by email; a public link anyone
   can view. Changes appear for everyone live.
