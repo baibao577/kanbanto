@@ -3,7 +3,7 @@ import { isBackground, type BoardBackground } from '@kanbanto/model/colors'
 import { CommandSchema } from '@kanbanto/model/schema'
 import { readBoardFile } from '@kanbanto/model/transfer'
 import { newId } from '@kanbanto/model/ids'
-import { and, eq, sql } from 'drizzle-orm'
+import { and, eq, inArray, sql } from 'drizzle-orm'
 import type { FastifyPluginAsync } from 'fastify'
 import { z } from 'zod'
 import { accessFor, accessOf, requireAccess, type BoardRow } from '../boards/access'
@@ -102,6 +102,20 @@ export async function boardsFor(db: Db, userId: string): Promise<BoardSummary[]>
     })
   }
   return summaries
+}
+
+/** Where each board lives, by name: its workspace's name, "Personal" (yours), or "Shared with you". */
+export async function withPlaces(db: Db, list: BoardSummary[]): Promise<(BoardSummary & { place: string })[]> {
+  const ids = [...new Set(list.flatMap((b) => (b.workspaceId ? [b.workspaceId] : [])))]
+  const names = new Map(
+    ids.length
+      ? (await db.select({ id: workspaces.id, name: workspaces.name }).from(workspaces).where(inArray(workspaces.id, ids))).map((w) => [w.id, w.name])
+      : [],
+  )
+  return list.map((b) => ({
+    ...b,
+    place: b.workspaceId ? (names.get(b.workspaceId) ?? 'A workspace') : b.role === 'owner' ? 'Personal' : 'Shared with you',
+  }))
 }
 
 export const boardRoutes: FastifyPluginAsync = async (app) => {

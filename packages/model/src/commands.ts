@@ -100,8 +100,16 @@ function run(data: BoardData, cmd: Command, ctx: Context): Change[] {
   const { now } = ctx
   const out: Change[] = []
   const task = (id: string) => data.tasks[id] ?? reject('That task no longer exists.')
-  const putTask = (before: Task | null, next: Omit<Task, 'createdAt' | 'updatedAt' | 'version'>) =>
-    out.push({ entity: 'task', id: next.id, before, after: stamp(before, { ...next, activeAt: activeAt(before, next, now) }, now) })
+  // When it got done: set on entering a done list, kept while it stays in one, gone once it leaves.
+  const putTask = (before: Task | null, { doneAt, ...next }: Omit<Task, 'createdAt' | 'updatedAt' | 'version'>) => {
+    const done = data.columns.some((c) => c.id === next.status && c.category === 'done')
+    out.push({
+      entity: 'task',
+      id: next.id,
+      before,
+      after: stamp(before, { ...next, activeAt: activeAt(before, next, now), ...(done && { doneAt: doneAt ?? now }) }, now),
+    })
+  }
 
   switch (cmd.type) {
     case 'task.create': {

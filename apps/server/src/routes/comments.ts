@@ -1,6 +1,6 @@
 import type { CommentView, NotificationView } from '@kanbanto/model/api'
 import { newId } from '@kanbanto/model/ids'
-import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm'
+import { and, desc, eq, ilike, inArray, isNull, or, sql } from 'drizzle-orm'
 import type { FastifyInstance, FastifyPluginAsync } from 'fastify'
 import { z } from 'zod'
 import { requireAccess, type BoardRow } from '../boards/access'
@@ -78,6 +78,44 @@ export async function lastComments(db: Db | Tx, boardId: string) {
     .where(eq(comments.boardId, boardId))
     .groupBy(comments.taskId)
   return Object.fromEntries(rows.map((r) => [r.taskId, new Date(r.at).toISOString()]))
+}
+
+/** The same, for several boards at once: per board, per task. */
+export async function lastCommentsFor(db: Db | Tx, boardIds: string[]) {
+  const out = new Map<string, Record<string, string>>()
+  if (!boardIds.length) return out
+  const rows = await db
+    .select({ boardId: comments.boardId, taskId: comments.taskId, at: sql<Date>`max(${comments.createdAt})` })
+    .from(comments)
+    .where(inArray(comments.boardId, boardIds))
+    .groupBy(comments.boardId, comments.taskId)
+  for (const r of rows) {
+    if (!out.has(r.boardId)) out.set(r.boardId, {})
+    out.get(r.boardId)![r.taskId] = new Date(r.at).toISOString()
+  }
+  return out
+}
+
+/** How many comments a search reads at most (the newest ones). */
+const MAX_FOUND = 2000
+
+/** Comments on these boards with any of these words in them, newest first: per board and task, their text. */
+export async function commentsWith(db: Db | Tx, boardIds: string[], words: string[]) {
+  const out = new Map<string, string[]>()
+  if (!boardIds.length || !words.length) return out
+  const like = (w: string) => `%${w.replace(/[\\%_]/g, (c) => `\\${c}`)}%`
+  const rows = await db
+    .select({ boardId: comments.boardId, taskId: comments.taskId, body: comments.body })
+    .from(comments)
+    .where(and(inArray(comments.boardId, boardIds), or(...words.map((w) => ilike(comments.body, like(w))))))
+    .orderBy(desc(comments.createdAt))
+    .limit(MAX_FOUND)
+  for (const r of rows) {
+    const key = `${r.boardId}:${r.taskId}`
+    if (!out.has(key)) out.set(key, [])
+    out.get(key)!.push(r.body)
+  }
+  return out
 }
 
 /** Only people on the board can be @mentioned (and not yourself). */

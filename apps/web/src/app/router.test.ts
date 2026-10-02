@@ -20,6 +20,25 @@ describe('router', () => {
       ['#/forgot', { page: 'forgot' }],
       ['#/w/w-1', { page: 'workspace', id: 'w-1' }],
       ['#/authorize?client_id=c&state=s', { page: 'authorize', query: 'client_id=c&state=s' }],
+      ['#/cards', { page: 'cards', state: 'active' }],
+      ['#/cards?state=archived&board=b1&q=old+idea&completed=yes', { page: 'cards', state: 'archived', board: 'b1', q: 'old idea', completed: true }],
+      ['#/cards?state=all&assignee=me&when=done&range=this-week', { page: 'cards', state: 'all', assignee: 'me', when: 'done', range: 'this-week' }],
+      [
+        '#/cards?place=personal&kind=backlog%2Ctodo&priority=urgent%2Cnone&label=Bug&due=overdue&from=2026-07-01&to=2026-07-31&parents=hide&sort=due',
+        {
+          page: 'cards',
+          state: 'active',
+          place: 'personal',
+          kinds: ['backlog', 'todo'],
+          priorities: ['urgent', 'none'],
+          label: 'Bug',
+          due: 'overdue',
+          from: '2026-07-01',
+          to: '2026-07-31',
+          leaves: true,
+          sort: 'due',
+        },
+      ],
       ['#/verify/v_tok', { page: 'verify', token: 'v_tok' }],
       ['#/reset/r-tok', { page: 'reset', token: 'r-tok' }],
     ]
@@ -27,6 +46,16 @@ describe('router', () => {
       expect(parseRoute(hash)).toEqual(route)
       if (hash) expect(hrefFor(route)).toBe(hash)
     }
+  })
+
+  it('a search address with something it doesn’t know is read without it', () => {
+    expect(parseRoute('#/cards?state=nope&when=any&range=fortnight&from=July&kind=doing,zzz&sort=recent')).toEqual({
+      page: 'cards',
+      state: 'active',
+      kinds: ['doing'],
+    })
+    // A named range wins over days.
+    expect(parseRoute('#/cards?range=7d&from=2026-07-01')).toEqual({ page: 'cards', state: 'active', range: '7d' })
   })
 
   it('ignores an unknown tab rather than failing', () => {

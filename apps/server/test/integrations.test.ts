@@ -1,5 +1,6 @@
 import { createHmac } from 'node:crypto'
 import { createServer, type Server } from 'node:http'
+import { eq } from 'drizzle-orm'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { tasks, webhookDeliveries } from '../src/db/schema'
 import { mid, Person, reset, setPlatformAdmin, setup } from './helpers'
@@ -510,6 +511,10 @@ describe('MCP', () => {
     const call = async (name: string, args: object) => toolResult(await rpc(mcp, 'tools/call', { name, arguments: args }))
     // Everything on the starter board is weeks old; make A3 look fresh through a comment, and A1 through an edit.
     await t.db.update(tasks).set({ activeAt: new Date(Date.now() - 30 * 86_400_000), updatedAt: new Date(Date.now() - 30 * 86_400_000) })
+    await t.db
+      .update(tasks)
+      .set({ doneAt: new Date(Date.now() - 30 * 86_400_000) })
+      .where(eq(tasks.id, 'A1'))
     await call('add_comment', { board_id: id, task_id: 'A3', text: 'Still on it' })
     await call('update_task', { board_id: id, task_id: 'A1', title: 'Pick a logo' })
     const stale = await call('find_tasks', { board_id: id, idle_days: 7, sort: 'idle' })
@@ -519,6 +524,19 @@ describe('MCP', () => {
     // A1's parent counts its subtask's activity.
     expect(ids).not.toContain('A')
     expect(stale.tasks[0].idle_days).toBeGreaterThanOrEqual(29)
+
+    // What got done, and when: asking by the done date finds done tasks, archived ones too when asked.
+    await call('update_task', { board_id: id, task_id: 'B1', list: 'Done' })
+    const finished = await call('find_tasks', { board_id: id, done_after: '1h' })
+    expect(finished.tasks.map((x: { id: string }) => x.id)).toEqual(['B1'])
+    expect(finished.tasks[0]).toMatchObject({ done: true, done_at: expect.any(String) })
+    expect((await call('find_tasks', { board_id: id, done_before: '1h' })).tasks.map((x: { id: string }) => x.id)).toEqual(['A1'])
+    await call('archive_task', { board_id: id, task_id: 'B1' })
+    expect((await call('find_tasks', { board_id: id, done_after: '1h' })).total).toBe(0)
+    expect((await call('find_tasks', { board_id: id, done_after: '1h', include_archived: true })).tasks[0]).toMatchObject({
+      id: 'B1',
+      done_at: finished.tasks[0].done_at,
+    })
 
     expect((await call('list_boards', {})).boards[0].favorite).toBeUndefined()
     await ann.ok('PUT', `/api/boards/${id}/favorite`, { favorite: true })

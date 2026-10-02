@@ -81,6 +81,8 @@ Without MCP, use the REST API (see "REST fallback" below).
   the meeting with the action items as subtasks, on the board the meeting was about.
 - *"What happened last week / in September?"* → `recent_activity` with `since` and `until` (kept 90 days); page with
   `next_until`. For what was created or touched in a period, `find_tasks` with `created_after` / `changed_before` etc.
+- *"What did I finish this week?"* → `find_tasks` with `assignee: "me"` and `done_after: "7d"` (add `include_archived`
+  for cards put away since); each result says when it got done (`done_at`).
 - *"Plan X"* → find or create the parent task, then `create_tasks` with its subtasks; offer to set due dates and
   assignees.
 - *"My day" / "what do I need to do today?"* → `reminders` (coming up today, and what went off), `find_tasks` with

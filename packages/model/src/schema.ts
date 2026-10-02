@@ -76,6 +76,7 @@ export const TaskSchema = z.object({
   archivedList: plain(200).optional(),
   archivedDone: z.boolean().optional(),
   activeAt: z.string().max(40).optional(),
+  doneAt: z.string().max(40).optional(),
   reminders: reminders.optional(),
   color: color.optional(),
   rank: position.optional(),

@@ -37,7 +37,12 @@ export async function insertBoard(tx: Tx, data: BoardData, ownerId: string, work
     version: data.board.version,
   })
   await tx.insert(boardMembers).values({ boardId: data.board.id, userId: ownerId, role: 'owner', createdAt: now, updatedAt: now, version: 1 })
-  await writeChanges(tx, data.board.id, creations(data))
+  // Cards that arrive finished (the example board, an imported one) were done by their last change, as far as we know.
+  const doneLists = new Set(data.columns.filter((c) => c.category === 'done').map((c) => c.id))
+  const tasks = Object.fromEntries(
+    Object.values(data.tasks).map((t) => [t.id, doneLists.has(t.status) && !t.doneAt ? { ...t, doneAt: t.activeAt ?? t.updatedAt } : t]),
+  )
+  await writeChanges(tx, data.board.id, creations({ ...data, tasks }))
 }
 
 export type Template = 'empty' | 'example'

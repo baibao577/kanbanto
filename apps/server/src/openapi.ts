@@ -216,12 +216,41 @@ The answer lists the records that changed.
       '/api/cards': {
         get: {
           tags: ['Boards'],
-          summary: 'Archived cards, across your boards',
-          description: 'Newest first. Only `state=archived` for now. For more, pass `nextOffset` back as `offset`.',
+          summary: 'Search cards, across your boards',
+          description:
+            'Cards on every board you can open, as one list: the ones on their boards (`active`), the archived ones, or both. Every filter is optional and they combine. Each card says where it lives, and which of its dates the search was about (`at`, `atKind`). For more, pass `nextOffset` back as `offset`.',
           parameters: [
-            { name: 'state', in: 'query', schema: { enum: ['archived'], default: 'archived' } },
+            { name: 'state', in: 'query', schema: { enum: ['archived', 'active', 'all'], default: 'archived' } },
             { name: 'board', in: 'query', schema: { ...str, description: 'One board; leave out for all of them.' } },
-            { name: 'q', in: 'query', schema: { ...str, description: 'Words in the title or description.' } },
+            {
+              name: 'place',
+              in: 'query',
+              schema: { ...str, description: 'A workspace’s id, `personal` (your own boards) or `shared` (shared with you).' },
+            },
+            { name: 'q', in: 'query', schema: { ...str, description: 'Words in the title, the description or a comment.' } },
+            {
+              name: 'completed',
+              in: 'query',
+              schema: { enum: ['true', 'false'], description: 'Done (in a done list, or archived as completed) or not.' },
+            },
+            { name: 'kind', in: 'query', schema: { ...str, description: 'Kinds of list, with commas: `backlog`, `todo`, `doing`, `done`.' } },
+            { name: 'assignee', in: 'query', schema: { ...str, description: '`me`, `none` (no one), or a person’s id.' } },
+            { name: 'priority', in: 'query', schema: { ...str, description: 'With commas: `urgent`, `high`, `medium`, `low`, `none`.' } },
+            { name: 'label', in: 'query', schema: { ...str, description: 'A label’s name.' } },
+            { name: 'due', in: 'query', schema: { enum: ['overdue', 'week', 'none'] } },
+            {
+              name: 'when',
+              in: 'query',
+              schema: {
+                enum: ['any', 'done', 'created', 'changed', 'archived'],
+                default: 'any',
+                description: 'Which of a card’s dates `from` and `to` are about. Only the latest change of a card is kept.',
+              },
+            },
+            { name: 'from', in: 'query', schema: { ...str, description: 'A moment (ISO): on or after this.' } },
+            { name: 'to', in: 'query', schema: { ...str, description: 'A moment (ISO): before this.' } },
+            { name: 'parents', in: 'query', schema: { enum: ['hide'], description: 'Only cards without subtasks.' } },
+            { name: 'sort', in: 'query', schema: { enum: ['recent', 'created', 'due', 'priority'], default: 'recent' } },
             { name: 'offset', in: 'query', schema: { type: 'integer', minimum: 0 } },
             { name: 'limit', in: 'query', schema: { type: 'integer', minimum: 1, maximum: 100, default: 50 } },
           ],

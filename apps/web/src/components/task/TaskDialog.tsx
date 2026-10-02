@@ -41,10 +41,13 @@ export function TaskDialog({
   id,
   onClose,
   editTitle,
+  banner,
 }: {
   id: string | null
   onClose: () => void
   /** Start in the title: for a card made just now. */ editTitle?: boolean
+  /** Shown above the card (the Search cards page says it's view only there, with a way to its board). */
+  banner?: ReactNode
 }) {
   const { data } = useBoard()
   const archived = !!id && !!data.archived?.[id]
@@ -71,6 +74,7 @@ export function TaskDialog({
           }
         }}
       >
+        {open && banner}
         {open && (archived ? <ArchivedCard key={id} id={id} onClose={onClose} /> : <TaskDetail key={id} id={id} onClose={onClose} />)}
       </DialogContent>
     </Dialog>
@@ -172,8 +176,8 @@ function TaskDetail({ id, onClose }: { id: string; onClose: () => void }) {
                   return (
                     <li key={k} className="group flex items-center gap-2 rounded-md px-1 py-1 hover:bg-accent/60">
                       <button
-                        disabled={kDerived}
-                        title={kDerived ? 'Follows its own subtasks' : isDone ? 'Mark as not done' : 'Mark as done'}
+                        disabled={kDerived || readOnly}
+                        title={readOnly ? undefined : kDerived ? 'Follows its own subtasks' : isDone ? 'Mark as not done' : 'Mark as done'}
                         onClick={() => run({ type: 'task.update', id: k, fields: { status: isDone ? idx.firstOf.todo : idx.firstOf.done } })}
                         className="grid size-5 place-items-center text-muted-foreground hover:text-status-done disabled:opacity-40"
                       >
@@ -197,14 +201,16 @@ function TaskDetail({ id, onClose }: { id: string; onClose: () => void }) {
                 {kids.length > 100 && <li className="px-1 text-xs text-muted-foreground">and {kids.length - 100} more</li>}
               </ul>
             )}
-            <QuickAdd
-              label="Add a subtask"
-              submitLabel="Add"
-              placeholder="Subtask title"
-              single
-              dates
-              onAdd={(title, fields) => createTask(id, { ...fields, title })}
-            />
+            {!readOnly && (
+              <QuickAdd
+                label="Add a subtask"
+                submitLabel="Add"
+                placeholder="Subtask title"
+                single
+                dates
+                onAdd={(title, fields) => createTask(id, { ...fields, title })}
+              />
+            )}
           </Section>
 
           <Section icon={<Prohibit />} title="Waiting on" count={t.blockedBy.filter((b) => b in data.tasks).length}>
@@ -219,27 +225,31 @@ function TaskDetail({ id, onClose }: { id: string; onClose: () => void }) {
                         {data.tasks[b].title}
                       </button>
                       <StatusPill col={statusCol(idx, b)} />
-                      <button
-                        aria-label="Stop waiting on this"
-                        onClick={() => patch({ blockedBy: t.blockedBy.filter((x) => x !== b) })}
-                        className="grid size-6 place-items-center rounded text-muted-foreground opacity-0 group-hover:opacity-100 hover:text-foreground"
-                      >
-                        <X className="size-3.5" />
-                      </button>
+                      {!readOnly && (
+                        <button
+                          aria-label="Stop waiting on this"
+                          onClick={() => patch({ blockedBy: t.blockedBy.filter((x) => x !== b) })}
+                          className="grid size-6 place-items-center rounded text-muted-foreground opacity-0 group-hover:opacity-100 hover:text-foreground"
+                        >
+                          <X className="size-3.5" />
+                        </button>
+                      )}
                     </li>
                   ))}
               </ul>
             )}
-            <TaskPicker
-              placeholder="Find a task…"
-              exclude={notBlocker}
-              onPick={(b) => b && patch({ blockedBy: [...t.blockedBy, b] })}
-              trigger={
-                <FieldButton empty className="w-auto">
-                  + Add a task this is waiting on
-                </FieldButton>
-              }
-            />
+            {!readOnly && (
+              <TaskPicker
+                placeholder="Find a task…"
+                exclude={notBlocker}
+                onPick={(b) => b && patch({ blockedBy: [...t.blockedBy, b] })}
+                trigger={
+                  <FieldButton empty className="w-auto">
+                    + Add a task this is waiting on
+                  </FieldButton>
+                }
+              />
+            )}
           </Section>
 
           <CommentsSection taskId={id} cardFiles={cardFiles} />

@@ -381,6 +381,8 @@ export const tasks = pgTable(
     archivedDone: boolean('archived_done'),
     /** The last real work on it (moved or edited; see model Task.activeAt). Null on older cards: updated_at stands in. */
     activeAt: at('active_at'),
+    /** When it entered a done list (see model Task.doneAt). Null: not done, or done before this was kept. */
+    doneAt: at('done_at'),
     /** Reminder[] (model/types.ts); null: none. */
     reminders: jsonb('reminders').$type<Reminder[]>(),
     /** The list it's in. */

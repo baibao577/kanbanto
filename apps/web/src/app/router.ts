@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from 'react'
-import { LAYOUTS, type Layout } from '@kanbanto/model/types'
+import { CARD_DATES, CARD_RANGES, CARD_SORTS, type CardDate, type CardRange, type CardSort, type CardState } from '@kanbanto/model/search'
+import { CATEGORIES, LAYOUTS, PRIORITIES, type Category, type Layout, type Priority } from '@kanbanto/model/types'
 
 /**
  * Pages:
@@ -8,7 +9,8 @@ import { LAYOUTS, type Layout } from '@kanbanto/model/types'
  *                            Back/Forward and links bring it back. A bare #/b/<id> means "as I left it".
  *   #/join/<token>           a share link (or an email invite), to a board or a workspace
  *   #/w/<id>                 a workspace's people and settings
- *   #/cards?state=archived&board=<id>&q=<words>   cards across boards (archived ones, for now)
+ *   #/cards?q=<words>&assignee=me&when=done&range=this-week…   search cards across boards. The address holds the
+ *                            whole search (see CardsRoute), so it can be kept and shared. state=archived: the archived ones.
  *   #/authorize?<oauth params>   approving an app that connects with sign-in (from /oauth/authorize)
  *   #/signin, #/signup       (?next=<where to go after>)
  *   #/forgot                 ask for a password reset email
@@ -18,8 +20,34 @@ import { LAYOUTS, type Layout } from '@kanbanto/model/types'
  * Hash addresses work on any static host, with no server rewrite rules.
  */
 export type BoardRoute = { page: 'board'; id: string; layout?: Layout; focus?: string; task?: string }
-/** The Cards page: which cards (archived, for now), on one board or all of them, matching some words. */
-export type CardsRoute = { page: 'cards'; state: 'archived'; board?: string; q?: string; completed?: boolean }
+/**
+ * The Search cards page: which cards (the ones on their boards, unless said), where, and what about them. A time range
+ * is a named one (`range`, which moves with the calendar) or two days (`from`, `to`), about one of a card's dates
+ * (`when`).
+ */
+export type CardsRoute = {
+  page: 'cards'
+  state: CardState
+  board?: string
+  /** A workspace's id, `personal` or `shared`. */
+  place?: string
+  q?: string
+  completed?: boolean
+  kinds?: Category[]
+  /** `me`, `none`, or a person's id. */
+  assignee?: string
+  priorities?: (Priority | 'none')[]
+  label?: string
+  due?: 'overdue' | 'week' | 'none'
+  when?: CardDate
+  range?: CardRange
+  /** Days, YYYY-MM-DD. */
+  from?: string
+  to?: string
+  /** Leave out cards that have subtasks. */
+  leaves?: boolean
+  sort?: CardSort
+}
 export type Route =
   | { page: 'home' }
   | BoardRoute
@@ -50,12 +78,30 @@ export function parseRoute(hash: string): Route {
   if (cards) {
     const p = new URLSearchParams(cards[1] ?? '')
     const done = p.get('completed')
+    const one = <T extends string>(key: string, values: readonly T[]) => values.find((v) => v === p.get(key))
+    const some = <T extends string>(key: string, values: readonly T[]) => (p.get(key) ?? '').split(',').flatMap((v) => values.filter((x) => x === v))
+    const day = (key: string) => (/^\d{4}-\d{2}-\d{2}$/.test(p.get(key) ?? '') ? p.get(key)! : undefined)
+    const state = one('state', ['archived', 'all'] as const) ?? 'active'
+    const kinds = some('kind', CATEGORIES)
+    const priorities = some('priority', [...PRIORITIES, 'none'] as const)
+    const range = one('range', CARD_RANGES)
     return {
       page: 'cards',
-      state: 'archived',
+      state,
       ...(p.get('board') && { board: p.get('board')! }),
+      ...(p.get('place') && { place: p.get('place')! }),
       ...(p.get('q') && { q: p.get('q')! }),
       ...((done === 'yes' || done === 'no') && { completed: done === 'yes' }),
+      ...(kinds.length && { kinds }),
+      ...(p.get('assignee') && { assignee: p.get('assignee')! }),
+      ...(priorities.length && { priorities }),
+      ...(p.get('label') && { label: p.get('label')! }),
+      ...(one('due', ['overdue', 'week', 'none'] as const) && { due: one('due', ['overdue', 'week', 'none'] as const) }),
+      ...(one('when', CARD_DATES) && one('when', CARD_DATES) !== 'any' && { when: one('when', CARD_DATES) }),
+      // A named range, or days: not both.
+      ...(range ? { range } : { ...(day('from') && { from: day('from') }), ...(day('to') && { to: day('to') }) }),
+      ...(p.get('parents') === 'hide' && { leaves: true }),
+      ...(one('sort', CARD_SORTS) && one('sort', CARD_SORTS) !== 'recent' && { sort: one('sort', CARD_SORTS) }),
     }
   }
   const ws = hash.match(/^#\/w\/([^/?#]+)\/?$/)
@@ -95,11 +141,27 @@ export function hrefFor(r: Route) {
   if (r.page === 'forgot') return '#/forgot'
   if (r.page === 'workspace') return `#/w/${encodeURIComponent(r.id)}`
   if (r.page === 'cards') {
-    const p = new URLSearchParams({ state: r.state })
+    const p = new URLSearchParams()
+    if (r.state !== 'active') p.set('state', r.state)
     if (r.board) p.set('board', r.board)
+    if (r.place) p.set('place', r.place)
     if (r.q) p.set('q', r.q)
     if (r.completed !== undefined) p.set('completed', r.completed ? 'yes' : 'no')
-    return `#/cards?${p}`
+    if (r.kinds?.length) p.set('kind', r.kinds.join(','))
+    if (r.assignee) p.set('assignee', r.assignee)
+    if (r.priorities?.length) p.set('priority', r.priorities.join(','))
+    if (r.label) p.set('label', r.label)
+    if (r.due) p.set('due', r.due)
+    if (r.when && r.when !== 'any') p.set('when', r.when)
+    if (r.range) p.set('range', r.range)
+    else {
+      if (r.from) p.set('from', r.from)
+      if (r.to) p.set('to', r.to)
+    }
+    if (r.leaves) p.set('parents', 'hide')
+    if (r.sort && r.sort !== 'recent') p.set('sort', r.sort)
+    const qs = p.toString()
+    return `#/cards${qs ? `?${qs}` : ''}`
   }
   if (r.page === 'authorize') return `#/authorize?${r.query}`
   if (r.page === 'join' || r.page === 'verify' || r.page === 'reset') return `#/${r.page}/${encodeURIComponent(r.token)}`

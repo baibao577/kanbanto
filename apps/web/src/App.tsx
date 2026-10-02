@@ -116,6 +116,19 @@ export default function App() {
     navigate(last ? { page: 'board', id: last } : { page: 'home' }, { replace: true })
   }, [user])
 
+  // ⌘K / Ctrl+K, anywhere: search all cards.
+  useEffect(() => {
+    if (!user) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key.toLowerCase() !== 'k' || !(e.metaKey || e.ctrlKey) || e.shiftKey || e.altKey) return
+      e.preventDefault()
+      if (currentRoute().page !== 'cards') navigate({ page: 'cards', state: 'active' })
+      else document.querySelector<HTMLInputElement>('input[aria-label="Search cards"]')?.focus()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [user])
+
   // Links from emails work whatever state you're in.
   if (route.page === 'verify') return <VerifyView token={route.token} />
   if (route.page === 'reset') return <ResetView token={route.token} />

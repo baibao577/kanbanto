@@ -96,7 +96,9 @@ export function planMove(
   const lastSibling = (parent ? tIdx.childrenOf.get(parent) : tIdx.roots)?.at(-1)
   for (const id of moving) {
     const t = source.tasks[id]
-    const { rank: _rank, assigneeId, ...rest } = t
+    const { rank: _rank, assigneeId, doneAt, ...rest } = t
+    const status = listFor(t)
+    const done = target.columns.some((c) => c.id === status && c.category === 'done')
     const keep = assigneeId && onTarget.has(assigneeId)
     if (assigneeId && !keep) unassigned.add(source.members.find((m) => m.id === assigneeId)?.name ?? 'Someone')
     droppedLinks += t.blockedBy.filter((b) => !inMove.has(b)).length
@@ -106,7 +108,9 @@ export function planMove(
       parentId: id === taskId ? parent : ids.get(t.parentId!)!,
       // Its place among its new siblings (at the end); subtasks keep theirs.
       order: id === taskId ? positionBetween(lastSibling ? target.tasks[lastSibling].order : null, null) : t.order,
-      status: listFor(t),
+      status,
+      // When it got done goes with it, if it lands in a done list.
+      ...(done && { doneAt: doneAt ?? ctx.now }),
       labels: t.labels.flatMap((l) => (labelIds.has(l) ? [labelIds.get(l)!] : [])),
       blockedBy: t.blockedBy.filter((b) => inMove.has(b)).map((b) => ids.get(b)!),
       ...(keep && { assigneeId }),

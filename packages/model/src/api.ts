@@ -1,6 +1,8 @@
 import type { PresetSettings } from './prefs'
 import type { Change } from './records'
-import type { BoardData } from './types'
+import type { CardDate, CardMomentKind, CardSort, CardState } from './search'
+import type { BoardData, Category, Priority } from './types'
+import type { ColorName } from './colors'
 
 /**
  * What the server's API sends back, shared by the server and the web app so both agree on the shapes.
@@ -285,19 +287,38 @@ export interface BoardSummary {
 }
 
 // ── Cards across boards (GET /api/cards) ───────────────────────────────────────
-// One search over cards, for the Cards page (archived cards today; every card later) and, later, assistants.
+// One search over the cards on every board you can open, for the Search cards page and for apps (see search.ts).
 
-/** Which cards: archived ones only, for now. (Later: 'active' and 'all'.) */
-export type CardState = 'archived'
+export type { CardDate, CardMomentKind, CardSort, CardState }
 
 export interface CardsQuery {
+  /** Archived cards (the default), the ones on their boards, or both. */
   state: CardState
   /** One board; leave out for every board you can open. */
   board?: string
-  /** Words in the title or description. */
+  /** The boards of one place: a workspace's id, `personal` (your own) or `shared` (shared with you). */
+  place?: string
+  /** Words in the title, the description or a comment. */
   q?: string
-  /** Archived as completed (true) or not (false); leave out for both. */
+  /** Done (in a done list, or archived as completed) or not; leave out for both. */
   completed?: boolean
+  /** Kinds of list (an archived card counts as `done` when it was completed). */
+  kinds?: Category[]
+  /** `me`, `none` (no one), or a person's id. */
+  assignee?: string
+  /** Any of these (`none`: no priority). */
+  priorities?: (Priority | 'none')[]
+  /** A label's name. */
+  label?: string
+  due?: 'overdue' | 'week' | 'none'
+  /** Which of a card's dates `from`..`to` is about (any of them, by default); alone, only cards that have that date. */
+  when?: CardDate
+  /** Moments (ISO): from this one up to, not including, that one. */
+  from?: string
+  to?: string
+  /** `hide`: only cards without subtasks. */
+  parents?: 'hide'
+  sort?: CardSort
   offset?: number
   limit?: number
 }
@@ -307,16 +328,36 @@ export interface CardRow {
   id: string
   title: string
   board: { id: string; name: string; background: string | null }
+  /** Where its board lives: a workspace's name, "Personal" or "Shared with you". */
+  place: string
   /** Its parents' titles, top first. */
   path: string[]
-  /** The list it was archived from (its name then); null if that's unknown. */
+  archived: boolean
+  /** The list it shows in; archived: the list it was archived from (its name then), null if that's unknown. */
   list: string | null
-  /** Archived as completed: it was in a done list then. null: unknown (archived before this was kept). */
+  /** The kind of that list (null: archived unfinished), and its own color if it has one. */
+  kind: Category | null
+  listColor: ColorName | null
+  done: boolean
+  /** Archived as completed: it was in a done list then. null: not archived, or unknown (archived before this was kept). */
   completed: boolean | null
   assignee: string | null
-  /** Subtasks that go with it (archived with it). */
+  priority: Priority | null
+  due: string | null
+  labels: { name: string; color: ColorName }[]
+  /** Subtasks under it (archived: the ones archived with it), and how many are done. */
   subtasks: number
+  subtasksDone: number
+  createdAt: string
+  /** The last thing that happened on it: moved, edited or commented on. */
+  activeAt: string
+  doneAt: string | null
   archivedAt: string | null
+  /** The date the search is about, and which of the above it is ("done 2 days ago"). */
+  at: string
+  atKind: CardMomentKind
+  /** Part of the comment the words were found in, when they weren't all in the title or description. */
+  snippet?: string
   /** You can restore or delete it (an editor, on a board that isn't archived). */
   canEdit: boolean
 }
@@ -326,6 +367,9 @@ export interface CardsPage {
   total: number
   /** Pass back as `offset` for the next page; null at the end. */
   nextOffset: number | null
+  /** On the first page: the labels and people of the boards searched, to filter by. */
+  labels?: string[]
+  people?: { id: string; name: string }[]
 }
 
 export interface SharingMember {

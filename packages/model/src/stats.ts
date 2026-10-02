@@ -10,8 +10,8 @@ import type { BoardData, StatusColumn, Task } from './types'
  * It counts cards: tasks without subtasks (a parent's status follows its subtasks). Archived cards count as made, and
  * as done when they were archived as completed.
  *
- * When a card was done isn't stored. For a card in a done list it's taken to be its last real change (moving it there,
- * usually: an edit made afterwards moves it later); for an archived one, when it was archived.
+ * When a card was done is the moment it entered a done list (Task.doneAt; the index stands in its last real change for
+ * a card without one). An archived card: the same, or when it was archived if that wasn't kept.
  */
 
 const DAY_MS = 86_400_000
@@ -90,7 +90,7 @@ export function boardStats(
   for (const t of Object.values(data.tasks)) {
     if (!isLeaf(idx, t.id)) continue
     const isDone = idx.category.get(t.id) === 'done'
-    cards.push({ made: toDay(t.createdAt), madeAt: Date.parse(t.createdAt), doneAt: isDone ? Date.parse(t.activeAt ?? t.updatedAt) : null })
+    cards.push({ made: toDay(t.createdAt), madeAt: Date.parse(t.createdAt), doneAt: idx.doneAt.get(t.id) ?? null })
     if (!isDone) open.push(t)
   }
   const archived = Object.values(data.archived ?? {})
@@ -100,7 +100,7 @@ export function boardStats(
     cards.push({
       made: toDay(t.createdAt),
       madeAt: Date.parse(t.createdAt),
-      doneAt: t.archivedDone && t.archivedAt ? Date.parse(t.archivedAt) : null,
+      doneAt: t.archivedDone && t.archivedAt ? Date.parse(t.doneAt ?? t.archivedAt) : null,
     })
   }
   const dayOf = (ms: number) => toDay(new Date(ms).toISOString())

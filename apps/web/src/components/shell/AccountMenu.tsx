@@ -1,7 +1,8 @@
-import { Desktop, Moon, ShieldCheck, SignOut, Sun, UserCircle } from '@phosphor-icons/react'
+import { Desktop, MagnifyingGlass, Moon, ShieldCheck, SignOut, Sun, UserCircle } from '@phosphor-icons/react'
 import { navigate } from '@/app/router'
 import { useAuth } from '@/app/use-auth'
 import { useTheme } from '@/app/use-theme'
+import { SEARCH_KEYS } from '@/components/cards/search'
 import { Avatar } from '@/components/common/bits'
 import {
   DropdownMenu,
@@ -11,13 +12,14 @@ import {
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
   DropdownMenuSeparator,
+  DropdownMenuShortcut,
   DropdownMenuSub,
   DropdownMenuSubContent,
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 
-/** Your avatar: account, appearance, the platform console (platform admins), sign out. */
+/** Your avatar: search all cards, account, appearance, the platform console (platform admins), sign out. */
 export function AccountMenu() {
   const { user, signOut } = useAuth()
   const { theme, setTheme } = useTheme()
@@ -37,6 +39,10 @@ export function AccountMenu() {
             <span className="block truncate text-xs text-muted-foreground">{user.email}</span>
           </DropdownMenuLabel>
           <DropdownMenuSeparator />
+          <DropdownMenuItem onSelect={() => navigate({ page: 'cards', state: 'active' })}>
+            <MagnifyingGlass /> Search all cards
+            <DropdownMenuShortcut>{SEARCH_KEYS}</DropdownMenuShortcut>
+          </DropdownMenuItem>
           <DropdownMenuItem onSelect={() => navigate({ page: 'account' })}>
             <UserCircle /> Account settings
           </DropdownMenuItem>

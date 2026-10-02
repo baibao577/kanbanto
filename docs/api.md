@@ -41,6 +41,11 @@ curl -X POST https://kanbanto.example.com/api/boards/<board id>/mutations \
   comments and files) under `archived` in `GET /api/boards/<id>`, and come back with `task.restore`. `task.delete` on
   an archived task deletes it for good. A whole board is archived (read-only) with `POST /api/boards/<id>/archive`.
   `GET /api/cards?state=archived&board=<id>&q=<words>` lists archived cards across your boards, newest first, in pages.
+- **Searching every board**: `GET /api/cards?state=all` (or `active`, for cards still on their boards) takes the same
+  filters as the Search cards page: `q` (words in the title, description or a comment), `assignee=me`, `completed`,
+  `kind`, `priority`, `label`, `due`, and a time range (`from`, `to`) about one of a card's dates (`when=done`,
+  `created`, `changed` or `archived`). What I finished this week: `?state=all&assignee=me&when=done&from=2026-09-28`.
+  A task's `doneAt` is when it entered a done list.
 
 `GET /api/boards/<id>` returns the whole board: its lists, labels, people and tasks (a task's `status` is its list's id;
 `parentId` makes the tree; `priority` is `urgent`, `high`, `medium` or `low`).
@@ -129,7 +134,7 @@ claude mcp add --transport http kanbanto https://kanbanto.example.com/api/mcp --
 |---|---|
 | `list_boards` | The boards you can open: where each lives (a workspace, "Personal" or "Shared with you"), what it's for, and which is your Inbox |
 | `get_board` | A board's lists, labels, people and its open tasks as an outline: the top levels, or the part under one task |
-| `find_tasks` | Search one board, one workspace or everything: text, list, label, assignee (`me`, `nobody`), priority, blocked, due, created or changed between two times; sorted and paged |
+| `find_tasks` | Search one board, one workspace or everything: text, list, label, assignee (`me`, `nobody`), priority, blocked, due, created, changed or done between two times; sorted and paged |
 | `team_overview` | How a board or workspace is doing: tasks per list, each person's open, overdue and blocked work, and what needs attention |
 | `reminders` | Your reminders coming up in the next days, and the ones that went off today |
 | `recent_activity` | What happened in a stretch of time (default: the last day), optionally by one person: changes, who made them and through which app, and comments |

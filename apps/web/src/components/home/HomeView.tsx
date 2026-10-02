@@ -7,6 +7,7 @@ import {
   DotsThree,
   LockSimple,
   Key,
+  MagnifyingGlass,
   PencilSimple,
   Plus,
   SignOut,
@@ -28,6 +29,7 @@ import { hrefFor, navigate } from '@/app/router'
 import { useAuth } from '@/app/use-auth'
 import { ConfirmDialog, type ConfirmRequest } from '@/components/common/ConfirmDialog'
 import { visibilityOf } from '@/components/share/visibility'
+import { SEARCH_KEYS } from '@/components/cards/search'
 import { AccountMenu } from '@/components/shell/AccountMenu'
 import { NotificationBell } from '@/components/shell/NotificationBell'
 import { Button } from '@/components/ui/button'
@@ -194,6 +196,11 @@ export function HomeView() {
         <LogoMark className="size-7" />
         <span className="text-sm font-semibold">Kanbanto</span>
         <div className="ml-auto flex items-center gap-2">
+          <Button size="sm" variant="outline" className="gap-1.5" title={`Search all cards (${SEARCH_KEYS})`} asChild>
+            <a href={hrefFor({ page: 'cards', state: 'active' })}>
+              <MagnifyingGlass /> <span className="hidden sm:inline">Search cards</span>
+            </a>
+          </Button>
           <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setJoining(true)}>
             <Key /> <span className="hidden sm:inline">Join with a code</span>
           </Button>

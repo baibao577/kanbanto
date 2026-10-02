@@ -115,7 +115,7 @@ export function CommentsSection({ taskId, cardFiles }: { taskId: string; cardFil
                       </Folded>
                     </div>
                     <FileList files={c.attachments} />
-                    {(mine || access.role === 'owner') && (
+                    {canComment && (mine || access.role === 'owner') && (
                       <div className="mt-1 flex gap-3 text-xs text-muted-foreground opacity-0 group-hover:opacity-100 focus-within:opacity-100">
                         {mine && (
                           <button className="hover:text-foreground hover:underline" onClick={() => setEditing(c.id)}>

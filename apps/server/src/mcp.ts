@@ -7,8 +7,9 @@ import { idleDays, lastActivity } from '@kanbanto/model/age'
 import { isPast, sortTime } from '@kanbanto/model/dates'
 import { ancestorsOf, descendantsOf, indexFor, isBlocked, statusCol, type TaskIndex } from '@kanbanto/model/indexer'
 import { fireTime } from '@kanbanto/model/reminders'
+import { hasWords, wordsOf } from '@kanbanto/model/search'
 import { PRIORITIES, type BoardData, type Priority, type Reminder, type Task } from '@kanbanto/model/types'
-import { and, desc, eq, gte, ilike, inArray, or, sql } from 'drizzle-orm'
+import { and, desc, eq, gte, ilike, or, sql } from 'drizzle-orm'
 import type { FastifyInstance, FastifyPluginAsync } from 'fastify'
 import { z } from 'zod'
 import type { SessionUser } from './auth/sessions'
@@ -18,7 +19,7 @@ import { ACTIVITY_DAYS, parseMoment, readActivity } from './boards/activityLog'
 import { comments, reminderSends, tasks, users, workspaceMembers, workspaces } from './db/schema'
 import { HttpError } from './http'
 import { createBoard } from './boards/service'
-import { boardsFor } from './routes/boards'
+import { boardsFor, withPlaces } from './routes/boards'
 import { lastComments, postComment } from './routes/comments'
 
 /**
@@ -58,6 +59,7 @@ function brief(data: BoardData, idx: TaskIndex, t: Task) {
     title: t.title,
     list: col.name,
     done: col.category === 'done',
+    ...(idx.doneAt.has(t.id) && { done_at: new Date(idx.doneAt.get(t.id)!).toISOString() }),
     ...(t.parentId && { parent_id: t.parentId }),
     ...(t.assigneeId && { assignee: idx.members.get(t.assigneeId)?.name ?? t.assigneeId }),
     ...(t.start && { start: t.start }),
@@ -87,6 +89,7 @@ function archivedBrief(data: BoardData, t: Task) {
     archived: t.archivedAt,
     list: t.archivedList ?? data.columns.find((c) => c.id === t.status)?.name ?? 'a list that’s gone',
     ...(t.archivedDone !== undefined && { completed: t.archivedDone }),
+    ...(t.archivedDone && { done_at: t.doneAt ?? t.archivedAt }),
     ...(t.parentId && { parent_id: t.parentId }),
     ...(t.assigneeId && { assignee: data.members.find((m) => m.id === t.assigneeId)?.name ?? t.assigneeId }),
     ...(t.due && { due: t.due }),
@@ -130,22 +133,11 @@ function buildServer(app: FastifyInstance, me: SessionUser, token: TokenAccess) 
   const run = (boardId: string, command: Command) => app.engine.mutate(boardId, newId(), command, me.id, token.app)
 
   /** The boards you can open, each with where it lives: its workspace's name, "Personal" (yours), or "Shared with you". */
-  const myBoards = async (archived = false) => {
-    const list = (await boardsFor(app.db, me.id)).filter((b) => archived || !b.archivedAt)
-    const ids = [...new Set(list.flatMap((b) => (b.workspaceId ? [b.workspaceId] : [])))]
-    const names = new Map(
-      ids.length
-        ? (await app.db.select({ id: workspaces.id, name: workspaces.name }).from(workspaces).where(inArray(workspaces.id, ids))).map((w) => [
-            w.id,
-            w.name,
-          ])
-        : [],
+  const myBoards = async (archived = false) =>
+    withPlaces(
+      app.db,
+      (await boardsFor(app.db, me.id)).filter((b) => archived || !b.archivedAt),
     )
-    return list.map((b) => ({
-      ...b,
-      place: b.workspaceId ? (names.get(b.workspaceId) ?? 'A workspace') : b.role === 'owner' ? 'Personal' : 'Shared with you',
-    }))
-  }
   /** One board, the boards of one place (a workspace's name, "Personal", "Shared with you"), or all of them. */
   const choose = async (a: { board_id?: string; workspace?: string }) => {
     const all = await myBoards()
@@ -246,7 +238,7 @@ function buildServer(app: FastifyInstance, me: SessionUser, token: TokenAccess) 
     {
       title: 'Find tasks',
       description:
-        'Searches tasks on one board, one workspace, or every board you can open. All filters are optional and combine. Done tasks are left out unless include_done is true. When there are more, pass next_offset back as offset.',
+        'Searches tasks on one board, one workspace, or every board you can open. All filters are optional and combine. Done tasks are left out unless include_done is true (or you ask by when they got done). When there are more, pass next_offset back as offset.',
       inputSchema: {
         board_id: z.string().optional().describe('Leave out to search more boards.'),
         workspace: WORKSPACE,
@@ -263,6 +255,11 @@ function buildServer(app: FastifyInstance, me: SessionUser, token: TokenAccess) 
         created_before: z.string().optional().describe(MOMENT),
         changed_after: z.string().optional().describe(`Last changed on or after this. ${MOMENT}`),
         changed_before: z.string().optional().describe(`Last changed before this (e.g. "14d": untouched for two weeks). ${MOMENT}`),
+        done_after: z
+          .string()
+          .optional()
+          .describe(`Only done tasks that got done on or after this ("7d": finished in the last week); results show done_at. ${MOMENT}`),
+        done_before: z.string().optional().describe(`Only done tasks that got done before this. ${MOMENT}`),
         idle_days: z
           .number()
           .int()
@@ -302,6 +299,8 @@ function buildServer(app: FastifyInstance, me: SessionUser, token: TokenAccess) 
         created_before?: string
         changed_after?: string
         changed_before?: string
+        done_after?: string
+        done_before?: string
         idle_days?: number
         include_done?: boolean
         include_archived?: boolean
@@ -313,11 +312,15 @@ function buildServer(app: FastifyInstance, me: SessionUser, token: TokenAccess) 
         const limit = a.limit ?? PAGE
         const offset = a.offset ?? 0
         const chosen = (await choose(a)).slice(0, 50)
-        const words = a.text?.toLowerCase().split(/\s+/).filter(Boolean) ?? []
+        const words = wordsOf(a.text)
         const rank = a.priority ? PRIORITIES.indexOf(a.priority) : -1
         const time = (v: string | undefined, name: string) => parseMoment(v, name, null)?.getTime() ?? null
         const created = [time(a.created_after, 'created_after') ?? -Infinity, time(a.created_before, 'created_before') ?? Infinity]
         const changed = [time(a.changed_after, 'changed_after') ?? -Infinity, time(a.changed_before, 'changed_before') ?? Infinity]
+        // Asking when tasks got done is asking for done tasks.
+        const finished =
+          a.done_after || a.done_before ? [time(a.done_after, 'done_after') ?? -Infinity, time(a.done_before, 'done_before') ?? Infinity] : null
+        const gotDone = (ms: number | null | undefined) => !finished || (ms != null && ms >= finished[0] && ms < finished[1])
         const within = (iso: string, [from, to]: number[]) => {
           const t = Date.parse(iso)
           return t >= from && t < to
@@ -345,7 +348,8 @@ function buildServer(app: FastifyInstance, me: SessionUser, token: TokenAccess) 
           const commented = aging ? await lastComments(app.db, boardId) : undefined
           for (const id of a.parent_id ? descendantsOf(idx, a.parent_id) : idx.preorder) {
             const t = data.tasks[id]
-            if (!a.include_done && idx.category.get(id) === 'done') continue
+            if (!a.include_done && !finished && idx.category.get(id) === 'done') continue
+            if (!gotDone(idx.doneAt.get(id))) continue
             if (list && idx.status.get(id) !== list) continue
             if (label && !t.labels.includes(label)) continue
             if (who && t.assigneeId !== who) continue
@@ -356,10 +360,7 @@ function buildServer(app: FastifyInstance, me: SessionUser, token: TokenAccess) 
             if (a.due_before && (!t.due || t.due.slice(0, 10) > a.due_before)) continue
             if (a.due_after && (!t.due || t.due.slice(0, 10) < a.due_after)) continue
             if (!within(t.createdAt, created) || !within(t.updatedAt, changed)) continue
-            if (words.length) {
-              const hay = `${t.title} ${t.description ?? ''}`.toLowerCase()
-              if (!words.every((w) => hay.includes(w))) continue
-            }
+            if (!hasWords(words, `${t.title} ${t.description ?? ''}`.toLowerCase())) continue
             const active = aging ? lastActivity(idx, id, commented) : undefined
             if (a.idle_days && (idx.category.get(id) === 'done' || idleDays(active!) < a.idle_days)) continue
             found.push({
@@ -384,7 +385,8 @@ function buildServer(app: FastifyInstance, me: SessionUser, token: TokenAccess) 
               if (a.due_before && (!t.due || t.due.slice(0, 10) > a.due_before)) continue
               if (a.due_after && (!t.due || t.due.slice(0, 10) < a.due_after)) continue
               if (!within(t.createdAt, created) || !within(t.updatedAt, changed)) continue
-              if (words.length && !words.every((w) => `${t.title} ${t.description ?? ''}`.toLowerCase().includes(w))) continue
+              if (!gotDone(t.archivedDone ? Date.parse(t.doneAt ?? t.archivedAt!) : null)) continue
+              if (!hasWords(words, `${t.title} ${t.description ?? ''}`.toLowerCase())) continue
               found.push({ task: t, row: { board_id: boardId, board: data.board.name, workspace: b.place, ...archivedBrief(data, t) } })
             }
         }

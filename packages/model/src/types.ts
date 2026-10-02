@@ -134,6 +134,11 @@ export interface Task extends Meta {
    * older cards: `updatedAt` stands in. Card age also counts its subtasks and comments (see age.ts).
    */
   activeAt?: string
+  /**
+   * When it got done: the moment it entered a done list (kept while it stays in one, and through archiving). Unset
+   * while it isn't done. What a parent whose list follows its subtasks shows is worked out from theirs (see the index).
+   */
+  doneAt?: string
   /** Timeline bar color; unset = its status color. */
   color?: ColorName
   /**

@@ -35,6 +35,12 @@ export interface TaskIndex {
   subDone: Map<string, number>
   /** Last real work on it or any of its subtasks, in ms (see Task.activeAt). */
   lastActive: Map<string, number>
+  /**
+   * When each done task got done, in ms (only tasks showing in a done list). Its own `doneAt`; without one (a list
+   * that became a done list later), its last real work. A parent whose list follows its subtasks: when the last of
+   * them got done.
+   */
+  doneAt: Map<string, number>
 }
 
 // Siblings by outline position; the id breaks ties so the order is always the same.
@@ -119,7 +125,9 @@ export function buildIndex(tasks: TaskMap, mode: StatusMode, columns: StatusColu
   const subTotal = new Map<string, number>()
   const subDone = new Map<string, number>()
   const lastActive = new Map<string, number>()
+  const doneAt = new Map<string, number>()
   const ownActive = (id: string) => Date.parse(tasks[id].activeAt ?? tasks[id].updatedAt) || 0
+  const ownDone = (id: string) => Date.parse(tasks[id].doneAt ?? tasks[id].activeAt ?? tasks[id].updatedAt) || 0
   const set = (id: string, col: string) => {
     status.set(id, col)
     category.set(id, colById.get(col)!.category)
@@ -132,6 +140,7 @@ export function buildIndex(tasks: TaskMap, mode: StatusMode, columns: StatusColu
       subTotal.set(id, 0)
       subDone.set(id, 0)
       lastActive.set(id, ownActive(id))
+      if (category.get(id) === 'done') doneAt.set(id, ownDone(id))
       continue
     }
     let active = ownActive(id)
@@ -160,6 +169,9 @@ export function buildIndex(tasks: TaskMap, mode: StatusMode, columns: StatusColu
     // Derived: all children in one column → parent goes there too; otherwise roll up by category.
     else if (sameCol) set(id, sameCol)
     else set(id, firstOf[allDone ? 'done' : anyStarted ? 'doing' : anyReady ? 'todo' : 'backlog'])
+    if (category.get(id) !== 'done') continue
+    const kidsDone = kids.flatMap((k) => (doneAt.has(k) ? [doneAt.get(k)!] : []))
+    doneAt.set(id, mode === 'manual' || !kidsDone.length ? ownDone(id) : Math.max(...kidsDone))
   }
 
   return {
@@ -180,6 +192,7 @@ export function buildIndex(tasks: TaskMap, mode: StatusMode, columns: StatusColu
     subTotal,
     subDone,
     lastActive,
+    doneAt,
   }
 }
 

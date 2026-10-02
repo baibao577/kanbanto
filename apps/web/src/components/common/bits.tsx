@@ -44,7 +44,7 @@ export function StatusDot({ category, color, className }: { category: Category; 
 }
 
 /** A status name, tinted by its list's color (or what it counts as). */
-export function StatusPill({ col, className }: { col: StatusColumn; className?: string }) {
+export function StatusPill({ col, className }: { col: Pick<StatusColumn, 'name' | 'category' | 'color'>; className?: string }) {
   const c = statusTone(col.category, col.color)
   return (
     <span
