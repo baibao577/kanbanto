@@ -174,8 +174,13 @@ The app uses hash routing, so any static host or proxy works without rewrite rul
 ## Files
 
 - Files go to the **server's disk** (`UPLOADS_DIR`) by default, or to an **S3-compatible bucket** set in the
-  Platform console. Each file remembers where it was saved; changing the setting never moves or breaks existing
-  files (old settings are retired, not overwritten).
+  Platform console. Each file remembers where it was saved; changing the setting never breaks existing files, and
+  doesn't move them by itself (old settings are retired, not overwritten; saving a bucket used before brings its
+  setting back).
+- **Moving files** (`src/storage/move.ts`): files kept elsewhere (the disk, the site's storage, an earlier bucket) can
+  be moved to the storage in use, by the platform admin for the site's storage and by people for their own boards.
+  Each file is copied, its record switched, then the old copy removed; progress is kept in memory, so a restart just
+  leaves the rest where it was. An earlier bucket with no files left is forgotten, with its keys.
 - **Bring your own bucket:** people can connect their own bucket in Account settings; files on boards they own go
   there, with no limit. Their buckets must be at public addresses: every connection is checked after the name is
   looked up (so changing DNS later doesn't get around it), and redirects aren't followed.
@@ -197,7 +202,7 @@ The app uses hash routing, so any static host or proxy works without rewrite rul
 | An email | Its wording in `emails` (`apps/server/src/mail/templates.tsx`), its kind in `EMAIL_KINDS` (`db/schema.ts`) and a sample for the console's previews. It's then sent with `app.mail.queue(…)`. |
 | An email provider | A branch in `sendWith…` (`src/mail/transport.ts`), its settings in `senders.ts`, and the form in `EmailKeyForm.tsx`. |
 | A site setting | A column in `site_settings` (with a new migration), its default in `src/db/defaults.ts`, and the console page that changes it. Read it with `loadSettings()`. |
-| Storage somewhere other than S3 | An `ObjectStore` (`src/storage/stores.ts`: put and delete, plus how downloads are served) and where `storeOf` picks it. |
+| Storage somewhere other than S3 | An `ObjectStore` (`src/storage/stores.ts`: put, get and delete, plus how downloads are served) and where `storeOf` picks it. |
 
 ## Scaling
 

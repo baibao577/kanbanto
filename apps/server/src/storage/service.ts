@@ -1,6 +1,6 @@
 import { newId } from '@kanbanto/model/ids'
-import type { StorageBucket } from '@kanbanto/model/api'
-import { and, asc, eq, isNull, sql } from 'drizzle-orm'
+import type { StorageBucket, StoragePlace } from '@kanbanto/model/api'
+import { and, asc, desc, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm'
 import { decrypt, encrypt, encryptionReady } from '../crypto'
 import type { Db, Tx } from '../db'
 import { attachments, boardMembers, storageBackends } from '../db/schema'
@@ -17,19 +17,23 @@ import { DiskStore, S3Store, StorageError, type S3Config } from './stores'
  *   the per-owner quota.
  * - A board in a workspace: its files count against the workspace (which gets the same quota as a person), in the
  *   site's storage.
- * - Changing storage never moves or breaks existing files: each file remembers where it was saved, and replaced
- *   storage settings are retired, not overwritten.
+ * - Changing storage never breaks existing files, and doesn't move them by itself: each file remembers where it was
+ *   saved, and replaced storage settings are retired, not overwritten. Saving a bucket that was used before brings its
+ *   setting back; files kept elsewhere can be moved to the storage in use (move.ts).
  */
 
 export const disk = new DiskStore(env.uploadsDir)
 
 type BackendRow = typeof storageBackends.$inferSelect
 
+/** Whose storage settings: a person's own buckets, or (null) the platform's. */
+const ownedBy = (owner: string | null) => (owner ? eq(storageBackends.userId, owner) : isNull(storageBackends.userId))
+
 export async function activeBackend(db: Db | Tx, userId: string | null) {
   const [row] = await db
     .select()
     .from(storageBackends)
-    .where(and(userId ? eq(storageBackends.userId, userId) : isNull(storageBackends.userId), isNull(storageBackends.retiredAt)))
+    .where(and(ownedBy(userId), isNull(storageBackends.retiredAt)))
   return row ?? null
 }
 
@@ -44,6 +48,7 @@ export const s3For = (row: BackendRow) =>
 
 export const bucketView = (row: BackendRow | null): StorageBucket | null =>
   row && {
+    id: row.id,
     endpoint: row.endpoint,
     region: row.region,
     bucket: row.bucket,
@@ -124,47 +129,103 @@ export const BucketInput = {
   },
 }
 
-/**
- * Tests a bucket (writes and removes a small file), then saves it for `owner` (null = the platform). The secret is
- * encrypted. A different bucket retires the old setting (its files keep opening from it); new keys for the same
- * bucket just replace the keys.
- */
-export async function saveBucket(db: Db, meId: string, owner: string | null, input: ReturnType<typeof BucketInput.parse>) {
-  if (!encryptionReady()) throw new HttpError(503, 'Keys can’t be saved until the server has an encryption key. Restart Kanbanto to make one.')
-  const current = await activeBackend(db, owner)
-  const sameBucket = current && current.endpoint === input.endpoint && current.bucket === input.bucket
-  const secret = input.secret || (sameBucket && current.accessKeyId === input.accessKeyId ? decrypt(current.secretEncrypted) : '')
-  if (!secret) throw new HttpError(400, 'Paste the secret access key.')
-  const config: S3Config = { ...input, secret }
+/** A saved secret, or '' if it can't be read any more (the encryption key changed). */
+function savedSecret(row: BackendRow) {
+  try {
+    return decrypt(row.secretEncrypted)
+  } catch {
+    return ''
+  }
+}
+
+/** Checks a bucket works with these keys (writes and removes a small file). */
+async function testBucket(config: S3Config, owner: string | null) {
   try {
     await new S3Store(config, { publicOnly: restricted(owner) }).check()
   } catch (e) {
     throw new HttpError(400, `The storage test failed: ${e instanceof StorageError ? e.message : 'unknown error'}`)
   }
+}
+
+const keyValues = (meId: string, accessKeyId: string, secret: string) => ({
+  accessKeyId,
+  secretEncrypted: encrypt(secret),
+  keyHint: `…${secret.slice(-4)}`,
+  lastError: null,
+  updatedBy: meId,
+  updatedAt: new Date(),
+})
+
+const NO_KEY = 'Keys can’t be saved until the server has an encryption key. Restart Kanbanto to make one.'
+
+/**
+ * Tests a bucket, then saves it for `owner` (null = the platform) as where new files go. The secret is encrypted.
+ * A bucket this owner has used before (the one in use, or one retired earlier) keeps its setting, with the keys given
+ * now: the files already in it open with them too, so switching back and forth never leaves old keys behind. Any
+ * other bucket in use is retired (its files keep opening from it).
+ */
+export async function saveBucket(db: Db, meId: string, owner: string | null, input: ReturnType<typeof BucketInput.parse>) {
+  if (!encryptionReady()) throw new HttpError(503, NO_KEY)
+  const current = await activeBackend(db, owner)
+  const known = await db
+    .select()
+    .from(storageBackends)
+    .where(and(ownedBy(owner), eq(storageBackends.endpoint, input.endpoint), eq(storageBackends.bucket, input.bucket)))
+    .orderBy(desc(storageBackends.updatedAt))
+  const keep = known.find((r) => !r.retiredAt) ?? known[0]
+  const sameKey = known.find((r) => r.accessKeyId === input.accessKeyId)
+  const secret = input.secret || (sameKey ? savedSecret(sameKey) : '')
+  if (!secret) throw new HttpError(400, 'Paste the secret access key.')
+  await testBucket({ ...input, secret }, owner)
   const values = {
     kind: 's3' as const,
     endpoint: input.endpoint,
     region: input.region,
     bucket: input.bucket,
-    accessKeyId: input.accessKeyId,
-    secretEncrypted: encrypt(secret),
-    keyHint: `…${secret.slice(-4)}`,
-    lastError: null,
-    updatedBy: meId,
-    updatedAt: new Date(),
+    ...keyValues(meId, input.accessKeyId, secret),
   }
   return db.transaction(async (tx) => {
-    if (current && sameBucket) {
-      const [row] = await tx.update(storageBackends).set(values).where(eq(storageBackends.id, current.id)).returning()
+    if (current && current.id !== keep?.id) await tx.update(storageBackends).set({ retiredAt: new Date() }).where(eq(storageBackends.id, current.id))
+    if (!keep) {
+      const [row] = await tx
+        .insert(storageBackends)
+        .values({ id: newId(), userId: owner, ...values })
+        .returning()
       return row
     }
-    if (current) await tx.update(storageBackends).set({ retiredAt: new Date() }).where(eq(storageBackends.id, current.id))
+    // Left from before a bucket's setting was brought back: the same bucket saved more than once. One is enough.
+    const twins = known.filter((r) => r.id !== keep.id).map((r) => r.id)
+    if (twins.length) {
+      await tx.update(attachments).set({ backendId: keep.id }).where(inArray(attachments.backendId, twins))
+      await tx.delete(storageBackends).where(inArray(storageBackends.id, twins))
+    }
     const [row] = await tx
-      .insert(storageBackends)
-      .values({ id: newId(), userId: owner, ...values })
+      .update(storageBackends)
+      .set({ ...values, retiredAt: null })
+      .where(eq(storageBackends.id, keep.id))
       .returning()
     return row
   })
+}
+
+/**
+ * New keys for a bucket used earlier (after changing them at the provider), so the files still in it open again.
+ * Tested first; the bucket stays retired.
+ */
+export async function saveBucketKeys(db: Db, meId: string, owner: string | null, backendId: string, keys: { accessKeyId: string; secret: string }) {
+  if (!encryptionReady()) throw new HttpError(503, NO_KEY)
+  const [found] = await db
+    .select()
+    .from(storageBackends)
+    .where(and(eq(storageBackends.id, backendId), ownedBy(owner)))
+  if (!found) throw new HttpError(404, 'That bucket is no longer here.')
+  await testBucket({ endpoint: found.endpoint, region: found.region, bucket: found.bucket, ...keys }, owner)
+  const [row] = await db
+    .update(storageBackends)
+    .set(keyValues(meId, keys.accessKeyId, keys.secret))
+    .where(eq(storageBackends.id, found.id))
+    .returning()
+  return row
 }
 
 /** Stops using a bucket for new files (existing files keep opening from it). */
@@ -172,5 +233,56 @@ export async function retireBucket(db: Db, owner: string | null) {
   await db
     .update(storageBackends)
     .set({ retiredAt: new Date() })
-    .where(and(owner ? eq(storageBackends.userId, owner) : isNull(storageBackends.userId), isNull(storageBackends.retiredAt)))
+    .where(and(ownedBy(owner), isNull(storageBackends.retiredAt)))
+}
+
+const counts = {
+  files: sql<number>`count(*)::int`,
+  bytes: sql<number>`coalesce(sum(${attachments.size}), 0)::bigint`,
+}
+
+/**
+ * Where files are kept other than where new ones go now, for the site (`owner` null: everything in the site's storage)
+ * or a person (their own buckets, and with a bucket connected, their Personal boards' files in the site's storage).
+ * Each place's files can be moved to the storage in use.
+ */
+export async function storagePlaces(db: Db | Tx, owner: string | null): Promise<StoragePlace[]> {
+  const current = await activeBackend(db, owner)
+  const places: StoragePlace[] = []
+  if (current) {
+    const [here] = await db
+      .select(counts)
+      .from(attachments)
+      .where(placeFiles(owner, owner ? 'site' : 'disk'))
+    if (here.files)
+      places.push({ id: owner ? 'site' : 'disk', kind: owner ? 'site' : 'disk', bucket: null, files: here.files, bytes: Number(here.bytes) })
+  }
+  const earlier = await db
+    .select({ row: storageBackends, ...counts })
+    .from(attachments)
+    .innerJoin(storageBackends, eq(storageBackends.id, attachments.backendId))
+    .where(and(ownedBy(owner), isNotNull(storageBackends.retiredAt), eq(attachments.backend, 's3'), eq(attachments.ownStorage, owner !== null)))
+    .groupBy(storageBackends.id)
+    .orderBy(desc(storageBackends.retiredAt))
+  for (const e of earlier) places.push({ id: e.row.id, kind: 'bucket', bucket: bucketView(e.row), files: e.files, bytes: Number(e.bytes) })
+  return places
+}
+
+/** The files in one of `storagePlaces`: 'disk' (the site's), 'site' (a person's files in the site's storage), or a bucket's id. */
+export function placeFiles(owner: string | null, placeId: string) {
+  if (placeId === 'disk') return and(eq(attachments.backend, 'disk'), eq(attachments.ownStorage, false))
+  if (placeId === 'site') return and(eq(attachments.ownerId, owner ?? ''), isNull(attachments.workspaceId), eq(attachments.ownStorage, false))
+  return and(eq(attachments.backend, 's3'), eq(attachments.backendId, placeId), eq(attachments.ownStorage, owner !== null))
+}
+
+/** Forgets buckets retired a while ago that hold no files any more (their keys go with them). */
+export async function forgetEmptyBuckets(db: Db | Tx) {
+  await db
+    .delete(storageBackends)
+    .where(
+      and(
+        sql`${storageBackends.retiredAt} < now() - interval '1 hour'`,
+        sql`not exists (select 1 from ${attachments} a where a.backend_id = ${storageBackends.id})`,
+      ),
+    )
 }

@@ -1,7 +1,7 @@
 import { AwsClient } from 'aws4fetch'
 import { fetch as request } from 'undici'
 import { createReadStream } from 'node:fs'
-import { mkdir, rm, stat, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import type { Readable } from 'node:stream'
 import { assertPublicEndpoint, PrivateAddressError, publicOnly } from './egress'
@@ -9,6 +9,8 @@ import { assertPublicEndpoint, PrivateAddressError, publicOnly } from './egress'
 /** Where attachment bytes live. */
 export interface ObjectStore {
   put(key: string, body: Buffer, mime: string): Promise<void>
+  /** The file's bytes (to move it to other storage), or null if it isn't there. */
+  get(key: string): Promise<Buffer | null>
   delete(key: string): Promise<void>
 }
 
@@ -30,6 +32,15 @@ export class DiskStore implements ObjectStore {
     const f = this.file(key)
     await mkdir(path.dirname(f), { recursive: true })
     await writeFile(f, body)
+  }
+
+  async get(key: string) {
+    try {
+      return await readFile(this.file(key))
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code === 'ENOENT') return null
+      throw e
+    }
   }
 
   async delete(key: string) {
@@ -64,7 +75,8 @@ export class StorageError extends Error {}
  */
 export class S3Store implements ObjectStore {
   private readonly client: AwsClient
-  private readonly base: string
+  /** The bucket's address (endpoint/bucket): two stores with the same one hold the same files. */
+  readonly base: string
   /** Someone's own storage: only public internet addresses (see egress.ts). The platform's isn't restricted. */
   private readonly publicOnly: boolean
 
@@ -102,6 +114,7 @@ export class S3Store implements ObjectStore {
     if (!res.ok && !(method === 'DELETE' && res.status === 404)) {
       const text = await res.text().catch(() => '')
       const code = text.match(/<Code>([^<]+)<\/Code>/)?.[1]
+      if (method === 'GET' && res.status === 404 && code !== 'NoSuchBucket') return null
       const why =
         code === 'NoSuchBucket'
           ? 'That bucket doesn’t exist.'
@@ -115,12 +128,17 @@ export class S3Store implements ObjectStore {
 
   async put(key: string, body: Buffer, mime: string) {
     const res = await this.call('PUT', key, { body: new Uint8Array(body), headers: { 'content-type': mime } })
-    await res.body?.cancel()
+    await res?.body?.cancel()
+  }
+
+  async get(key: string) {
+    const res = await this.call('GET', key)
+    return res && Buffer.from(await res.arrayBuffer())
   }
 
   async delete(key: string) {
     const res = await this.call('DELETE', key)
-    await res.body?.cancel()
+    await res?.body?.cancel()
   }
 
   /** A link that works for 5 minutes, telling the browser to show or download the file under its real name. */

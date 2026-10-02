@@ -15,13 +15,17 @@ import {
   bucketView,
   BucketInput,
   disk,
+  forgetEmptyBuckets,
   quotaUsed,
   retireBucket,
   s3For,
   saveBucket,
+  saveBucketKeys,
+  storagePlaces,
   storageSettings,
   storeOf,
 } from '../storage/service'
+import { moveStatus, startMove, stopMove, stopMoves } from '../storage/move'
 import { contentDisposition, DiskStore, S3Store, StorageError } from '../storage/stores'
 import { requireUser } from './auth'
 
@@ -35,6 +39,12 @@ const Bucket = z.object({
   accessKeyId: z.string().trim().min(1, 'Enter the access key ID.').max(200),
   secret: z.string().max(300).optional(),
 })
+const BucketParams = z.object({ backendId: z.uuid() })
+const Keys = z.object({
+  accessKeyId: z.string().trim().min(1, 'Enter the access key ID.').max(200),
+  secret: z.string().trim().min(1, 'Paste the secret access key.').max(300),
+})
+const Move = z.object({ place: z.string().min(1).max(40) })
 
 const MB = 1024 * 1024
 /** Uploads bigger than this are refused before being read, whatever the settings say. */
@@ -145,7 +155,8 @@ export async function deleteBoardFiles(db: Db, boardId: string) {
 
 /**
  * Housekeeping, every few hours: files of deleted cards go to the trash (and come back if the card is restored),
- * and files in the trash for 30 days are removed for good.
+ * and files in the trash for 30 days are removed for good. Buckets used earlier that hold no files any more are
+ * forgotten.
  */
 export async function tidyFiles(app: FastifyInstance) {
   await app.db.execute(sql`
@@ -168,6 +179,7 @@ export async function tidyFiles(app: FastifyInstance) {
     await removeObject(app.db, a)
     await app.db.delete(attachments).where(eq(attachments.id, a.id))
   }
+  await forgetEmptyBuckets(app.db)
 }
 
 /**
@@ -423,6 +435,8 @@ export const fileRoutes: FastifyPluginAsync = async (app) => {
     return {
       encryptionReady: encryptionReady(),
       bucket: bucketView(await activeBackend(app.db, null)),
+      elsewhere: await storagePlaces(app.db, null),
+      move: moveStatus(null),
       settings: await storageSettings(app.db),
       usage: { bytes: Number(u.bytes), files: u.files, ownStorage: n },
     }
@@ -436,6 +450,24 @@ export const fileRoutes: FastifyPluginAsync = async (app) => {
   app.delete('/admin/storage/bucket', async (req) => {
     admin(req.user)
     await retireBucket(app.db, null)
+    return { ok: true }
+  })
+
+  // New keys for a bucket used earlier, and moving files kept elsewhere to the storage in use.
+  app.put('/admin/storage/buckets/:backendId/keys', async (req) => {
+    const me = admin(req.user)
+    const { backendId } = parse(BucketParams, req.params)
+    return bucketView(await saveBucketKeys(app.db, me.id, null, backendId, parse(Keys, req.body)))
+  })
+
+  app.post('/admin/storage/move', async (req) => {
+    admin(req.user)
+    return startMove(app, null, parse(Move, req.body).place)
+  })
+
+  app.delete('/admin/storage/move', async (req) => {
+    admin(req.user)
+    stopMove(null)
     return { ok: true }
   })
 
@@ -459,6 +491,8 @@ export const fileRoutes: FastifyPluginAsync = async (app) => {
     return {
       encryptionReady: encryptionReady(),
       bucket: bucketView(await activeBackend(app.db, me.id)),
+      elsewhere: await storagePlaces(app.db, me.id),
+      move: moveStatus(me.id),
       used: await quotaUsed(app.db, { ownerId: me.id }),
       quota: quotaMb * MB,
       maxFile: maxFileMb * MB,
@@ -475,4 +509,23 @@ export const fileRoutes: FastifyPluginAsync = async (app) => {
     await retireBucket(app.db, me.id)
     return { ok: true }
   })
+
+  app.put('/account/storage/buckets/:backendId/keys', async (req) => {
+    const me = requireUser(req.user)
+    const { backendId } = parse(BucketParams, req.params)
+    return bucketView(await saveBucketKeys(app.db, me.id, me.id, backendId, parse(Keys, req.body)))
+  })
+
+  app.post('/account/storage/move', async (req) => {
+    const me = requireUser(req.user)
+    return startMove(app, me.id, parse(Move, req.body).place)
+  })
+
+  app.delete('/account/storage/move', async (req) => {
+    const me = requireUser(req.user)
+    stopMove(me.id)
+    return { ok: true }
+  })
+
+  app.addHook('onClose', async () => stopMoves())
 }

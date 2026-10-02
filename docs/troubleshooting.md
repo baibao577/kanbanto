@@ -232,6 +232,10 @@ Kanbanto writes and deletes a small file to check the bucket. The message says w
 The file may be damaged, or its storage was removed. If you use a bucket, check its key still works (Platform console
 → Storage shows the last problem).
 
+Files in a **bucket used earlier** still open with the key saved for it back then. If that key was changed or revoked,
+give Kanbanto the new one with **Update keys** (Platform console → Storage, or Account settings → File storage for
+someone's own bucket), or bring the bucket's files over with **Move here**. A deleted bucket's files are gone.
+
 ## Database
 
 ### I changed `POSTGRES_PASSWORD` and now Kanbanto can't connect

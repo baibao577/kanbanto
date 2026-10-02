@@ -5,7 +5,7 @@ import { eq, sql } from 'drizzle-orm'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { Readable } from 'node:stream'
 import { fetch } from 'undici'
-import { attachments, users } from '../src/db/schema'
+import { attachments, storageBackends, users } from '../src/db/schema'
 import { env } from '../src/env'
 import { isPublicAddress, PrivateAddressError, publicLookup, publicOnly } from '../src/storage/egress'
 import { S3Store } from '../src/storage/stores'
@@ -49,6 +49,18 @@ async function team() {
   await ann.ok('POST', `/api/boards/${id}/invitations`, { email: 'vic@example.com', role: 'viewer' })
   return { ann, bob, vic, id }
 }
+
+/** The storage page's data (the site's or a person's), once any move of files has ended. */
+async function afterMove(p: Person, url: '/api/admin/storage' | '/api/account/storage') {
+  for (;;) {
+    const s = await p.ok('GET', url)
+    if (!s.move?.running) return s
+    await new Promise((r) => setTimeout(r, 10))
+  }
+}
+const inBucket = (s3: { objects: Map<string, Buffer> }, bucket: string) =>
+  [...s3.objects.keys()].filter((k) => k.startsWith(`/${bucket}/boards/`)).length
+const fileRow = async (id: string) => (await t.db.select().from(attachments).where(eq(attachments.id, id)))[0]
 
 const upload = (p: Person, board: string, task: string, name: string, bytes: Buffer, type = 'application/octet-stream', forComment = false) =>
   p.request('POST', `/api/boards/${board}/tasks/${task}/attachments`, bytes, {
@@ -233,6 +245,192 @@ describe('attachments', () => {
       })
       expect(bad.body.error).toMatch(/storage test failed/)
       expect((await ann.ok('GET', '/api/admin/storage')).bucket).toMatchObject({ bucket: 'site' })
+    } finally {
+      await s3.close()
+    }
+  })
+
+  it('going back to a bucket used before brings its setting back, with the keys given now', async () => {
+    const s3 = await fakeS3()
+    try {
+      const { ann, bob, id } = await team()
+      await setPlatformAdmin(t.db, 'ann@example.com', true)
+      const bucket = (name: string, more = {}) => ({ endpoint: s3.endpoint, bucket: name, accessKeyId: 'AK', secret: 'SECRET1234', ...more })
+      const a = await ann.ok('PUT', '/api/admin/storage/bucket', bucket('a'))
+      const first = await upload(bob, id, 'A3', 'first.txt', Buffer.from('1'))
+      const b = await ann.ok('PUT', '/api/admin/storage/bucket', bucket('b'))
+      await upload(bob, id, 'A3', 'second.txt', Buffer.from('22'))
+      expect((await ann.ok('GET', '/api/admin/storage')).elsewhere).toMatchObject([
+        { id: a.id, kind: 'bucket', bucket: { bucket: 'a' }, files: 1, bytes: 1 },
+      ])
+      // Back to A with new keys: the same setting, so the file from the first time opens with them too.
+      const again = await ann.ok('PUT', '/api/admin/storage/bucket', bucket('a', { accessKeyId: 'AK2', secret: 'NEWSECRET99' }))
+      expect(again).toMatchObject({ id: a.id, accessKeyId: 'AK2', keyHint: '…ET99' })
+      expect(await t.db.select().from(storageBackends)).toHaveLength(2)
+      expect((await bob.request('GET', first.body.attachment.url)).headers.location).toContain('Credential=AK2')
+      expect((await ann.ok('GET', '/api/admin/storage')).elsewhere).toMatchObject([{ id: b.id, files: 1, bytes: 2 }])
+      // "Use again": an earlier bucket's saved secret is used when the access key is the same.
+      expect(await ann.ok('PUT', '/api/admin/storage/bucket', { endpoint: s3.endpoint, bucket: 'b', accessKeyId: 'AK' })).toMatchObject({ id: b.id })
+      expect(
+        (await ann.request('PUT', '/api/admin/storage/bucket', { endpoint: s3.endpoint, bucket: 'a', accessKeyId: 'OTHER' })).body.error,
+      ).toMatch(/Paste the secret/)
+      // The same bucket saved twice (from before settings were brought back) becomes one again.
+      const [rowA] = await t.db.select().from(storageBackends).where(eq(storageBackends.id, a.id))
+      const twin = '00000000-0000-4000-8000-000000000001'
+      await t.db.insert(storageBackends).values({ ...rowA, id: twin, retiredAt: new Date() })
+      await t.db.update(attachments).set({ backendId: twin }).where(eq(attachments.id, first.body.attachment.id))
+      await ann.ok('PUT', '/api/admin/storage/bucket', bucket('a'))
+      expect(await t.db.select().from(storageBackends)).toHaveLength(2)
+      expect((await fileRow(first.body.attachment.id)).backendId).toBe(a.id)
+    } finally {
+      await s3.close()
+    }
+  })
+
+  it('an earlier bucket can get new keys (tested first); only by whose bucket it is', async () => {
+    const [old, now] = [await fakeS3(), await fakeS3()]
+    let oldOpen = true
+    try {
+      const { ann, bob } = await team()
+      await setPlatformAdmin(t.db, 'ann@example.com', true)
+      const a = await ann.ok('PUT', '/api/admin/storage/bucket', { endpoint: old.endpoint, bucket: 'a', accessKeyId: 'AK', secret: 'SECRET1234' })
+      await ann.ok('PUT', '/api/admin/storage/bucket', { endpoint: now.endpoint, bucket: 'b', accessKeyId: 'AK', secret: 'SECRET1234' })
+      const keys = { accessKeyId: 'ROTATED', secret: 'ROTATEDSECRET' }
+      expect((await bob.request('PUT', `/api/admin/storage/buckets/${a.id}/keys`, keys)).status).toBe(403)
+      expect((await ann.request('PUT', `/api/account/storage/buckets/${a.id}/keys`, keys)).status).toBe(404)
+      expect(await ann.ok('PUT', `/api/admin/storage/buckets/${a.id}/keys`, keys)).toMatchObject({
+        id: a.id,
+        accessKeyId: 'ROTATED',
+        keyHint: '…CRET',
+      })
+      // Still the earlier bucket: new files keep going to B.
+      expect((await ann.ok('GET', '/api/admin/storage')).bucket).toMatchObject({ bucket: 'b' })
+      await old.close()
+      oldOpen = false
+      const bad = await ann.request('PUT', `/api/admin/storage/buckets/${a.id}/keys`, { accessKeyId: 'X', secret: 'Y' })
+      expect(bad.body.error).toMatch(/storage test failed/)
+      expect((await t.db.select().from(storageBackends).where(eq(storageBackends.id, a.id)))[0].accessKeyId).toBe('ROTATED')
+    } finally {
+      if (oldOpen) await old.close()
+      await now.close()
+    }
+  })
+
+  it('the site’s files kept elsewhere move to the storage in use: disk to a bucket, bucket to bucket, and back to disk', async () => {
+    const s3 = await fakeS3()
+    try {
+      const { ann, bob, id } = await team()
+      await setPlatformAdmin(t.db, 'ann@example.com', true)
+      const old = await upload(bob, id, 'A3', 'old.txt', Buffer.from('old'))
+      const onDisk = async () => existsSync(path.join(env.uploadsDir, (await fileRow(old.body.attachment.id)).storageKey))
+      expect((await ann.ok('GET', '/api/admin/storage')).elsewhere).toEqual([])
+      const site = await ann.ok('PUT', '/api/admin/storage/bucket', {
+        endpoint: s3.endpoint,
+        bucket: 'site',
+        accessKeyId: 'AK',
+        secret: 'SECRET1234',
+      })
+      expect((await ann.ok('GET', '/api/admin/storage')).elsewhere).toEqual([{ id: 'disk', kind: 'disk', bucket: null, files: 1, bytes: 3 }])
+      expect((await bob.request('POST', '/api/admin/storage/move', { place: 'disk' })).status).toBe(403)
+      expect((await ann.request('POST', '/api/admin/storage/move', { place: 'site' })).status).toBe(404)
+      await ann.ok('POST', '/api/admin/storage/move', { place: 'disk' })
+      let page = await afterMove(ann, '/api/admin/storage')
+      expect(page).toMatchObject({ elsewhere: [], move: { running: false, total: 1, moved: 1, failed: 0 } })
+      expect(await onDisk()).toBe(false)
+      expect(inBucket(s3, 'site')).toBe(1)
+      expect((await bob.request('GET', old.body.attachment.url)).status).toBe(302)
+
+      // On to another bucket. A file that has gone missing is counted, and doesn't hold up the rest.
+      const lost = await upload(bob, id, 'A3', 'lost.txt', Buffer.from('lost'))
+      s3.objects.delete(`/site/${(await fileRow(lost.body.attachment.id)).storageKey}`)
+      await ann.ok('PUT', '/api/admin/storage/bucket', { endpoint: s3.endpoint, bucket: 'site2', accessKeyId: 'AK', secret: 'SECRET1234' })
+      await ann.ok('POST', '/api/admin/storage/move', { place: site.id })
+      page = await afterMove(ann, '/api/admin/storage')
+      expect(page.move).toMatchObject({ total: 2, moved: 1, failed: 1, lastError: expect.stringMatching(/isn’t in its storage/) })
+      expect(page.elsewhere).toMatchObject([{ id: site.id, files: 1 }])
+      expect([inBucket(s3, 'site'), inBucket(s3, 'site2')]).toEqual([0, 1])
+
+      // And back to the server's disk.
+      await ann.ok('DELETE', '/api/admin/storage/bucket')
+      // The bucket replaced last comes first.
+      const [site2] = (await ann.ok('GET', '/api/admin/storage')).elsewhere
+      expect(site2).toMatchObject({ kind: 'bucket', bucket: { bucket: 'site2' }, files: 1 })
+      await ann.ok('POST', '/api/admin/storage/move', { place: site2.id })
+      await afterMove(ann, '/api/admin/storage')
+      expect(await onDisk()).toBe(true)
+      expect(inBucket(s3, 'site2')).toBe(0)
+      expect((await bob.request('GET', old.body.attachment.url)).raw.toString()).toBe('old')
+    } finally {
+      await s3.close()
+    }
+  })
+
+  it('a person moves their files into their own bucket, and back only as far as their space allows', async () => {
+    const s3 = await fakeS3()
+    try {
+      const { ann, bob, id } = await team()
+      await setPlatformAdmin(t.db, 'ann@example.com', true)
+      await ann.ok('PATCH', '/api/admin/storage/settings', { maxFileMb: 1, quotaMb: 1 })
+      const big = await upload(bob, id, 'A3', 'a.bin', Buffer.alloc(600 * 1024))
+      expect((await ann.ok('GET', '/api/account/storage')).elsewhere).toEqual([])
+      const own = await ann.ok('PUT', '/api/account/storage/bucket', {
+        endpoint: s3.endpoint,
+        bucket: 'anns',
+        accessKeyId: 'AK',
+        secret: 'SECRET1234',
+      })
+      expect(await ann.ok('GET', '/api/account/storage')).toMatchObject({
+        used: 600 * 1024,
+        elsewhere: [{ id: 'site', kind: 'site', bucket: null, files: 1 }],
+      })
+      await ann.ok('POST', '/api/account/storage/move', { place: 'site' })
+      expect(await afterMove(ann, '/api/account/storage')).toMatchObject({ used: 0, elsewhere: [], move: { moved: 1 } })
+      expect(inBucket(s3, 'anns')).toBe(1)
+      expect(await fileRow(big.body.attachment.id)).toMatchObject({ backend: 's3', backendId: own.id, ownStorage: true })
+      // Her bucket is hers: it isn't among the site's places, and nobody else can move its files.
+      expect((await ann.ok('GET', '/api/admin/storage')).elsewhere).toEqual([])
+
+      // Without her bucket, new files use the site's storage again; the one in her bucket only fits if there's room.
+      await ann.ok('DELETE', '/api/account/storage/bucket')
+      const other = await upload(bob, id, 'A3', 'b.bin', Buffer.alloc(600 * 1024))
+      expect((await ann.ok('GET', '/api/account/storage')).elsewhere).toMatchObject([{ id: own.id, kind: 'bucket', files: 1 }])
+      expect((await bob.request('POST', '/api/account/storage/move', { place: own.id })).status).toBe(404)
+      expect((await ann.request('POST', '/api/admin/storage/move', { place: own.id })).status).toBe(404)
+      await ann.ok('POST', '/api/account/storage/move', { place: own.id })
+      expect((await afterMove(ann, '/api/account/storage')).move).toMatchObject({ total: 1, moved: 0, noSpace: 1 })
+      expect(inBucket(s3, 'anns')).toBe(1)
+      await bob.ok('DELETE', `/api/boards/${id}/attachments/${other.body.attachment.id}`)
+      await ann.ok('POST', '/api/account/storage/move', { place: own.id })
+      expect(await afterMove(ann, '/api/account/storage')).toMatchObject({ used: 600 * 1024, elsewhere: [], move: { moved: 1, noSpace: 0 } })
+      expect(inBucket(s3, 'anns')).toBe(0)
+      expect((await bob.request('GET', big.body.attachment.url)).raw).toHaveLength(600 * 1024)
+    } finally {
+      await s3.close()
+    }
+  })
+
+  it('an earlier bucket with no files left is forgotten (its keys too); one that still holds files stays', async () => {
+    const s3 = await fakeS3()
+    try {
+      const { ann, bob, id } = await team()
+      await setPlatformAdmin(t.db, 'ann@example.com', true)
+      const bucket = (name: string) => ({ endpoint: s3.endpoint, bucket: name, accessKeyId: 'AK', secret: 'SECRET1234' })
+      const empty = await ann.ok('PUT', '/api/admin/storage/bucket', bucket('empty'))
+      const used = await ann.ok('PUT', '/api/admin/storage/bucket', bucket('used'))
+      await upload(bob, id, 'A3', 'x.txt', Buffer.from('x'))
+      await ann.ok('PUT', '/api/admin/storage/bucket', bucket('now'))
+      await tidyFiles(t.app)
+      // Not straight away: an upload may still be on its way to a bucket that was just replaced.
+      expect(await t.db.select().from(storageBackends)).toHaveLength(3)
+      await t.db
+        .update(storageBackends)
+        .set({ retiredAt: sql`now() - interval '2 hours'` })
+        .where(sql`retired_at is not null`)
+      await tidyFiles(t.app)
+      const left = (await t.db.select().from(storageBackends)).map((r) => r.id)
+      expect(left).toContain(used.id)
+      expect(left).not.toContain(empty.id)
+      expect(left).toHaveLength(2)
     } finally {
       await s3.close()
     }

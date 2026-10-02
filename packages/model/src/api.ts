@@ -227,6 +227,7 @@ export interface AttachmentView {
 
 /** An S3-compatible bucket, as the browser sees it (never the secret). */
 export interface StorageBucket {
+  id: string
   endpoint: string
   region: string
   bucket: string
@@ -237,11 +238,39 @@ export interface StorageBucket {
   updatedAt: string
 }
 
+/**
+ * Somewhere that still holds files, other than where new files go now: the server's disk, the site's storage (as a
+ * person with their own bucket sees it), or a bucket used earlier. Its files can be moved to the storage in use.
+ */
+export interface StoragePlace {
+  /** 'disk', 'site', or the earlier bucket's id. */
+  id: string
+  kind: 'disk' | 'site' | 'bucket'
+  /** The earlier bucket (kind 'bucket'): its keys can be replaced, and it can be used again. */
+  bucket: StorageBucket | null
+  files: number
+  bytes: number
+}
+
+/** Files being moved to the storage in use (or the last move, until the server restarts). */
+export interface StorageMove {
+  running: boolean
+  total: number
+  moved: number
+  /** Couldn't be read or written; they stay where they were. */
+  failed: number
+  /** Didn't fit in the owner's (or workspace's) space; they stay where they were. */
+  noSpace: number
+  lastError: string | null
+}
+
 /** GET /api/admin/storage */
 export interface PlatformStorage {
   encryptionReady: boolean
   /** null: the server's disk. */
   bucket: StorageBucket | null
+  elsewhere: StoragePlace[]
+  move: StorageMove | null
   settings: { quotaMb: number; maxFileMb: number }
   usage: { bytes: number; files: number; ownStorage: number }
 }
@@ -250,6 +279,8 @@ export interface PlatformStorage {
 export interface AccountStorage {
   encryptionReady: boolean
   bucket: StorageBucket | null
+  elsewhere: StoragePlace[]
+  move: StorageMove | null
   /** Space used on boards you own, in the site's storage. */
   used: number
   quota: number

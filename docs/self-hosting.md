@@ -189,12 +189,26 @@ fine for most teams. To keep files elsewhere, use any **S3-compatible bucket**:
 3. Kanbanto → **Platform console → Storage → Use an S3 / R2 bucket**: fill in endpoint, bucket, keys →
    **Test and save**. Kanbanto writes and deletes a small test file before saving.
 
-No CORS setup is needed. **Switching storage never moves or breaks files already uploaded** — each file keeps opening
-from where it was saved. Switch back with **Stop using it**.
+No CORS setup is needed. **Switching storage never breaks files already uploaded**, and doesn't move them by itself:
+each file keeps opening from where it was saved. Switch back with **Stop using it**.
+
+After a switch, the Storage page lists the **files kept elsewhere** (on the server's disk, or in a bucket used
+earlier):
+
+- **Move here** moves them to the storage in use, one by one, while Kanbanto stays usable. Stopping part-way is safe:
+  what's left stays where it was.
+- **Update keys** gives an earlier bucket new keys, for when its key was changed or revoked at the provider. Until
+  then its files don't open.
+- **Use again** makes an earlier bucket the storage in use again. Saving a bucket Kanbanto already knows brings its
+  setting back, with the keys given now.
+
+Keep an earlier bucket and its key until its files are moved. Once it holds no files it leaves the list, and Kanbanto
+deletes its saved keys.
 
 **Limits** (Platform console → Storage): space per person (default 50 MB, in total across all the boards they own) and
 the largest file (default 10 MB). People can connect **their own bucket** (Account settings → File storage) for
-unlimited space on their boards. Their buckets must be at a public `https://` address: Kanbanto won't connect to
+unlimited space on their boards, and move the files already on their boards into it (or back, as far as their space
+allows). Their buckets must be at a public `https://` address: Kanbanto won't connect to
 private network addresses for them. (The site's own bucket, set by platform admins, may be anywhere, e.g. a MinIO on
 your network.)
 

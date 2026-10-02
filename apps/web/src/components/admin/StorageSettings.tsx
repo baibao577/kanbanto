@@ -3,6 +3,7 @@ import { toast } from 'sonner'
 import type { PlatformStorage } from '@kanbanto/model/api'
 import { api, errorMessage } from '@/api/client'
 import { BucketForm } from '@/components/email/BucketForm'
+import { StoragePlaces } from '@/components/email/StoragePlaces'
 import { useLoaded } from '@/data/useLoaded'
 import { formatSize } from '@/lib/format'
 import { Button } from '@/components/ui/button'
@@ -22,7 +23,7 @@ export function StorageSettings() {
       <PageTitle title="Storage" description="Where card attachments are kept, and how much space people get." />
       <SettingsCard
         title="Where files are kept"
-        description="Switching never moves or breaks files already uploaded: they keep opening from where they were saved."
+        description="Switching doesn’t move files already uploaded: they keep opening from where they were saved, and can be moved afterwards."
       >
         <BucketForm
           key={info.bucket?.updatedAt ?? 'disk'}
@@ -44,6 +45,13 @@ export function StorageSettings() {
           {info.usage.files.toLocaleString()} {info.usage.files === 1 ? 'file' : 'files'} · {formatSize(info.usage.bytes)} in total ·{' '}
           {info.usage.ownStorage === 1 ? '1 person uses' : `${info.usage.ownStorage} people use`} their own bucket
         </p>
+        <StoragePlaces
+          base="/admin/storage"
+          places={info.elsewhere}
+          move={info.move}
+          target={info.bucket ? `the bucket “${info.bucket.bucket}”` : 'this server’s disk'}
+          onChanged={reload}
+        />
       </SettingsCard>
       <SettingsCard title="Limits" description="People can connect their own bucket (in their Account settings) for unlimited space on their boards.">
         <Limits key={JSON.stringify(info.settings)} settings={info.settings} onSaved={reload} />

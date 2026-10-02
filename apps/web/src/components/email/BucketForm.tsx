@@ -172,7 +172,8 @@ export function BucketForm({
         </div>
       </div>
       <p className="text-[11px] text-muted-foreground">
-        Use a key that can only read and write this bucket. It’s stored encrypted and never shown again. Files already uploaded stay where they are.
+        Use a key that can only read and write this bucket. It’s stored encrypted and never shown again. Files already uploaded stay where they are
+        until you move them.
       </p>
       {error && (
         <p role="alert" className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">

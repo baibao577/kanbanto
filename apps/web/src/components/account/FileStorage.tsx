@@ -2,6 +2,7 @@ import { toast } from 'sonner'
 import type { AccountStorage } from '@kanbanto/model/api'
 import { api } from '@/api/client'
 import { BucketForm } from '@/components/email/BucketForm'
+import { StoragePlaces } from '@/components/email/StoragePlaces'
 import { PageTitle, SettingsCard } from '@/components/settings/SettingsCard'
 import { formatSize } from '@/lib/format'
 import { useLoaded } from '@/data/useLoaded'
@@ -17,10 +18,14 @@ export function AccountStorageSection() {
   return (
     <div className="space-y-6">
       <PageTitle title="File storage" description="Where files attached to cards on your boards are kept." />
-      {!info.bucket && (
+      {(!info.bucket || info.used > 0) && (
         <SettingsCard
           title="Space used"
-          description={`All the files on all the boards you own count toward this one total, whoever attached them. Each file can be up to ${formatSize(info.maxFile)}.`}
+          description={
+            info.bucket
+              ? 'Files on your boards that are still in Kanbanto’s storage. Files in your own bucket don’t count.'
+              : `All the files on all the boards you own count toward this one total, whoever attached them. Each file can be up to ${formatSize(info.maxFile)}.`
+          }
         >
           <div className="space-y-1">
             <div className="flex justify-between text-xs">
@@ -58,6 +63,16 @@ export function AccountStorageSection() {
             toast('New files will use Kanbanto’s storage again. Files already in your bucket stay there.')
             await reload()
           }}
+        />
+        <StoragePlaces
+          base="/account/storage"
+          places={info.elsewhere}
+          move={info.move}
+          target={info.bucket ? `your bucket “${info.bucket.bucket}”` : 'Kanbanto’s storage'}
+          note={
+            info.bucket ? undefined : `There, they count toward your space (${formatSize(info.quota)}): files that don’t fit stay where they are.`
+          }
+          onChanged={reload}
         />
       </SettingsCard>
     </div>
