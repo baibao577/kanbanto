@@ -55,7 +55,8 @@ export function TaskDialog({
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
       <DialogContent
-        className="max-h-[calc(100dvh-4rem)] gap-0 overflow-y-auto p-0 sm:max-w-3xl"
+        // One column that never grows past the dialog: a long name inside (a parent, say) is cut, not the card widened.
+        className="max-h-[calc(100dvh-4rem)] grid-cols-[minmax(0,1fr)] gap-0 overflow-y-auto p-0 sm:max-w-3xl"
         // Opening a card is for reading it: nothing in it is put into editing (on a phone, a focused title brings up
         // the keyboard). A card made just now starts in its title, so its name can be typed straight away.
         onOpenAutoFocus={(e) => {
@@ -120,12 +121,13 @@ function TaskDetail({ id, onClose }: { id: string; onClose: () => void }) {
   return (
     <>
       <div className="px-6 pt-5 pr-12">
-        <nav className="mb-1 flex min-h-5 flex-wrap items-center gap-1 text-xs text-muted-foreground">
+        {/* One line: short names in full, long ones share what's left and end in … */}
+        <nav className="mb-1 grid min-h-5 auto-cols-[minmax(0,max-content)] grid-flow-col items-center justify-start gap-1 text-xs text-muted-foreground">
           {path.length === 0 ? (
             <span>Project</span>
           ) : (
             path.map((a, i) => (
-              <span key={a} className="flex max-w-full min-w-0 items-center gap-1">
+              <span key={a} className="flex min-w-0 items-center gap-1">
                 {i > 0 && <CaretRight className="size-3 shrink-0" />}
                 <button onClick={() => openTask(a)} title={data.tasks[a].title} className="truncate hover:text-foreground hover:underline">
                   {data.tasks[a].title}
@@ -147,7 +149,7 @@ function TaskDetail({ id, onClose }: { id: string; onClose: () => void }) {
         />
       </div>
 
-      <div className="grid items-start gap-6 px-6 pt-4 pb-6 md:grid-cols-[1fr_14rem] md:gap-0">
+      <div className="grid grid-cols-[minmax(0,1fr)] items-start gap-6 px-6 pt-4 pb-6 md:grid-cols-[minmax(0,1fr)_14rem] md:gap-0">
         {/* Main column */}
         <div className="min-w-0 divide-y md:pr-6 [&>*]:py-5 [&>*:first-child]:pt-0 [&>*:last-child]:pb-0">
           <Description
