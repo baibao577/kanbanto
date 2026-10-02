@@ -125,9 +125,9 @@ function TaskDetail({ id, onClose }: { id: string; onClose: () => void }) {
             <span>Project</span>
           ) : (
             path.map((a, i) => (
-              <span key={a} className="flex items-center gap-1">
-                {i > 0 && <CaretRight className="size-3" />}
-                <button onClick={() => openTask(a)} className="hover:text-foreground hover:underline">
+              <span key={a} className="flex max-w-full min-w-0 items-center gap-1">
+                {i > 0 && <CaretRight className="size-3 shrink-0" />}
+                <button onClick={() => openTask(a)} title={data.tasks[a].title} className="truncate hover:text-foreground hover:underline">
                   {data.tasks[a].title}
                 </button>
               </span>
