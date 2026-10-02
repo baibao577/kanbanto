@@ -11,6 +11,7 @@ import { indexFor } from '@kanbanto/model/indexer'
 import type { PrefsAction } from '@kanbanto/model/prefs'
 import type { BoardData, Layout } from '@kanbanto/model/types'
 import { BoardContext, type BoardContextValue } from '@/app/board-context'
+import { setTabIcon } from '@/app/tabIcon'
 import { closeTask, currentRoute, hrefFor, navigate, openTask, parseRoute, useRoute, type BoardRoute, type Route } from '@/app/router'
 import { useAuth } from '@/app/use-auth'
 import { AuthView } from '@/components/auth/AuthView'
@@ -214,6 +215,12 @@ function BoardScreen({ id }: { id: string }) {
   useEffect(() => {
     if (name) document.title = `${name} · Kanbanto`
   }, [name])
+  // The tab's icon takes the board's colors, so its tab can be told from other boards'.
+  const background = store.data?.board.background
+  useEffect(() => {
+    setTabIcon(backgroundOf(background))
+    return () => setTabIcon(null)
+  }, [background])
 
   if (gone)
     return (

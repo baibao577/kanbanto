@@ -22,7 +22,8 @@ import type { Connection } from '@/data/sync'
 import { AccountMenu } from './AccountMenu'
 import { NotificationBell } from './NotificationBell'
 import { MoreMenu, type MoreMenuProps } from './MoreMenu'
-import { LogoMark } from '@/components/common/Logo'
+import { LogoMark, LogoTile } from '@/components/common/Logo'
+import { backgroundOf } from '@kanbanto/model/colors'
 import { VIEW_TABS } from '@/components/views'
 
 interface Props extends MoreMenuProps {
@@ -36,6 +37,7 @@ interface Props extends MoreMenuProps {
 export function TopBar({ search, onSearch, onNewTask, connection, unsaved, ...menu }: Props) {
   const { data, prefs, setPrefs, run, readOnly, access, openShare } = useBoard()
   const { user } = useAuth()
+  const tile = backgroundOf(data.board.background)
 
   return (
     <header className="flex h-14 shrink-0 items-center gap-3 border-b bg-background px-3 sm:px-4">
@@ -47,7 +49,7 @@ export function TopBar({ search, onSearch, onNewTask, connection, unsaved, ...me
               aria-label="All boards"
               className="grid size-8 shrink-0 place-items-center rounded-md text-foreground outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring/50"
             >
-              <LogoMark className="size-7" title="All boards" />
+              {tile ? <LogoTile background={tile} className="sm:size-6" title="All boards" /> : <LogoMark className="size-7" title="All boards" />}
             </a>
           </TooltipTrigger>
           <TooltipContent>All boards</TooltipContent>
