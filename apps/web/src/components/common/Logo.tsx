@@ -45,7 +45,7 @@ export function LogoMark({ className, title = 'Kanbanto' }: { className?: string
   )
 }
 
-/** The mark on a rounded tile in a board's colors: the logo on a board that has a background (its tab icon matches). */
+/** The mark on a rounded tile in a board's colors: the logo on a board that has a background. */
 export function LogoTile({ background, className, title }: { background: Gradient; className?: string; title?: string }) {
   return (
     <span
