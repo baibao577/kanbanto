@@ -5,13 +5,15 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
-    <!-- Lets a phone or computer install Kanbanto as an app: its own icon and window (it still needs a connection). -->
+    <!--
+      Lets a phone or computer install Kanbanto as an app: its own icon and window (it still needs a connection).
+      The dark theme has its own (manifest-dark.webmanifest: the same, with dark colors), set by the script below.
+    -->
     <link rel="manifest" href="/manifest.webmanifest" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Kanbanto</title>
     <meta name="description" content="Plan projects as tasks inside tasks, and see them as a board, a timeline or an outline." />
-    <meta name="theme-color" content="#f9fafb" media="(prefers-color-scheme: light)" />
-    <meta name="theme-color" content="#16171c" media="(prefers-color-scheme: dark)" />
+    <meta name="theme-color" content="#f9fafb" />
     <script>
       // Apply the saved theme before first paint so the page doesn't flash. Same key as src/app/theme.tsx.
       try {
@@ -19,6 +21,11 @@
         var dark = t === 'dark' || (t !== 'light' && matchMedia('(prefers-color-scheme: dark)').matches)
         document.documentElement.classList.toggle('dark', dark)
         document.documentElement.style.colorScheme = dark ? 'dark' : 'light'
+        // The browser's bars, and an installed app's, take their colors from these.
+        if (dark) {
+          document.querySelector('meta[name="theme-color"]').content = '#18191c'
+          document.querySelector('link[rel="manifest"]').href = '/manifest-dark.webmanifest'
+        }
       } catch (e) {}
     </script>
   </head>

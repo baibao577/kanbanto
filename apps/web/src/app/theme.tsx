@@ -30,6 +30,9 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     document.documentElement.classList.toggle('dark', dark)
     document.documentElement.style.colorScheme = dark ? 'dark' : 'light'
+    // The browser's bars, and an installed app's (the phone's status bar and bottom bar), take their colors from these.
+    document.querySelector('meta[name="theme-color"]')?.setAttribute('content', dark ? '#18191c' : '#f9fafb')
+    document.querySelector('link[rel="manifest"]')?.setAttribute('href', dark ? '/manifest-dark.webmanifest' : '/manifest.webmanifest')
   }, [dark])
 
   const setTheme = useCallback((t: Theme | string) => {
