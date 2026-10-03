@@ -1,9 +1,9 @@
-import { ArrowLeft, ArrowsClockwise, Copy, EnvelopeSimple, SignOut, Trash, X } from '@phosphor-icons/react'
-import { useCallback, useEffect, useState } from 'react'
+import { ArrowLeft, ArrowsClockwise, ChartBarHorizontal, Copy, EnvelopeSimple, SignOut, Trash, UsersThree, X } from '@phosphor-icons/react'
+import { lazy, Suspense, useCallback, useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import type { InvitationResult, WorkspaceDetail, WorkspaceRole } from '@kanbanto/model/api'
 import { api, errorMessage } from '@/api/client'
-import { hrefFor, navigate } from '@/app/router'
+import { hrefFor, navigate, type WorkspaceRoute } from '@/app/router'
 import { useAuth } from '@/app/use-auth'
 import { Avatar } from '@/components/common/bits'
 import { ConfirmDialog, type ConfirmRequest } from '@/components/common/ConfirmDialog'
@@ -15,11 +15,14 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
+import { cn } from '@/lib/utils'
+
+const PlanningView = lazy(() => import('@/components/planning/PlanningView').then((m) => ({ default: m.PlanningView })))
 
 const ROLE_TEXT: Record<WorkspaceRole, string> = { admin: 'Admin', member: 'Member' }
 const ROLE_HINT: Record<WorkspaceRole, string> = {
-  admin: 'Invites and removes people, renames or deletes the workspace',
-  member: 'Opens the boards shared with the workspace',
+  admin: 'Invites and removes people, changes the plan, renames or deletes the workspace',
+  member: 'Opens the boards shared with the workspace; changes the plan if they plan',
 }
 
 const linkFor = (token: string) => `${location.origin}${location.pathname}${hrefFor({ page: 'join', token })}`
@@ -34,10 +37,13 @@ async function copy(text: string, what: string) {
 }
 
 /**
- * A workspace's page: its people (admins invite, change roles and remove; anyone can leave), and for admins, its name
- * and deleting it. Boards aren't managed here: they're on the boards page, grouped by workspace.
+ * A workspace's page, in two tabs. People: who's in it (admins invite, change roles, choose who can change the plan,
+ * and remove; anyone can leave), and for admins, its name and deleting it. Planning: who works on which project (see
+ * PlanningView). Boards aren't managed here: they're on the boards page, grouped by workspace.
  */
-export function WorkspaceView({ id }: { id: string }) {
+export function WorkspaceView({ route }: { route: WorkspaceRoute }) {
+  const id = route.id
+  const planning = route.section === 'planning'
   const { user } = useAuth()
   const base = `/workspaces/${id}`
   const [ws, setWs] = useState<WorkspaceDetail | null>(null)
@@ -56,8 +62,8 @@ export function WorkspaceView({ id }: { id: string }) {
   const [confirm, setConfirm] = useState<ConfirmRequest | null>(null)
 
   useEffect(() => {
-    document.title = `${ws?.name ?? 'Workspace'} · Kanbanto`
-  }, [ws?.name])
+    if (!planning) document.title = `${ws?.name ?? 'Workspace'} · Kanbanto`
+  }, [ws?.name, planning])
 
   /** Makes a change, then shows the result (or why it didn't work). */
   const act = async (method: 'PATCH' | 'PUT' | 'DELETE' | 'POST', path: string, body?: unknown, done?: string) => {
@@ -103,7 +109,8 @@ export function WorkspaceView({ id }: { id: string }) {
   const askDelete = () =>
     setConfirm({
       title: `Delete “${ws!.name}”?`,
-      description: 'Its people lose nothing: it has no boards. They’ll just no longer be in it.',
+      description:
+        'It has no boards, so no board is lost. Its plan (projects and people’s time) is deleted with it, and its people are no longer in it.',
       confirmLabel: 'Delete workspace',
       destructive: true,
       onConfirm: () =>
@@ -122,168 +129,223 @@ export function WorkspaceView({ id }: { id: string }) {
         <a href={hrefFor({ page: 'home' })} className="grid size-8 place-items-center rounded-md hover:bg-accent" aria-label="Your boards">
           <LogoMark className="size-7" title="Your boards" />
         </a>
-        <a href={hrefFor({ page: 'home' })} className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
+        <a href={hrefFor({ page: 'home' })} className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground max-sm:hidden">
           <ArrowLeft className="size-3.5" /> Boards
         </a>
+        {ws && <span className="min-w-0 truncate text-sm font-semibold max-sm:hidden">{ws.name}</span>}
+        <nav role="tablist" aria-label="Workspace" className="flex items-center gap-0.5 rounded-lg bg-muted p-0.5">
+          {(
+            [
+              { section: undefined, label: 'People', icon: UsersThree },
+              { section: 'planning' as const, label: 'Planning', icon: ChartBarHorizontal },
+            ] as const
+          ).map(({ section, label, icon: Icon }) => {
+            const on = (route.section ?? undefined) === section
+            return (
+              <a
+                key={label}
+                role="tab"
+                aria-selected={on}
+                href={hrefFor({ page: 'workspace', id, ...(section && { section }) })}
+                className={cn(
+                  'flex h-7 items-center gap-1.5 rounded-md px-2.5 text-[13px] font-medium text-muted-foreground transition-colors hover:text-foreground',
+                  on && 'bg-background text-foreground shadow-xs',
+                )}
+              >
+                <Icon weight={on ? 'fill' : 'regular'} className="size-4" />
+                {label}
+              </a>
+            )
+          })}
+        </nav>
         <div className="ml-auto flex items-center gap-2">
           <NotificationBell />
           <AccountMenu />
         </div>
       </header>
-      <main className="min-h-0 flex-1 overflow-auto">
-        <div className="mx-auto max-w-3xl space-y-6 px-4 py-8 sm:px-8">
-          {!ws ? (
-            error && (
-              <div className="space-y-2">
-                <p className="text-sm">{error}</p>
-                <a href={hrefFor({ page: 'home' })} className="text-sm font-medium text-primary hover:underline">
-                  Go to your boards
-                </a>
-              </div>
-            )
-          ) : (
-            <>
-              <PageTitle
-                title={ws.name}
-                description={`${ws.memberCount} ${ws.memberCount === 1 ? 'person' : 'people'} · ${ws.boardCount} ${ws.boardCount === 1 ? 'board' : 'boards'}. Everyone here can open the boards shared with the workspace.`}
-              />
+      {planning && ws ? (
+        <Suspense fallback={null}>
+          <PlanningView ws={ws} route={route} />
+        </Suspense>
+      ) : (
+        <main className="min-h-0 flex-1 overflow-auto">
+          <div className="mx-auto max-w-3xl space-y-6 px-4 py-8 sm:px-8">
+            {!ws ? (
+              error && (
+                <div className="space-y-2">
+                  <p className="text-sm">{error}</p>
+                  <a href={hrefFor({ page: 'home' })} className="text-sm font-medium text-primary hover:underline">
+                    Go to your boards
+                  </a>
+                </div>
+              )
+            ) : (
+              <>
+                <PageTitle
+                  title={ws.name}
+                  description={`${ws.memberCount} ${ws.memberCount === 1 ? 'person' : 'people'} · ${ws.boardCount} ${ws.boardCount === 1 ? 'board' : 'boards'}. Everyone here can open the boards shared with the workspace.`}
+                />
 
-              <SettingsCard title={`People (${ws.memberCount})`} description={admin ? undefined : 'Only admins can invite or remove people.'}>
-                <ul className="space-y-1">
-                  {ws.members.map((m) => {
-                    const me = m.userId === user?.id
-                    return (
-                      <li key={m.userId} className="flex items-center gap-3 py-1.5">
-                        <Avatar name={m.name} className="size-8 text-xs" />
-                        <span className="min-w-0 flex-1">
-                          <span className="block truncate text-sm font-medium">
-                            {m.name}
-                            {me && <span className="font-normal text-muted-foreground"> (you)</span>}
+                <SettingsCard title={`People (${ws.memberCount})`} description={admin ? undefined : 'Only admins can invite or remove people.'}>
+                  <ul className="space-y-1">
+                    {ws.members.map((m) => {
+                      const me = m.userId === user?.id
+                      return (
+                        <li key={m.userId} className="flex items-center gap-3 py-1.5">
+                          <Avatar name={m.name} className="size-8 text-xs" />
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate text-sm font-medium">
+                              {m.name}
+                              {me && <span className="font-normal text-muted-foreground"> (you)</span>}
+                            </span>
+                            {m.email && <span className="block truncate text-xs text-muted-foreground">{m.email}</span>}
                           </span>
-                          {m.email && <span className="block truncate text-xs text-muted-foreground">{m.email}</span>}
+                          {admin && m.role === 'member' && (
+                            <label
+                              className="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground"
+                              title="Can change the workspace’s plan"
+                            >
+                              <Switch
+                                checked={m.planner}
+                                aria-label={`${m.name} can change the plan`}
+                                onCheckedChange={(planner) =>
+                                  void act(
+                                    'PATCH',
+                                    `/members/${m.userId}`,
+                                    { planner },
+                                    planner ? `${m.name} can change the plan` : `${m.name} can no longer change the plan`,
+                                  )
+                                }
+                              />
+                              <span className="max-sm:hidden">Plans</span>
+                            </label>
+                          )}
+                          {!admin && m.planner && m.role === 'member' && <span className="text-xs text-muted-foreground">Plans</span>}
+                          {admin ? (
+                            <RoleSelect value={m.role} onChange={(role) => void act('PATCH', `/members/${m.userId}`, { role })} />
+                          ) : (
+                            <span className="text-xs text-muted-foreground">{ROLE_TEXT[m.role]}</span>
+                          )}
+                          {admin && !me && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="size-8 text-muted-foreground"
+                              aria-label={`Remove ${m.name}`}
+                              title={`Remove ${m.name}`}
+                              onClick={() => askRemove(m)}
+                            >
+                              <X />
+                            </Button>
+                          )}
+                        </li>
+                      )
+                    })}
+                    {ws.pending.map((p) => (
+                      <li key={p.id} className="flex items-center gap-3 py-1.5">
+                        <span className="grid size-8 shrink-0 place-items-center rounded-full border border-dashed text-muted-foreground">
+                          <EnvelopeSimple className="size-4" />
                         </span>
-                        {admin ? (
-                          <RoleSelect value={m.role} onChange={(role) => void act('PATCH', `/members/${m.userId}`, { role })} />
-                        ) : (
-                          <span className="text-xs text-muted-foreground">{ROLE_TEXT[m.role]}</span>
-                        )}
-                        {admin && !me && (
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="size-8 text-muted-foreground"
-                            aria-label={`Remove ${m.name}`}
-                            title={`Remove ${m.name}`}
-                            onClick={() => askRemove(m)}
-                          >
-                            <X />
-                          </Button>
-                        )}
-                      </li>
-                    )
-                  })}
-                  {ws.pending.map((p) => (
-                    <li key={p.id} className="flex items-center gap-3 py-1.5">
-                      <span className="grid size-8 shrink-0 place-items-center rounded-full border border-dashed text-muted-foreground">
-                        <EnvelopeSimple className="size-4" />
-                      </span>
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate text-sm">{p.email}</span>
-                        <span className="block truncate text-xs text-muted-foreground">Invited, hasn’t joined yet</span>
-                      </span>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="size-8 text-muted-foreground"
-                        aria-label={`Cancel the invite to ${p.email}`}
-                        title="Cancel the invite"
-                        onClick={() => void act('DELETE', `/invitations/${p.id}`, undefined, `Invite to ${p.email} cancelled`)}
-                      >
-                        <X />
-                      </Button>
-                    </li>
-                  ))}
-                </ul>
-              </SettingsCard>
-
-              {admin && (
-                <SettingsCard title="Invite people" description="They can open the boards shared with the workspace as soon as they join.">
-                  <InviteByEmail base={base} onDone={() => void load()} />
-                  <div className="space-y-2 border-t pt-4">
-                    <div className="flex items-start gap-4">
-                      <div className="flex-1">
-                        <p className="text-sm font-medium">Invite link</p>
-                        <p className="text-xs text-muted-foreground">Anyone with the link can join after signing in (or creating an account).</p>
-                      </div>
-                      <Switch
-                        checked={!!ws.link}
-                        aria-label="Invite link"
-                        onCheckedChange={(on) =>
-                          void (on ? act('PUT', '/invites/link', {}) : act('DELETE', '/invites/link', undefined, 'Link turned off'))
-                        }
-                      />
-                    </div>
-                    {ws.link && (
-                      <div className="flex items-center gap-2">
-                        <Input
-                          readOnly
-                          value={linkFor(ws.link.token)}
-                          onFocus={(e) => e.target.select()}
-                          className="h-8 font-mono text-xs"
-                          aria-label="Invite link"
-                        />
-                        <Button
-                          variant="outline"
-                          size="icon"
-                          className="size-8 shrink-0"
-                          aria-label="Copy"
-                          title="Copy"
-                          onClick={() => void copy(linkFor(ws.link!.token), 'Link')}
-                        >
-                          <Copy />
-                        </Button>
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate text-sm">{p.email}</span>
+                          <span className="block truncate text-xs text-muted-foreground">Invited, hasn’t joined yet</span>
+                        </span>
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="size-8 shrink-0 text-muted-foreground"
-                          aria-label="Make a new one"
-                          title="Make a new one (the old one stops working)"
-                          onClick={() => void act('PUT', '/invites/link', { regenerate: true }, 'New link made. The old one no longer works.')}
+                          className="size-8 text-muted-foreground"
+                          aria-label={`Cancel the invite to ${p.email}`}
+                          title="Cancel the invite"
+                          onClick={() => void act('DELETE', `/invitations/${p.id}`, undefined, `Invite to ${p.email} cancelled`)}
                         >
-                          <ArrowsClockwise />
+                          <X />
                         </Button>
-                      </div>
-                    )}
-                  </div>
+                      </li>
+                    ))}
+                  </ul>
                 </SettingsCard>
-              )}
 
-              {admin && <Rename key={ws.name} name={ws.name} onSave={(name) => act('PATCH', '', { name }, 'Workspace renamed')} />}
-
-              <SettingsCard title={admin ? 'Leave or delete' : 'Leave'}>
-                <div className="flex items-center gap-4">
-                  <p className="flex-1 text-xs text-muted-foreground">Boards you own here stay in the workspace, and an admin becomes their owner.</p>
-                  <Button variant="outline" size="sm" className="gap-1.5" onClick={askLeave}>
-                    <SignOut /> Leave workspace
-                  </Button>
-                </div>
                 {admin && (
-                  <div className="flex items-center gap-4 border-t pt-4">
+                  <SettingsCard title="Invite people" description="They can open the boards shared with the workspace as soon as they join.">
+                    <InviteByEmail base={base} onDone={() => void load()} />
+                    <div className="space-y-2 border-t pt-4">
+                      <div className="flex items-start gap-4">
+                        <div className="flex-1">
+                          <p className="text-sm font-medium">Invite link</p>
+                          <p className="text-xs text-muted-foreground">Anyone with the link can join after signing in (or creating an account).</p>
+                        </div>
+                        <Switch
+                          checked={!!ws.link}
+                          aria-label="Invite link"
+                          onCheckedChange={(on) =>
+                            void (on ? act('PUT', '/invites/link', {}) : act('DELETE', '/invites/link', undefined, 'Link turned off'))
+                          }
+                        />
+                      </div>
+                      {ws.link && (
+                        <div className="flex items-center gap-2">
+                          <Input
+                            readOnly
+                            value={linkFor(ws.link.token)}
+                            onFocus={(e) => e.target.select()}
+                            className="h-8 font-mono text-xs"
+                            aria-label="Invite link"
+                          />
+                          <Button
+                            variant="outline"
+                            size="icon"
+                            className="size-8 shrink-0"
+                            aria-label="Copy"
+                            title="Copy"
+                            onClick={() => void copy(linkFor(ws.link!.token), 'Link')}
+                          >
+                            <Copy />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="size-8 shrink-0 text-muted-foreground"
+                            aria-label="Make a new one"
+                            title="Make a new one (the old one stops working)"
+                            onClick={() => void act('PUT', '/invites/link', { regenerate: true }, 'New link made. The old one no longer works.')}
+                          >
+                            <ArrowsClockwise />
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                  </SettingsCard>
+                )}
+
+                {admin && <Rename key={ws.name} name={ws.name} onSave={(name) => act('PATCH', '', { name }, 'Workspace renamed')} />}
+
+                <SettingsCard title={admin ? 'Leave or delete' : 'Leave'}>
+                  <div className="flex items-center gap-4">
                     <p className="flex-1 text-xs text-muted-foreground">
-                      {ws.boardCount
-                        ? `It still has ${ws.boardCount} ${ws.boardCount === 1 ? 'board' : 'boards'}. Move ${ws.boardCount === 1 ? 'it' : 'them'} to another place or delete ${ws.boardCount === 1 ? 'it' : 'them'} first (in each board’s menu on the boards page).`
-                        : 'The workspace has no boards, so nothing is lost.'}
+                      Boards you own here stay in the workspace, and an admin becomes their owner.
                     </p>
-                    <Button variant="outline" size="sm" className="gap-1.5 text-destructive" disabled={ws.boardCount > 0} onClick={askDelete}>
-                      <Trash /> Delete workspace
+                    <Button variant="outline" size="sm" className="gap-1.5" onClick={askLeave}>
+                      <SignOut /> Leave workspace
                     </Button>
                   </div>
-                )}
-              </SettingsCard>
-            </>
-          )}
-        </div>
-      </main>
+                  {admin && (
+                    <div className="flex items-center gap-4 border-t pt-4">
+                      <p className="flex-1 text-xs text-muted-foreground">
+                        {ws.boardCount
+                          ? `It still has ${ws.boardCount} ${ws.boardCount === 1 ? 'board' : 'boards'}. Move ${ws.boardCount === 1 ? 'it' : 'them'} to another place or delete ${ws.boardCount === 1 ? 'it' : 'them'} first (in each board’s menu on the boards page).`
+                          : 'The workspace has no boards, so nothing is lost.'}
+                      </p>
+                      <Button variant="outline" size="sm" className="gap-1.5 text-destructive" disabled={ws.boardCount > 0} onClick={askDelete}>
+                        <Trash /> Delete workspace
+                      </Button>
+                    </div>
+                  )}
+                </SettingsCard>
+              </>
+            )}
+          </div>
+        </main>
+      )}
       <ConfirmDialog request={confirm} onClose={() => setConfirm(null)} />
     </div>
   )

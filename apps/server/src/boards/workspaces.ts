@@ -2,6 +2,7 @@ import { and, asc, eq, inArray, isNull, ne, sql } from 'drizzle-orm'
 import type { Db, Tx } from '../db'
 import { attachments, boardMembers, boards, tasks, workspaceInvites, workspaceMembers, workspaces, type WorkspaceRole } from '../db/schema'
 import { HttpError } from '../http'
+import { addPlanPerson } from '../planning/store'
 import { memberRole, workspaceRole, type BoardRow } from './access'
 
 /**
@@ -35,6 +36,8 @@ export async function addToWorkspace(tx: Db | Tx, workspaceId: string, userId: s
     .values({ workspaceId, userId, role, createdAt: now, updatedAt: now, version: 1 })
     .onConflictDoNothing()
     .returning({ userId: workspaceMembers.userId })
+  // Everyone in a workspace is in its plan.
+  if (added.length) await addPlanPerson(tx, workspaceId, userId)
   return added.length > 0
 }
 

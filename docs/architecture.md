@@ -26,6 +26,8 @@ packages/model/   The board model and its rules: pure TypeScript, used by BOTH t
   commands.ts       Every change to a board, with its rules (no loops, valid references, parent status…) → Change[]
   changes.ts        Apply changes; invert them (undo)
   schema.ts         zod schemas: board data, and every command a client can send
+  planning.ts, planningCommands.ts, planningSchema.ts   A workspace's plan (people's time on projects): its sums
+                    (working days, man-days, loads), its commands and their rules (like commands.ts), their schemas
   api.ts            The API's request/response shapes, shared by server and web
   indexer.ts, view.ts, tree.ts, table.ts   The task tree, rolled-up status, what each view shows
 
@@ -35,6 +37,7 @@ apps/server/      Fastify + Drizzle + PostgreSQL
   src/db/defaults.ts, src/settings.ts   Site settings' defaults (one place) and loading them
   src/boards/       engine.ts (runs commands), store.ts (rows ⇄ records, a board's people), access.ts (who can do
                     what), invites.ts, workspaces.ts (joining, leaving, moving boards)
+  src/planning/     engine.ts (runs plan commands, one workspace at a time), store.ts (rows ⇄ records, seeding)
   src/routes/       auth, boards, sharing, workspaces, comments (and the bell), files, email, admin, integrations
                     (API tokens, a board's webhooks)
   src/auth/apiTokens.ts   Bearer tokens: who they act as, and which routes they may use (TOKEN_ROUTES)
@@ -52,6 +55,9 @@ apps/server/      Fastify + Drizzle + PostgreSQL
 
 apps/web/         React + Vite + Tailwind + shadcn/ui, Phosphor icons
   src/data/sync.ts  BoardSync: keeps an open board in step with the server
+  src/data/planSync.ts   PlanSync: the same for a workspace's plan (checked for changes now and then; no socket)
+  src/components/planning/   The Planning tab: planLayout.ts (rows, time axis), PlanSheet.tsx (the timeline and its
+                    gestures), dialogs, pickers
   src/components/views.ts   The views (tabs): add one here and to LAYOUTS in the model
   src/components/board/dropRules.ts   What a drop on the board means (status, parent, person, position)
   src/lib/pointerDrag.ts   Dragging with a mouse, pen or finger (hold to pick up on touch), used by every view
@@ -98,6 +104,7 @@ The app uses hash routing, so any static host or proxy works without rewrite rul
 | `#/b/<id>/<tab>?focus=<task>&task=<task>` | A board: tab (board, timeline, outline), zoomed-in task, open card. Back/Forward work. |
 | `#/join/<token>` | An invite link, to a board or a workspace |
 | `#/w/<id>` | A workspace's people and settings |
+| `#/w/<id>/planning?by=person&zoom=days` | Its plan, by project or by person, in weeks or days |
 | `#/signin`, `#/signup`, `#/forgot` | Signing in |
 | `#/verify/<token>`, `#/reset/<token>` | Links in emails |
 | `#/account/<section>` | Account settings: profile, password, notifications, email, storage |
@@ -192,6 +199,23 @@ The app uses hash routing, so any static host or proxy works without rewrite rul
   their uploader's only, and count against the owner's space once posted.
   Disk files stream through the server; bucket files use 5-minute signed links.
 - Deleted files stay in a trash for 30 days. Files of a deleted card come back if the card is restored.
+
+## Planning
+
+- **Each workspace has a plan:** projects with a budget in man-days, people (every member, plus people added by name:
+  contractors, future hires, stand-ins like "New SE"), roles (SE, DE, SA, BA to start; each workspace changes its
+  own), and blocks: a person (or nobody yet) on a project from one day to another, at 25, 50, 75 or 100% of their
+  time. It's separate from the boards' cards.
+- **Sums** (`packages/model/src/planning.ts`): a block is worth its working days (Monday to Friday) × its share; one
+  working day of a person is one man-day, whatever their hours. A project is Under, Fit (within half a man-day) or
+  Over its plan. A person's load is the sum of their shares on a day; over 100% is flagged with when. Blocks on one
+  line (one person, or nobody, on one project) never overlap.
+- **Who:** workspace admins, and members an admin marks as planners, change the plan; everyone else in the workspace
+  sees it. Members stay in the plan while they're in the workspace; someone who leaves keeps their time until a
+  planner takes them out (their time then becomes "not assigned yet"), and gets it back if they rejoin.
+- **Changes** work like a board's: commands checked by the same model code on both sides, sent one at a time, each
+  numbered (`planning_state.seq`, the row that's locked while a plan changes), with undo as a checked restore. There's
+  no live connection for plans yet: an open plan checks for changes every minute and when the tab comes back.
 
 ## Adding things
 

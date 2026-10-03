@@ -9,6 +9,7 @@ import { CATEGORIES, LAYOUTS, PRIORITIES, type Category, type Layout, type Prior
  *                            Back/Forward and links bring it back. A bare #/b/<id> means "as I left it".
  *   #/join/<token>           a share link (or an email invite), to a board or a workspace
  *   #/w/<id>                 a workspace's people and settings
+ *   #/w/<id>/planning?by=person&zoom=days   its plan: who works on which project (by project, in weeks, unless said)
  *   #/cards?q=<words>&assignee=me&when=done&range=this-week…   search cards across boards. The address holds the
  *                            whole search (see CardsRoute), so it can be kept and shared. state=archived: the archived ones.
  *   #/authorize?<oauth params>   approving an app that connects with sign-in (from /oauth/authorize)
@@ -20,6 +21,8 @@ import { CATEGORIES, LAYOUTS, PRIORITIES, type Category, type Layout, type Prior
  * Hash addresses work on any static host, with no server rewrite rules.
  */
 export type BoardRoute = { page: 'board'; id: string; layout?: Layout; focus?: string; task?: string }
+/** A workspace: its people (the default), or its plan, shown by project or by person, in weeks or days. */
+export type WorkspaceRoute = { page: 'workspace'; id: string; section?: WorkspaceSection; by?: 'person'; zoom?: 'days' }
 /**
  * The Search cards page: which cards (the ones on their boards, unless said), where, and what about them. A time range
  * is a named one (`range`, which moves with the calendar) or two days (`from`, `to`), about one of a card's dates
@@ -52,7 +55,7 @@ export type Route =
   | { page: 'home' }
   | BoardRoute
   | { page: 'join'; token: string }
-  | { page: 'workspace'; id: string }
+  | WorkspaceRoute
   | CardsRoute
   | { page: 'authorize'; query: string }
   | { page: 'verify'; token: string }
@@ -65,6 +68,8 @@ export type Route =
 
 export const ADMIN_SECTIONS = ['overview', 'accounts', 'email', 'storage', 'integrations'] as const
 export type AdminSection = (typeof ADMIN_SECTIONS)[number]
+export const WORKSPACE_SECTIONS = ['people', 'planning'] as const
+export type WorkspaceSection = Exclude<(typeof WORKSPACE_SECTIONS)[number], 'people'>
 export const ACCOUNT_SECTIONS = ['profile', 'password', 'notifications', 'email', 'storage', 'api'] as const
 export type AccountSection = (typeof ACCOUNT_SECTIONS)[number]
 
@@ -104,8 +109,18 @@ export function parseRoute(hash: string): Route {
       ...(one('sort', CARD_SORTS) && one('sort', CARD_SORTS) !== 'recent' && { sort: one('sort', CARD_SORTS) }),
     }
   }
-  const ws = hash.match(/^#\/w\/([^/?#]+)\/?$/)
-  if (ws) return { page: 'workspace', id: decodeURIComponent(ws[1]) }
+  const ws = hash.match(/^#\/w\/([^/?#]+)(?:\/([a-z]+))?\/?(?:\?(.*))?$/)
+  if (ws) {
+    const planning = ws[2] === 'planning'
+    const q = new URLSearchParams(ws[3] ?? '')
+    return {
+      page: 'workspace',
+      id: decodeURIComponent(ws[1]),
+      ...(planning && { section: 'planning' as const }),
+      ...(planning && q.get('by') === 'person' && { by: 'person' as const }),
+      ...(planning && q.get('zoom') === 'days' && { zoom: 'days' as const }),
+    }
+  }
   const auth = hash.match(/^#\/(signin|signup)(?:\?(.*))?$/)
   if (auth) {
     const next = new URLSearchParams(auth[2] ?? '').get('next')
@@ -139,7 +154,14 @@ export function hrefFor(r: Route) {
   if (r.page === 'account') return r.section && r.section !== 'profile' ? `#/account/${r.section}` : '#/account'
   if (r.page === 'admin') return r.section && r.section !== 'overview' ? `#/admin/${r.section}` : '#/admin'
   if (r.page === 'forgot') return '#/forgot'
-  if (r.page === 'workspace') return `#/w/${encodeURIComponent(r.id)}`
+  if (r.page === 'workspace') {
+    if (r.section !== 'planning') return `#/w/${encodeURIComponent(r.id)}`
+    const q = new URLSearchParams()
+    if (r.by) q.set('by', r.by)
+    if (r.zoom) q.set('zoom', r.zoom)
+    const qs = q.toString()
+    return `#/w/${encodeURIComponent(r.id)}/planning${qs ? `?${qs}` : ''}`
+  }
   if (r.page === 'cards') {
     const p = new URLSearchParams()
     if (r.state !== 'active') p.set('state', r.state)

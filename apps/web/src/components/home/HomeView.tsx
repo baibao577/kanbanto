@@ -3,6 +3,7 @@ import {
   ArrowCounterClockwise,
   ArrowsLeftRight,
   Buildings,
+  ChartBarHorizontal,
   CaretRight,
   DotsThree,
   LockSimple,
@@ -265,11 +266,18 @@ export function HomeView() {
                   icon={<Buildings className="size-4 text-muted-foreground" />}
                   count={all.filter((b) => b.workspaceId === w.id).length}
                   action={
-                    <Button asChild size="sm" variant="ghost" className="h-7 gap-1.5 text-muted-foreground">
-                      <a href={hrefFor({ page: 'workspace', id: w.id })}>
-                        <UsersThree /> {w.memberCount} {w.memberCount === 1 ? 'person' : 'people'}
-                      </a>
-                    </Button>
+                    <span className="flex items-center gap-0.5">
+                      <Button asChild size="sm" variant="ghost" className="h-7 gap-1.5 text-muted-foreground">
+                        <a href={hrefFor({ page: 'workspace', id: w.id, section: 'planning' })}>
+                          <ChartBarHorizontal /> Planning
+                        </a>
+                      </Button>
+                      <Button asChild size="sm" variant="ghost" className="h-7 gap-1.5 text-muted-foreground">
+                        <a href={hrefFor({ page: 'workspace', id: w.id })}>
+                          <UsersThree /> {w.memberCount} {w.memberCount === 1 ? 'person' : 'people'}
+                        </a>
+                      </Button>
+                    </span>
                   }
                 >
                   {all.filter((b) => b.workspaceId === w.id).map(tile)}

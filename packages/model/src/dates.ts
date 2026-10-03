@@ -90,6 +90,14 @@ export const todayDay = (): number => {
   return Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()) / DAY_MS
 }
 
+/** The weekday of a day number: 0 = Sunday … 6 = Saturday (day 0, 1970-01-01, was a Thursday). */
+export const weekdayOf = (day: number) => (((day + 4) % 7) + 7) % 7
+
+export const isWeekend = (day: number) => weekdayOf(day) === 0 || weekdayOf(day) === 6
+
+/** The Monday of the week a day number is in (weeks run Monday to Sunday). */
+export const mondayOf = (day: number) => day - ((weekdayOf(day) + 6) % 7)
+
 /** Calendar parts of a day number. */
 export const dayParts = (day: number) => {
   const d = new Date(day * DAY_MS)

@@ -34,6 +34,7 @@ import { loadSettings } from './settings'
 import { openApiRoutes } from './openapi'
 import { integrationRoutes } from './routes/integrations'
 import { workspaceRoutes } from './routes/workspaces'
+import { planningRoutes } from './routes/planning'
 
 declare module 'fastify' {
   interface FastifyRequest {
@@ -223,6 +224,7 @@ export async function buildApp(
   await app.register(presetRoutes, { prefix: '/api' })
   await app.register(sharingRoutes, { prefix: '/api' })
   await app.register(workspaceRoutes, { prefix: '/api' })
+  await app.register(planningRoutes, { prefix: '/api' })
   await app.register(integrationRoutes, { prefix: '/api' })
   await app.register(mcpRoutes, { prefix: '/api' })
   await app.register(oauthRoutes)

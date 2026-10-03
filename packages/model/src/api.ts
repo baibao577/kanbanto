@@ -3,6 +3,8 @@ import type { Change } from './records'
 import type { CardDate, CardMomentKind, CardSort, CardState } from './search'
 import type { BoardData, Category, Priority } from './types'
 import type { ColorName } from './colors'
+import type { PlanData } from './planning'
+import type { PlanChange } from './planningCommands'
 
 /**
  * What the server's API sends back, shared by the server and the web app so both agree on the shapes.
@@ -476,6 +478,27 @@ export interface WorkspaceMember {
   /** Admins see everyone's; others only their own. */
   email?: string
   role: WorkspaceRole
+  /** Can change the workspace's plan (admins always can). */
+  planner: boolean
+}
+
+/** GET /api/workspaces/:id/planning */
+export interface PlanningView {
+  plan: PlanData
+  /** Goes up with every change to the plan. */
+  seq: number
+  /** You can change it: the workspace's admins and planners. */
+  canEdit: boolean
+  /** The accounts in the workspace now (someone in the plan who isn't has left). */
+  memberIds: string[]
+  /** The last change to each project's plan: when, and who made it. */
+  activity: Record<string, { at: string; by: string | null }>
+}
+
+/** POST /api/workspaces/:id/planning/mutations */
+export interface PlanningMutationResult {
+  seq: number
+  changes: PlanChange[]
 }
 
 /** GET /api/workspaces/:id */

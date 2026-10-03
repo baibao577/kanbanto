@@ -179,7 +179,7 @@ export default function App() {
       if (!user) return <Redirect to={{ page: 'signin', next: here() }} />
       return (
         <Suspense fallback={null}>
-          <WorkspaceView key={route.id} id={route.id} />
+          <WorkspaceView key={route.id} route={route} />
         </Suspense>
       )
     case 'board':

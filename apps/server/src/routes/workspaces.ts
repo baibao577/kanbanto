@@ -12,6 +12,7 @@ import { env } from '../env'
 import { HttpError, parse, siteUrl } from '../http'
 import { WHY_NOT_SENT } from '../mail/mailer'
 import { emails } from '../mail/templates'
+import { seedPlan } from '../planning/store'
 import { requireUser } from './auth'
 import { notifyAdded } from './comments'
 
@@ -43,13 +44,13 @@ export const workspaceRoutes: FastifyPluginAsync = async (app) => {
     const { workspace, role } = await requireWorkspace(app.db, id, meId)
     const admin = role === 'admin'
     const rows = await app.db
-      .select({ userId: users.id, name: users.name, email: users.email, role: workspaceMembers.role })
+      .select({ userId: users.id, name: users.name, email: users.email, role: workspaceMembers.role, planner: workspaceMembers.planner })
       .from(workspaceMembers)
       .innerJoin(users, eq(users.id, workspaceMembers.userId))
       .where(eq(workspaceMembers.workspaceId, id))
     const members = rows
       .sort((a, b) => (a.role === b.role ? a.name.localeCompare(b.name) : a.role === 'admin' ? -1 : 1))
-      .map((m) => (admin || m.userId === meId ? m : { userId: m.userId, name: m.name, role: m.role }))
+      .map((m) => (admin || m.userId === meId ? m : { userId: m.userId, name: m.name, role: m.role, planner: m.planner }))
     const [{ n }] = await app.db
       .select({ n: sql<number>`count(*)::int` })
       .from(boards)
@@ -92,6 +93,7 @@ export const workspaceRoutes: FastifyPluginAsync = async (app) => {
     const id = newId()
     await app.db.transaction(async (tx) => {
       await tx.insert(workspaces).values({ id, name, createdBy: me.id })
+      await seedPlan(tx, id)
       await addToWorkspace(tx, id, me.id, 'admin')
     })
     return { id }
@@ -221,23 +223,30 @@ export const workspaceRoutes: FastifyPluginAsync = async (app) => {
     return { ok: true }
   })
 
-  /** Makes someone an admin or a member. A workspace always keeps an admin. */
+  /** Makes someone an admin or a member, or lets them change the plan (planner). A workspace always keeps an admin. */
   app.patch('/workspaces/:id/members/:userId', async (req) => {
     const { id, userId } = parse(MemberParams, req.params)
     const me = requireUser(req.user)
     await requireWorkspace(app.db, id, me.id, true)
-    const { role } = parse(z.object({ role: z.enum(WORKSPACE_ROLES) }), req.body)
+    const body = parse(
+      z
+        .object({ role: z.enum(WORKSPACE_ROLES), planner: z.boolean() })
+        .partial()
+        .strict()
+        .refine((b) => b.role !== undefined || b.planner !== undefined, 'Say what to change.'),
+      req.body,
+    )
     await app.db.transaction(async (tx) => {
       const [m] = await tx
         .select()
         .from(workspaceMembers)
         .where(and(eq(workspaceMembers.workspaceId, id), eq(workspaceMembers.userId, userId)))
       if (!m) throw new HttpError(404, 'That person isn’t in this workspace.')
-      if (m.role === 'admin' && role !== 'admin' && (await adminCount(tx, id)) < 2)
+      if (m.role === 'admin' && body.role && body.role !== 'admin' && (await adminCount(tx, id)) < 2)
         throw new HttpError(400, 'A workspace needs at least one admin. Make someone else an admin first.')
       await tx
         .update(workspaceMembers)
-        .set({ role, updatedAt: new Date(), version: sql`${workspaceMembers.version} + 1` })
+        .set({ ...body, updatedAt: new Date(), version: sql`${workspaceMembers.version} + 1` })
         .where(and(eq(workspaceMembers.workspaceId, id), eq(workspaceMembers.userId, userId)))
     })
     return detail(id, me.id)

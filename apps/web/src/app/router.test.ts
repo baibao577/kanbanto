@@ -19,6 +19,8 @@ describe('router', () => {
       ['#/account/password', { page: 'account', section: 'password' }],
       ['#/forgot', { page: 'forgot' }],
       ['#/w/w-1', { page: 'workspace', id: 'w-1' }],
+      ['#/w/w-1/planning', { page: 'workspace', id: 'w-1', section: 'planning' }],
+      ['#/w/w-1/planning?by=person&zoom=days', { page: 'workspace', id: 'w-1', section: 'planning', by: 'person', zoom: 'days' }],
       ['#/authorize?client_id=c&state=s', { page: 'authorize', query: 'client_id=c&state=s' }],
       ['#/cards', { page: 'cards', state: 'active' }],
       ['#/cards?state=archived&board=b1&q=old+idea&completed=yes', { page: 'cards', state: 'archived', board: 'b1', q: 'old idea', completed: true }],
@@ -60,5 +62,11 @@ describe('router', () => {
 
   it('ignores an unknown tab rather than failing', () => {
     expect(parseRoute('#/b/abc/kanban?task=t')).toEqual({ page: 'board', id: 'abc', task: 't' })
+  })
+
+  it('a workspace address with something it doesn’t know opens its people', () => {
+    expect(parseRoute('#/w/w-1/people')).toEqual({ page: 'workspace', id: 'w-1' })
+    expect(parseRoute('#/w/w-1/zzz?by=person')).toEqual({ page: 'workspace', id: 'w-1' })
+    expect(parseRoute('#/w/w-1/planning?by=team&zoom=hours')).toEqual({ page: 'workspace', id: 'w-1', section: 'planning' })
   })
 })

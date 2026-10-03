@@ -131,8 +131,8 @@ describe('workspaces', () => {
     expect((await bob.request('PUT', `/api/workspaces/${ws}/invites/link`, {})).status).toBe(403)
     const seen = await bob.ok('GET', `/api/workspaces/${ws}`)
     expect(seen.members).toEqual([
-      { userId: ann.user.id, name: 'Ann', role: 'admin' },
-      { userId: bob.user.id, name: 'Bob', email: 'bob@example.com', role: 'member' },
+      { userId: ann.user.id, name: 'Ann', role: 'admin', planner: false },
+      { userId: bob.user.id, name: 'Bob', email: 'bob@example.com', role: 'member', planner: false },
     ])
     expect(seen.link).toBeNull()
     expect((await ann.request('POST', `/api/workspaces/${ws}/invitations`, { email: 'bob@example.com' })).status).toBe(409)

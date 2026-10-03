@@ -1,14 +1,19 @@
 import { PRIORITIES, type Reminder } from '@kanbanto/model/types'
 import { SETTING_DEFAULTS } from './defaults'
+import { sql } from 'drizzle-orm'
 import {
   type AnyPgColumn,
   bigint,
   boolean,
+  check,
+  date,
   index,
   integer,
   jsonb,
+  numeric,
   pgTable,
   primaryKey,
+  smallint,
   text,
   timestamp,
   unique,
@@ -221,6 +226,8 @@ export const workspaceMembers = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
     role: text('role', { enum: WORKSPACE_ROLES }).notNull(),
+    /** Can change the workspace's plan (admins always can). */
+    planner: boolean('planner').notNull().default(false),
     ...meta,
   },
   (t) => [primaryKey({ columns: [t.workspaceId, t.userId] }), index('workspace_members_user_idx').on(t.userId)],
@@ -245,6 +252,123 @@ export const workspaceInvites = pgTable(
     revokedAt: at('revoked_at'),
   },
   (t) => [uniqueIndex('workspace_invites_token_idx').on(t.token), index('workspace_invites_workspace_idx').on(t.workspaceId)],
+)
+
+// ── Planning: who works on which project, when, and how much (see model/planning.ts) ───
+
+/** One per workspace: locked while its plan changes, and counts the changes so pages can tell they missed one. */
+export const planningState = pgTable('planning_state', {
+  workspaceId: uuid('workspace_id')
+    .primaryKey()
+    .references(() => workspaces.id, { onDelete: 'cascade' }),
+  seq: bigint('seq', { mode: 'number' }).notNull().default(0),
+})
+
+/** The roles people have in a workspace's plan (it starts with SE, DE, SA, BA). */
+export const planningRoles = pgTable(
+  'planning_roles',
+  {
+    id: uuid('id').primaryKey(),
+    workspaceId: uuid('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    position: text('position').notNull(),
+    ...meta,
+  },
+  (t) => [index('planning_roles_workspace_idx').on(t.workspaceId)],
+)
+
+/** People in a plan: each member of the workspace (kept while they're in it), and people added by name. */
+export const planningPeople = pgTable(
+  'planning_people',
+  {
+    id: uuid('id').primaryKey(),
+    workspaceId: uuid('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    /** Their account, for members; null for someone added by name. */
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'set null' }),
+    /** Members: a copy of their account's name, kept for when the account is gone. */
+    name: text('name').notNull(),
+    roleId: uuid('role_id').references(() => planningRoles.id, { onDelete: 'set null' }),
+    hoursPerDay: numeric('hours_per_day', { precision: 4, scale: 1, mode: 'number' }).notNull().default(8),
+    ...meta,
+  },
+  (t) => [index('planning_people_workspace_idx').on(t.workspaceId), uniqueIndex('planning_people_user_idx').on(t.workspaceId, t.userId)],
+)
+
+export const planningProjects = pgTable(
+  'planning_projects',
+  {
+    id: uuid('id').primaryKey(),
+    workspaceId: uuid('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    client: text('client').notNull().default(''),
+    /** The budget in man-days; null: no plan for it yet. */
+    plannedMd: numeric('planned_md', { precision: 9, scale: 2, mode: 'number' }),
+    color: text('color').notNull(),
+    position: text('position').notNull(),
+    finishedAt: at('finished_at'),
+    /** The last change to it or its time, and by whom (for "changed 2 days ago by Ann"). */
+    activityAt: at('activity_at'),
+    activityBy: uuid('activity_by').references(() => users.id, { onDelete: 'set null' }),
+    /** How many "not assigned yet" lines it has (one for each need nobody is chosen for yet). */
+    openLines: smallint('open_lines').notNull().default(1),
+    ...meta,
+  },
+  (t) => [index('planning_projects_workspace_idx').on(t.workspaceId)],
+)
+
+/** Someone put on a project with no time yet, so their line is there to add time to. */
+export const planningLines = pgTable(
+  'planning_lines',
+  {
+    id: uuid('id').primaryKey(),
+    workspaceId: uuid('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => planningProjects.id, { onDelete: 'cascade' }),
+    personId: uuid('person_id')
+      .notNull()
+      .references(() => planningPeople.id, { onDelete: 'cascade' }),
+    ...meta,
+  },
+  (t) => [uniqueIndex('planning_lines_project_person_idx').on(t.projectId, t.personId), index('planning_lines_person_idx').on(t.personId)],
+)
+
+/** A person (or nobody yet) on a project from one day to another, at 25, 50, 75 or 100% of their time. */
+export const planningBlocks = pgTable(
+  'planning_blocks',
+  {
+    id: uuid('id').primaryKey(),
+    workspaceId: uuid('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => planningProjects.id, { onDelete: 'cascade' }),
+    /** null: not assigned to anyone yet. */
+    personId: uuid('person_id').references(() => planningPeople.id, { onDelete: 'set null' }),
+    /** Which of the project's "not assigned yet" lines it's on (0 for someone's time). */
+    slot: smallint('slot').notNull().default(0),
+    start: date('start', { mode: 'string' }).notNull(),
+    end: date('end', { mode: 'string' }).notNull(),
+    pct: smallint('pct').notNull(),
+    updatedBy: uuid('updated_by').references(() => users.id, { onDelete: 'set null' }),
+    ...meta,
+  },
+  (t) => [
+    index('planning_blocks_workspace_idx').on(t.workspaceId),
+    index('planning_blocks_project_idx').on(t.projectId),
+    index('planning_blocks_person_idx').on(t.personId),
+    check('planning_blocks_pct_check', sql`${t.pct} in (25, 50, 75, 100)`),
+    check('planning_blocks_dates_check', sql`${t.start} <= ${t.end}`),
+  ],
 )
 
 // ── Boards and who can use them ────────────────────────────────────────────────

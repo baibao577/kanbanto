@@ -169,6 +169,20 @@
       "when": 1790918512504,
       "tag": "0023_done_at",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1791011159560,
+      "tag": "0024_planning",
+      "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1791013539650,
+      "tag": "0025_planning_open_lines",
+      "breakpoints": true
     }
   ]
 }
