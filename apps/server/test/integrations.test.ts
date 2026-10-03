@@ -207,6 +207,8 @@ describe('MCP', () => {
       'recent_activity',
       'reminders',
       'get_task',
+      'my_week',
+      'plan_overview',
       'create_tasks',
       'update_task',
       'move_task',
@@ -218,6 +220,7 @@ describe('MCP', () => {
       'manage_lists',
       'manage_labels',
       'set_inbox',
+      'log_time',
       'add_comment',
     ])
 
@@ -496,11 +499,73 @@ describe('MCP', () => {
     await ann.ok('DELETE', `/api/boards/${id}`)
   })
 
+  it('time: log it, see it on the task, in the board’s week and in my week; plans are read, not changed', async () => {
+    const { ann, id } = await site({ apiTokens: true })
+    const mcp = withToken(await makeToken(ann, 'write'))
+    const call = async (name: string, args: object) => toolResult(await rpc(mcp, 'tools/call', { name, arguments: args }))
+    const today = new Date().toISOString().slice(0, 10)
+    expect(await call('log_time', { board_id: id, task_id: 'A3', time: '1:30', note: 'review' })).toMatchObject({
+      logged: '1h 30m',
+      day: today,
+      note: 'review',
+      isError: false,
+    })
+    expect(await call('log_time', { board_id: id, task_id: 'A3', time: '20' })).toMatchObject({
+      isError: true,
+      error: '20 hours? Type 20m for minutes.',
+    })
+    expect(await call('log_time', { board_id: id, task_id: 'A3', time: '45m', day: 'tomorrow' })).toMatchObject({ isError: true })
+    const task = await call('get_task', { board_id: id, task_id: 'A3' })
+    expect(task.time).toEqual({
+      total: '1h 30m',
+      by_person: [{ name: 'Ann', time: '1h 30m' }],
+      latest: [{ who: 'Ann', time: '1h 30m', day: today, note: 'review' }],
+    })
+    expect((await call('team_overview', { board_id: id })).boards[0].logged_this_week).toEqual([{ name: 'Ann', time: '1h 30m' }])
+    const week = await call('my_week', {})
+    expect(week.total).toBe('1h 30m')
+    expect(week.tasks).toEqual([expect.objectContaining({ task_id: 'A3', total: '1h 30m', days: { [today]: '1h 30m' } })])
+
+    // A workspace plan with this board's project: readable, with the logged time as man-days; nothing changes it here.
+    const { id: ws } = await ann.ok('POST', '/api/workspaces', { name: 'Acme' })
+    await ann.ok('PUT', `/api/boards/${id}/workspace`, { workspaceId: ws })
+    const run = (command: object) => ann.ok('POST', `/api/workspaces/${ws}/planning/mutations`, { mutationId: mid(), command })
+    const project = (await run({ type: 'project.add', name: 'Launch', plannedMd: 10 })).changes[0].id
+    await run({ type: 'project.update', id: project, fields: { boardId: id } })
+    const annId = (await ann.ok('GET', `/api/workspaces/${ws}/planning`)).plan.people[0].id
+    await run({ type: 'block.add', projectId: project, personId: annId, start: '2026-10-05', end: '2026-10-09', pct: 50 })
+    const plan = await call('plan_overview', { workspace: 'Acme' })
+    expect(plan.projects[0]).toMatchObject({
+      name: 'Launch',
+      state: 'running',
+      planned_md: 10,
+      scheduled_md: 2.5,
+      against_plan: 'under',
+      logged_md: 0.2,
+      people: [{ name: 'Ann', booked_md: 2.5, logged_md: 0.2, blocks: [{ from: '2026-10-05', until: '2026-10-09', pct: 50 }] }],
+    })
+    expect(plan.people[0]).toMatchObject({ name: 'Ann', hours_per_day: 8 })
+    expect((await call('plan_overview', { workspace: 'Nowhere' })).isError).toBe(true)
+    expect(
+      ((await rpc(mcp, 'tools/list')).body.result.tools as { name: string }[]).some((x) => /plan/.test(x.name) && x.name !== 'plan_overview'),
+    ).toBe(false)
+  })
+
   it('read-only tokens get the reading tools only', async () => {
     const { ann, id } = await site({ apiTokens: true })
     const mcp = withToken(await makeToken(ann, 'read'))
     const tools = (await rpc(mcp, 'tools/list')).body.result.tools.map((x: { name: string }) => x.name)
-    expect(tools).toEqual(['list_boards', 'get_board', 'find_tasks', 'team_overview', 'recent_activity', 'reminders', 'get_task'])
+    expect(tools).toEqual([
+      'list_boards',
+      'get_board',
+      'find_tasks',
+      'team_overview',
+      'recent_activity',
+      'reminders',
+      'get_task',
+      'my_week',
+      'plan_overview',
+    ])
     const r = await rpc(mcp, 'tools/call', { name: 'create_tasks', arguments: { board_id: id, tasks: [{ title: 'x' }] } })
     expect(r.body.result?.isError ?? !!r.body.error).toBe(true)
   })
@@ -584,6 +649,15 @@ describe('API reference', () => {
     const spec = await new Person(t.app).ok('GET', '/api/openapi.json')
     expect(spec.openapi).toBe('3.1.0')
     expect(spec.components.schemas.Command.oneOf).toHaveLength(16)
+    expect(spec.components.schemas.PlanCommand.oneOf).toHaveLength(22)
+    expect(Object.keys(spec.paths)).toEqual(
+      expect.arrayContaining([
+        '/api/boards/{id}/tasks/{taskId}/time',
+        '/api/time/week',
+        '/api/workspaces/{id}/planning/mutations',
+        '/api/boards/{id}/plan',
+      ]),
+    )
     expect(Object.keys(spec.webhooks)).toEqual(['board.changed', 'reminder.due', 'comment.added', 'ping'])
     expect((await new Person(t.app).request('GET', '/api/docs')).headers.location).toBe('/api/docs/')
     const page = await new Person(t.app).request('GET', '/api/docs/')

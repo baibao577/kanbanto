@@ -1,4 +1,5 @@
 import scalar from '@scalar/fastify-api-reference'
+import { PlanCommandSchema } from '@kanbanto/model/planningSchema'
 import { CommandSchema } from '@kanbanto/model/schema'
 import type { FastifyPluginAsync } from 'fastify'
 import { z } from 'zod'
@@ -88,6 +89,20 @@ const schemas = {
     mentions: { type: 'array', items: str },
     createdAt: str,
   }),
+  TimeEntry: obj({
+    id: str,
+    boardId: str,
+    taskId: str,
+    user: nullable(obj({ id: str, name: str })),
+    day: { ...str, description: 'The day it counts for, YYYY-MM-DD.' },
+    minutes: { type: 'integer', minimum: 1, maximum: 1440 },
+    note: str,
+    editedBy: { ...nullable(obj({ id: str, name: str })), description: 'Someone else who changed it (a board owner or workspace admin).' },
+    canEdit: { type: 'boolean', description: 'You may change or delete it.' },
+    createdAt: str,
+    updatedAt: str,
+  }),
+  PlanCommand: { ...z.toJSONSchema(PlanCommandSchema, { unrepresentable: 'any' }), $schema: undefined },
   Error: obj({ error: str }),
 }
 
@@ -146,6 +161,16 @@ The answer lists the records that changed.
         description: 'A board’s webhooks, for its owners (when a platform admin allows webhooks). What they send is under Webhooks.',
       },
       { name: 'Workspaces' },
+      {
+        name: 'Time',
+        description:
+          'Time people log on cards: editors and owners log; everyone on the board sees it. You change your own entries; a board owner, or an admin of its workspace, can fix anyone’s.',
+      },
+      {
+        name: 'Planning',
+        description:
+          'A workspace’s resource plan: projects with planned man-days, people, and blocks of their time (25–100%) between two days. Everyone in the workspace can read it; its admins and planners change it with plan commands, checked like board commands.',
+      },
       { name: 'You' },
     ],
     paths: {
@@ -446,6 +471,136 @@ The answer lists the records that changed.
       '/api/workspaces': { get: { tags: ['Workspaces'], summary: 'Workspaces you’re in', responses: { 200: json({ type: 'object' }) } } },
       '/api/workspaces/{id}': {
         get: { tags: ['Workspaces'], summary: 'A workspace and its people', parameters: [id('id')], responses: { 200: json({ type: 'object' }) } },
+      },
+      '/api/boards/{id}/tasks/{taskId}/time': {
+        get: {
+          tags: ['Time'],
+          summary: 'The time logged on a card',
+          parameters: [id('id'), id('taskId')],
+          responses: { 200: json(obj({ entries: { type: 'array', items: ref('TimeEntry') }, canLog: { type: 'boolean' } })) },
+        },
+        post: {
+          tags: ['Time'],
+          summary: 'Log time on a card',
+          parameters: [id('id'), id('taskId')],
+          requestBody: {
+            content: {
+              'application/json': {
+                schema: obj(
+                  {
+                    minutes: { type: 'integer', minimum: 1, maximum: 1440 },
+                    day: { ...str, description: 'The day it counts for, YYYY-MM-DD.' },
+                    note: { ...str, maxLength: 200 },
+                  },
+                  ['minutes', 'day'],
+                ),
+              },
+            },
+          },
+          responses: { 200: json(obj({ entry: ref('TimeEntry') })) },
+        },
+      },
+      '/api/boards/{id}/time/{entryId}': {
+        patch: {
+          tags: ['Time'],
+          summary: 'Change an entry’s time, day or note',
+          parameters: [id('id'), id('entryId')],
+          requestBody: {
+            content: {
+              'application/json': {
+                schema: obj({ minutes: { type: 'integer', minimum: 1, maximum: 1440 }, day: str, note: { ...str, maxLength: 200 } }, []),
+              },
+            },
+          },
+          responses: { 200: json(obj({ entry: ref('TimeEntry') })) },
+        },
+        delete: { tags: ['Time'], summary: 'Delete an entry', parameters: [id('id'), id('entryId')], responses: ok },
+      },
+      '/api/boards/{id}/time/mine': {
+        get: {
+          tags: ['Time'],
+          summary: 'For logging on a board: the cards you worked on that day and logged on lately, and your day so far',
+          parameters: [
+            id('id'),
+            id('day', 'query'),
+            { name: 'timeZone', in: 'query', schema: { ...str, description: 'Yours, e.g. Asia/Bangkok. Default UTC.' } },
+          ],
+          responses: {
+            200: json(
+              obj({
+                day: str,
+                touched: { type: 'array', items: str, description: 'Card ids, latest first.' },
+                recent: { type: 'array', items: str },
+                logged: { type: 'integer', description: 'Minutes you logged that day, on all your boards.' },
+                hoursPerDay: { type: 'number' },
+              }),
+            ),
+          },
+        },
+      },
+      '/api/time/week': {
+        get: {
+          tags: ['Time'],
+          summary: 'Your week across boards (My week)',
+          parameters: [
+            { name: 'from', in: 'query', required: true, schema: { ...str, description: 'The Monday it starts on, YYYY-MM-DD.' } },
+            { name: 'timeZone', in: 'query', schema: { ...str, description: 'Yours, e.g. Asia/Bangkok. Default UTC.' } },
+          ],
+          responses: {
+            200: json(
+              obj({
+                from: str,
+                hoursPerDay: { type: 'number' },
+                entries: { type: 'array', items: ref('TimeEntry') },
+                cards: { type: 'array', items: { type: 'object' }, description: 'The rows: cards you logged on, worked on, or are assigned to.' },
+                touched: {
+                  type: 'object',
+                  additionalProperties: { type: 'array', items: str },
+                  description: 'Days you worked on each card, by `boardId:taskId`.',
+                },
+              }),
+            ),
+          },
+        },
+      },
+      '/api/workspaces/{id}/planning': {
+        get: {
+          tags: ['Planning'],
+          summary: 'A workspace’s plan',
+          description:
+            'The plan (roles, people, projects, lines, blocks), its change counter (`seq`), whether you can change it, and the minutes logged on linked boards (`actuals`, by board then by person).',
+          parameters: [id('id')],
+          responses: { 200: json({ type: 'object' }) },
+        },
+      },
+      '/api/workspaces/{id}/planning/mutations': {
+        post: {
+          tags: ['Planning'],
+          summary: 'Change the plan (admins and planners)',
+          description: 'One plan command; refused (409) with a reason if it breaks a rule, like two blocks overlapping on one person’s line.',
+          parameters: [id('id')],
+          requestBody: {
+            content: {
+              'application/json': {
+                schema: obj({
+                  mutationId: { ...str, description: 'Your id for this change: sending it again does it once.' },
+                  command: ref('PlanCommand'),
+                }),
+              },
+            },
+          },
+          responses: { 200: json(obj({ seq: { type: 'integer' }, changes: { type: 'array', items: { type: 'object' } } })) },
+        },
+      },
+      '/api/boards/{id}/plan': {
+        get: {
+          tags: ['Planning'],
+          summary: 'The plan of the project linked to a board',
+          description:
+            'Who is booked on it, at what share and until when; `plan` is null when the board isn’t linked or you aren’t in its workspace.',
+          parameters: [id('id')],
+          responses: { 200: json(obj({ plan: nullable({ type: 'object' }) })) },
+        },
       },
     },
     webhooks: {

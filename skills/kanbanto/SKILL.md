@@ -43,6 +43,13 @@ Without MCP, use the REST API (see "REST fallback" below).
   status comes from its subtasks: change the subtasks instead.
 - **Structure:** `move_task` changes a task's parent (or makes it top-level with `parent_id: null`) or its place among
   siblings.
+- **Time:** `log_time` logs time the user says they spent on a task ("2h on the login task yesterday": `time: "2h"`,
+  `day: "yesterday"`). Only log what they tell you; never estimate hours for them. Several tasks or days: one call each.
+  `get_task` shows a task's logged time; `my_week` their week across boards, with the days still empty and the tasks
+  they worked on but didn't log.
+- **Plans:** `plan_overview` reads a workspace's resource plan: projects' planned vs scheduled vs logged man-days, who's
+  booked where at what share, who's over 100% and when people are free. It's read only: changes are made by planners
+  in the app's Planning tab.
 - **Comments:** `add_comment`; write `@Name` to notify someone on the board. Use comments to explain changes you made
   on the user's behalf when that helps their team.
 - **Setting up a board:** `create_board` (with `about`, in Personal or a workspace), then `manage_lists` for its
@@ -90,6 +97,11 @@ Without MCP, use the REST API (see "REST fallback" below).
   what's urgent or overdue, then today's reminders in time order.
 - *"Catch me up" / "what's new"* → `recent_activity` (since the last day, or `since: "3d"`), per workspace; lead with
   what mentions them and what's due soon.
+- *"Log my day" / "I spent 2h on X and 1h on Y"* → find each task (`find_tasks`), then `log_time` for each; say what
+  was logged, on which day. *"Fill in my week"* → `my_week`, show the empty days and the tasks they worked on then, and
+  ask how long each took: don't guess.
+- *"Who's free next month?" / "are we over on project X?"* → `plan_overview` (with `person` or `project` to narrow
+  it); say planned vs logged, and who's over 100% and when.
 - *"Standup / status update"* → `recent_activity` for what changed, `find_tasks` for what's in progress, `get_task` for
   detail.
 

@@ -175,6 +175,45 @@ async function entryFor(app: FastifyInstance, me: SessionUser, boardId: string, 
   return e
 }
 
+/** Logs time on a card as `me` (an editor or owner of its board): the entry, as they see it. Shared with MCP. */
+export async function logTimeOn(
+  app: FastifyInstance,
+  me: SessionUser,
+  boardId: string,
+  taskId: string,
+  body: { minutes: number; day: string; note: string },
+  via: string | null,
+) {
+  const { board, access } = await requireAccess(app.db, me, boardId, 'editor')
+  const [card] = await app.db
+    .select({ id: tasks.id })
+    .from(tasks)
+    .where(and(eq(tasks.boardId, boardId), eq(tasks.id, taskId)))
+  if (!card) throw new HttpError(404, 'That card no longer exists.')
+  const entryId = newId()
+  await app.db.insert(timeEntries).values({ id: entryId, boardId, taskId, userId: me.id, ...body, via })
+  const [entry] = await entryViews(app.db, eq(timeEntries.id, entryId), await changeRule(app.db, me, board, access))
+  await announce(app, boardId, taskId)
+  return entry
+}
+
+/** A card's entries, newest day first, as `viewer` sees them (for MCP's get_task). */
+export async function cardTime(app: FastifyInstance, me: SessionUser, board: BoardRow, access: Access, taskId: string) {
+  return entryViews(app.db, and(eq(timeEntries.boardId, board.id), eq(timeEntries.taskId, taskId)), await changeRule(app.db, me, board, access))
+}
+
+/** Minutes each person logged on a board's cards from `from` (a day) on, by account. */
+export async function loggedSince(db: Db | Tx, boardId: string, from: string) {
+  const rows = await db
+    .select({ userId: timeEntries.userId, name: users.name, n: sql<number>`sum(${timeEntries.minutes})::int` })
+    .from(timeEntries)
+    .leftJoin(users, eq(users.id, timeEntries.userId))
+    .innerJoin(tasks, and(eq(tasks.boardId, timeEntries.boardId), eq(tasks.id, timeEntries.taskId)))
+    .where(and(eq(timeEntries.boardId, boardId), gte(timeEntries.day, from)))
+    .groupBy(timeEntries.userId, users.name)
+  return rows.map((r) => ({ userId: r.userId, name: r.name ?? 'Someone who left', minutes: r.n }))
+}
+
 export const timeRoutes: FastifyPluginAsync = async (app) => {
   /** A card's time, newest day first. */
   app.get('/boards/:id/tasks/:taskId/time', async (req) => {
@@ -193,18 +232,7 @@ export const timeRoutes: FastifyPluginAsync = async (app) => {
   app.post('/boards/:id/tasks/:taskId/time', async (req) => {
     const { id, taskId } = parse(TaskParams, req.params)
     const me = requireUser(req.user)
-    const { board, access } = await requireAccess(app.db, me, id, 'editor')
-    const body = parse(Log, req.body)
-    const [card] = await app.db
-      .select({ id: tasks.id })
-      .from(tasks)
-      .where(and(eq(tasks.boardId, id), eq(tasks.id, taskId)))
-    if (!card) throw new HttpError(404, 'That card no longer exists.')
-    const entryId = newId()
-    await app.db.insert(timeEntries).values({ id: entryId, boardId: id, taskId, userId: me.id, ...body, via: req.apiToken?.app ?? null })
-    const [entry] = await entryViews(app.db, eq(timeEntries.id, entryId), await changeRule(app.db, me, board, access))
-    await announce(app, id, taskId)
-    return { entry }
+    return { entry: await logTimeOn(app, me, id, taskId, parse(Log, req.body), req.apiToken?.app ?? null) }
   })
 
   /** Changes an entry's time, day or note. Someone else's, fixed by an owner or admin, shows who did it. */
@@ -261,89 +289,93 @@ export const timeRoutes: FastifyPluginAsync = async (app) => {
   /** My week: your time Monday to Sunday on every board you can open, and the cards to fill it in on. */
   app.get('/time/week', async (req): Promise<WeekView> => {
     const { from, timeZone } = parse(WeekQuery, req.query)
-    const me = requireUser(req.user)
-    const last = fromDay(toDay(from) + 6)
-    const boards = await boardsFor(app.db, me.id)
-    const byId = new Map(boards.map((b) => [b.id, b]))
-    const ids = boards.map((b) => b.id)
-    const active = boards.filter((b) => !b.archivedAt).map((b) => b.id)
-    const canLog = (boardId: string) => {
-      const b = byId.get(boardId)
-      return !!b && !b.archivedAt && atLeast(b.role, 'editor')
-    }
-
-    const entries = ids.length
-      ? await entryViews(
-          app.db,
-          and(eq(timeEntries.userId, me.id), inArray(timeEntries.boardId, ids), gte(timeEntries.day, from), lte(timeEntries.day, last)),
-          (e) => canLog(e.boardId),
-        )
-      : []
-    const touched = await touchedCards(app.db, me.id, active, from, last, timeZone)
-    const assigned = active.length
-      ? await app.db
-          .select({ boardId: tasks.boardId, taskId: tasks.id })
-          .from(tasks)
-          .innerJoin(lists, and(eq(lists.boardId, tasks.boardId), eq(lists.id, tasks.status)))
-          .where(and(eq(tasks.assigneeId, me.id), inArray(tasks.boardId, active), isNull(tasks.archivedAt), ne(lists.category, 'done')))
-          .limit(100)
-      : []
-
-    // The rows: cards logged on, touched, then assigned (each once), as long as the card still exists.
-    const keys = [
-      ...new Set([...entries.map((e) => `${e.boardId}:${e.taskId}`), ...touched.keys(), ...assigned.map((a) => `${a.boardId}:${a.taskId}`)]),
-    ]
-    const wanted = keys.map((k) => {
-      const i = k.indexOf(':')
-      return { boardId: k.slice(0, i), taskId: k.slice(i + 1) }
-    })
-    const found = wanted.length
-      ? await app.db
-          .select({ boardId: tasks.boardId, id: tasks.id, title: tasks.title, parentId: tasks.parentId, category: lists.category })
-          .from(tasks)
-          .leftJoin(lists, and(eq(lists.boardId, tasks.boardId), eq(lists.id, tasks.status)))
-          .where(
-            sql`(${tasks.boardId}, ${tasks.id}) in (${sql.join(
-              wanted.map((w) => sql`(${w.boardId}, ${w.taskId})`),
-              sql`, `,
-            )})`,
-          )
-      : []
-    const parents = found.filter((f) => f.parentId)
-    const parentTitles = parents.length
-      ? await app.db
-          .select({ boardId: tasks.boardId, id: tasks.id, title: tasks.title })
-          .from(tasks)
-          .where(
-            sql`(${tasks.boardId}, ${tasks.id}) in (${sql.join(
-              parents.map((p) => sql`(${p.boardId}, ${p.parentId})`),
-              sql`, `,
-            )})`,
-          )
-      : []
-    const parentTitle = new Map(parentTitles.map((p) => [`${p.boardId}:${p.id}`, p.title]))
-    const card = new Map(found.map((f) => [`${f.boardId}:${f.id}`, f]))
-    const cards = keys.flatMap((k) => {
-      const f = card.get(k)
-      if (!f) return []
-      return [
-        {
-          boardId: f.boardId,
-          taskId: f.id,
-          title: f.title,
-          parent: f.parentId ? (parentTitle.get(`${f.boardId}:${f.parentId}`) ?? null) : null,
-          boardName: byId.get(f.boardId)?.name ?? '',
-          done: f.category === 'done',
-          canLog: canLog(f.boardId),
-        },
-      ]
-    })
-    return {
-      from,
-      hoursPerDay: await hoursPerDay(app.db, me.id),
-      entries: entries.filter((e) => card.has(`${e.boardId}:${e.taskId}`)),
-      cards,
-      touched: Object.fromEntries([...touched].map(([k, days]) => [k, [...days].sort()])),
-    }
+    return weekOf(app, requireUser(req.user), from, timeZone)
   })
+}
+
+/** Your week (from a Monday) on every board you can open: entries, the cards to show, the days you touched them. */
+export async function weekOf(app: FastifyInstance, me: SessionUser, from: string, timeZone: string): Promise<WeekView> {
+  const last = fromDay(toDay(from) + 6)
+  const boards = await boardsFor(app.db, me.id)
+  const byId = new Map(boards.map((b) => [b.id, b]))
+  const ids = boards.map((b) => b.id)
+  const active = boards.filter((b) => !b.archivedAt).map((b) => b.id)
+  const canLog = (boardId: string) => {
+    const b = byId.get(boardId)
+    return !!b && !b.archivedAt && atLeast(b.role, 'editor')
+  }
+
+  const entries = ids.length
+    ? await entryViews(
+        app.db,
+        and(eq(timeEntries.userId, me.id), inArray(timeEntries.boardId, ids), gte(timeEntries.day, from), lte(timeEntries.day, last)),
+        (e) => canLog(e.boardId),
+      )
+    : []
+  const touched = await touchedCards(app.db, me.id, active, from, last, timeZone)
+  const assigned = active.length
+    ? await app.db
+        .select({ boardId: tasks.boardId, taskId: tasks.id })
+        .from(tasks)
+        .innerJoin(lists, and(eq(lists.boardId, tasks.boardId), eq(lists.id, tasks.status)))
+        .where(and(eq(tasks.assigneeId, me.id), inArray(tasks.boardId, active), isNull(tasks.archivedAt), ne(lists.category, 'done')))
+        .limit(100)
+    : []
+
+  // The rows: cards logged on, touched, then assigned (each once), as long as the card still exists.
+  const keys = [
+    ...new Set([...entries.map((e) => `${e.boardId}:${e.taskId}`), ...touched.keys(), ...assigned.map((a) => `${a.boardId}:${a.taskId}`)]),
+  ]
+  const wanted = keys.map((k) => {
+    const i = k.indexOf(':')
+    return { boardId: k.slice(0, i), taskId: k.slice(i + 1) }
+  })
+  const found = wanted.length
+    ? await app.db
+        .select({ boardId: tasks.boardId, id: tasks.id, title: tasks.title, parentId: tasks.parentId, category: lists.category })
+        .from(tasks)
+        .leftJoin(lists, and(eq(lists.boardId, tasks.boardId), eq(lists.id, tasks.status)))
+        .where(
+          sql`(${tasks.boardId}, ${tasks.id}) in (${sql.join(
+            wanted.map((w) => sql`(${w.boardId}, ${w.taskId})`),
+            sql`, `,
+          )})`,
+        )
+    : []
+  const parents = found.filter((f) => f.parentId)
+  const parentTitles = parents.length
+    ? await app.db
+        .select({ boardId: tasks.boardId, id: tasks.id, title: tasks.title })
+        .from(tasks)
+        .where(
+          sql`(${tasks.boardId}, ${tasks.id}) in (${sql.join(
+            parents.map((p) => sql`(${p.boardId}, ${p.parentId})`),
+            sql`, `,
+          )})`,
+        )
+    : []
+  const parentTitle = new Map(parentTitles.map((p) => [`${p.boardId}:${p.id}`, p.title]))
+  const card = new Map(found.map((f) => [`${f.boardId}:${f.id}`, f]))
+  const cards = keys.flatMap((k) => {
+    const f = card.get(k)
+    if (!f) return []
+    return [
+      {
+        boardId: f.boardId,
+        taskId: f.id,
+        title: f.title,
+        parent: f.parentId ? (parentTitle.get(`${f.boardId}:${f.parentId}`) ?? null) : null,
+        boardName: byId.get(f.boardId)?.name ?? '',
+        done: f.category === 'done',
+        canLog: canLog(f.boardId),
+      },
+    ]
+  })
+  return {
+    from,
+    hoursPerDay: await hoursPerDay(app.db, me.id),
+    entries: entries.filter((e) => card.has(`${e.boardId}:${e.taskId}`)),
+    cards,
+    touched: Object.fromEntries([...touched].map(([k, days]) => [k, [...days].sort()])),
+  }
 }

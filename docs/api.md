@@ -135,10 +135,12 @@ claude mcp add --transport http kanbanto https://kanbanto.example.com/api/mcp --
 | `list_boards` | The boards you can open: where each lives (a workspace, "Personal" or "Shared with you"), what it's for, and which is your Inbox |
 | `get_board` | A board's lists, labels, people and its open tasks as an outline: the top levels, or the part under one task |
 | `find_tasks` | Search one board, one workspace or everything: text, list, label, assignee (`me`, `nobody`), priority, blocked, due, created, changed or done between two times; sorted and paged |
-| `team_overview` | How a board or workspace is doing: tasks per list, each person's open, overdue and blocked work, and what needs attention |
+| `team_overview` | How a board or workspace is doing: tasks per list, each person's open, overdue and blocked work, what needs attention, and the time each person logged on it this week |
 | `reminders` | Your reminders coming up in the next days, and the ones that went off today |
 | `recent_activity` | What happened in a stretch of time (default: the last day), optionally by one person: changes, who made them and through which app, and comments |
-| `get_task` | A task with its parents, subtasks, what it waits on, and latest comments |
+| `get_task` | A task with its parents, subtasks, what it waits on, latest comments, and the time logged on it |
+| `my_week` | Your logged time for a week across your boards: each day against your hours a day (empty days stand out), each task's time per day, and tasks you worked on without logging time |
+| `plan_overview` | A workspace's resource plan, read only: each project's planned, scheduled and logged man-days, who's booked at what share; each person's load, when they go over 100% and when they're free |
 | `create_tasks` | Add tasks, or break one down into subtasks (`parent_id`); without a board they go to your Inbox |
 | `update_task` | Title, description, dates, assignee, priority, labels, list |
 | `move_task` | Change a task's parent or its place among siblings |
@@ -150,9 +152,11 @@ claude mcp add --transport http kanbanto https://kanbanto.example.com/api/mcp --
 | `manage_lists` | Add, rename, reorder, change the kind of, or remove (empty) lists |
 | `manage_labels` | Add, rename, recolor, or remove (unused) labels |
 | `set_inbox` | Choose your Inbox board |
+| `log_time` | Log time you spent on a task ("1:30", "2h", "45m"), today, yesterday or another day, with a short note |
 | `add_comment` | Comment as you; `@Name` notifies people |
 
-Read-only tokens get the first six only. Every change on a board is kept as a line of activity for 90 days ("Ann moved
+Read-only tokens get the reading tools only (`list_boards` to `plan_overview`). Plans can be read but not changed
+through MCP: planners change them in the app's Planning tab. Every change on a board is kept as a line of activity for 90 days ("Ann moved
 “Deploy” to Done", marked with the app it came through), which is what `recent_activity` reads. Sharing (inviting people, links,
 roles) and deleting boards or tasks aren't tools, on purpose: an assistant reads text other people wrote, and those
 can't be undone. People do them in the app.
