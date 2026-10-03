@@ -1,6 +1,20 @@
-import { Archive, ArrowSquareRight, CaretRight, CheckCircle, Circle, Crosshair, ListChecks, Plus, Prohibit, Trash, X } from '@phosphor-icons/react'
+import {
+  Archive,
+  ArrowSquareRight,
+  CaretRight,
+  ChatCircle,
+  CheckCircle,
+  Circle,
+  Crosshair,
+  ListChecks,
+  Plus,
+  Prohibit,
+  Trash,
+  X,
+} from '@phosphor-icons/react'
 import { formatMoment } from '@/lib/format'
 import { cn } from '@/lib/utils'
+import { useMediaQuery } from '@/lib/useMediaQuery'
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { BoardContext, useBoard } from '@/app/board-context'
 import { ColorSwatches, LabelChip, PriorityIcon, ProgressBar, StatusDot, StatusPill } from '@/components/common/bits'
@@ -57,7 +71,8 @@ export function TaskDialog({
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
       <DialogContent
         // One column that never grows past the dialog: a long name inside (a parent, say) is cut, not the card widened.
-        className="max-h-[calc(100dvh-4rem)] grid-cols-[minmax(0,1fr)] gap-0 overflow-y-auto p-0 sm:max-w-3xl"
+        // On wide screens it's as tall as the window, with the comments as a third column (each column scrolls).
+        className="max-h-[calc(100dvh-4rem)] grid-cols-[minmax(0,1fr)] gap-0 overflow-y-auto p-0 sm:max-w-3xl xl:flex xl:h-[calc(100dvh-4rem)] xl:max-w-[1180px] xl:flex-col xl:overflow-hidden"
         // Opening a card is for reading it: nothing in it is put into editing (on a phone, a focused title brings up
         // the keyboard). A card made just now starts in its title, so its name can be typed straight away.
         onOpenAutoFocus={(e) => {
@@ -104,7 +119,9 @@ function ArchivedCard({ id, onClose }: { id: string; onClose: () => void }) {
 }
 
 function TaskDetail({ id, onClose }: { id: string; onClose: () => void }) {
-  const { data, idx, run, openTask, createTask, focus, readOnly, onActivity, moveToBoard, logTime } = useBoard()
+  const { data, idx, run, openTask, createTask, focus, readOnly, onActivity, moveToBoard, logTime, counts, canComment } = useBoard()
+  // Wide enough for the comments to have their own column.
+  const wide = useMediaQuery('(min-width: 1280px)')
   // The card's files, shared by the Files section, comments and the description (# references).
   const cardFiles = useCardFiles(data.board.id, id, onActivity)
   const t = data.tasks[id]
@@ -135,7 +152,18 @@ function TaskDetail({ id, onClose }: { id: string; onClose: () => void }) {
 
   return (
     <>
-      <div className="px-6 pt-5 pr-12">
+      <div className="relative px-6 pt-5 pr-24">
+        {/* Narrower screens: the comments are at the bottom; this goes there. */}
+        {!wide && (counts.comments[id] > 0 || canComment) && (
+          <button
+            type="button"
+            onClick={() => document.getElementById('card-comments')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+            className="absolute top-3.5 right-12 inline-flex h-7 items-center gap-1 rounded-md px-2 text-xs text-muted-foreground hover:bg-accent hover:text-foreground"
+            title="Go to the comments"
+          >
+            <ChatCircle className="size-4" /> {counts.comments[id] || 'Comment'}
+          </button>
+        )}
         {/* One line: short names in full, long ones share what's left and end in … */}
         <nav className="mb-1 grid min-h-5 auto-cols-[minmax(0,max-content)] grid-flow-col items-center justify-start gap-1 text-xs text-muted-foreground">
           {path.length === 0 ? (
@@ -164,9 +192,9 @@ function TaskDetail({ id, onClose }: { id: string; onClose: () => void }) {
         />
       </div>
 
-      <div className="grid grid-cols-[minmax(0,1fr)] items-start gap-6 px-6 pt-4 pb-6 md:grid-cols-[minmax(0,1fr)_14rem] md:gap-0">
+      <div className="grid grid-cols-[minmax(0,1fr)] items-start gap-6 px-6 pt-4 pb-6 md:grid-cols-[minmax(0,1fr)_14rem] md:gap-0 xl:min-h-0 xl:flex-1 xl:grid-cols-[minmax(0,1fr)_14rem_23rem] xl:grid-rows-[minmax(0,1fr)] xl:items-stretch xl:pb-0">
         {/* Main column */}
-        <div className="min-w-0 divide-y md:pr-6 [&>*]:py-5 [&>*:first-child]:pt-0 [&>*:last-child]:pb-0">
+        <div className="min-w-0 divide-y md:pr-6 xl:min-h-0 xl:overflow-y-auto xl:pb-6 [&>*]:py-5 [&>*:first-child]:pt-0 [&>*:last-child]:pb-0">
           <Description
             key={`desc-${id}`}
             title={t.title}
@@ -271,11 +299,15 @@ function TaskDetail({ id, onClose }: { id: string; onClose: () => void }) {
 
           <TimeSection taskId={id} />
 
-          <CommentsSection taskId={id} cardFiles={cardFiles} />
+          {!wide && (
+            <div id="card-comments" className="scroll-mt-4">
+              <CommentsSection taskId={id} cardFiles={cardFiles} />
+            </div>
+          )}
         </div>
 
         {/* Side column */}
-        <aside className="border-t pt-5 md:sticky md:top-4 md:border-t-0 md:border-l md:pt-0 md:pl-6">
+        <aside className="border-t pt-5 md:sticky md:top-4 md:border-t-0 md:border-l md:pt-0 md:pl-6 xl:static xl:min-h-0 xl:overflow-y-auto xl:pr-6 xl:pb-6">
           {/* View only: every field shows its value but can't be changed. */}
           <fieldset disabled={readOnly} className="min-w-0 divide-y [&>*]:space-y-4 [&>*]:py-4 [&>*:first-child]:pt-0">
             <div>
@@ -459,6 +491,13 @@ function TaskDetail({ id, onClose }: { id: string; onClose: () => void }) {
             {t.version > 1 && <> · updated {formatWhen(t.updatedAt)}</>}
           </p>
         </aside>
+
+        {/* Wide screens: the conversation as its own column, the box to write in always in view. */}
+        {wide && (
+          <div className="flex min-h-0 flex-col border-l pb-4 pl-6">
+            <CommentsSection taskId={id} cardFiles={cardFiles} column />
+          </div>
+        )}
       </div>
     </>
   )

@@ -10,6 +10,7 @@ import { Avatar } from '@/components/common/bits'
 import { Button } from '@/components/ui/button'
 import { uploadFile, type CardFiles } from '@/data/cardFiles'
 import { formatSize } from '@/lib/format'
+import { cn } from '@/lib/utils'
 import { Markdown } from '@/components/text/Markdown'
 import { Folded } from './Description'
 import { Section } from './Section'
@@ -22,12 +23,29 @@ type Member = { id: string; name: string }
  * A card's conversation. Everyone on the board can comment (viewers too), @mention people, attach files to their
  * comment (📎, paste or drop), and refer to any of the card's files with #.
  */
-export function CommentsSection({ taskId, cardFiles }: { taskId: string; cardFiles: CardFiles }) {
+export function CommentsSection({
+  taskId,
+  cardFiles,
+  column,
+}: {
+  taskId: string
+  cardFiles: CardFiles
+  /**
+   * As the card's third column (wide screens): read like a chat, oldest first, scrolling on its own, with the box to
+   * write in pinned under it. Otherwise a section of the card: the box first, newest comment next.
+   */
+  column?: boolean
+}) {
   const { data, canComment, access, onActivity } = useBoard()
   const { user } = useAuth()
   const boardId = data.board.id
   const [items, setItems] = useState<CommentView[]>([])
   const [editing, setEditing] = useState<string | null>(null)
+  // The column keeps the latest comment in view, like a chat.
+  const list = useRef<HTMLUListElement>(null)
+  useEffect(() => {
+    if (column && list.current) list.current.scrollTop = list.current.scrollHeight
+  }, [column, items.length])
 
   useEffect(() => {
     api<{ comments: CommentView[] }>('GET', `/boards/${boardId}/tasks/${taskId}/comments`).then(
@@ -65,75 +83,104 @@ export function CommentsSection({ taskId, cardFiles }: { taskId: string; cardFil
     }
   }
 
+  const item = (c: CommentView) => {
+    const mine = c.author?.id === user?.id
+    return (
+      <li key={c.id} className="group flex gap-3">
+        <Avatar name={c.author?.name ?? '?'} className="mt-0.5 size-7 text-[10px]" />
+        <div className="min-w-0 flex-1">
+          <p className="text-xs">
+            <span className="font-semibold">{c.author?.name ?? 'Someone'}</span>{' '}
+            <span className="text-muted-foreground" title={new Date(c.createdAt).toLocaleString()}>
+              {formatDistanceToNow(parseISO(c.createdAt), { addSuffix: true })}
+              {c.editedAt && ' (edited)'}
+            </span>
+          </p>
+          {editing === c.id ? (
+            <Composer
+              boardId={boardId}
+              taskId={taskId}
+              members={data.members}
+              files={cardFiles.files}
+              initial={c}
+              onSubmit={(body, mentions, attachments) => save(c, body, mentions, attachments)}
+              onCancel={() => setEditing(null)}
+              submitLabel="Save"
+            />
+          ) : (
+            <>
+              <div className="mt-1 rounded-lg bg-muted/60">
+                <Folded height={220}>
+                  <Markdown text={c.body} mentions={data.members.filter((m) => c.mentions.includes(m.id))} files={cardFiles.files} />
+                </Folded>
+              </div>
+              <FileList files={c.attachments} />
+              {canComment && (mine || access.role === 'owner') && (
+                <div className="mt-1 flex gap-3 text-xs text-muted-foreground opacity-0 group-hover:opacity-100 focus-within:opacity-100">
+                  {mine && (
+                    <button className="hover:text-foreground hover:underline" onClick={() => setEditing(c.id)}>
+                      Edit
+                    </button>
+                  )}
+                  <button className="hover:text-destructive hover:underline" onClick={() => void remove(c)}>
+                    Delete
+                  </button>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      </li>
+    )
+  }
+  const composer = canComment && (
+    <div className={cn('flex gap-3', !column && 'mb-4')}>
+      <Avatar name={user?.name ?? '?'} className="mt-1 size-7 text-[10px]" />
+      <Composer
+        boardId={boardId}
+        taskId={taskId}
+        members={data.members}
+        files={cardFiles.files}
+        onSubmit={post}
+        placeholder="Write a comment… @ to mention someone, # to point to a file."
+        submitLabel="Comment"
+      />
+    </div>
+  )
+
+  if (column)
+    return (
+      <section className="flex min-h-0 flex-1 flex-col" aria-label="Comments">
+        <header className="mb-3 flex min-h-7 shrink-0 items-center gap-2.5">
+          <span className="grid size-7 shrink-0 place-items-center rounded-lg bg-primary/10 text-primary [&_svg]:size-4">
+            <ChatCircle />
+          </span>
+          <h3 className="text-sm font-semibold">Comments</h3>
+          {items.length > 0 && (
+            <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground tabular-nums">{items.length}</span>
+          )}
+        </header>
+        <ul ref={list} className="-mr-3 min-h-0 flex-1 space-y-4 overflow-y-auto pr-3 pb-2">
+          {!items.length && <li className="text-xs text-muted-foreground">{canComment ? 'No comments yet. Start below.' : 'No comments yet.'}</li>}
+          {items.map(item)}
+        </ul>
+        {composer && (
+          <div
+            className="shrink-0 border-t pt-3"
+            // The box grows when you write: keep the latest comment in view above it.
+            onFocusCapture={() => requestAnimationFrame(() => list.current && (list.current.scrollTop = list.current.scrollHeight))}
+          >
+            {composer}
+          </div>
+        )}
+      </section>
+    )
+
   return (
     <Section icon={<ChatCircle />} title="Comments" count={items.length}>
-      {canComment && (
-        <div className="mb-4 flex gap-3">
-          <Avatar name={user?.name ?? '?'} className="mt-1 size-7 text-[10px]" />
-          <Composer
-            boardId={boardId}
-            taskId={taskId}
-            members={data.members}
-            files={cardFiles.files}
-            onSubmit={post}
-            placeholder="Write a comment… @ to mention someone, # to point to a file."
-            submitLabel="Comment"
-          />
-        </div>
-      )}
+      {composer}
       {!canComment && !items.length && <p className="text-xs text-muted-foreground">No comments yet.</p>}
-      <ul className="space-y-4">
-        {[...items].reverse().map((c) => {
-          const mine = c.author?.id === user?.id
-          return (
-            <li key={c.id} className="group flex gap-3">
-              <Avatar name={c.author?.name ?? '?'} className="mt-0.5 size-7 text-[10px]" />
-              <div className="min-w-0 flex-1">
-                <p className="text-xs">
-                  <span className="font-semibold">{c.author?.name ?? 'Someone'}</span>{' '}
-                  <span className="text-muted-foreground" title={new Date(c.createdAt).toLocaleString()}>
-                    {formatDistanceToNow(parseISO(c.createdAt), { addSuffix: true })}
-                    {c.editedAt && ' (edited)'}
-                  </span>
-                </p>
-                {editing === c.id ? (
-                  <Composer
-                    boardId={boardId}
-                    taskId={taskId}
-                    members={data.members}
-                    files={cardFiles.files}
-                    initial={c}
-                    onSubmit={(body, mentions, attachments) => save(c, body, mentions, attachments)}
-                    onCancel={() => setEditing(null)}
-                    submitLabel="Save"
-                  />
-                ) : (
-                  <>
-                    <div className="mt-1 rounded-lg bg-muted/60">
-                      <Folded height={220}>
-                        <Markdown text={c.body} mentions={data.members.filter((m) => c.mentions.includes(m.id))} files={cardFiles.files} />
-                      </Folded>
-                    </div>
-                    <FileList files={c.attachments} />
-                    {canComment && (mine || access.role === 'owner') && (
-                      <div className="mt-1 flex gap-3 text-xs text-muted-foreground opacity-0 group-hover:opacity-100 focus-within:opacity-100">
-                        {mine && (
-                          <button className="hover:text-foreground hover:underline" onClick={() => setEditing(c.id)}>
-                            Edit
-                          </button>
-                        )}
-                        <button className="hover:text-destructive hover:underline" onClick={() => void remove(c)}>
-                          Delete
-                        </button>
-                      </div>
-                    )}
-                  </>
-                )}
-              </div>
-            </li>
-          )
-        })}
-      </ul>
+      <ul className="space-y-4">{[...items].reverse().map(item)}</ul>
     </Section>
   )
 }

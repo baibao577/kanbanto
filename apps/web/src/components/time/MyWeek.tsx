@@ -9,6 +9,7 @@ import { hrefFor, navigate } from '@/app/router'
 import { LogoMark } from '@/components/common/Logo'
 import { AccountMenu } from '@/components/shell/AccountMenu'
 import { NotificationBell } from '@/components/shell/NotificationBell'
+import { Button } from '@/components/ui/button'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { cn } from '@/lib/utils'
 import { zone } from './logging'
@@ -139,20 +140,20 @@ export default function MyWeek({ week }: { week?: string }) {
 
       <main className="min-h-0 flex-1 overflow-auto">
         <div className="mx-auto max-w-5xl space-y-4 px-4 py-8">
-          <div className="flex flex-wrap items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3 sm:flex-nowrap">
             <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-muted text-muted-foreground">
               <Timer className="size-5" />
             </span>
-            <div className="mr-auto">
+            <div className="mr-auto min-w-0 sm:flex-1">
               <h1 className="text-lg font-semibold">My week</h1>
               <p className="text-xs text-muted-foreground">
                 Your time on every board. Type hours in a cell: 2, 1:30 or 45m.{' '}
-                <span className="inline-flex items-center gap-1 whitespace-nowrap">
+                <span className="inline-flex items-center gap-1">
                   <span className="size-1.5 rounded-full bg-primary/50" /> a day you worked on the card (moved, changed or commented on it)
                 </span>
               </p>
             </div>
-            <div className="flex items-center gap-1">
+            <div className="flex shrink-0 items-center gap-1">
               <button
                 type="button"
                 aria-label="Week before"
@@ -175,6 +176,7 @@ export default function MyWeek({ week }: { week?: string }) {
                 <CaretRight className="size-4" />
               </button>
             </div>
+            <AddCard onAdd={(c) => setAdded((a) => [...a, c])} />
           </div>
 
           {/* How full the week is: logged against your working days. */}
@@ -273,7 +275,6 @@ export default function MyWeek({ week }: { week?: string }) {
               </tbody>
             </table>
           </div>
-          <AddCard onAdd={(c) => setAdded((a) => [...a, c])} />
         </div>
       </main>
     </div>
@@ -410,59 +411,62 @@ function AddCard({ onAdd }: { onAdd: (c: Card) => void }) {
     )
     return () => clearTimeout(t)
   }, [q])
-  if (!open)
-    return (
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        className="inline-flex items-center gap-1.5 rounded-md px-2 py-1.5 text-sm text-muted-foreground hover:bg-accent hover:text-foreground"
-      >
-        <Plus className="size-4" /> Add a card
-      </button>
-    )
   return (
-    <div className="max-w-md rounded-lg border">
-      <div className="flex items-center gap-2 border-b px-3">
-        <MagnifyingGlass className="size-4 text-muted-foreground" />
-        <input
-          autoFocus
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          onKeyDown={(e) => e.key === 'Escape' && setOpen(false)}
-          placeholder="Find a card on your boards"
-          className="h-10 flex-1 bg-transparent text-sm outline-none"
-        />
-      </div>
-      <ul className="max-h-64 overflow-y-auto py-1">
-        {(q.trim() ? hits : []).map((c) => (
-          <li key={`${c.board.id}:${c.id}`}>
-            <button
-              type="button"
-              onClick={() => {
-                onAdd({
-                  boardId: c.board.id,
-                  taskId: c.id,
-                  title: c.title,
-                  parent: c.path.at(-1) ?? null,
-                  boardName: c.board.name,
-                  done: c.done,
-                  canLog: true,
-                })
-                setQ('')
-                setOpen(false)
-              }}
-              className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm hover:bg-accent"
-            >
-              <span className="min-w-0 flex-1 truncate">
-                {c.path.length > 0 && <span className="text-muted-foreground">{c.path.join(' › ')} › </span>}
-                {c.title}
-              </span>
-              <span className="shrink-0 text-xs text-muted-foreground">{c.board.name}</span>
-            </button>
-          </li>
-        ))}
-        {q.trim() && !hits.length && <li className="px-3 py-2 text-sm text-muted-foreground">No card by that name.</li>}
-      </ul>
-    </div>
+    <Popover
+      open={open}
+      onOpenChange={(o) => {
+        setOpen(o)
+        if (!o) setQ('')
+      }}
+    >
+      <PopoverTrigger asChild>
+        <Button variant="outline" size="sm" className="h-8 shrink-0 gap-1.5">
+          <Plus /> Add a card
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent align="end" className="w-96 max-w-[calc(100vw-2rem)] p-0">
+        <div className="flex items-center gap-2 border-b px-3">
+          <MagnifyingGlass className="size-4 text-muted-foreground" />
+          <input
+            autoFocus
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="Find a card on your boards"
+            className="h-10 flex-1 bg-transparent text-sm outline-none"
+          />
+        </div>
+        <ul className="max-h-64 overflow-y-auto py-1">
+          {!q.trim() && <li className="px-3 py-2 text-sm text-muted-foreground">Type a card’s name.</li>}
+          {(q.trim() ? hits : []).map((c) => (
+            <li key={`${c.board.id}:${c.id}`}>
+              <button
+                type="button"
+                onClick={() => {
+                  onAdd({
+                    boardId: c.board.id,
+                    taskId: c.id,
+                    title: c.title,
+                    parent: c.path.at(-1) ?? null,
+                    boardName: c.board.name,
+                    done: c.done,
+                    canLog: true,
+                  })
+                  setQ('')
+                  setOpen(false)
+                }}
+                className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm hover:bg-accent"
+              >
+                <span className="min-w-0 flex-1 truncate">
+                  {c.path.length > 0 && <span className="text-muted-foreground">{c.path.join(' › ')} › </span>}
+                  {c.title}
+                </span>
+                <span className="shrink-0 text-xs text-muted-foreground">{c.board.name}</span>
+              </button>
+            </li>
+          ))}
+          {q.trim() && !hits.length && <li className="px-3 py-2 text-sm text-muted-foreground">No card by that name.</li>}
+        </ul>
+      </PopoverContent>
+    </Popover>
   )
 }
