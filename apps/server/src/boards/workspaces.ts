@@ -1,8 +1,18 @@
 import { and, asc, eq, inArray, isNull, ne, sql } from 'drizzle-orm'
 import type { Db, Tx } from '../db'
-import { attachments, boardMembers, boards, tasks, workspaceInvites, workspaceMembers, workspaces, type WorkspaceRole } from '../db/schema'
+import {
+  attachments,
+  boardMembers,
+  boards,
+  planningProjects,
+  tasks,
+  workspaceInvites,
+  workspaceMembers,
+  workspaces,
+  type WorkspaceRole,
+} from '../db/schema'
 import { HttpError } from '../http'
-import { addPlanPerson } from '../planning/store'
+import { addPlanPerson, bumpPlan } from '../planning/store'
 import { memberRole, workspaceRole, type BoardRow } from './access'
 
 /**
@@ -159,6 +169,15 @@ export async function moveBoard(tx: Tx, board: BoardRow, userId: string, to: str
   if (to && !(await workspaceRole(tx, to, userId))) throw new HttpError(403, 'You can only move boards into a workspace you’re in.')
   const visibility = !to && board.visibility === 'workspace' ? 'invited' : board.visibility
   await tx.update(boards).set({ workspaceId: to, visibility }).where(eq(boards.id, board.id))
+  // A plan's project can only be linked to a board in its own workspace: the link goes with the board.
+  if (from) {
+    const unlinked = await tx
+      .update(planningProjects)
+      .set({ boardId: null, updatedAt: new Date(), version: sql`${planningProjects.version} + 1` })
+      .where(eq(planningProjects.boardId, board.id))
+      .returning({ id: planningProjects.id })
+    if (unlinked.length) await bumpPlan(tx, from)
+  }
   // Files in the site's storage now count against the new workspace (or, in Personal, the board's owner).
   const [owner] = await tx
     .select({ userId: boardMembers.userId })

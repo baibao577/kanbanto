@@ -293,6 +293,8 @@ export const planningPeople = pgTable(
     name: text('name').notNull(),
     roleId: uuid('role_id').references(() => planningRoles.id, { onDelete: 'set null' }),
     hoursPerDay: numeric('hours_per_day', { precision: 4, scale: 1, mode: 'number' }).notNull().default(8),
+    /** Their place in the plan's order, once a planner has put people in an order (null: by role, then name). */
+    position: text('position'),
     ...meta,
   },
   (t) => [index('planning_people_workspace_idx').on(t.workspaceId), uniqueIndex('planning_people_user_idx').on(t.workspaceId, t.userId)],
@@ -317,9 +319,13 @@ export const planningProjects = pgTable(
     activityBy: uuid('activity_by').references(() => users.id, { onDelete: 'set null' }),
     /** How many "not assigned yet" lines it has (one for each need nobody is chosen for yet). */
     openLines: smallint('open_lines').notNull().default(1),
+    /** Might not happen: shown apart, and kept out of people's Over / Fit. */
+    prospect: boolean('prospect').notNull().default(false),
+    /** The board its work is tracked on (in the same workspace). One board, one project. */
+    boardId: text('board_id').references((): AnyPgColumn => boards.id, { onDelete: 'set null' }),
     ...meta,
   },
-  (t) => [index('planning_projects_workspace_idx').on(t.workspaceId)],
+  (t) => [index('planning_projects_workspace_idx').on(t.workspaceId), uniqueIndex('planning_projects_board_idx').on(t.boardId)],
 )
 
 /** Someone put on a project with no time yet, so their line is there to add time to. */

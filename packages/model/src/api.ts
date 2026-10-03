@@ -493,6 +493,25 @@ export interface PlanningView {
   memberIds: string[]
   /** The last change to each project's plan: when, and who made it. */
   activity: Record<string, { at: string; by: string | null }>
+  /** The workspace's boards you can open: what a project can be linked to. */
+  boards: { id: string; name: string; background: string | null }[]
+}
+
+/**
+ * GET /api/boards/:id/plan: the plan for a board's project (a workspace's plan can link a project to a board), for
+ * its Timeline. Only for people in that workspace; null for everyone else, or when no project is linked.
+ */
+export interface BoardPlan {
+  plan: {
+    workspaceId: string
+    /** prospect: it might not happen (see PlanProject). */
+    project: { id: string; name: string; plannedMd: number | null; color: ColorName; prospect: boolean }
+    /** Man-days on it, and the part nobody has yet. */
+    scheduled: number
+    unassigned: number
+    /** One per person on it (earliest first), then each "not assigned yet" line with time on it. */
+    lines: { key: string; name: string | null; role: string | null; blocks: { start: string; end: string; pct: number }[] }[]
+  } | null
 }
 
 /** POST /api/workspaces/:id/planning/mutations */

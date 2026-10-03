@@ -1,0 +1,1 @@
+ALTER TABLE "planning_people" ADD COLUMN "position" text;

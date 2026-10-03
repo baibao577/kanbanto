@@ -1,8 +1,8 @@
 import { newId } from '@kanbanto/model/ids'
 import { executePlan, type PlanChange, type PlanCommand } from '@kanbanto/model/planningCommands'
-import { eq } from 'drizzle-orm'
+import { and, eq, inArray } from 'drizzle-orm'
 import type { Db } from '../db'
-import { planningState, workspaceMembers } from '../db/schema'
+import { boards, planningState, workspaceMembers } from '../db/schema'
 import { HttpError } from '../http'
 import { loadPlan, writePlanChanges } from './store'
 
@@ -51,6 +51,19 @@ export class PlanningEngine {
         }
         if ('error' in r) throw new HttpError(422, r.error)
         if (!r.changes.length) return { seq: row.seq, changes: [] }
+        // A project can only be linked to a board in the same workspace.
+        const linked = [
+          ...new Set(
+            r.changes.flatMap((c) => (c.entity === 'project' && c.after?.boardId && c.after.boardId !== c.before?.boardId ? [c.after.boardId] : [])),
+          ),
+        ]
+        if (linked.length) {
+          const found = await tx
+            .select({ id: boards.id })
+            .from(boards)
+            .where(and(inArray(boards.id, linked), eq(boards.workspaceId, workspaceId)))
+          if (found.length !== linked.length) throw new HttpError(422, 'That board isn’t in this workspace.')
+        }
         await writePlanChanges(tx, workspaceId, r.changes, userId)
         const seq = row.seq + 1
         await tx.update(planningState).set({ seq }).where(eq(planningState.workspaceId, workspaceId))

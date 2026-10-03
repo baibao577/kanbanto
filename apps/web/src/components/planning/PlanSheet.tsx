@@ -1,4 +1,4 @@
-import { CaretDown, CaretRight, Scissors, X } from '@phosphor-icons/react'
+import { CaretDown, CaretRight, DotsSixVertical, Kanban, Scissors, X } from '@phosphor-icons/react'
 import {
   memo,
   useCallback,
@@ -13,7 +13,7 @@ import {
 } from 'react'
 import type { PlanningView } from '@kanbanto/model/api'
 import { tone } from '@kanbanto/model/colors'
-import { fromDay, mondayOf, toDay } from '@kanbanto/model/dates'
+import { dayParts, fromDay, mondayOf, monthEndOf, toDay } from '@kanbanto/model/dates'
 import { newId } from '@kanbanto/model/ids'
 import {
   canSplit,
@@ -22,13 +22,16 @@ import {
   loadOn,
   manDays,
   overlapsOnLine,
+  personBlocks,
   personFacts,
   projectFacts,
   spanOf,
+  type AddSize,
   type PlanBlock,
   type PlanData,
 } from '@kanbanto/model/planning'
 import type { PlanCommand } from '@kanbanto/model/planningCommands'
+import { hrefFor } from '@/app/router'
 import { Avatar } from '@/components/common/bits'
 import { edgeSpeed } from '@/lib/pointerDrag'
 import { formatAgo, formatDay } from '@/lib/format'
@@ -59,12 +62,17 @@ interface Props extends SheetActions {
   /** A touch screen: blocks aren't dragged (a tap opens their menu; fingers scroll). */
   coarse: boolean
   activity: PlanningView['activity']
+  boards: PlanningView['boards']
   /** Scroll to today (when this number changes). */
   todayRequest: number
 }
 
 const HEADER_H = 48
 const dayDate = (d: number) => formatDay(fromDay(d))
+const monthName = (d: number) => {
+  const p = dayParts(d)
+  return new Date(Date.UTC(p.year, p.month, 1)).toLocaleDateString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' })
+}
 const range = (s: number, e: number) => `${dayDate(s)} – ${dayDate(e)}`
 
 /** The readout that follows the pointer while dragging (its own little store, so the sheet doesn't redraw). */
@@ -123,6 +131,29 @@ interface Drag {
   style: { left: string; width: string; transform: string }
 }
 
+/** Rearranging: a project or person's group dragged by its grip, up or down among the others of its kind. */
+interface Reorder {
+  kind: 'project' | 'person'
+  id: string
+  name: string
+  section: string
+  row: HTMLElement | null
+  last: { x: number; y: number }
+  /** Where it would go: before this one (undefined: last), or null when it wouldn't move. */
+  before: string | undefined | null
+}
+
+/** A group on the sheet: a project or person's header row with the rows under it, and where it sits. */
+interface Group {
+  kind: 'project' | 'person'
+  id: string
+  name: string
+  /** Groups only move among their own: running, prospect or finished projects; people. */
+  section: string
+  top: number
+  bottom: number
+}
+
 /**
  * The plan on a timeline: a sticky header of months and weeks (or days), a sticky column of names and sums, and the
  * rows. Planners point at free space on a line to see where a week would go and click to add it; drag a block to move
@@ -144,6 +175,11 @@ export function PlanSheet(props: Props) {
     if (start < prevStart.current && scroller.current) scroller.current.scrollBy((prevStart.current - start) * dayWidth(zoom, narrow), 0)
     prevStart.current = start
   }, [start, zoom, narrow])
+  // Not as wide as the screen yet (months are narrow): grow until it is, so there's always somewhere to scroll.
+  useEffect(() => {
+    const s = scroller.current
+    if (s && s.scrollWidth - s.clientWidth < 120 && end < today + REACH) setMore((m) => ({ ...m, after: m.after + 13 }))
+  }, [end, dayW, today])
   const onScroll = () => {
     const s = scroller.current
     if (!s || drag.current) return
@@ -183,10 +219,12 @@ export function PlanSheet(props: Props) {
 
   const block = (id: string) => plan.blocks.find((b) => b.id === id)
   const dayAt = (clientX: number, track: Element) => start + Math.floor((clientX - track.getBoundingClientRect().left) / dayW)
-  /** Where a block would be split at the pointer: the nearest Monday (weeks) or day boundary (days). */
+  /** What a click on free space adds: a week, five working days (days) or a month. */
+  const addSize: AddSize = zoom === 'days' ? 'days' : zoom === 'months' ? 'month' : 'week'
+  /** Where a block would be split at the pointer: the nearest Monday (weeks, months) or day boundary (days). */
   const splitDayAt = (b: PlanBlock, clientX: number, track: Element) => {
     let d = start + Math.round((clientX - track.getBoundingClientRect().left) / dayW)
-    if (zoom === 'weeks') d = mondayOf(d + 3)
+    if (zoom !== 'days') d = mondayOf(d + 3)
     return canSplit(b, d) ? d : null
   }
   const lineOf = (el: Element | null) => (el?.closest('[data-line]') as HTMLElement | null) ?? null
@@ -231,7 +269,7 @@ export function PlanSheet(props: Props) {
       track.dataset.project!,
       track.dataset.person || null,
       Math.max(start, dayAt(e.clientX, track)),
-      zoom === 'weeks' ? 'week' : 'days',
+      addSize,
       Number(track.dataset.slot ?? 0),
     )
     if (!r) return void (ghost.current!.hidden = true)
@@ -354,9 +392,106 @@ export function PlanSheet(props: Props) {
     )
   }
 
+  // ── Rearranging projects and people: drag a group's grip, or arrow keys on it ──
+  const groups = useMemo(() => {
+    const out: Group[] = []
+    let y = HEADER_H
+    let cur: Group | null = null
+    for (const r of rows) {
+      const h = ROW_HEIGHT[r.kind]
+      if (r.kind === 'project' || r.kind === 'person') {
+        const section = r.kind === 'person' ? 'people' : r.project.finishedAt ? 'finished' : r.project.prospect ? 'prospect' : 'running'
+        const g = r.kind === 'project' ? { id: r.project.id, name: r.project.name } : { id: r.person.id, name: r.person.name }
+        cur = { kind: r.kind, ...g, section, top: y, bottom: y + h }
+        out.push(cur)
+      } else if (r.kind === 'heading') cur = null
+      else if (cur) cur.bottom = y + h
+      y += h
+    }
+    return out
+  }, [rows])
+  const reorder = useRef<Reorder | null>(null)
+  const dropLine = useRef<HTMLDivElement>(null)
+  const peers = (kind: Group['kind'], section: string) => groups.filter((g) => g.kind === kind && g.section === section)
+  const moveGroup = (kind: Group['kind'], id: string, before: string | undefined) =>
+    run(kind === 'project' ? { type: 'project.move', id, beforeId: before } : { type: 'person.move', id, beforeId: before })
+
+  const followReorder = () => {
+    const r = reorder.current
+    const line = dropLine.current
+    if (!r || !line || !content.current) return
+    const y = r.last.y - content.current.getBoundingClientRect().top
+    const same = peers(r.kind, r.section)
+    let i = same.findIndex((g) => y < (g.top + g.bottom) / 2)
+    if (i < 0) i = same.length
+    const from = same.findIndex((g) => g.id === r.id)
+    r.before = i === from || i === from + 1 ? null : same[i]?.id
+    line.hidden = r.before === null
+    line.style.top = `${(i < same.length ? same[i].top : same[same.length - 1].bottom) - 1}px`
+    tipStore.set({
+      x: r.last.x,
+      y: r.last.y,
+      lines: [<b key="name">{r.name}</b>, r.before === null ? 'Drag up or down' : 'Let go to put it here'],
+      bad: false,
+    })
+  }
+  const reorderScroll = () => {
+    const r = reorder.current
+    const s = scroller.current
+    if (!r || !s) return
+    const box = s.getBoundingClientRect()
+    const vy = edgeSpeed(r.last.y, box.top + HEADER_H, box.bottom)
+    if (vy) {
+      s.scrollBy(0, vy)
+      followReorder()
+    }
+    frame.current = requestAnimationFrame(reorderScroll)
+  }
+  const startReorder = (e: React.PointerEvent, grip: HTMLElement) => {
+    const g = groups.find((x) => x.kind === grip.dataset.gripKind && x.id === grip.dataset.grip)
+    if (!g) return
+    const row = grip.closest('[data-row]') as HTMLElement | null
+    row?.classList.add('opacity-60')
+    reorder.current = { kind: g.kind, id: g.id, name: g.name, section: g.section, row, last: { x: e.clientX, y: e.clientY }, before: null }
+    grip.setPointerCapture(e.pointerId)
+    hideHover()
+    setBusy(true)
+    followReorder()
+    frame.current = requestAnimationFrame(reorderScroll)
+    e.preventDefault()
+  }
+  const endReorder = (commit: boolean) => {
+    const r = reorder.current
+    reorder.current = null
+    cancelAnimationFrame(frame.current)
+    tipStore.set(null)
+    setBusy(false)
+    if (dropLine.current) dropLine.current.hidden = true
+    r?.row?.classList.remove('opacity-60')
+    if (commit && r && r.before !== null) moveGroup(r.kind, r.id, r.before)
+  }
+  /** Arrow keys on a grip: one place up or down among its own. */
+  const reorderKey = (e: React.KeyboardEvent, grip: HTMLElement) => {
+    if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return
+    e.preventDefault()
+    const kind = grip.dataset.gripKind as Group['kind']
+    const g = groups.find((x) => x.kind === kind && x.id === grip.dataset.grip)
+    if (!g) return
+    const same = peers(kind, g.section)
+    const i = same.findIndex((x) => x.id === g.id)
+    if (e.key === 'ArrowUp' ? i === 0 : i === same.length - 1) return
+    const before = e.key === 'ArrowUp' ? same[i - 1].id : same[i + 2]?.id
+    if (moveGroup(kind, g.id, before))
+      requestAnimationFrame(() =>
+        (content.current?.querySelector(`[data-grip="${g.id}"][data-grip-kind="${kind}"]`) as HTMLElement | null)?.focus({ preventScroll: true }),
+      )
+  }
+
   const onPointerDown = (e: React.PointerEvent) => {
     afterDrag.current = false
     const t = e.target as HTMLElement
+    const grip = t.closest('[data-grip]') as HTMLElement | null
+    if (grip) return void (canEdit && e.button === 0 && startReorder(e, grip))
     if (!canEdit || coarse || e.button !== 0 || e.pointerType === 'touch' || t.closest('[data-split]')) return
     const bar = t.closest('[data-block]') as HTMLElement | null
     const b = bar && block(bar.dataset.block!)
@@ -385,6 +520,10 @@ export function PlanSheet(props: Props) {
     e.preventDefault()
   }
   const onPointerMove = (e: React.PointerEvent) => {
+    if (reorder.current) {
+      reorder.current.last = { x: e.clientX, y: e.clientY }
+      return followReorder()
+    }
     const d = drag.current
     if (!d) return hover(e)
     d.last = { x: e.clientX, y: e.clientY }
@@ -395,6 +534,10 @@ export function PlanSheet(props: Props) {
       if (e.key === 'Escape' && drag.current) {
         e.preventDefault()
         endDrag(false)
+      }
+      if (e.key === 'Escape' && reorder.current) {
+        e.preventDefault()
+        endReorder(false)
       }
     }
     window.addEventListener('keydown', onKey)
@@ -420,14 +563,7 @@ export function PlanSheet(props: Props) {
     const track = lineOf(t)
     if (!track || !canEdit || t.closest('button, a, input, [role=combobox]')) return
     const slot = Number(track.dataset.slot ?? 0)
-    const r = freeRangeAt(
-      plan,
-      track.dataset.project!,
-      track.dataset.person || null,
-      Math.max(start, dayAt(e.clientX, track)),
-      zoom === 'weeks' ? 'week' : 'days',
-      slot,
-    )
+    const r = freeRangeAt(plan, track.dataset.project!, track.dataset.person || null, Math.max(start, dayAt(e.clientX, track)), addSize, slot)
     if (!r) return
     const id = newId()
     hideHover()
@@ -455,6 +591,8 @@ export function PlanSheet(props: Props) {
 
   // ── Keyboard on a block: arrows move it a day, Shift+arrows its end, Enter its menu, Delete removes it ──
   const onKeyDown = (e: React.KeyboardEvent) => {
+    const grip = (e.target as HTMLElement).closest('[data-grip]') as HTMLElement | null
+    if (grip) return canEdit ? reorderKey(e, grip) : undefined
     const bar = (e.target as HTMLElement).closest('[data-block]') as HTMLElement | null
     const b = bar && block(bar.dataset.block!)
     if (!bar || !b) return
@@ -482,15 +620,24 @@ export function PlanSheet(props: Props) {
     if (flash) focusBlock(flash)
   }, [flash])
 
-  // Grid lines: a line a week (on Mondays), and in days each day too, with weekends shaded.
+  // Grid lines: a line a week (on Mondays), and in days each day too, with weekends shaded; in months, a line a month.
   const weekW = 7 * dayW
-  const grid: CSSProperties =
-    zoom === 'days'
-      ? {
-          backgroundImage: `linear-gradient(to right, var(--grid-line) 1px, transparent 1px), repeating-linear-gradient(to right, transparent 0 ${5 * dayW}px, var(--weekend) ${5 * dayW}px ${weekW}px)`,
-          backgroundSize: `${weekW}px 100%, auto`,
-        }
-      : { backgroundImage: 'linear-gradient(to right, var(--grid-line) 1px, transparent 1px)', backgroundSize: `${weekW}px 100%` }
+  const grid: CSSProperties = useMemo(() => {
+    if (zoom === 'days')
+      return {
+        backgroundImage: `linear-gradient(to right, var(--grid-line) 1px, transparent 1px), repeating-linear-gradient(to right, transparent 0 ${5 * dayW}px, var(--weekend) ${5 * dayW}px ${weekW}px)`,
+        backgroundSize: `${weekW}px 100%, auto`,
+      }
+    if (zoom === 'weeks')
+      return { backgroundImage: 'linear-gradient(to right, var(--grid-line) 1px, transparent 1px)', backgroundSize: `${weekW}px 100%` }
+    // Months aren't all as long: one 1px line placed at each.
+    return {
+      backgroundImage: minor.map(() => 'linear-gradient(var(--grid-line), var(--grid-line))').join(', '),
+      backgroundPosition: minor.map((m) => `${x(m.day)}px 0`).join(', '),
+      backgroundSize: '1px 100%',
+      backgroundRepeat: 'no-repeat',
+    }
+  }, [zoom, dayW, weekW, minor, x])
 
   return (
     <>
@@ -499,8 +646,8 @@ export function PlanSheet(props: Props) {
         className="h-full overflow-auto"
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
-        onPointerUp={() => endDrag(true)}
-        onPointerCancel={() => endDrag(false)}
+        onPointerUp={() => (reorder.current ? endReorder(true) : endDrag(true))}
+        onPointerCancel={() => (reorder.current ? endReorder(false) : endDrag(false))}
         onPointerLeave={() => !drag.current && hideHover()}
         onClick={onClick}
         onScroll={onScroll}
@@ -516,10 +663,17 @@ export function PlanSheet(props: Props) {
               {rows[0]?.kind === 'person' || rows[0]?.kind === 'heading' ? 'Person · projects' : 'Project · people'}
             </div>
             <div className="relative shrink-0" style={{ width, height: HEADER_H }}>
-              {months.map((m) => (
-                <span key={m.day} className="absolute top-1.5 border-l pl-2 text-xs font-semibold whitespace-nowrap" style={{ left: x(m.day) }}>
-                  {m.label}
-                </span>
+              {/* Each month (year, in months) reaches to the next, its name staying in view until the next one comes. */}
+              {months.map((m, i) => (
+                <div
+                  key={m.day}
+                  className="absolute top-1.5 h-4 border-l"
+                  style={{ left: x(m.day), width: x(months[i + 1]?.day ?? end + 1) - x(m.day) }}
+                >
+                  <span className="sticky inline-block pr-2 pl-2 text-xs font-semibold whitespace-nowrap" style={{ left: left }}>
+                    {m.label}
+                  </span>
+                </div>
               ))}
               {minor.map((m) => (
                 <span
@@ -547,6 +701,8 @@ export function PlanSheet(props: Props) {
             className="pointer-events-none absolute bottom-0 z-10 w-0.5 bg-primary/50"
             style={{ left: left + x(today) + dayW / 2 - 1, top: HEADER_H }}
           />
+          {/* Where a dragged project or person would go */}
+          <div ref={dropLine} hidden aria-hidden className="pointer-events-none absolute right-0 left-0 z-30 h-0.5 bg-primary" />
           {/* Where a week would go */}
           <div
             ref={ghost}
@@ -583,6 +739,25 @@ const STATUS_CLASS = {
   room: 'bg-primary/10 text-primary',
 } as const
 
+/** A project's linked board, opened from its row (if you can open it). */
+function BoardLink({ board, id }: { board?: { name: string }; id: string }) {
+  const cls = 'ml-auto grid size-6 shrink-0 place-items-center rounded text-muted-foreground'
+  return board ? (
+    <a
+      href={hrefFor({ page: 'board', id })}
+      className={cn(cls, 'hover:bg-muted hover:text-foreground')}
+      title={`Open its board: ${board.name}`}
+      aria-label={`Open its board, ${board.name}`}
+    >
+      <Kanban className="size-4" />
+    </a>
+  ) : (
+    <span className={cn(cls, 'opacity-50')} title="Linked to a board you can’t open">
+      <Kanban className="size-4" />
+    </span>
+  )
+}
+
 /** The caret that folds a project's or person's group. */
 function Fold({ open, label, onClick }: { open: boolean; label: string; onClick: () => void }) {
   return (
@@ -596,6 +771,31 @@ function Fold({ open, label, onClick }: { open: boolean; label: string; onClick:
     >
       {open ? <CaretDown className="size-3.5" /> : <CaretRight className="size-3.5" />}
     </button>
+  )
+}
+
+/** The handle a planner drags a project or person by (or moves with the arrow keys). */
+function Grip({ kind, id, name }: { kind: 'project' | 'person'; id: string; name: string }) {
+  return (
+    <button
+      type="button"
+      data-grip={id}
+      data-grip-kind={kind}
+      className="absolute top-1/2 left-0.5 grid h-7 w-3.5 -translate-y-1/2 cursor-grab touch-none place-items-center rounded text-muted-foreground/70 opacity-0 group-hover/row:opacity-100 hover:bg-muted hover:text-foreground focus-visible:opacity-100 pointer-coarse:opacity-100"
+      aria-label={`Move ${name} (arrow keys)`}
+      title="Drag to move, or use the arrow keys"
+    >
+      <DotsSixVertical className="size-3.5" weight="bold" />
+    </button>
+  )
+}
+
+/** A project that might not happen. */
+function ProspectChip() {
+  return (
+    <span className="shrink-0 rounded-full border border-dashed border-muted-foreground/60 px-2 py-px text-[11px] font-semibold text-muted-foreground">
+      Prospect
+    </span>
   )
 }
 
@@ -635,16 +835,25 @@ const Row = memo(function Row(p: RowProps) {
     ]
       .filter(Boolean)
       .join('\n')
+    // A prospect's row is paper, not grey, with a dashed edge: like its blocks, pencilled in.
+    const bg = pr.prospect ? 'bg-background' : 'bg-muted/40'
     return (
-      <div data-row className="flex border-b bg-muted/40" style={{ height }}>
-        <div className={cn(cell, 'bg-muted/40 backdrop-blur-sm')} style={{ width: left }} title={more}>
+      <div data-row className={cn('group/row flex border-b', bg, pr.prospect && 'border-dashed border-muted-foreground/40')} style={{ height }}>
+        <div
+          className={cn(cell, bg, 'pl-5 backdrop-blur-sm')}
+          style={{ width: left }}
+          title={pr.prospect ? `Prospect: might not happen\n${more}` : more}
+        >
           <div className="flex min-w-0 items-center gap-2">
+            {canEdit && <Grip kind="project" id={pr.id} name={pr.name} />}
             <Fold open={!row.collapsed} label={pr.name} onClick={() => p.toggleGroup(row.key)} />
             <span className="size-2.5 shrink-0 rounded-sm" style={{ background: tone(pr.color) }} />
             <button type="button" className="min-w-0 truncate text-left text-sm font-semibold hover:underline" onClick={() => p.editProject(pr.id)}>
               {pr.name}
             </button>
+            {pr.prospect && <ProspectChip />}
             {facts.status !== 'none' && <Chip status={facts.status}>{STATUS_WORD[facts.status]}</Chip>}
+            {pr.boardId && <BoardLink board={p.boards.find((b) => b.id === pr.boardId)} id={pr.boardId} />}
           </div>
           <div className="truncate pl-[18px] text-xs text-muted-foreground">
             <span className="text-foreground tabular-nums">{md}</span>
@@ -659,7 +868,7 @@ const Row = memo(function Row(p: RowProps) {
               style={{
                 left: x(Math.max(facts.start, start)),
                 width: x(Math.min(facts.end!, end) + 1) - x(Math.max(facts.start, start)),
-                background: tone(pr.color),
+                background: pr.prospect ? `repeating-linear-gradient(90deg, ${tone(pr.color)} 0 6px, transparent 6px 10px)` : tone(pr.color),
               }}
             />
           )}
@@ -673,15 +882,27 @@ const Row = memo(function Row(p: RowProps) {
     const room = 100 - facts.nowLoad
     const status = facts.status === 'under' ? 'room' : facts.status
     const now = room > 0 ? `${room}% free now` : room === 0 ? 'Fully booked now' : `Booked ${facts.nowLoad}% now`
-    const free = facts.freeFrom !== null ? `free from ${dayDate(facts.freeFrom)}` : 'nothing booked ahead'
+    // Time on prospects ahead isn't booked yet, but isn't nothing either.
+    const prospectsAhead = personBlocks(plan, person.id).maybe.some((b) => toDay(b.end) >= p.today)
+    const free =
+      facts.freeFrom !== null ? `free from ${dayDate(facts.freeFrom)}` : prospectsAhead ? 'nothing confirmed ahead' : 'nothing booked ahead'
     const over = facts.overFrom !== null ? `${facts.peak}% from ${dayDate(facts.overFrom)} to ${dayDate(facts.overTo!)}` : null
-    const more = [gone && 'Left the workspace', `${person.hoursPerDay} hours a day`, now, `All ${free}`, over && `Over: ${over}`]
+    // Over only if prospects they're on happen.
+    const names = facts.ifProjects.map((id) => plan.projects.find((x) => x.id === id)?.name ?? '').filter(Boolean)
+    const maybe =
+      facts.ifFrom !== null ? `${facts.ifLoad}% if ${names.length === 1 ? `${names[0]} happens` : `${names.length} prospects happen`}` : null
+    const maybeMore =
+      facts.ifFrom !== null
+        ? `If ${names.join(' and ')} ${names.length === 1 ? 'happens' : 'happen'}: ${facts.ifLoad}% from ${dayDate(facts.ifFrom)}`
+        : null
+    const more = [gone && 'Left the workspace', `${person.hoursPerDay} hours a day`, now, `All ${free}`, over && `Over: ${over}`, maybeMore]
       .filter(Boolean)
       .join('\n')
     return (
-      <div data-row className="flex border-b bg-muted/40" style={{ height }}>
-        <div className={cn(cell, 'bg-muted/40 backdrop-blur-sm')} style={{ width: left }} title={more}>
+      <div data-row className="group/row flex border-b bg-muted/40" style={{ height }}>
+        <div className={cn(cell, 'bg-muted/40 pl-5 backdrop-blur-sm')} style={{ width: left }} title={more}>
           <div className="flex min-w-0 items-center gap-2">
+            {canEdit && <Grip kind="person" id={person.id} name={person.name} />}
             <Fold open={!row.collapsed} label={person.name} onClick={() => p.toggleGroup(row.key)} />
             <Avatar name={person.name} className="size-5 text-[9px]" />
             <button
@@ -699,6 +920,8 @@ const Row = memo(function Row(p: RowProps) {
               <span className="text-destructive">Left the workspace</span>
             ) : over ? (
               <span className="text-destructive">{over}</span>
+            ) : maybe ? (
+              <span className="text-[color-mix(in_oklab,var(--c-amber)_70%,var(--foreground))]">{maybe}</span>
             ) : (
               <span>{now}</span>
             )}
@@ -824,6 +1047,7 @@ const Row = memo(function Row(p: RowProps) {
             key={b.id}
             block={b}
             color={color}
+            prospect={project.prospect}
             label={row.label === 'person' ? `${b.pct}% · ${fmtMd(manDays(b))} MD` : `${project.name} · ${b.pct}%`}
             {...p}
           />
@@ -846,7 +1070,8 @@ function Block({
   flash,
   plan,
   left,
-}: RowProps & { block: PlanBlock; color: string; label: string }) {
+  prospect,
+}: RowProps & { block: PlanBlock; color: string; label: string; prospect: boolean }) {
   const s = Math.max(toDay(b.start), start)
   const e = Math.min(toDay(b.end), end)
   if (s > e) return null
@@ -858,18 +1083,20 @@ function Block({
       role="button"
       tabIndex={0}
       data-block={b.id}
-      aria-label={`${who} on ${project}, ${b.pct}%, ${range(toDay(b.start), toDay(b.end))}, ${fmtMd(manDays(b))} man-days`}
-      title={`${who} · ${range(toDay(b.start), toDay(b.end))} · ${b.pct}% · ${fmtMd(manDays(b))} man-days`}
+      aria-label={`${who} on ${project}${prospect ? ' (prospect)' : ''}, ${b.pct}%, ${range(toDay(b.start), toDay(b.end))}, ${fmtMd(manDays(b))} man-days`}
+      title={`${prospect ? 'Prospect · ' : ''}${who} · ${range(toDay(b.start), toDay(b.end))} · ${b.pct}% · ${fmtMd(manDays(b))} man-days`}
       className={cn(
         'absolute top-1.5 bottom-1.5 flex items-stretch rounded-md border text-[11px] font-medium text-foreground select-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none',
         handles ? 'cursor-grab' : 'cursor-pointer',
         flash === b.id && 'ring-2 ring-primary',
+        // A prospect: pencilled in, dashed and paler.
+        prospect && 'border-[1.5px] border-dashed text-foreground/80',
       )}
       style={{
         left: x(s),
         width: Math.max(dayW, x(e + 1) - x(s)),
         borderColor: color,
-        backgroundColor: `color-mix(in oklab, ${color} ${b.personId ? 30 : 14}%, var(--background))`,
+        backgroundColor: `color-mix(in oklab, ${color} ${(b.personId ? 30 : 14) / (prospect ? 2.5 : 1)}%, var(--background))`,
         backgroundImage: b.personId
           ? undefined
           : `repeating-linear-gradient(135deg, color-mix(in oklab, ${color} 30%, transparent) 0 4px, transparent 4px 9px)`,
@@ -884,7 +1111,7 @@ function Block({
   )
 }
 
-/** A person's load: each week's busiest day (weeks), or each working day (days); over 100% in red. */
+/** A person's load: each working day (days), or each week's or month's busiest day; over 100% in red. */
 function LoadCells({
   plan,
   personId,
@@ -904,38 +1131,67 @@ function LoadCells({
   dayW: number
   today: number
 }) {
-  const spans = plan.blocks.filter((b) => b.personId === personId).map(spanOf)
-  if (!spans.length) return null
-  const cells: { day: number; width: number; load: number }[] = []
+  const { confirmed, maybe } = personBlocks(plan, personId)
+  if (!confirmed.length && !maybe.length) return null
+  const spans = confirmed.map(spanOf)
+  const maybeSpans = maybe.map(spanOf)
+  /** The busiest working day's confirmed load, and how much more the busiest day would be if prospects happen. */
+  const busiest = (from: number, to: number) => {
+    let load = 0
+    let all = 0
+    for (let d = from; d <= to; d++)
+      if (isWorkDay(d)) {
+        const l = loadOn(spans, d)
+        load = Math.max(load, l)
+        all = Math.max(all, l + loadOn(maybeSpans, d))
+      }
+    return { load, extra: all - load }
+  }
+  const cells: { day: number; days: number; width: number; load: number; extra: number }[] = []
   if (zoom === 'days') {
-    for (let d = start; d <= end; d++) if (isWorkDay(d)) cells.push({ day: d, width: dayW, load: loadOn(spans, d) })
+    for (let d = start; d <= end; d++) if (isWorkDay(d)) cells.push({ day: d, days: 1, width: dayW, ...busiest(d, d) })
+  } else if (zoom === 'weeks') {
+    for (let m = start; m <= end; m += 7) cells.push({ day: m, days: 7, width: 7 * dayW, ...busiest(m, m + 6) })
   } else {
-    for (let m = start; m <= end; m += 7) {
-      let load = 0
-      for (let d = m; d < m + 7; d++) if (isWorkDay(d)) load = Math.max(load, loadOn(spans, d))
-      cells.push({ day: m, width: 7 * dayW, load })
+    // Months: from the sheet's first day (partway through a month) to its last.
+    for (let m = start; m <= end; m = monthEndOf(m) + 1) {
+      const e = Math.min(monthEndOf(m), end)
+      cells.push({ day: m, days: e - m + 1, width: (e - m + 1) * dayW, ...busiest(m, e) })
     }
   }
   return (
     <>
       {cells
-        .filter((c) => c.load)
+        .filter((c) => c.load || c.extra)
         .map((c) => (
           <div
             key={c.day}
-            title={`${zoom === 'days' ? dayDate(c.day) : `Week of ${dayDate(c.day)}, busiest day`}: ${c.load}%`}
+            title={`${zoom === 'days' ? dayDate(c.day) : `${zoom === 'weeks' ? `Week of ${dayDate(c.day)}` : monthName(c.day)}, busiest day`}: ${c.load}%${c.extra ? ` (${c.load + c.extra}% if prospects happen)` : ''}`}
             className={cn(
-              'absolute top-1/2 grid h-6 -translate-y-1/2 place-items-center rounded text-[10px] font-medium tabular-nums',
+              'absolute top-1/2 flex h-6 -translate-y-1/2 items-center justify-center gap-0.5 rounded text-[10px] font-medium tabular-nums',
               c.load > 100
                 ? 'bg-destructive/20 font-semibold text-destructive'
                 : c.load === 100
                   ? 'bg-status-done/25 text-foreground'
-                  : 'bg-primary/12 text-foreground',
-              c.day + (zoom === 'days' ? 1 : 7) <= today && 'opacity-45',
+                  : c.load
+                    ? 'bg-primary/12 text-foreground'
+                    : 'text-muted-foreground',
+              // Prospects on top: a dashed edge, and their share in grey.
+              c.extra > 0 && 'border border-dashed border-muted-foreground/50',
+              c.day + c.days <= today && 'opacity-45',
             )}
             style={{ left: x(c.day) + 1.5, width: c.width - 3 }}
           >
-            {c.width >= 22 ? c.load : ''}
+            {c.width >= (c.load && c.extra ? 44 : 22) ? (
+              <>
+                {c.load > 0 && <span>{c.load}</span>}
+                {c.extra > 0 && <span className="font-normal text-muted-foreground">+{c.extra}</span>}
+              </>
+            ) : c.width >= 22 ? (
+              c.load || `+${c.extra}`
+            ) : (
+              ''
+            )}
           </div>
         ))}
     </>

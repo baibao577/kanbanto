@@ -104,7 +104,7 @@ The app uses hash routing, so any static host or proxy works without rewrite rul
 | `#/b/<id>/<tab>?focus=<task>&task=<task>` | A board: tab (board, timeline, outline), zoomed-in task, open card. Back/Forward work. |
 | `#/join/<token>` | An invite link, to a board or a workspace |
 | `#/w/<id>` | A workspace's people and settings |
-| `#/w/<id>/planning?by=person&zoom=days` | Its plan, by project or by person, in weeks or days |
+| `#/w/<id>/planning?by=person&zoom=days` | Its plan, by project or by person, in weeks, days or months (`zoom=months`) |
 | `#/signin`, `#/signup`, `#/forgot` | Signing in |
 | `#/verify/<token>`, `#/reset/<token>` | Links in emails |
 | `#/account/<section>` | Account settings: profile, password, notifications, email, storage |
@@ -213,6 +213,13 @@ The app uses hash routing, so any static host or proxy works without rewrite rul
 - **Who:** workspace admins, and members an admin marks as planners, change the plan; everyone else in the workspace
   sees it. Members stay in the plan while they're in the workspace; someone who leaves keeps their time until a
   planner takes them out (their time then becomes "not assigned yet"), and gets it back if they rejoin.
+- **Prospects:** a project can be marked as a prospect (it might not happen). Its time shows dashed and is kept out of
+  people's Over / Fit / free from; a person who'd go over 100% only if a prospect happens says so apart.
+- **Boards:** a project can be linked to one board in the same workspace (`planning_projects.board_id`); the board's
+  Timeline then shows the project's plan as a read-only band (`GET /api/boards/:id/plan`, workspace members only).
+  A board that leaves the workspace loses its link.
+- **Order:** projects and people keep the order planners drag them into (`position`); people without one (until the
+  first move) come by role, then name.
 - **Changes** work like a board's: commands checked by the same model code on both sides, sent one at a time, each
   numbered (`planning_state.seq`, the row that's locked while a plan changes), with undo as a checked restore. There's
   no live connection for plans yet: an open plan checks for changes every minute and when the tab comes back.

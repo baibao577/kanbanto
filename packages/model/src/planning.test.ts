@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { fromDay, isWeekend, mondayOf, toDay, weekdayOf } from './dates'
+import { fromDay, isWeekend, mondayOf, monthEndOf, monthStartOf, toDay, weekdayOf } from './dates'
 import {
   canSplit,
   emptyPlan,
@@ -7,6 +7,7 @@ import {
   freeRangeAt,
   manDays,
   nextWorkDay,
+  peopleInOrder,
   personFacts,
   prevWorkDay,
   projectFacts,
@@ -69,6 +70,9 @@ describe('working days and man-days', () => {
     expect(mondayOf(d('2026-10-11'))).toBe(MON)
     expect(mondayOf(MON)).toBe(MON)
     expect([isWeekend(d('2026-10-10')), isWeekend(d('2026-10-11')), isWeekend(MON)]).toEqual([true, true, false])
+    expect([monthStartOf(MON), monthEndOf(MON)].map(fromDay)).toEqual(['2026-10-01', '2026-10-31'])
+    expect([monthStartOf(d('2027-02-28')), monthEndOf(d('2027-02-01'))].map(fromDay)).toEqual(['2027-02-01', '2027-02-28'])
+    expect(fromDay(monthEndOf(d('2026-12-31')))).toBe('2026-12-31')
   })
 
   it('counts working days, both ends included, and steps over weekends', () => {
@@ -126,10 +130,38 @@ describe('projects and people', () => {
       overTo: d('2026-10-30'),
       freeFrom: d('2026-11-16'),
       status: 'over',
+      ifFrom: null,
+      ifLoad: 0,
+      ifProjects: [],
     })
     expect(personFacts(p, 'bob', today)).toMatchObject({ nowLoad: 0, peak: 0, freeFrom: null, status: 'under' })
     // Once the overlap is in the past, it no longer counts.
     expect(personFacts(p, 'ann', d('2026-11-02'))).toMatchObject({ nowLoad: 50, peak: 50, overFrom: null, status: 'under' })
+  })
+
+  it('a prospect’s time is kept out of Over / Fit / free from, and said apart: over only if it happens', () => {
+    let p = example()
+    p = exec(p, block('1', 'a', 'ann', '2026-10-05', '2026-10-30', 100)).plan
+    p = exec(p, block('2', 'b', 'ann', '2026-10-19', '2026-11-13', 50)).plan
+    p = exec(p, { type: 'project.update', id: 'b', fields: { prospect: true } }).plan
+    const today = d('2026-10-03')
+    expect(personFacts(p, 'ann', today)).toEqual({
+      nowLoad: 100,
+      peak: 100,
+      overFrom: null,
+      overTo: null,
+      freeFrom: d('2026-11-02'),
+      status: 'fit',
+      ifFrom: d('2026-10-19'),
+      ifLoad: 150,
+      ifProjects: ['b'],
+    })
+    // Only on a prospect: nothing booked, nothing over.
+    expect(personFacts(p, 'ann', d('2026-11-02'))).toMatchObject({ nowLoad: 0, peak: 0, freeFrom: null, status: 'under', ifFrom: null })
+    // It happens: back to counting.
+    p = exec(p, { type: 'project.update', id: 'b', fields: { prospect: false } }).plan
+    expect(personFacts(p, 'ann', today)).toMatchObject({ peak: 150, status: 'over', ifFrom: null })
+    expect(projectFacts(p, 'b').scheduled).toBe(10)
   })
 
   it('pointing at a free spot gives a week (or five working days), trimmed to the room around it', () => {
@@ -144,6 +176,9 @@ describe('projects and people', () => {
     expect(freeRangeAt(p, 'a', 'ann', MON + 12, 'week')).toBeNull()
     // Another line is free.
     expect(freeRangeAt(p, 'a', 'bob', MON + 1, 'week')).toEqual({ start: MON, end: MON + 4 })
+    // A month: its first to last working day (Thu 1 – Fri 30 Oct), trimmed to the free space around the day.
+    expect(freeRangeAt(p, 'a', 'bob', MON + 1, 'month')).toEqual({ start: MON - 4, end: MON + 25 })
+    expect(freeRangeAt(p, 'a', 'ann', MON + 3, 'month')).toEqual({ start: MON + 3, end: MON + 4 })
   })
 
   it('a block splits only inside, with working days on both sides', () => {
@@ -225,6 +260,26 @@ describe('plan commands', () => {
     expect(refusal(p, { type: 'person.update', id: 'ann', fields: { name: 'Annie' } })).toMatch(/account/)
   })
 
+  it('people are in role-then-name order until a planner moves one; then the plan keeps their order', () => {
+    let p = example()
+    const names = (plan: PlanData) => peopleInOrder(plan).map((x) => x.name)
+    expect(names(p)).toEqual(['Ann', 'Bob', 'Cat']) // Ann has a role (SE); the others none, by name
+    // The first move gives everyone a place.
+    const first = exec(p, { type: 'person.move', id: 'cat', beforeId: 'ann' })
+    expect(names(first.plan)).toEqual(['Cat', 'Ann', 'Bob'])
+    expect(first.changes).toHaveLength(3)
+    p = first.plan
+    // After that, only the one moved changes.
+    const next = exec(p, { type: 'person.move', id: 'cat' })
+    expect(names(next.plan)).toEqual(['Ann', 'Bob', 'Cat'])
+    expect(next.changes).toHaveLength(1)
+    // Someone new comes after the people put in order; undo puts it back.
+    const added = exec(next.plan, { type: 'person.add', id: 'dan', name: 'Abe' }).plan
+    expect(names(added)).toEqual(['Ann', 'Bob', 'Cat', 'Abe'])
+    expect(names(applyPlanChanges(next.plan, invertPlanChanges(next.plan, next.changes, NOW)))).toEqual(['Cat', 'Ann', 'Bob'])
+    expect(refusal(p, { type: 'person.move', id: 'cat', beforeId: 'nobody' })).toMatch(/no longer in the plan/)
+  })
+
   it('roles: unique names, removing one leaves people with none; projects: removing takes their time along', () => {
     let p = example()
     expect(refusal(p, { type: 'role.add', name: ' se ' })).toMatch(/already a role/)
@@ -278,6 +333,16 @@ describe('time nobody has yet', () => {
   })
 })
 
+describe('linking a board', () => {
+  it('a project links to one board, and a board to one project', () => {
+    let p = exec(example(), { type: 'project.update', id: 'a', fields: { boardId: 'board-1' } }).plan
+    expect(p.projects[0].boardId).toBe('board-1')
+    expect(refusal(p, { type: 'project.update', id: 'b', fields: { boardId: 'board-1' } })).toMatch(/already linked to Data platform/)
+    p = exec(p, { type: 'project.update', id: 'a', fields: { boardId: null } }).plan
+    expect(refusal(p, { type: 'project.update', id: 'b', fields: { boardId: 'board-1' } })).toBeNull()
+  })
+})
+
 describe('undo', () => {
   /** Runs a command, then its undo through plan.restore, and checks the plan is back as it was (apart from versions). */
   function roundTrip(plan: PlanData, cmd: PlanCommand, members?: string[]) {
@@ -305,6 +370,7 @@ describe('undo', () => {
     roundTrip(p, { type: 'role.remove', id: 'se' })
     roundTrip(p, { type: 'person.merge', id: 'bob', into: 'ann' })
     roundTrip(p, { type: 'project.addOpenLine', id: 'a' })
+    roundTrip(p, { type: 'project.update', id: 'a', fields: { boardId: 'board-1' } })
   })
 
   it('refuses when someone changed it since, or when it would break the plan', () => {

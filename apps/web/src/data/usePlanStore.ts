@@ -88,6 +88,7 @@ export function usePlanStore(workspaceId: string, me: string, onEvent: (e: PlanE
     run,
     /** While dragging: hold off fetching other people's changes. */
     setBusy: useCallback((busy: boolean) => sync?.setBusy(busy), [sync]),
+    addBoard: useCallback((board: PlanState['boards'][number]) => sync?.addBoard(board), [sync]),
     undo: useCallback(() => step('undo'), [step]),
     redo: useCallback(() => step('redo'), [step]),
     canUndo: depth.undo > 0,

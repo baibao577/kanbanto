@@ -63,7 +63,7 @@ export function PlanningView({ ws, route }: { ws: WorkspaceDetail; route: Worksp
   const narrow = useMediaQuery('(max-width: 767px)')
   const coarse = useMediaQuery('(pointer: coarse)')
   const today = todayDay()
-  const zoom: Zoom = route.zoom === 'days' ? 'days' : 'weeks'
+  const zoom: Zoom = route.zoom ?? 'weeks'
   const by = route.by === 'person' ? 'person' : 'project'
   const [showFinished, setShowFinished] = useState(false)
   const [folded, setFolded] = useState(() => loadFolded(ws.id))
@@ -143,8 +143,18 @@ export function PlanningView({ ws, route }: { ws: WorkspaceDetail; route: Worksp
   if (store.error) return <Empty>{store.error.message}</Empty>
   if (!state) return null
   const { plan } = state
-  const planned = plan.projects.filter((p) => !p.finishedAt).reduce((s, p) => s + (p.plannedMd ?? 0), 0)
-  const scheduled = sumManDays(plan.blocks.filter((b) => !plan.projects.find((p) => p.id === b.projectId)?.finishedAt))
+  // Running projects, and prospects (might not happen) apart.
+  const totals = (prospect: boolean) => {
+    const projects = plan.projects.filter((p) => !p.finishedAt && p.prospect === prospect)
+    const ids = new Set(projects.map((p) => p.id))
+    return {
+      count: projects.length,
+      planned: projects.reduce((s, p) => s + (p.plannedMd ?? 0), 0),
+      scheduled: sumManDays(plan.blocks.filter((b) => ids.has(b.projectId))),
+    }
+  }
+  const running = totals(false)
+  const prospects = totals(true)
   const menuBlock = menu && plan.blocks.find((b) => b.id === menu.id)
   const who = (personId: string | null) => (personId ? (plan.people.find((p) => p.id === personId)?.name ?? 'Someone') : 'Not assigned yet')
   const projectName = (id: string) => plan.projects.find((p) => p.id === id)?.name ?? ''
@@ -171,13 +181,16 @@ export function PlanningView({ ws, route }: { ws: WorkspaceDetail; route: Worksp
           size="sm"
           variant="outline"
           value={zoom}
-          onValueChange={(v) => v && set({ zoom: v === 'days' ? 'days' : undefined })}
+          onValueChange={(v) => v && set({ zoom: v === 'days' || v === 'months' ? v : undefined })}
         >
+          <ToggleGroupItem value="days" className="px-3">
+            Days
+          </ToggleGroupItem>
           <ToggleGroupItem value="weeks" className="px-3">
             Weeks
           </ToggleGroupItem>
-          <ToggleGroupItem value="days" className="px-3">
-            Days
+          <ToggleGroupItem value="months" className="px-3">
+            Months
           </ToggleGroupItem>
         </ToggleGroup>
         <Button variant="outline" size="sm" className="h-8" onClick={() => setTodayRequest((n) => n + 1)}>
@@ -212,7 +225,14 @@ export function PlanningView({ ws, route }: { ws: WorkspaceDetail; route: Worksp
           </Select>
         )}
         <p className="hidden text-xs text-muted-foreground tabular-nums lg:block">
-          <b className="text-foreground">{fmtMd(scheduled)}</b> of <b className="text-foreground">{fmtMd(planned)}</b> planned man-days scheduled
+          <b className="text-foreground">{fmtMd(running.scheduled)}</b> of <b className="text-foreground">{fmtMd(running.planned)}</b> planned
+          man-days scheduled
+          {prospects.count > 0 && (
+            <>
+              {' · '}
+              {fmtMd(prospects.scheduled)} of {fmtMd(prospects.planned)} on prospects
+            </>
+          )}
         </p>
         <div className="ml-auto flex items-center gap-1.5">
           {(state.unsaved > 0 || state.offline) && (
@@ -280,6 +300,7 @@ export function PlanningView({ ws, route }: { ws: WorkspaceDetail; route: Worksp
             canEdit={canEdit}
             coarse={coarse}
             activity={state.activity}
+            boards={state.boards}
             todayRequest={todayRequest}
             run={run}
             setBusy={store.setBusy}
@@ -347,7 +368,18 @@ export function PlanningView({ ws, route }: { ws: WorkspaceDetail; route: Worksp
         )}
       </DropdownMenu>
 
-      {dialog?.kind === 'project' && <ProjectDialog key={dialog.id} plan={plan} id={dialog.id} onClose={() => setDialog(null)} run={run} />}
+      {dialog?.kind === 'project' && (
+        <ProjectDialog
+          key={dialog.id}
+          plan={plan}
+          id={dialog.id}
+          workspaceId={ws.id}
+          boards={state.boards}
+          onBoardMade={store.addBoard}
+          onClose={() => setDialog(null)}
+          run={run}
+        />
+      )}
       {dialog?.kind === 'person' && (
         <PersonDialog
           key={dialog.id}

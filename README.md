@@ -28,8 +28,10 @@
   link, an access code or an email invite, as an owner, editor or viewer.
   Changes appear for everyone instantly.
 - **Plan your people:** each workspace has a Planning tab: projects with their planned man-days, and who works on
-  each one, when and how much of their time (25–100%), on a timeline by project or by person. It shows which projects
-  are under or over their plan, who is booked over 100%, and when people are free.
+  each one, when and how much of their time (25–100%), on a timeline by project or by person, in days, weeks or
+  months. It shows which projects are under or over their plan, who is booked over 100%, and when people are free.
+  Prospects (work that might not happen) are planned apart, and a project linked to a board shows its plan on that
+  board's Timeline.
 - **Comments and files:** discuss each card, @mention people, attach files and screenshots, and point to a file with `#`.
 - **Connect it:** an API with personal tokens, webhooks for each board, and an MCP endpoint so AI assistants like
   Claude can find, plan and update tasks for you.

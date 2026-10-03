@@ -1,5 +1,6 @@
 import type { ColorName } from './colors'
-import { mondayOf, toDay, weekdayOf } from './dates'
+import { mondayOf, monthEndOf, monthStartOf, toDay, weekdayOf } from './dates'
+import { comparePositions } from './position'
 import type { Meta } from './types'
 
 /**
@@ -38,6 +39,8 @@ export interface PlanPerson extends Meta {
   roleId: string | null
   /** For reference: a man-day is one of their working days, however long. */
   hoursPerDay: number
+  /** Position key (see position.ts) once planners have put people in an order; null: after them, by role then name. */
+  position: string | null
 }
 
 export interface PlanProject extends Meta {
@@ -52,6 +55,13 @@ export interface PlanProject extends Meta {
   finishedAt: string | null
   /** How many "not assigned yet" lines it has (at least one): one for each need nobody is chosen for yet. */
   openLines: number
+  /** The board its work is tracked on (in the same workspace), if any. One board, one project. */
+  boardId: string | null
+  /**
+   * Might not happen (work being sold, say), planned so there are people for it if it does. Its time is shown apart
+   * and doesn't count toward people's Over / Fit / free from.
+   */
+  prospect: boolean
 }
 
 /** Someone put on a project with no time yet, so their line is there to add blocks to. */
@@ -79,6 +89,22 @@ export interface PlanData {
   projects: PlanProject[]
   lines: PlanLine[]
   blocks: PlanBlock[]
+}
+
+/**
+ * People in the plan's order: those planners have put in an order first (by position), then the rest by role (in the
+ * roles' order) and name.
+ */
+export function peopleInOrder(plan: PlanData): PlanPerson[] {
+  const rank = new Map(plan.roles.map((r, i) => [r.id, i]))
+  return [...plan.people].sort((a, b) => {
+    if (a.position !== null || b.position !== null) {
+      if (a.position === null) return 1
+      if (b.position === null) return -1
+      return comparePositions(a.position, b.position)
+    }
+    return (rank.get(a.roleId ?? '') ?? 999) - (rank.get(b.roleId ?? '') ?? 999) || a.name.localeCompare(b.name)
+  })
 }
 
 export const emptyPlan = (): PlanData => ({ roles: [], people: [], projects: [], lines: [], blocks: [] })
@@ -193,19 +219,47 @@ export interface PersonFacts {
   freeFrom: number | null
   /** Over: above 100% somewhere ahead. Fit: fully booked now. Under: room now. */
   status: 'under' | 'fit' | 'over'
+  /**
+   * Prospects. All of the above is their confirmed work only; this is the first working day from `today` they'd go
+   * over 100% only if prospects they're on happen, with that day's load and those prospects (ids).
+   */
+  ifFrom: number | null
+  ifLoad: number
+  ifProjects: string[]
+}
+
+/** Their blocks, split into confirmed work and prospects (projects that might not happen). */
+export function personBlocks(plan: PlanData, personId: string) {
+  const prospects = new Set(plan.projects.filter((p) => p.prospect).map((p) => p.id))
+  const mine = plan.blocks.filter((b) => b.personId === personId)
+  return { confirmed: mine.filter((b) => !prospects.has(b.projectId)), maybe: mine.filter((b) => prospects.has(b.projectId)) }
 }
 
 export function personFacts(plan: PlanData, personId: string, today: number, week: WorkWeek = WORK_WEEK): PersonFacts {
-  const spans = plan.blocks.filter((b) => b.personId === personId).map(spanOf)
+  const { confirmed, maybe } = personBlocks(plan, personId)
+  const spans = confirmed.map(spanOf)
+  const maybeSpans = maybe.map((b) => ({ ...spanOf(b), projectId: b.projectId }))
   const first = nextWorkDay(today, week)
   const last = spans.length ? Math.max(...spans.map((s) => s.end)) : -Infinity
+  const lastAny = Math.max(last, ...maybeSpans.map((s) => s.end))
   let peak = 0
   let overFrom: number | null = null
   let overTo: number | null = null
   let done = false
-  for (let d = first; d <= last; d++) {
+  let ifFrom: number | null = null
+  let ifLoad = 0
+  let ifProjects: string[] = []
+  for (let d = first; d <= lastAny; d++) {
     if (!isWorkDay(d, week)) continue
     const l = loadOn(spans, d)
+    if (ifFrom === null && l <= 100) {
+      const extra = loadOn(maybeSpans, d)
+      if (l + extra > 100) {
+        ifFrom = d
+        ifLoad = l + extra
+        ifProjects = [...new Set(maybeSpans.filter((s) => s.start <= d && d <= s.end).map((s) => s.projectId))]
+      }
+    }
     if (l > peak) peak = l
     if (done) continue
     if (l > 100) {
@@ -221,6 +275,9 @@ export function personFacts(plan: PlanData, personId: string, today: number, wee
     overTo,
     freeFrom: last >= today ? nextWorkDay(last + 1, week) : null,
     status: peak > 100 ? 'over' : nowLoad === 100 ? 'fit' : 'under',
+    ifFrom,
+    ifLoad,
+    ifProjects,
   }
 }
 
@@ -235,8 +292,11 @@ export function overlapsOnLine(plan: PlanData, projectId: string, personId: stri
   return lineBlocks(plan, projectId, personId, except, slot).some((b) => toDay(b.start) <= end && start <= toDay(b.end))
 }
 
-/** How long a block added by pointing at a day is: Monday to Friday of that week, or five working days from it. */
-export type AddSize = 'week' | 'days'
+/**
+ * How long a block added by pointing at a day is: Monday to Friday of that week, five working days from it, or the
+ * working days of its month.
+ */
+export type AddSize = 'week' | 'days' | 'month'
 
 /**
  * The block to add where someone points: the usual length, trimmed to the free space around `day` on that line.
@@ -264,6 +324,9 @@ export function freeRangeAt(
   if (size === 'week') {
     start = mondayOf(day)
     end = start + 4
+  } else if (size === 'month') {
+    start = monthStartOf(day)
+    end = monthEndOf(day)
   } else {
     start = nextWorkDay(day, week)
     end = start
@@ -271,7 +334,9 @@ export function freeRangeAt(
   }
   start = Math.max(start, lo)
   end = Math.min(end, hi)
-  return start <= end && workDays(start, end, week) > 0 ? { start, end } : null
+  if (start > end || !workDays(start, end, week)) return null
+  // A month starts and ends on working days, not on a weekend around them.
+  return size === 'month' ? { start: nextWorkDay(start, week), end: prevWorkDay(end, week) } : { start, end }
 }
 
 /**

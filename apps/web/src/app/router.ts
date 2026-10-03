@@ -22,7 +22,7 @@ import { CATEGORIES, LAYOUTS, PRIORITIES, type Category, type Layout, type Prior
  */
 export type BoardRoute = { page: 'board'; id: string; layout?: Layout; focus?: string; task?: string }
 /** A workspace: its people (the default), or its plan, shown by project or by person, in weeks or days. */
-export type WorkspaceRoute = { page: 'workspace'; id: string; section?: WorkspaceSection; by?: 'person'; zoom?: 'days' }
+export type WorkspaceRoute = { page: 'workspace'; id: string; section?: WorkspaceSection; by?: 'person'; zoom?: 'days' | 'months' }
 /**
  * The Search cards page: which cards (the ones on their boards, unless said), where, and what about them. A time range
  * is a named one (`range`, which moves with the calendar) or two days (`from`, `to`), about one of a card's dates
@@ -118,7 +118,7 @@ export function parseRoute(hash: string): Route {
       id: decodeURIComponent(ws[1]),
       ...(planning && { section: 'planning' as const }),
       ...(planning && q.get('by') === 'person' && { by: 'person' as const }),
-      ...(planning && q.get('zoom') === 'days' && { zoom: 'days' as const }),
+      ...(planning && (q.get('zoom') === 'days' || q.get('zoom') === 'months') && { zoom: q.get('zoom') as 'days' | 'months' }),
     }
   }
   const auth = hash.match(/^#\/(signin|signup)(?:\?(.*))?$/)

@@ -43,7 +43,9 @@ const meta = {
 }
 
 const RoleSchema = z.object({ id, name: text(20), position, ...meta }).strict()
-const PersonSchema = z.object({ id, userId: id.nullable(), name: text(100), roleId: id.nullable(), hoursPerDay: hours, ...meta }).strict()
+const PersonSchema = z
+  .object({ id, userId: id.nullable(), name: text(100), roleId: id.nullable(), hoursPerDay: hours, position: position.nullable(), ...meta })
+  .strict()
 const slot = z.number().int().min(0).max(19)
 const ProjectSchema = z
   .object({
@@ -55,6 +57,8 @@ const ProjectSchema = z
     position,
     finishedAt: moment.nullable(),
     openLines: z.number().int().min(1).max(20),
+    boardId: id.nullable(),
+    prospect: z.boolean(),
     ...meta,
   })
   .strict()
@@ -96,12 +100,13 @@ export const PlanCommandSchema = z.discriminatedUnion('type', [
     client: text(200).optional(),
     plannedMd: md.optional(),
     color: color.optional(),
+    prospect: z.boolean().optional(),
   }),
   z.object({
     type: z.literal('project.update'),
     id,
     fields: z
-      .object({ name: text(200), client: text(200), plannedMd: md, color, finished: z.boolean() })
+      .object({ name: text(200), client: text(200), plannedMd: md, color, finished: z.boolean(), boardId: id.nullable(), prospect: z.boolean() })
       .partial()
       .strict(),
   }),
@@ -118,6 +123,7 @@ export const PlanCommandSchema = z.discriminatedUnion('type', [
       .partial()
       .strict(),
   }),
+  z.object({ type: z.literal('person.move'), id, beforeId: id.optional() }),
   z.object({ type: z.literal('person.merge'), id, into: id }),
   z.object({ type: z.literal('person.remove'), id }),
   z.object({ type: z.literal('line.add'), id: id.optional(), projectId: id, personId: id }),

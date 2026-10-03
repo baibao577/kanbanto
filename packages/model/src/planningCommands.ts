@@ -3,6 +3,7 @@ import { fromDay, hasTime, normalizeTaskDate, toDay } from './dates'
 import {
   canSplit,
   overlapsOnLine,
+  peopleInOrder,
   PERCENTS,
   prevWorkDay,
   WORK_WEEK,
@@ -30,7 +31,7 @@ export type PlanCommand =
   /** Cuts a block in two: the second part starts on `at`, the first ends on the working day before. */
   | { type: 'block.split'; id: string; at: string; newId?: string }
   | { type: 'block.remove'; id: string }
-  | { type: 'project.add'; id?: string; name: string; client?: string; plannedMd?: number | null; color?: ColorName }
+  | { type: 'project.add'; id?: string; name: string; client?: string; plannedMd?: number | null; color?: ColorName; prospect?: boolean }
   | { type: 'project.update'; id: string; fields: ProjectFields }
   | { type: 'project.move'; id: string; beforeId?: string }
   /** Deletes a project with its blocks and lines. */
@@ -41,6 +42,8 @@ export type PlanCommand =
   | { type: 'project.removeOpenLine'; id: string; slot: number }
   | { type: 'person.add'; id?: string; name: string; roleId?: string | null; hoursPerDay?: number }
   | { type: 'person.update'; id: string; fields: PersonFields }
+  /** Puts someone before another person (or last) in the plan's order of people. */
+  | { type: 'person.move'; id: string; beforeId?: string }
   /** Someone added by name turns out to be a workspace member: their blocks and lines move to the member, then they go. */
   | { type: 'person.merge'; id: string; into: string }
   /** Takes someone out of the plan; their blocks become "not assigned yet". */
@@ -56,7 +59,7 @@ export type PlanCommand =
   | { type: 'plan.restore'; changes: PlanChange[] }
 
 export type BlockFields = Partial<Pick<PlanBlock, 'projectId' | 'personId' | 'slot' | 'start' | 'end' | 'pct'>>
-export type ProjectFields = Partial<Pick<PlanProject, 'name' | 'client' | 'plannedMd' | 'color'> & { finished: boolean }>
+export type ProjectFields = Partial<Pick<PlanProject, 'name' | 'client' | 'plannedMd' | 'color' | 'boardId' | 'prospect'> & { finished: boolean }>
 export type PersonFields = Partial<Pick<PlanPerson, 'name' | 'roleId' | 'hoursPerDay'>>
 
 export interface PlanRecords {
@@ -256,6 +259,8 @@ function run(plan: PlanData, cmd: PlanCommand, ctx: PlanContext): PlanChange[] {
         position: positionBetween(lastPosition(plan.projects), null),
         finishedAt: null,
         openLines: 1,
+        boardId: null,
+        prospect: cmd.prospect ?? false,
       })
       break
     }
@@ -263,6 +268,8 @@ function run(plan: PlanData, cmd: PlanCommand, ctx: PlanContext): PlanChange[] {
       const p = project(cmd.id)
       const f = cmd.fields
       if (f.color !== undefined && !isColor(f.color)) refuse('That isn’t one of the colors.')
+      const linked = f.boardId ? plan.projects.find((x) => x.id !== p.id && x.boardId === f.boardId) : null
+      if (linked) refuse(`That board is already linked to ${linked.name}.`)
       put('project', p, {
         ...p,
         ...(f.name !== undefined && { name: cleanName(f.name, PLAN_LIMITS.name, 'project') }),
@@ -270,6 +277,8 @@ function run(plan: PlanData, cmd: PlanCommand, ctx: PlanContext): PlanChange[] {
         ...(f.plannedMd !== undefined && { plannedMd: cleanMd(f.plannedMd) }),
         ...(f.color !== undefined && { color: f.color }),
         ...(f.finished !== undefined && { finishedAt: f.finished ? (p.finishedAt ?? now) : null }),
+        ...(f.boardId !== undefined && { boardId: f.boardId }),
+        ...(f.prospect !== undefined && { prospect: f.prospect }),
       })
       break
     }
@@ -312,6 +321,7 @@ function run(plan: PlanData, cmd: PlanCommand, ctx: PlanContext): PlanChange[] {
         name: cleanName(cmd.name, PLAN_LIMITS.name, 'person'),
         roleId: cmd.roleId ?? null,
         hoursPerDay: cleanHours(cmd.hoursPerDay ?? 8),
+        position: null,
       })
       break
     }
@@ -326,6 +336,24 @@ function run(plan: PlanData, cmd: PlanCommand, ctx: PlanContext): PlanChange[] {
         ...(f.roleId !== undefined && { roleId: f.roleId }),
         ...(f.hoursPerDay !== undefined && { hoursPerDay: cleanHours(f.hoursPerDay) }),
       })
+      break
+    }
+    case 'person.move': {
+      const p = person(cmd.id)
+      const order = peopleInOrder(plan).filter((x) => x.id !== p.id)
+      const at = cmd.beforeId ? order.findIndex((x) => x.id === cmd.beforeId) : order.length
+      if (at < 0) refuse('That person is no longer in the plan.')
+      order.splice(at, 0, p)
+      // Everyone gets a place the first time (until then they're in role-then-name order); after that, only the one moved.
+      if (order.every((x) => x.id === p.id || x.position !== null)) {
+        put('person', p, { ...p, position: positionBetween(order[at - 1]?.position ?? null, order[at + 1]?.position ?? null) })
+      } else {
+        let last: string | null = null
+        for (const x of order) {
+          last = positionBetween(last, null)
+          put('person', x, { ...x, position: last })
+        }
+      }
       break
     }
     case 'person.merge': {
@@ -437,9 +465,13 @@ function restore(
   }
   const next = applyPlanChanges(plan, out)
   const has = (list: { id: string }[], id: string | null) => id === null || list.some((x) => x.id === id)
-  for (const c of out)
-    if (c.entity === 'project' && c.after && next.blocks.some((b) => b.projectId === c.id && b.personId === null && b.slot >= c.after!.openLines))
+  for (const c of out) {
+    if (c.entity !== 'project' || !c.after) continue
+    if (next.blocks.some((b) => b.projectId === c.id && b.personId === null && b.slot >= c.after!.openLines))
       refuse('That project’s “not assigned yet” lines have time on them now, so it can’t be undone.')
+    if (c.after.boardId && next.projects.some((p) => p.id !== c.id && p.boardId === c.after!.boardId))
+      refuse('That board is linked to another project now, so it can’t be undone.')
+  }
   for (const [i, c] of out.entries()) {
     if (!c.after) continue
     if (c.entity === 'block') checked(c.after, next)

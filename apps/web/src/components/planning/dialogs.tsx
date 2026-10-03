@@ -1,4 +1,6 @@
-import { ArrowDown, ArrowUp, Trash, X } from '@phosphor-icons/react'
+import { ArrowDown, ArrowUp, Plus, Trash, X } from '@phosphor-icons/react'
+import { toast } from 'sonner'
+import { api, errorMessage } from '@/api/client'
 import { useState, type ReactNode } from 'react'
 import type { ColorName } from '@kanbanto/model/colors'
 import { fromDay, toDay } from '@kanbanto/model/dates'
@@ -49,22 +51,74 @@ function DeleteButton({ label, confirm, onDelete }: { label: string; confirm: st
   )
 }
 
-/** A project: its name, client, planned man-days (its budget), colour; finished; deleted with its time. */
-export function ProjectDialog({ plan, id, onClose, run }: { plan: PlanData; id: string | 'new'; onClose: () => void; run: Run }) {
+/** A project: its name, running or a prospect, client, planned man-days (its budget), colour; finished; deleted with its time. */
+export function ProjectDialog({
+  plan,
+  id,
+  workspaceId,
+  boards,
+  onBoardMade,
+  onClose,
+  run,
+}: {
+  plan: PlanData
+  id: string | 'new'
+  workspaceId: string
+  /** The workspace's boards you can open. */
+  boards: { id: string; name: string }[]
+  onBoardMade: (board: { id: string; name: string; background: string | null }) => void
+  onClose: () => void
+  run: Run
+}) {
   const p = id === 'new' ? null : plan.projects.find((x) => x.id === id)
   const [name, setName] = useState(p?.name ?? '')
   const [client, setClient] = useState(p?.client ?? '')
   const [planned, setPlanned] = useState(p?.plannedMd !== null && p?.plannedMd !== undefined ? String(p.plannedMd) : '')
   const [color, setColor] = useState<ColorName | undefined>(p?.color)
   const [finished, setFinished] = useState(!!p?.finishedAt)
+  const [prospect, setProspect] = useState(!!p?.prospect)
+  const [boardId, setBoardId] = useState(p?.boardId ?? NONE)
+  const [making, setMaking] = useState(false)
+  // A board made here is offered at once (the plan's list catches up a moment later).
+  const [made, setMade] = useState<{ id: string; name: string }[]>([])
+  const all = [...boards, ...made.filter((m) => !boards.some((b) => b.id === m.id))]
+  // Boards not linked to another project (one board, one project).
+  const free = all.filter((b) => !plan.projects.some((x) => x.id !== p?.id && x.boardId === b.id))
+  const linkedElsewhere = p?.boardId && !all.some((b) => b.id === p.boardId)
+  const makeBoard = async () => {
+    setMaking(true)
+    try {
+      const board = { name: name.trim() || 'New project', background: null }
+      const { id: made } = await api<{ id: string }>('POST', '/boards', { name: board.name, workspaceId })
+      setMade((m) => [...m, { id: made, name: board.name }])
+      setBoardId(made)
+      onBoardMade({ id: made, ...board })
+      toast(`Board “${board.name}” made. Save to link it.`)
+    } catch (e) {
+      toast.error(errorMessage(e))
+    } finally {
+      setMaking(false)
+    }
+  }
   const blocks = p ? plan.blocks.filter((b) => b.projectId === p.id).length : 0
   const plannedMd = planned.trim() === '' ? null : Number(planned)
 
   const save = () => {
-    const ok = !p
-      ? run({ type: 'project.add', id: newId(), name, client, plannedMd, ...(color && { color }) })
-      : run({ type: 'project.update', id: p.id, fields: { name, client, plannedMd, ...(color && { color }), finished } })
-    if (ok) onClose()
+    const board = boardId === NONE ? null : boardId
+    if (!p) {
+      const added = newId()
+      if (!run({ type: 'project.add', id: added, name, client, plannedMd, ...(color && { color }), prospect })) return
+      if (board) run({ type: 'project.update', id: added, fields: { boardId: board } })
+      return onClose()
+    }
+    if (
+      run({
+        type: 'project.update',
+        id: p.id,
+        fields: { name, client, plannedMd, ...(color && { color }), finished, prospect, ...(boardId !== (p.boardId ?? NONE) && { boardId: board }) },
+      })
+    )
+      onClose()
   }
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
@@ -90,6 +144,30 @@ export function ProjectDialog({ plan, id, onClose, run }: { plan: PlanData; id: 
               required
             />
           </Field>
+          <Field
+            label="Status"
+            hint={
+              prospect
+                ? 'Might not happen: its time shows dashed, and doesn’t count toward people’s Over or Fit.'
+                : 'Going ahead: its time counts toward people’s load.'
+            }
+          >
+            <ToggleGroup
+              type="single"
+              size="sm"
+              variant="outline"
+              value={prospect ? 'prospect' : 'running'}
+              onValueChange={(v) => v && setProspect(v === 'prospect')}
+              aria-label="Status"
+            >
+              <ToggleGroupItem value="running" className="px-3">
+                Running
+              </ToggleGroupItem>
+              <ToggleGroupItem value="prospect" className="px-3">
+                Prospect
+              </ToggleGroupItem>
+            </ToggleGroup>
+          </Field>
           <div className="grid gap-4 sm:grid-cols-2">
             <Field id="plan-project-client" label="Client">
               <Input id="plan-project-client" value={client} onChange={(e) => setClient(e.target.value)} placeholder="Optional" />
@@ -108,6 +186,29 @@ export function ProjectDialog({ plan, id, onClose, run }: { plan: PlanData; id: 
           </div>
           <Field label="Color">
             <ColorSwatches value={color} onChange={setColor} />
+          </Field>
+          <Field label="Board" hint={linkedElsewhere ? 'Linked to a board you can’t open.' : 'Where its work is tracked: open it from the plan.'}>
+            <div className="flex gap-2">
+              <Select value={boardId} onValueChange={(v) => v && setBoardId(v)}>
+                <SelectTrigger className="min-w-0 flex-1" aria-label="Board">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={NONE}>No board</SelectItem>
+                  {linkedElsewhere && <SelectItem value={p!.boardId!}>A board you can’t open</SelectItem>}
+                  {free.map((b) => (
+                    <SelectItem key={b.id} value={b.id}>
+                      {b.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {boardId === NONE && (
+                <Button type="button" variant="outline" disabled={making} onClick={() => void makeBoard()}>
+                  <Plus /> Make one
+                </Button>
+              )}
+            </div>
           </Field>
           {p && (
             <label className="flex items-center justify-between gap-4 rounded-md border px-3 py-2">

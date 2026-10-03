@@ -98,6 +98,12 @@ export const isWeekend = (day: number) => weekdayOf(day) === 0 || weekdayOf(day)
 /** The Monday of the week a day number is in (weeks run Monday to Sunday). */
 export const mondayOf = (day: number) => day - ((weekdayOf(day) + 6) % 7)
 
+/** The first day of the month a day number is in. */
+export const monthStartOf = (day: number) => day - dayParts(day).date + 1
+
+/** The last day of the month a day number is in. */
+export const monthEndOf = (day: number) => monthStartOf(monthStartOf(day) + 31) - 1
+
 /** Calendar parts of a day number. */
 export const dayParts = (day: number) => {
   const d = new Date(day * DAY_MS)

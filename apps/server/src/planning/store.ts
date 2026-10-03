@@ -96,6 +96,7 @@ export async function loadPlan(tx: Db | Tx, workspaceId: string): Promise<Loaded
         name: account ?? p.name,
         roleId: p.roleId,
         hoursPerDay: p.hoursPerDay,
+        position: p.position,
         ...meta(p),
       })),
       projects: projects
@@ -108,6 +109,8 @@ export async function loadPlan(tx: Db | Tx, workspaceId: string): Promise<Loaded
           position: p.position,
           finishedAt: p.finishedAt ? iso(p.finishedAt) : null,
           openLines: p.openLines,
+          prospect: p.prospect,
+          boardId: p.boardId,
           ...meta(p),
         }))
         .sort((a, b) => comparePositions(a.position, b.position)),
@@ -142,7 +145,16 @@ function toRow(workspaceId: string, c: PlanChange, userId: string) {
     }
     case 'person': {
       const r = c.after!
-      return { id: r.id, workspaceId, userId: r.userId, name: r.name, roleId: r.roleId, hoursPerDay: r.hoursPerDay, ...metaRow(r) }
+      return {
+        id: r.id,
+        workspaceId,
+        userId: r.userId,
+        name: r.name,
+        roleId: r.roleId,
+        hoursPerDay: r.hoursPerDay,
+        position: r.position,
+        ...metaRow(r),
+      }
     }
     case 'project': {
       const r = c.after!
@@ -156,6 +168,8 @@ function toRow(workspaceId: string, c: PlanChange, userId: string) {
         position: r.position,
         finishedAt: r.finishedAt ? new Date(r.finishedAt) : null,
         openLines: r.openLines,
+        prospect: r.prospect,
+        boardId: r.boardId,
         ...metaRow(r),
       }
     }

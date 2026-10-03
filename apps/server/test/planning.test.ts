@@ -131,6 +131,63 @@ describe('planning', () => {
     expect(v.plan.blocks.map((b) => b.slot).sort()).toEqual([0, 1])
   })
 
+  it('a project links to a board in the same workspace; the link goes when the board leaves it', async () => {
+    const { ann, ws } = await acme()
+    const project = (await ok(ann, ws, { type: 'project.add', name: 'Data platform' })).changes[0].id
+    const { id: board } = await ann.ok('POST', '/api/boards', { name: 'Data platform', workspaceId: ws })
+    const { id: personal } = await ann.ok('POST', '/api/boards', { name: 'Mine' })
+    expect((await plan(ann, ws)).boards.map((b) => b.name)).toEqual(['Data platform'])
+    expect((await send(ann, ws, { type: 'project.update', id: project, fields: { boardId: personal } })).body.error).toMatch(
+      /isn’t in this workspace/,
+    )
+    await ok(ann, ws, { type: 'project.update', id: project, fields: { boardId: board } })
+    expect((await plan(ann, ws)).plan.projects[0].boardId).toBe(board)
+    const seq = (await plan(ann, ws)).seq
+    await ann.ok('PUT', `/api/boards/${board}/workspace`, { workspaceId: null })
+    const after = await plan(ann, ws)
+    expect(after.plan.projects[0]).toMatchObject({ boardId: null, version: 3 })
+    expect(after.seq).toBe(seq + 1)
+  })
+
+  it('a linked board’s Timeline gets its project’s plan, for people in the workspace only', async () => {
+    const { ann, bob, carl, ws } = await acme()
+    const annId = personOf(await plan(ann, ws), 'Ann').id
+    const project = (await ok(ann, ws, { type: 'project.add', name: 'Data platform', plannedMd: 20 })).changes[0].id
+    const { id: board } = await ann.ok('POST', '/api/boards', { name: 'Data platform', workspaceId: ws })
+    expect(await ann.ok('GET', `/api/boards/${board}/plan`)).toEqual({ plan: null })
+    await ok(ann, ws, { type: 'project.update', id: project, fields: { boardId: board } })
+    await ok(ann, ws, { type: 'block.add', projectId: project, personId: annId, start: '2026-10-05', end: '2026-10-16', pct: 50 })
+    await ok(ann, ws, { type: 'block.add', projectId: project, personId: null, start: '2026-10-05', end: '2026-10-09', pct: 100 })
+    const seen = (await bob.ok('GET', `/api/boards/${board}/plan`)).plan
+    expect(seen).toMatchObject({ workspaceId: ws, project: { name: 'Data platform', plannedMd: 20, prospect: false }, scheduled: 10, unassigned: 5 })
+    expect(seen.lines.map((l: { name: string | null; blocks: unknown[] }) => [l.name, l.blocks.length])).toEqual([
+      ['Ann', 1],
+      [null, 1],
+    ])
+    // Marked as a prospect: saved, and the band knows.
+    await ok(ann, ws, { type: 'project.update', id: project, fields: { prospect: true } })
+    expect((await plan(ann, ws)).plan.projects[0]).toMatchObject({ prospect: true })
+    expect((await bob.ok('GET', `/api/boards/${board}/plan`)).plan.project.prospect).toBe(true)
+    // Shared with Carl, who isn't in the workspace: the board opens, its plan doesn't.
+    await ann.ok('POST', `/api/boards/${board}/invitations`, { email: 'carl@example.com', role: 'viewer' })
+    expect(await carl.ok('GET', `/api/boards/${board}/plan`)).toEqual({ plan: null })
+  })
+
+  it('projects and people keep the order planners put them in', async () => {
+    const { ann, bob, ws } = await acme()
+    const a = (await ok(ann, ws, { type: 'project.add', name: 'Alpha' })).changes[0].id
+    const b = (await ok(ann, ws, { type: 'project.add', name: 'Beta' })).changes[0].id
+    await ok(ann, ws, { type: 'project.move', id: b, beforeId: a })
+    const view = await plan(bob, ws)
+    expect(view.plan.projects.map((p: { name: string }) => p.name)).toEqual(['Beta', 'Alpha'])
+    const bobId = personOf(view, 'Bob').id
+    const annId = personOf(view, 'Ann').id
+    await ok(ann, ws, { type: 'person.move', id: bobId, beforeId: annId })
+    const people = (await plan(bob, ws)).plan.people as { id: string; position: string | null }[]
+    const pos = (id: string) => people.find((p) => p.id === id)!.position!
+    expect(pos(bobId) < pos(annId)).toBe(true)
+  })
+
   it('two overlapping blocks sent at the same moment: one is saved, the other refused', async () => {
     const { ann, ws } = await acme()
     const annId = personOf(await plan(ann, ws), 'Ann').id

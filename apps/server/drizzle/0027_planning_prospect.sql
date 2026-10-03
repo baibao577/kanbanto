@@ -1,0 +1,1 @@
+ALTER TABLE "planning_projects" ADD COLUMN "prospect" boolean DEFAULT false NOT NULL;

@@ -1,5 +1,6 @@
 import { dayParts, isWeekend, mondayOf, toDay } from '@kanbanto/model/dates'
 import {
+  peopleInOrder,
   personFacts,
   projectFacts,
   spanOf,
@@ -112,9 +113,20 @@ export function rowsByProject(plan: PlanData, opts: { canEdit: boolean; showFini
       rows.push({ kind: 'add-person', key: `add-person:${p.id}`, projectId: p.id, options })
     }
   }
-  const open = plan.projects.filter((p) => !p.finishedAt)
+  const open = plan.projects.filter((p) => !p.finishedAt && !p.prospect)
+  const prospects = plan.projects.filter((p) => !p.finishedAt && p.prospect)
   const finished = plan.projects.filter((p) => p.finishedAt)
   for (const p of open) projectRows(p)
+  // Work that might not happen, apart from what's going ahead.
+  if (prospects.length) {
+    rows.push({
+      kind: 'heading',
+      key: 'prospects',
+      title: `Prospects (${prospects.length})`,
+      detail: 'Might not happen. Their time is shown dashed and doesn’t count toward people’s Over or Fit.',
+    })
+    for (const p of prospects) projectRows(p)
+  }
   if (finished.length) {
     rows.push({
       kind: 'heading',
@@ -129,11 +141,8 @@ export function rowsByProject(plan: PlanData, opts: { canEdit: boolean; showFini
   return rows
 }
 
-/** People in the order a team reads them: by role (in the roles' order), then name. */
-export function sortedPeople(plan: PlanData) {
-  const rank = new Map(plan.roles.map((r, i) => [r.id, i]))
-  return [...plan.people].sort((a, b) => (rank.get(a.roleId ?? '') ?? 999) - (rank.get(b.roleId ?? '') ?? 999) || byName(a, b))
-}
+/** People in the plan's order (see peopleInOrder). */
+export const sortedPeople = peopleInOrder
 
 export function rowsByPerson(
   plan: PlanData,
@@ -179,10 +188,12 @@ export function rowsByPerson(
 
 // ── The time axis ─────────────────────────────────────────────────────────────
 
-export type Zoom = 'weeks' | 'days'
+export type Zoom = 'days' | 'weeks' | 'months'
+
+const DAY_W: Record<Zoom, [wide: number, narrow: number]> = { days: [28, 24], weeks: [8, 6], months: [4, 3] }
 
 /** Pixels per day. */
-export const dayWidth = (zoom: Zoom, narrow: boolean) => (zoom === 'days' ? (narrow ? 24 : 28) : narrow ? 6 : 8)
+export const dayWidth = (zoom: Zoom, narrow: boolean) => DAY_W[zoom][narrow ? 1 : 0]
 
 /** How far the sheet reaches either side of today: three years. */
 export const REACH = 3 * 366
@@ -203,18 +214,26 @@ export function sheetRange(plan: PlanData, today: number, more = { before: 0, af
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
 /**
- * Header marks: months, and either Mondays (weeks) or every day (days). The month the sheet starts in is only named
- * when there's room before the next one (`minDays`); the first month named carries the year.
+ * Header marks: months, and either Mondays (weeks) or every day (days); in months, years and months. The month (or
+ * year) the sheet starts in is only named when there's room before the next one (`minDays`); in weeks and days, the
+ * first month named carries the year.
  */
 export function ticks(start: number, end: number, zoom: Zoom, today: number, minDays = 0) {
   const months: { day: number; label: string }[] = []
   const minor: { day: number; label: string; weekend: boolean; today: boolean }[] = []
+  const now = dayParts(today)
+  const top = (d: number, label: (first: boolean) => string) => {
+    if (months.length === 1 && months[0].day === start && d - start < minDays) months.pop()
+    months.push({ day: d, label: label(!months.length) })
+  }
   for (let d = start; d <= end; d++) {
     const p = dayParts(d)
-    if (d === start || p.date === 1) {
-      if (months.length === 1 && months[0].day === start && d - start < minDays) months.pop()
-      months.push({ day: d, label: `${MONTHS[p.month]}${p.month === 0 || !months.length ? ` ${p.year}` : ''}` })
+    if (zoom === 'months') {
+      if (d === start || (p.month === 0 && p.date === 1)) top(d, () => String(p.year))
+      if (p.date === 1) minor.push({ day: d, label: MONTHS[p.month], weekend: false, today: p.year === now.year && p.month === now.month })
+      continue
     }
+    if (d === start || p.date === 1) top(d, (first) => `${MONTHS[p.month]}${p.month === 0 || first ? ` ${p.year}` : ''}`)
     if (zoom === 'days') minor.push({ day: d, label: String(p.date), weekend: isWeekend(d), today: d === today })
     else if (p.weekday === 1) minor.push({ day: d, label: String(p.date), weekend: false, today: d <= today && today < d + 7 })
   }

@@ -1,5 +1,8 @@
 import { ArrowSquareOut, ArrowsInSimple, ArrowsOutSimple, CalendarX, CaretDown, CaretRight, Check, Plus } from '@phosphor-icons/react'
-import { useLayoutEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
+import type { BoardPlan } from '@kanbanto/model/api'
+import { api } from '@/api/client'
+import { useAuth } from '@/app/use-auth'
 import { useBoard } from '@/app/board-context'
 import { StatusDot } from '@/components/common/bits'
 import { Empty } from '@/components/common/Empty'
@@ -24,7 +27,8 @@ import {
 } from '@/components/ui/context-menu'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { cn } from '@/lib/utils'
-import { dayParts, fromDay, shiftDays, taskSpan, todayDay } from '@kanbanto/model/dates'
+import { PlanBand } from './PlanBand'
+import { dayParts, fromDay, shiftDays, taskSpan, toDay, todayDay } from '@kanbanto/model/dates'
 import { formatDay } from '@/lib/format'
 import { statusCol } from '@kanbanto/model/indexer'
 import { afterSubtree, defaultExpanded, flattenTree, treeTop } from '@kanbanto/model/tree'
@@ -61,7 +65,27 @@ function dragged(d: Drag) {
  * Drag a bar to move it, drag its ends to change the dates, click an empty row to schedule.
  */
 export function TimelineView({ search }: { search: string }) {
-  const { data, prefs, idx, run, openTask, createTask, readOnly } = useBoard()
+  const { data, prefs, idx, run, openTask, createTask, readOnly, access } = useBoard()
+  const { user } = useAuth()
+  // The workspace's plan for this board's project, if it has one: shown above the tasks.
+  const [plan, setPlan] = useState<BoardPlan['plan']>(null)
+  const boardId = data.board.id
+  const inWorkspace = !!access.workspace && !!user
+  useEffect(() => {
+    if (!inWorkspace) return setPlan(null)
+    let alive = true
+    const load = () =>
+      api<BoardPlan>('GET', `/boards/${encodeURIComponent(boardId)}/plan`).then(
+        (r) => alive && setPlan(r.plan),
+        () => {},
+      )
+    void load()
+    window.addEventListener('focus', load)
+    return () => {
+      alive = false
+      window.removeEventListener('focus', load)
+    }
+  }, [boardId, inWorkspace])
   const [expanded, setExpanded] = useState(() => defaultExpanded(idx))
   const [limit, setLimit] = useState(ROWS_STEP)
   const [zoom, setZoom] = useState<Zoom>('day')
@@ -97,9 +121,14 @@ export function TimelineView({ search }: { search: string }) {
       lo = Math.min(lo, s.start)
       hi = Math.max(hi, s.end)
     }
+    for (const line of plan?.lines ?? [])
+      for (const b of line.blocks) {
+        lo = Math.min(lo, toDay(b.start))
+        hi = Math.max(hi, toDay(b.end))
+      }
     const pad = zoom === 'day' ? 14 : zoom === 'week' ? 35 : 90
     return [lo - pad, Math.max(hi + pad, lo - pad + MIN_DAYS[zoom])]
-  }, [spans, zoom, today])
+  }, [spans, zoom, today, plan])
   const width = (rangeEnd - rangeStart + 1) * dayW
   const x = (day: number) => (day - rangeStart) * dayW
 
@@ -192,6 +221,8 @@ export function TimelineView({ search }: { search: string }) {
     }
   }
 
+  const emptyText = search || filtering ? 'No tasks match.' : hiddenDone ? 'Everything here is done.' : 'No tasks here yet.'
+
   return (
     <>
       <ViewActions>
@@ -222,10 +253,9 @@ export function TimelineView({ search }: { search: string }) {
         </BarIconButton>
       </ViewActions>
 
-      {rows.length === 0 ? (
-        <Empty action={hiddenDone ? <HiddenDoneNote count={hiddenDone} /> : undefined}>
-          {search || filtering ? 'No tasks match.' : hiddenDone ? 'Everything here is done.' : 'No tasks here yet.'}
-        </Empty>
+      {/* With a plan, the timeline shows even before there are tasks (a board just made for a planned project). */}
+      {rows.length === 0 && !plan ? (
+        <Empty action={hiddenDone ? <HiddenDoneNote count={hiddenDone} /> : undefined}>{emptyText}</Empty>
       ) : (
         <div ref={scroller} className="h-full overflow-auto">
           <div className="relative" style={{ width: LEFT_W + width }}>
@@ -259,6 +289,12 @@ export function TimelineView({ search }: { search: string }) {
                 ))}
               </div>
             </div>
+
+            {plan && (
+              <PlanBand plan={plan} boardId={boardId} x={x} width={width} left={LEFT_W} dayW={dayW} today={today} start={rangeStart} end={rangeEnd} />
+            )}
+
+            {rows.length === 0 && <p className="sticky left-0 w-fit px-4 py-3 text-sm text-muted-foreground">{emptyText}</p>}
 
             {/* rows */}
             <div className="relative">

@@ -53,6 +53,21 @@ describe('the planning sheet', () => {
     ])
     expect(rowsByProject(finished, { canEdit: false, showFinished: false }).map((r) => r.key)).toEqual(['finished'])
     expect(rowsByProject(finished, { canEdit: false, showFinished: true }).map((r) => r.key)).toEqual(['finished', 'project:x', 'line:x:-0:person'])
+    // Prospects come after the projects going ahead, under their own heading, before the finished ones.
+    const mixed = build([
+      { type: 'project.add', id: 'x', name: 'Old' },
+      { type: 'project.update', id: 'x', fields: { finished: true } },
+      { type: 'project.add', id: 'p', name: 'Maybe', prospect: true },
+      { type: 'project.add', id: 'r', name: 'Running' },
+    ])
+    expect(rowsByProject(mixed, { canEdit: false, showFinished: false }).map((r) => r.key)).toEqual([
+      'project:r',
+      'line:r:-0:person',
+      'prospects',
+      'project:p',
+      'line:p:-0:person',
+      'finished',
+    ])
   })
 
   it('a project with several "not assigned yet" lines shows each; a folded group shows only its first row', () => {
@@ -115,5 +130,15 @@ describe('the planning sheet', () => {
       ['5', false],
     ])
     expect(ticks(toDay('2026-10-09'), toDay('2026-10-11'), 'days', today).minor.map((m) => m.weekend)).toEqual([false, true, true])
+    // Months: years above, months below (this one marked).
+    const m = ticks(toDay('2026-09-14'), toDay('2027-02-10'), 'months', today, 20)
+    expect(m.months.map((x) => x.label)).toEqual(['2026', '2027'])
+    expect(m.minor.map((x) => [x.label, x.today])).toEqual([
+      ['Oct', true],
+      ['Nov', false],
+      ['Dec', false],
+      ['Jan', false],
+      ['Feb', false],
+    ])
   })
 })

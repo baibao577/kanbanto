@@ -21,6 +21,7 @@ describe('router', () => {
       ['#/w/w-1', { page: 'workspace', id: 'w-1' }],
       ['#/w/w-1/planning', { page: 'workspace', id: 'w-1', section: 'planning' }],
       ['#/w/w-1/planning?by=person&zoom=days', { page: 'workspace', id: 'w-1', section: 'planning', by: 'person', zoom: 'days' }],
+      ['#/w/w-1/planning?zoom=months', { page: 'workspace', id: 'w-1', section: 'planning', zoom: 'months' }],
       ['#/authorize?client_id=c&state=s', { page: 'authorize', query: 'client_id=c&state=s' }],
       ['#/cards', { page: 'cards', state: 'active' }],
       ['#/cards?state=archived&board=b1&q=old+idea&completed=yes', { page: 'cards', state: 'archived', board: 'b1', q: 'old idea', completed: true }],

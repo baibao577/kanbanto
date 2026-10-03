@@ -18,6 +18,8 @@ export interface PlanState {
   canEdit: boolean
   memberIds: string[]
   activity: PlanningView['activity']
+  /** The workspace's boards you can open (what a project can be linked to). */
+  boards: PlanningView['boards']
   /** Changes made here that the server hasn't confirmed yet. */
   unsaved: number
   /** The server can't be reached right now (changes are kept and sent when it can). */
@@ -94,7 +96,15 @@ export class PlanSync {
     this.me = me
     this.confirmed = view.plan
     this.seq = view.seq
-    this.state = { plan: view.plan, canEdit: view.canEdit, memberIds: view.memberIds, activity: view.activity, unsaved: 0, offline: false }
+    this.state = {
+      plan: view.plan,
+      canEdit: view.canEdit,
+      memberIds: view.memberIds,
+      activity: view.activity,
+      boards: view.boards,
+      unsaved: 0,
+      offline: false,
+    }
     this.timer = setInterval(() => void this.check(), POLL_MS)
     window.addEventListener('focus', this.check)
     document.addEventListener('visibilitychange', this.check)
@@ -125,6 +135,11 @@ export class PlanSync {
     this.set({ plan: applyPlanChanges(this.state.plan, r.changes), unsaved: this.pending.length, activity })
     void this.flush()
     return r
+  }
+
+  /** A board made here (from a project): known at once, before the next fetch. */
+  addBoard(board: PlanningView['boards'][number]) {
+    this.set({ boards: [...this.state.boards, board] })
   }
 
   setBusy(busy: boolean) {
@@ -227,7 +242,7 @@ export class PlanSync {
         }
         this.confirmed = view.plan
         this.seq = view.seq
-        this.set({ canEdit: view.canEdit, memberIds: view.memberIds, activity: view.activity })
+        this.set({ canEdit: view.canEdit, memberIds: view.memberIds, activity: view.activity, boards: view.boards })
         this.replay()
       } catch (e) {
         if (e instanceof ApiError && e.status === 404) this.emit({ type: 'gone' })
