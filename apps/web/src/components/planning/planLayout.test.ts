@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { toDay } from '@kanbanto/model/dates'
-import { emptyPlan, type PlanData } from '@kanbanto/model/planning'
+import { emptyPlan, planActuals, type PlanData } from '@kanbanto/model/planning'
 import { applyPlanChanges, executePlan, type PlanCommand } from '@kanbanto/model/planningCommands'
 import { rowsByPerson, rowsByProject, sheetRange, ticks } from './planLayout'
 
@@ -114,6 +114,28 @@ describe('the planning sheet', () => {
       'open',
       'line:b:-0:project',
     ])
+  })
+
+  it('logged time: each line shows its man-days and what was booked until today; logging unbooked adds a line', () => {
+    // Krit (6 hours a day) logged 12h on Data platform; Bob, not booked on it, logged 4h.
+    const p = build([
+      ...seed,
+      { type: 'person.add', id: 'bob', name: 'Bob' },
+      { type: 'person.update', id: 'krit', fields: { hoursPerDay: 6 } },
+      { type: 'project.update', id: 'a', fields: { boardId: 'board-a' } },
+    ])
+    const withUsers = { ...p, people: p.people.map((x) => ({ ...x, userId: `u-${x.id}` })) }
+    const actuals = planActuals(withUsers, { 'board-a': { 'u-krit': 720, 'u-bob': 240 } })
+    const rows = rowsByProject(withUsers, { canEdit: false, showFinished: false, actuals, today: toDay('2026-10-07') })
+    const lines = rows.filter((r) => r.kind === 'line' && r.projectId === 'a')
+    expect(lines.map((r) => r.kind === 'line' && [r.personId, r.logged?.md ?? null, r.booked])).toEqual([
+      ['krit', 2, 1.5], // 12h ÷ 6h; Mon–Wed at 50% booked by the 7th
+      ['nok', null, 0],
+      ['ann', null, 0],
+      ['bob', 0.5, 0], // logged, not booked
+      [null, null, 0],
+    ])
+    expect(rows[0]).toMatchObject({ kind: 'project', actual: { md: 2.5 }, booked: 1.5 })
   })
 
   it('the time axis starts two weeks before, on a Monday, and has a mark per month and per week (or day)', () => {

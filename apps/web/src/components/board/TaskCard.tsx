@@ -14,6 +14,7 @@ import {
   ListChecks,
   Paperclip,
   Prohibit,
+  Timer,
 } from '@phosphor-icons/react'
 import { memo } from 'react'
 import { AgeChip, Avatar, DueChip, LabelChip, PriorityChip, ProgressBar, StatusDot, StatusPill } from '@/components/common/bits'
@@ -29,6 +30,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
+import { formatDuration } from '@kanbanto/model/time'
 import { formatDay } from '@/lib/format'
 import { AGE_SHOWN, idleDays, lastActivity } from '@kanbanto/model/age'
 import { upcoming } from '@kanbanto/model/reminders'
@@ -63,6 +65,10 @@ interface Props {
   comments?: number
   files?: number
   lastComment?: string
+  /** Minutes logged on it (with its subtasks'). */
+  time?: number
+  /** Opens the log box on this card (when you can log time). */
+  onLogTime?: (id: string) => void
 }
 
 export const TaskCard = memo(function TaskCard({
@@ -79,6 +85,8 @@ export const TaskCard = memo(function TaskCard({
   comments = 0,
   files = 0,
   lastComment,
+  time = 0,
+  onLogTime,
 }: Props) {
   const t = idx.tasks[id]
   const kids = idx.childrenOf.get(id)
@@ -96,7 +104,7 @@ export const TaskCard = memo(function TaskCard({
   const idle = idleDays(activeAt)
   const age = d.includes('age') && col.category !== 'done' && idle >= AGE_SHOWN ? idle : null
   const chips = config.columns === 'parent' || !!t.priority || blocked || !!t.due || age !== null
-  const meta = !!next || (!!kids && !d.includes('progress')) || comments > 0 || files > 0
+  const meta = !!next || (!!kids && !d.includes('progress')) || comments > 0 || files > 0 || time > 0
   const assignee = t.assigneeId && <Avatar name={idx.members.get(t.assigneeId)?.name ?? '?'} className="ml-auto size-5 text-[9px]" />
 
   return (
@@ -179,6 +187,11 @@ export const TaskCard = memo(function TaskCard({
                   <Paperclip className="size-3.5" /> {files}
                 </span>
               )}
+              {time > 0 && (
+                <span className="inline-flex h-5 items-center gap-1" title={`${formatDuration(time)} logged${kids ? ', with its subtasks' : ''}`}>
+                  <Timer className="size-3.5" /> {formatDuration(time)}
+                </span>
+              )}
               {assignee}
             </div>
           )}
@@ -205,6 +218,7 @@ export const TaskCard = memo(function TaskCard({
           onFocus={kids ? onFocus : undefined}
           onJumpToRow={onJumpToRow}
           move={readOnly ? undefined : move}
+          onLogTime={onLogTime}
         />
       </div>
     </article>
@@ -243,6 +257,7 @@ function CardMenu({
   onFocus,
   onJumpToRow,
   move,
+  onLogTime,
 }: {
   id: string
   idx: TaskIndex
@@ -251,6 +266,7 @@ function CardMenu({
   onFocus?: (id: string) => void
   onJumpToRow?: (id: string) => void
   move?: Props['move']
+  onLogTime?: (id: string) => void
 }) {
   const others = move?.lists.filter((l) => l.key !== move.col) ?? []
   return (
@@ -277,6 +293,11 @@ function CardMenu({
         {onJumpToRow && (
           <DropdownMenuItem onSelect={() => onJumpToRow(id)}>
             <ArrowDown /> Go to its row
+          </DropdownMenuItem>
+        )}
+        {onLogTime && (
+          <DropdownMenuItem onSelect={() => onLogTime(id)}>
+            <Timer /> Log time…
           </DropdownMenuItem>
         )}
         {move && (

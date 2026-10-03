@@ -8,7 +8,7 @@ import type { Change } from '@kanbanto/model/records'
 import type { BoardData } from '@kanbanto/model/types'
 import { and, eq, lt, sql } from 'drizzle-orm'
 import type { Db } from '../db'
-import { attachments, boardActivity, boards, comments, notifications } from '../db/schema'
+import { attachments, boardActivity, boards, comments, notifications, timeEntries } from '../db/schema'
 import { HttpError } from '../http'
 import type { LiveHub } from '../live'
 import { loadBoard, writeChanges } from './store'
@@ -138,12 +138,16 @@ export class BoardEngine {
       await writeChanges(tx, fromId, plan.source)
       await writeChanges(tx, toId, plan.target)
 
-      // Its comments, files and mentions follow it (files stay where they're stored, and count where they did).
+      // Its comments, files, mentions and logged time follow it (files stay where they're stored, and count where they did).
       for (const [oldId, id] of plan.ids) {
         const at = (t: typeof comments | typeof attachments | typeof notifications) => and(eq(t.boardId, fromId), eq(t.taskId, oldId))
         await tx.update(comments).set({ boardId: toId, taskId: id }).where(at(comments))
         await tx.update(attachments).set({ boardId: toId, taskId: id }).where(at(attachments))
         await tx.update(notifications).set({ boardId: toId, taskId: id }).where(at(notifications))
+        await tx
+          .update(timeEntries)
+          .set({ boardId: toId, taskId: id })
+          .where(and(eq(timeEntries.boardId, fromId), eq(timeEntries.taskId, oldId)))
       }
 
       // (Neither board's log names the other: people on one may not know the other exists.)

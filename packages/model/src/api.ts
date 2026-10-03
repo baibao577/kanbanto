@@ -146,11 +146,15 @@ export interface BoardAccess {
   archivedAt: string | null
 }
 
-/** Comments and attachments per task (for the badges on cards), and each task's latest comment (for card age). */
+/**
+ * Comments and attachments per task (for the badges on cards), each task's latest comment (for card age), and the
+ * minutes logged on each (not for visitors with the public link).
+ */
 export interface TaskCounts {
   comments: Record<string, number>
   attachments: Record<string, number>
   lastComment: Record<string, string>
+  time: Record<string, number>
 }
 
 /** GET /api/boards/:id */
@@ -175,6 +179,50 @@ export interface CommentView {
   attachments: AttachmentView[]
   createdAt: string
   editedAt: string | null
+}
+
+/** Time someone logged on a card. */
+export interface TimeEntryView {
+  id: string
+  boardId: string
+  taskId: string
+  /** Who logged it (null: their account is gone). */
+  user: { id: string; name: string } | null
+  /** The day it counts for, "2026-10-02". */
+  day: string
+  minutes: number
+  note: string
+  createdAt: string
+  updatedAt: string
+  /** Someone else changed it since (a board owner or workspace admin fixing it). */
+  editedBy: { id: string; name: string } | null
+  /** You may change or delete it. */
+  canEdit: boolean
+}
+
+/** GET /api/boards/:id/time/mine?day=: what the log box suggests on a board for one day. */
+export interface TimeMine {
+  day: string
+  /** Cards you touched that day on this board (moved, changed, commented on), latest first. */
+  touched: string[]
+  /** Cards on this board you logged time on lately, latest first. */
+  recent: string[]
+  /** Minutes you logged that day, on all your boards. */
+  logged: number
+  /** Your hours a day: from Planning in the board's workspace, or 8. */
+  hoursPerDay: number
+}
+
+/** GET /api/time/week?from=: your week across boards ("My week"). */
+export interface WeekView {
+  /** The Monday it starts on. */
+  from: string
+  hoursPerDay: number
+  entries: TimeEntryView[]
+  /** The rows: cards you logged on, touched or are assigned to (open), with where they are. */
+  cards: { boardId: string; taskId: string; title: string; parent: string | null; boardName: string; done: boolean; canLog: boolean }[]
+  /** The days you touched each card, by `${boardId}:${taskId}`. */
+  touched: Record<string, string[]>
 }
 
 /** Under the bell: someone @mentioned you in a comment, or added you to a board or a workspace. */
@@ -495,6 +543,8 @@ export interface PlanningView {
   activity: Record<string, { at: string; by: string | null }>
   /** The workspace's boards you can open: what a project can be linked to. */
   boards: { id: string; name: string; background: string | null }[]
+  /** Time logged on linked boards' cards: minutes by board, then by account (see planActuals). */
+  actuals: Record<string, Record<string, number>>
 }
 
 /**
@@ -568,6 +618,8 @@ export type LiveMessage =
   | { type: 'deleted' }
   | { type: 'comment'; taskId: string; action: 'added' | 'edited' | 'deleted'; commentId: string; comment?: CommentView }
   | { type: 'attachment'; taskId: string; action: 'added' | 'deleted'; attachmentId: string; attachment?: AttachmentView }
+  /** Time was logged, changed or removed on a card: its new total (minutes). */
+  | { type: 'time'; taskId: string; total: number }
 
 // ── Integrations ──────────────────────────────────────────────────────────────
 

@@ -26,6 +26,7 @@ packages/model/   The board model and its rules: pure TypeScript, used by BOTH t
   commands.ts       Every change to a board, with its rules (no loops, valid references, parent status…) → Change[]
   changes.ts        Apply changes; invert them (undo)
   schema.ts         zod schemas: board data, and every command a client can send
+  time.ts           Logged time: reading what people type ("1:30 review"), showing it, man-days
   planning.ts, planningCommands.ts, planningSchema.ts   A workspace's plan (people's time on projects): its sums
                     (working days, man-days, loads), its commands and their rules (like commands.ts), their schemas
   api.ts            The API's request/response shapes, shared by server and web
@@ -38,8 +39,8 @@ apps/server/      Fastify + Drizzle + PostgreSQL
   src/boards/       engine.ts (runs commands), store.ts (rows ⇄ records, a board's people), access.ts (who can do
                     what), invites.ts, workspaces.ts (joining, leaving, moving boards)
   src/planning/     engine.ts (runs plan commands, one workspace at a time), store.ts (rows ⇄ records, seeding)
-  src/routes/       auth, boards, sharing, workspaces, comments (and the bell), files, email, admin, integrations
-                    (API tokens, a board's webhooks)
+  src/routes/       auth, boards, sharing, workspaces, comments (and the bell), time (logged time, My week), files,
+                    email, admin, integrations (API tokens, a board's webhooks)
   src/auth/apiTokens.ts   Bearer tokens: who they act as, and which routes they may use (TOKEN_ROUTES)
   src/webhooks.ts   Queues, signs and delivers webhooks (with retries), like the email outbox
   src/mcp.ts        The MCP endpoint (/api/mcp): tools for AI assistants, over the same access checks and commands
@@ -58,6 +59,7 @@ apps/web/         React + Vite + Tailwind + shadcn/ui, Phosphor icons
   src/data/planSync.ts   PlanSync: the same for a workspace's plan (checked for changes now and then; no socket)
   src/components/planning/   The Planning tab: planLayout.ts (rows, time axis), PlanSheet.tsx (the timeline and its
                     gestures), dialogs, pickers
+  src/components/time/   The log box (LogBox.tsx), My week, and helpers; a card's time is task/CardTime.tsx
   src/components/views.ts   The views (tabs): add one here and to LAYOUTS in the model
   src/components/board/dropRules.ts   What a drop on the board means (status, parent, person, position)
   src/lib/pointerDrag.ts   Dragging with a mouse, pen or finger (hold to pick up on touch), used by every view
@@ -105,6 +107,7 @@ The app uses hash routing, so any static host or proxy works without rewrite rul
 | `#/join/<token>` | An invite link, to a board or a workspace |
 | `#/w/<id>` | A workspace's people and settings |
 | `#/w/<id>/planning?by=person&zoom=days` | Its plan, by project or by person, in weeks, days or months (`zoom=months`) |
+| `#/time?week=<monday>` | My week: your logged time on every board |
 | `#/signin`, `#/signup`, `#/forgot` | Signing in |
 | `#/verify/<token>`, `#/reset/<token>` | Links in emails |
 | `#/account/<section>` | Account settings: profile, password, notifications, email, storage |
@@ -223,6 +226,22 @@ The app uses hash routing, so any static host or proxy works without rewrite rul
 - **Changes** work like a board's: commands checked by the same model code on both sides, sent one at a time, each
   numbered (`planning_state.seq`, the row that's locked while a plan changes), with undo as a checked restore. There's
   no live connection for plans yet: an open plan checks for changes every minute and when the tab comes back.
+
+## Logged time
+
+- **Entries** (`time_entries`): a person, a card, a day, minutes (1 to 24 hours) and a note. Like comments, the card
+  is only named, not linked: an entry stays when its card is deleted (and is back with it on undo), but only entries
+  on cards that exist are counted. Moving a card to another board takes its time along.
+- **Who:** editors and owners log; everyone on the board sees it (not visitors with the public link). You change your
+  own; a board owner, or an admin of its workspace who can open the board, can fix anyone's ("edited by …").
+- **Typing it** (`packages/model/src/time.ts`): the time at either end and the rest as the note ("API integration –
+  3h 20m", "1:30 review"); a plain number is hours, and over 12 is refused ("20 hours? Type 20m").
+- **Nothing is guessed.** The log box and My week suggest *which* cards (the ones you changed, moved or commented on
+  that day, from the board's activity log and comments) but never *how long*.
+- **Live:** each change sends a card's new total on the board's socket (`{ type: 'time' }`).
+- **Planning:** `GET /workspaces/:id/planning` carries minutes by linked board and person; `planActuals` turns them into
+  each person's man-days (their hours ÷ their hours a day). Lines show logged of planned, against what was booked up
+  to today (`bookedUntil`).
 
 ## Adding things
 

@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import type { WorkspaceDetail } from '@kanbanto/model/api'
 import { fromDay, todayDay } from '@kanbanto/model/dates'
-import { manDays, PERCENTS, sumManDays, type Percent } from '@kanbanto/model/planning'
+import { PERCENTS, manDays, planActuals, sumManDays, type Percent } from '@kanbanto/model/planning'
 import type { PlanCommand } from '@kanbanto/model/planningCommands'
 import { navigate, type WorkspaceRoute } from '@/app/router'
 import { useAuth } from '@/app/use-auth'
@@ -133,12 +133,14 @@ export function PlanningView({ ws, route }: { ws: WorkspaceDetail; route: Worksp
 
   const set = (patch: Partial<WorkspaceRoute>) => navigate({ ...route, ...patch }, { replace: true })
 
+  // Time logged on linked boards, as each person's man-days.
+  const actuals = useMemo(() => (state ? planActuals(state.plan, state.actuals) : {}), [state])
   const rows = useMemo(() => {
     if (!state) return []
     return by === 'project'
-      ? rowsByProject(state.plan, { canEdit: state.canEdit, showFinished, collapsed: folded })
-      : rowsByPerson(state.plan, { canEdit: state.canEdit, today, memberIds: state.memberIds, roleId, collapsed: folded })
-  }, [state, by, showFinished, today, roleId, folded])
+      ? rowsByProject(state.plan, { canEdit: state.canEdit, showFinished, collapsed: folded, actuals, today })
+      : rowsByPerson(state.plan, { canEdit: state.canEdit, today, memberIds: state.memberIds, roleId, collapsed: folded, actuals })
+  }, [state, by, showFinished, today, roleId, folded, actuals])
 
   if (store.error) return <Empty>{store.error.message}</Empty>
   if (!state) return null

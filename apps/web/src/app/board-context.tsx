@@ -24,7 +24,7 @@ export interface BoardContextValue {
   readOnly: boolean
   /** Opens the Share dialog. */
   openShare: () => void
-  /** Comments and files per card. */
+  /** Comments, files and logged minutes per card. */
   counts: TaskCounts
   /** You can comment (members, viewers included). */
   canComment: boolean
@@ -44,6 +44,8 @@ export interface BoardContextValue {
   focus: (id?: string) => void
   /** A member's name ('' if unknown). */
   memberName: (id: string | undefined) => string
+  /** Opens the log box (with a card already picked). Missing when you can't log time here. */
+  logTime?: (taskId?: string) => void
 }
 
 export const BoardContext = createContext<BoardContextValue | null>(null)

@@ -1,4 +1,4 @@
-import { CaretRight, Crosshair, X } from '@phosphor-icons/react'
+import { CaretRight, Crosshair, Timer, X } from '@phosphor-icons/react'
 import { createContext, useContext, useMemo, useState, type CSSProperties, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { useBoard } from '@/app/board-context'
@@ -39,6 +39,7 @@ export function BarIconButton({ label, onClick, children }: { label: string; onC
  * over the view's background (`style`: the board's gradient), which runs on behind it.
  */
 export function ViewBar({ children, search, style }: { children: ReactNode; search: string; style?: CSSProperties }) {
+  const { logTime } = useBoard()
   const [main, setMain] = useState<HTMLElement | null>(null)
   const [lead, setLead] = useState<HTMLElement | null>(null)
   const slots = useMemo(() => ({ main, lead }), [main, lead])
@@ -56,6 +57,16 @@ export function ViewBar({ children, search, style }: { children: ReactNode; sear
             {/* `contents`: both slots' buttons flow as one row, so they wrap together. */}
             <div ref={setLead} className="contents" />
             <div ref={setMain} className="contents" />
+            {logTime && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button variant="outline" size="sm" className="h-8" onClick={() => logTime()} aria-label="Log time">
+                    <Timer /> <span className="max-sm:hidden">Log time</span>
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Log time on a card (L)</TooltipContent>
+              </Tooltip>
+            )}
           </div>
         </div>
         {children}

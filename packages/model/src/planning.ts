@@ -166,6 +166,51 @@ export const manDays = (b: Pick<PlanBlock, 'start' | 'end' | 'pct'>, week: WorkW
 export const sumManDays = (blocks: Pick<PlanBlock, 'start' | 'end' | 'pct'>[], week: WorkWeek = WORK_WEEK) =>
   blocks.reduce((sum, b) => sum + manDays(b, week), 0)
 
+/** Man-days booked from the blocks' starts up to `day` (included): what should have been done by then. */
+export const bookedUntil = (blocks: Pick<PlanBlock, 'start' | 'end' | 'pct'>[], day: number, week: WorkWeek = WORK_WEEK) =>
+  blocks.reduce((sum, b) => {
+    const s = toDay(b.start)
+    return s > day ? sum : sum + (workDays(s, Math.min(toDay(b.end), day), week) * b.pct) / 100
+  }, 0)
+
+/** Time logged on a project's board, as man-days: each person's hours over their own hours a day. */
+export interface ProjectActuals {
+  /** Per plan person: minutes logged and what that is in their man-days. */
+  people: Record<string, { minutes: number; md: number }>
+  /** Logged by people who aren't in the plan (from outside the workspace), counted at 8 hours a day. */
+  others: { minutes: number; md: number }
+  minutes: number
+  md: number
+}
+
+/**
+ * Logged time (minutes by board, then by account) laid onto the plan: for each project linked to a board, who logged
+ * how much. Projects without a board, or with nothing logged, aren't in the result.
+ */
+export function planActuals(plan: PlanData, logged: Record<string, Record<string, number>>): Record<string, ProjectActuals> {
+  const byUser = new Map(plan.people.filter((p) => p.userId).map((p) => [p.userId!, p]))
+  const out: Record<string, ProjectActuals> = {}
+  for (const project of plan.projects) {
+    const users = project.boardId ? logged[project.boardId] : undefined
+    if (!users) continue
+    const a: ProjectActuals = { people: {}, others: { minutes: 0, md: 0 }, minutes: 0, md: 0 }
+    for (const [userId, minutes] of Object.entries(users)) {
+      if (!minutes) continue
+      const person = byUser.get(userId)
+      const md = minutes / 60 / (person?.hoursPerDay || 8)
+      if (person) a.people[person.id] = { minutes, md }
+      else {
+        a.others.minutes += minutes
+        a.others.md += md
+      }
+      a.minutes += minutes
+      a.md += md
+    }
+    if (a.minutes) out[project.id] = a
+  }
+  return out
+}
+
 /** How a project's scheduled man-days compare with its plan. Fit: within half a man-day. */
 export type PlanStatus = 'none' | 'under' | 'fit' | 'over'
 

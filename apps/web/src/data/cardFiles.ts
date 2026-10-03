@@ -38,7 +38,7 @@ export function useCardFiles(boardId: string, taskId: string, onActivity: (l: (m
       () => {},
     )
     return onActivity((m) => {
-      if (m.taskId !== taskId) return
+      if (m.taskId !== taskId || m.type === 'time') return
       if (m.type === 'attachment') {
         if (m.action === 'deleted') setFiles((xs) => xs.filter((x) => x.id !== m.attachmentId))
         else if (m.attachment) upsert(m.attachment)

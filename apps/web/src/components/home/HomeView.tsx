@@ -3,20 +3,21 @@ import {
   ArrowCounterClockwise,
   ArrowsLeftRight,
   Buildings,
-  ChartBarHorizontal,
   CaretRight,
+  ChartBarHorizontal,
   DotsThree,
-  LockSimple,
   Key,
+  LockSimple,
   MagnifyingGlass,
   PencilSimple,
   Plus,
   SignOut,
+  Star,
+  Timer,
   Trash,
   Tray,
   UploadSimple,
   UsersThree,
-  Star,
 } from '@phosphor-icons/react'
 import { formatDistanceToNow, parseISO } from 'date-fns'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
@@ -93,7 +94,7 @@ export function HomeView() {
   const askDelete = (b: BoardSummary) =>
     setConfirm({
       title: `Delete “${b.name}”?`,
-      description: `The board and its ${b.taskCount.toLocaleString()} ${b.taskCount === 1 ? 'task' : 'tasks'} will be deleted for everyone. This can’t be undone — export it first if you want a copy.`,
+      description: `The board and its ${b.taskCount.toLocaleString()} ${b.taskCount === 1 ? 'task' : 'tasks'} will be deleted for everyone, with any time logged on them. This can’t be undone — export it first if you want a copy.`,
       confirmLabel: 'Delete board',
       destructive: true,
       onConfirm: () =>
@@ -197,6 +198,11 @@ export function HomeView() {
         <LogoMark className="size-7" />
         <span className="text-sm font-semibold">Kanbanto</span>
         <div className="ml-auto flex items-center gap-2">
+          <Button size="sm" variant="outline" className="gap-1.5" title="Your time this week, on every board" asChild>
+            <a href={hrefFor({ page: 'time' })}>
+              <Timer /> <span className="hidden sm:inline">My week</span>
+            </a>
+          </Button>
           <Button size="sm" variant="outline" className="gap-1.5" title={`Search all cards (${SEARCH_KEYS})`} asChild>
             <a href={hrefFor({ page: 'cards', state: 'active' })}>
               <MagnifyingGlass /> <span className="hidden sm:inline">Search cards</span>

@@ -28,6 +28,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { cn } from '@/lib/utils'
 import type { PublicUser } from '@kanbanto/model/api'
+import { formatDuration } from '@kanbanto/model/time'
 import { backgroundOf, gradientCss } from '@kanbanto/model/colors'
 import type { StatusMode } from '@kanbanto/model/types'
 
@@ -259,7 +260,9 @@ function JustForYou() {
 }
 
 function DeleteBoard({ onDeleted }: { onDeleted: () => void }) {
-  const { data } = useBoard()
+  const { data, counts } = useBoard()
+  // Time logged on its cards goes with it (and out of Planning's actual man-days).
+  const logged = Object.entries(counts.time).reduce((s, [id, m]) => (id in data.tasks || id in (data.archived ?? {}) ? s + m : s), 0)
   return (
     <Section title="Archive or delete" hint="For the board’s owners.">
       <div className="space-y-3 rounded-xl border bg-card p-4">
@@ -304,7 +307,8 @@ function DeleteBoard({ onDeleted }: { onDeleted: () => void }) {
             <AlertDialogHeader>
               <AlertDialogTitle>Delete “{data.board.name}”?</AlertDialogTitle>
               <AlertDialogDescription>
-                Its {Object.keys(data.tasks).length.toLocaleString()} tasks will be deleted too. This can’t be undone.
+                Its {Object.keys(data.tasks).length.toLocaleString()} tasks will be deleted too
+                {logged > 0 && <>, with the {formatDuration(logged)} of time logged on them (it stops counting in Planning)</>}. This can’t be undone.
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>

@@ -19,7 +19,7 @@ export type SyncEvent =
   | { type: 'signed-out' }
 
 /** A comment or file changed on some card (the open task dialog listens for its own). */
-export type TaskActivity = Extract<LiveMessage, { type: 'comment' | 'attachment' }>
+export type TaskActivity = Extract<LiveMessage, { type: 'comment' | 'attachment' | 'time' }>
 
 export interface SyncState {
   /** The board as you see it: the server's copy with your unsaved changes on top. */
@@ -302,11 +302,16 @@ export class BoardSync {
         this.bumpCount(m)
         this.activityListeners.forEach((l) => l(m))
         break
+      case 'time':
+        // The card's new total, as the server counts it.
+        this.set({ counts: { ...this.state.counts, time: { ...this.state.counts.time, [m.taskId]: m.total } } })
+        this.activityListeners.forEach((l) => l(m))
+        break
     }
   }
 
   /** Keeps the card badges right as comments and files come and go. */
-  private bumpCount(m: TaskActivity) {
+  private bumpCount(m: Extract<TaskActivity, { type: 'comment' | 'attachment' }>) {
     const kind = m.type === 'comment' ? 'comments' : 'attachments'
     const delta = m.action === 'added' ? 1 : m.action === 'deleted' ? -1 : 0
     if (!delta) return

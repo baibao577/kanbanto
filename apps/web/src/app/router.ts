@@ -12,6 +12,7 @@ import { CATEGORIES, LAYOUTS, PRIORITIES, type Category, type Layout, type Prior
  *   #/w/<id>/planning?by=person&zoom=days   its plan: who works on which project (by project, in weeks, unless said)
  *   #/cards?q=<words>&assignee=me&when=done&range=this-week…   search cards across boards. The address holds the
  *                            whole search (see CardsRoute), so it can be kept and shared. state=archived: the archived ones.
+ *   #/time?week=<monday>      My week: your logged time on every board (this week, unless said)
  *   #/authorize?<oauth params>   approving an app that connects with sign-in (from /oauth/authorize)
  *   #/signin, #/signup       (?next=<where to go after>)
  *   #/forgot                 ask for a password reset email
@@ -57,6 +58,7 @@ export type Route =
   | { page: 'join'; token: string }
   | WorkspaceRoute
   | CardsRoute
+  | { page: 'time'; week?: string }
   | { page: 'authorize'; query: string }
   | { page: 'verify'; token: string }
   | { page: 'reset'; token: string }
@@ -79,6 +81,11 @@ export function parseRoute(hash: string): Route {
   if (/^#\/forgot\/?$/.test(hash)) return { page: 'forgot' }
   const authorize = hash.match(/^#\/authorize\?(.*)$/)
   if (authorize) return { page: 'authorize', query: authorize[1] }
+  const time = hash.match(/^#\/time\/?(?:\?(.*))?$/)
+  if (time) {
+    const week = new URLSearchParams(time[1] ?? '').get('week')
+    return { page: 'time', ...(week && /^\d{4}-\d{2}-\d{2}$/.test(week) && { week }) }
+  }
   const cards = hash.match(/^#\/cards\/?(?:\?(.*))?$/)
   if (cards) {
     const p = new URLSearchParams(cards[1] ?? '')
@@ -185,6 +192,7 @@ export function hrefFor(r: Route) {
     const qs = p.toString()
     return `#/cards${qs ? `?${qs}` : ''}`
   }
+  if (r.page === 'time') return `#/time${r.week ? `?week=${r.week}` : ''}`
   if (r.page === 'authorize') return `#/authorize?${r.query}`
   if (r.page === 'join' || r.page === 'verify' || r.page === 'reset') return `#/${r.page}/${encodeURIComponent(r.token)}`
   if (r.page === 'signin' || r.page === 'signup') return `#/${r.page}${r.next ? `?next=${encodeURIComponent(r.next)}` : ''}`

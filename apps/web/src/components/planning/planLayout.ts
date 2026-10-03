@@ -1,5 +1,6 @@
-import { dayParts, isWeekend, mondayOf, toDay } from '@kanbanto/model/dates'
+import { dayParts, isWeekend, mondayOf, toDay, todayDay } from '@kanbanto/model/dates'
 import {
+  bookedUntil,
   peopleInOrder,
   personFacts,
   projectFacts,
@@ -11,6 +12,7 @@ import {
   type PlanPerson,
   type PlanProject,
   type PlanRole,
+  type ProjectActuals,
   type ProjectFacts,
 } from '@kanbanto/model/planning'
 import { comparePositions } from '@kanbanto/model/position'
@@ -21,7 +23,16 @@ import { comparePositions } from '@kanbanto/model/position'
  * they're on, and "+ add to a project"; then time nobody has yet. A line is where blocks sit, are added and dropped.
  */
 export type SheetRow =
-  | { kind: 'project'; key: string; project: PlanProject; facts: ProjectFacts; collapsed: boolean }
+  | {
+      kind: 'project'
+      key: string
+      project: PlanProject
+      facts: ProjectFacts
+      collapsed: boolean
+      /** Time logged on its board (when it's linked and there is some), and man-days booked until today. */
+      actual: ProjectActuals | null
+      booked: number
+    }
   | { kind: 'person'; key: string; person: PlanPerson; role: PlanRole | null; facts: PersonFacts; left: boolean; collapsed: boolean }
   | {
       kind: 'line'
@@ -38,6 +49,9 @@ export type SheetRow =
       md: number
       /** Someone put on the project with no time yet (their line can be taken away). */
       empty: boolean
+      /** What they logged on the project's board, and the man-days booked on this line until today. */
+      logged: { minutes: number; md: number } | null
+      booked: number
     }
   | { kind: 'add-person'; key: string; projectId: string; options: PlanPerson[] }
   | { kind: 'add-project'; key: string; personId: string; options: PlanProject[] }
@@ -48,36 +62,48 @@ export const ROW_HEIGHT: Record<SheetRow['kind'], number> = { project: 52, perso
 const byName = (a: { name: string }, b: { name: string }) => a.name.localeCompare(b.name)
 const firstStart = (blocks: PlanBlock[]) => Math.min(...blocks.map((b) => toDay(b.start)))
 
-/** People on a project: those with time on it (earliest first), then those put on it with none yet. */
-function peopleOn(plan: PlanData, projectId: string) {
+/** Logged time and today, for the figures on lines. */
+interface Actuals {
+  byProject: Record<string, ProjectActuals>
+  today: number
+}
+
+/**
+ * People on a project: those with time on it (earliest first), then those put on it with none yet, or who logged time
+ * on its board without being booked.
+ */
+function peopleOn(plan: PlanData, projectId: string, actuals?: Actuals) {
   const blocks = plan.blocks.filter((b) => b.projectId === projectId && b.personId)
   const withTime = [...new Set(blocks.map((b) => b.personId!))]
     .map((id) => ({ id, first: firstStart(blocks.filter((b) => b.personId === id)) }))
     .sort((a, b) => a.first - b.first)
     .map((x) => x.id)
-  const added = plan.lines
-    .filter((l) => l.projectId === projectId && !withTime.includes(l.personId))
-    .map((l) => plan.people.find((p) => p.id === l.personId))
-    .filter((p): p is PlanPerson => !!p)
+  const logged = Object.keys(actuals?.byProject[projectId]?.people ?? {})
+  const added = plan.people
+    .filter((p) => !withTime.includes(p.id) && (plan.lines.some((l) => l.projectId === projectId && l.personId === p.id) || logged.includes(p.id)))
     .sort(byName)
     .map((p) => p.id)
-  return [...withTime, ...added].filter((id) => plan.people.some((p) => p.id === id))
+  return [...withTime.filter((id) => plan.people.some((p) => p.id === id)), ...added]
 }
 
 /** Projects a person is on, the same way round. */
-function projectsOf(plan: PlanData, personId: string) {
+function projectsOf(plan: PlanData, personId: string, actuals?: Actuals) {
   const blocks = plan.blocks.filter((b) => b.personId === personId)
   const withTime = [...new Set(blocks.map((b) => b.projectId))]
     .map((id) => ({ id, first: firstStart(blocks.filter((b) => b.projectId === id)) }))
     .sort((a, b) => a.first - b.first)
     .map((x) => x.id)
   const added = plan.projects
-    .filter((p) => plan.lines.some((l) => l.personId === personId && l.projectId === p.id) && !withTime.includes(p.id))
+    .filter(
+      (p) =>
+        !withTime.includes(p.id) &&
+        (plan.lines.some((l) => l.personId === personId && l.projectId === p.id) || !!actuals?.byProject[p.id]?.people[personId]),
+    )
     .map((p) => p.id)
   return [...withTime, ...added].filter((id) => plan.projects.some((p) => p.id === id))
 }
 
-function line(plan: PlanData, projectId: string, personId: string | null, label: 'person' | 'project', slot = 0): SheetRow {
+function line(plan: PlanData, projectId: string, personId: string | null, label: 'person' | 'project', slot = 0, actuals?: Actuals): SheetRow {
   const blocks = plan.blocks
     .filter((b) => b.projectId === projectId && b.personId === personId && (personId !== null || b.slot === slot))
     .sort((a, b) => (a.start < b.start ? -1 : 1))
@@ -92,22 +118,39 @@ function line(plan: PlanData, projectId: string, personId: string | null, label:
     blocks,
     md: sumManDays(blocks),
     empty: !blocks.length,
+    logged: (personId && actuals?.byProject[projectId]?.people[personId]) || null,
+    booked: actuals ? bookedUntil(blocks, actuals.today) : 0,
   }
 }
 
 /** Groups folded to their first row (`project:<id>`, `person:<id>`). */
 export type Collapsed = ReadonlySet<string>
 
-export function rowsByProject(plan: PlanData, opts: { canEdit: boolean; showFinished: boolean; collapsed?: Collapsed }): SheetRow[] {
+export function rowsByProject(
+  plan: PlanData,
+  opts: { canEdit: boolean; showFinished: boolean; collapsed?: Collapsed; actuals?: Record<string, ProjectActuals>; today?: number },
+): SheetRow[] {
   const rows: SheetRow[] = []
+  const actuals = { byProject: opts.actuals ?? {}, today: opts.today ?? todayDay() }
   const projectRows = (p: PlanProject) => {
     const key = `project:${p.id}`
     const collapsed = !!opts.collapsed?.has(key)
-    rows.push({ kind: 'project', key, project: p, facts: projectFacts(plan, p.id), collapsed })
+    rows.push({
+      kind: 'project',
+      key,
+      project: p,
+      facts: projectFacts(plan, p.id),
+      collapsed,
+      actual: actuals.byProject[p.id] ?? null,
+      booked: bookedUntil(
+        plan.blocks.filter((b) => b.projectId === p.id),
+        actuals.today,
+      ),
+    })
     if (collapsed) return
-    const people = peopleOn(plan, p.id)
-    for (const id of people) rows.push(line(plan, p.id, id, 'person'))
-    for (let slot = 0; slot < p.openLines; slot++) rows.push(line(plan, p.id, null, 'person', slot))
+    const people = peopleOn(plan, p.id, actuals)
+    for (const id of people) rows.push(line(plan, p.id, id, 'person', 0, actuals))
+    for (let slot = 0; slot < p.openLines; slot++) rows.push(line(plan, p.id, null, 'person', slot, actuals))
     if (opts.canEdit) {
       const options = plan.people.filter((x) => !people.includes(x.id)).sort(byName)
       rows.push({ kind: 'add-person', key: `add-person:${p.id}`, projectId: p.id, options })
@@ -146,9 +189,17 @@ export const sortedPeople = peopleInOrder
 
 export function rowsByPerson(
   plan: PlanData,
-  opts: { canEdit: boolean; today: number; memberIds: string[]; roleId: string | null; collapsed?: Collapsed },
+  opts: {
+    canEdit: boolean
+    today: number
+    memberIds: string[]
+    roleId: string | null
+    collapsed?: Collapsed
+    actuals?: Record<string, ProjectActuals>
+  },
 ): SheetRow[] {
   const rows: SheetRow[] = []
+  const actuals = { byProject: opts.actuals ?? {}, today: opts.today }
   const roles = new Map(plan.roles.map((r) => [r.id, r]))
   for (const person of sortedPeople(plan)) {
     if (opts.roleId && person.roleId !== opts.roleId) continue
@@ -164,8 +215,8 @@ export function rowsByPerson(
       collapsed,
     })
     if (collapsed) continue
-    const projects = projectsOf(plan, person.id)
-    for (const id of projects) rows.push(line(plan, id, person.id, 'project'))
+    const projects = projectsOf(plan, person.id, actuals)
+    for (const id of projects) rows.push(line(plan, id, person.id, 'project', 0, actuals))
     if (opts.canEdit) {
       const options = plan.projects.filter((p) => !p.finishedAt && !projects.includes(p.id)).sort((a, b) => comparePositions(a.position, b.position))
       if (options.length) rows.push({ kind: 'add-project', key: `add-project:${person.id}`, personId: person.id, options })
@@ -181,7 +232,7 @@ export function rowsByPerson(
     })
     for (const p of plan.projects)
       for (let slot = 0; slot < p.openLines; slot++)
-        if (open.some((b) => b.projectId === p.id && b.slot === slot)) rows.push(line(plan, p.id, null, 'project', slot))
+        if (open.some((b) => b.projectId === p.id && b.slot === slot)) rows.push(line(plan, p.id, null, 'project', slot, actuals))
   }
   return rows
 }

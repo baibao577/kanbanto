@@ -1,4 +1,4 @@
-import { Desktop, MagnifyingGlass, Moon, ShieldCheck, SignOut, Sun, UserCircle } from '@phosphor-icons/react'
+import { Desktop, MagnifyingGlass, Moon, ShieldCheck, SignOut, Sun, Timer, UserCircle } from '@phosphor-icons/react'
 import { navigate } from '@/app/router'
 import { useAuth } from '@/app/use-auth'
 import { useTheme } from '@/app/use-theme'
@@ -42,6 +42,9 @@ export function AccountMenu() {
           <DropdownMenuItem onSelect={() => navigate({ page: 'cards', state: 'active' })}>
             <MagnifyingGlass /> Search all cards
             <DropdownMenuShortcut>{SEARCH_KEYS}</DropdownMenuShortcut>
+          </DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => navigate({ page: 'time' })}>
+            <Timer /> My week
           </DropdownMenuItem>
           <DropdownMenuItem onSelect={() => navigate({ page: 'account' })}>
             <UserCircle /> Account settings

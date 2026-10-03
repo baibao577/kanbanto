@@ -15,6 +15,7 @@ import type { PlanningView } from '@kanbanto/model/api'
 import { tone } from '@kanbanto/model/colors'
 import { dayParts, fromDay, mondayOf, monthEndOf, toDay } from '@kanbanto/model/dates'
 import { newId } from '@kanbanto/model/ids'
+import { formatDuration } from '@kanbanto/model/time'
 import {
   canSplit,
   freeRangeAt,
@@ -790,6 +791,41 @@ function Grip({ kind, id, name }: { kind: 'project' | 'person'; id: string; name
   )
 }
 
+/**
+ * Logged of planned on a line ("12.5 of 60 MD"), coloured by how it compares with what was booked until today: less
+ * (amber), about right, or more (red). Time logged with nothing booked says so.
+ */
+function Logged({ row, narrow }: { row: Extract<SheetRow, { kind: 'line' }>; narrow: boolean }) {
+  const { md, minutes } = row.logged!
+  const slack = Math.max(0.5, row.booked * 0.1)
+  const pace = row.empty ? null : md < row.booked - slack ? 'less' : md > row.booked + slack ? 'more' : 'fit'
+  const title = [
+    `Logged ${formatDuration(minutes)} = ${fmtMd(md)} MD`,
+    row.empty ? 'Nothing booked on it' : `booked until today ${fmtMd(row.booked)} MD`,
+    !row.empty && `planned in all ${fmtMd(row.md)} MD`,
+    pace === 'less' ? 'less than booked so far' : pace === 'more' ? 'more than booked so far' : pace && 'about as booked',
+  ]
+    .filter(Boolean)
+    .join(' · ')
+  return (
+    <span
+      title={title}
+      className={cn(
+        'ml-auto shrink-0 text-xs tabular-nums',
+        pace === 'less'
+          ? 'text-[color-mix(in_oklab,var(--c-amber)_70%,var(--foreground))]'
+          : pace === 'more'
+            ? 'text-destructive'
+            : pace === 'fit'
+              ? 'text-foreground'
+              : 'text-muted-foreground italic',
+      )}
+    >
+      {row.empty ? `${fmtMd(md)} MD logged` : narrow ? `${fmtMd(md)} / ${fmtMd(row.md)}` : `${fmtMd(md)} of ${fmtMd(row.md)} MD`}
+    </span>
+  )
+}
+
 /** A project that might not happen. */
 function ProspectChip() {
   return (
@@ -831,6 +867,9 @@ const Row = memo(function Row(p: RowProps) {
       pr.client,
       `${fmtMd(facts.scheduled)} man-days scheduled${pr.plannedMd !== null ? ` of ${fmtMd(pr.plannedMd)} planned (${diff})` : ', no plan yet'}`,
       facts.unassigned > 0 && `${fmtMd(facts.unassigned)} not assigned yet`,
+      row.actual &&
+        `${fmtMd(row.actual.md)} MD logged${pr.plannedMd !== null ? ` of ${fmtMd(pr.plannedMd)} planned` : ''} (booked until today: ${fmtMd(row.booked)})` +
+          (row.actual.others.minutes ? `, ${fmtMd(row.actual.others.md)} MD of it by others` : ''),
       act && `Changed ${formatAgo(act.at)}${act.by ? ` by ${act.by}` : ''}`,
     ]
       .filter(Boolean)
@@ -1007,9 +1046,13 @@ const Row = memo(function Row(p: RowProps) {
             {!person && <span className="shrink-0 text-xs text-muted-foreground italic">not assigned{row.openLines > 1 && ` ${row.slot + 1}`}</span>}
           </>
         )}
-        <span className="ml-auto shrink-0 text-xs text-muted-foreground tabular-nums">
-          {row.empty ? (person ? 'no time yet' : '') : `${fmtMd(row.md)} MD`}
-        </span>
+        {row.logged ? (
+          <Logged row={row} narrow={p.narrow} />
+        ) : (
+          <span className="ml-auto shrink-0 text-xs text-muted-foreground tabular-nums">
+            {row.empty ? (person ? 'no time yet' : '') : `${fmtMd(row.md)} MD`}
+          </span>
+        )}
         {row.empty && !person && row.label === 'person' && row.openLines > 1 && canEdit && (
           <button
             type="button"
@@ -1021,7 +1064,7 @@ const Row = memo(function Row(p: RowProps) {
             <X className="size-3" />
           </button>
         )}
-        {row.empty && person && canEdit && (
+        {row.empty && person && canEdit && !row.logged && (
           <button
             type="button"
             className="grid size-5 shrink-0 place-items-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"

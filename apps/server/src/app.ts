@@ -25,6 +25,7 @@ import { authRoutes } from './routes/auth'
 import { boardRoutes } from './routes/boards'
 import { cardRoutes } from './cards'
 import { commentRoutes } from './routes/comments'
+import { timeRoutes } from './routes/time'
 import { emailRoutes } from './routes/email'
 import { fileRoutes } from './routes/files'
 import { sharingRoutes } from './routes/sharing'
@@ -232,6 +233,7 @@ export async function buildApp(
   await app.register(adminRoutes, { prefix: '/api/admin' })
   await app.register(emailRoutes, { prefix: '/api' })
   await app.register(commentRoutes, { prefix: '/api' })
+  await app.register(timeRoutes, { prefix: '/api' })
   await app.register(fileRoutes, { prefix: '/api' })
   app.get('/api/health', async () => ({ ok: true }))
 

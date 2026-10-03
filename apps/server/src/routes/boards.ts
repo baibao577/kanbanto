@@ -16,6 +16,7 @@ import { HttpError, parse } from '../http'
 import { requireUser } from './auth'
 import { commentCounts, lastComments } from './comments'
 import { attachmentCounts, deleteBoardFiles } from './files'
+import { timeCounts } from './time'
 
 const background = z
   .string()
@@ -148,6 +149,8 @@ export const boardRoutes: FastifyPluginAsync = async (app) => {
       comments: await commentCounts(app.db, id),
       attachments: await attachmentCounts(app.db, id),
       lastComment: await lastComments(app.db, id),
+      // Who logged how much isn't for visitors with the public link.
+      time: access.via === 'public' ? {} : await timeCounts(app.db, id),
     }
     // Visitors with the public link aren't told which workspace it's in.
     const [workspace] =

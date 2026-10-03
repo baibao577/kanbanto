@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { fromDay, isWeekend, mondayOf, monthEndOf, monthStartOf, toDay, weekdayOf } from './dates'
 import {
+  bookedUntil,
   canSplit,
   emptyPlan,
   endForManDays,
@@ -9,6 +10,7 @@ import {
   nextWorkDay,
   peopleInOrder,
   personFacts,
+  planActuals,
   prevWorkDay,
   projectFacts,
   workDays,
@@ -258,6 +260,22 @@ describe('plan commands', () => {
     expect(refusal(p, { type: 'person.merge', id: 'bob', into: 'cat' })).toMatch(/in the workspace/)
     // Members' names come from their account.
     expect(refusal(p, { type: 'person.update', id: 'ann', fields: { name: 'Annie' } })).toMatch(/account/)
+  })
+
+  it('booked until a day counts working days so far; logged time becomes each person’s man-days', () => {
+    let p = example()
+    p = exec(p, block('1', 'a', 'ann', '2026-10-05', '2026-10-16', 50)).plan // 10 working days at 50%
+    p = exec(p, block('2', 'a', 'bob', '2026-10-19', '2026-10-23')).plan // later
+    const blocks = p.blocks.filter((b) => b.projectId === 'a')
+    expect(bookedUntil(blocks, d('2026-10-09'))).toBe(2.5) // Mon–Fri of the first week at 50%
+    expect(bookedUntil(blocks, d('2026-10-04'))).toBe(0)
+    expect(bookedUntil(blocks, d('2026-12-31'))).toBe(10)
+    // Ann (6 hours a day) and someone from outside the workspace logged on a's board; b has no board.
+    p = exec(p, { type: 'project.update', id: 'a', fields: { boardId: 'board-a' } }).plan
+    p = exec(p, { type: 'person.update', id: 'ann', fields: { hoursPerDay: 6 } }).plan
+    const actuals = planActuals(p, { 'board-a': { 'user-ann': 720, 'user-guest': 240 }, 'board-z': { 'user-ann': 60 } })
+    expect(Object.keys(actuals)).toEqual(['a'])
+    expect(actuals.a).toEqual({ people: { ann: { minutes: 720, md: 2 } }, others: { minutes: 240, md: 0.5 }, minutes: 960, md: 2.5 })
   })
 
   it('people are in role-then-name order until a planner moves one; then the plan keeps their order', () => {

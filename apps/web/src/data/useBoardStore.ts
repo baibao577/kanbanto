@@ -8,7 +8,7 @@ import { api, ApiError } from '@/api/client'
 import type { PrefsStore } from './prefsStore'
 import { BoardSync, type SyncEvent, type SyncState, type TaskActivity } from './sync'
 
-const NO_COUNTS = { comments: {}, attachments: {}, lastComment: {} }
+const NO_COUNTS = { comments: {}, attachments: {}, lastComment: {}, time: {} }
 
 const HISTORY = 200
 

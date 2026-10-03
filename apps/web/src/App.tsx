@@ -30,6 +30,8 @@ import { useBoardStore } from '@/data/useBoardStore'
 // Dialogs load the first time they're opened.
 const StatsDialog = lazy(() => import('@/components/shell/StatsDialog').then((m) => ({ default: m.StatsDialog })))
 const TaskDialog = lazy(() => import('@/components/task/TaskDialog').then((m) => ({ default: m.TaskDialog })))
+const LogBox = lazy(() => import('@/components/time/LogBox'))
+const MyWeek = lazy(() => import('@/components/time/MyWeek'))
 const MoveToBoardDialog = lazy(() => import('@/components/task/MoveToBoardDialog').then((m) => ({ default: m.MoveToBoardDialog })))
 const CardsView = lazy(() => import('@/components/cards/CardsView').then((m) => ({ default: m.CardsView })))
 const ShareDialog = lazy(() => import('@/components/share/ShareDialog').then((m) => ({ default: m.ShareDialog })))
@@ -166,6 +168,13 @@ export default function App() {
       return (
         <Suspense fallback={null}>
           <AuthorizeView query={route.query} />
+        </Suspense>
+      )
+    case 'time':
+      if (!user) return <Redirect to={{ page: 'signin', next: here() }} />
+      return (
+        <Suspense fallback={null}>
+          <MyWeek key={route.week ?? ''} week={route.week} />
         </Suspense>
       )
     case 'cards':
@@ -337,6 +346,10 @@ function Workspace({ store }: { store: Store }) {
     [store, undo, say],
   )
 
+  // The log box, open (with a card picked, from a card's menu or dialog).
+  const [logging, setLogging] = useState<{ taskId?: string } | null>(null)
+  const logTime = useCallback((taskId?: string) => setLogging({ taskId }), [])
+
   // The card made and opened just now: its dialog starts in the title.
   const [justMade, setNewId] = useState<string | null>(null)
   const createTask = useCallback<BoardContextValue['createTask']>(
@@ -371,11 +384,12 @@ function Workspace({ store }: { store: Store }) {
     counts: store.counts,
     canComment: store.canComment,
     onActivity: store.onActivity,
+    logTime: readOnly ? undefined : logTime,
   }
 
   const newTask = useCallback(() => createTask(undefined, { title: 'New task' }, { open: true }), [createTask])
 
-  // Keyboard: N = new task, ⌘/Ctrl+Z = undo, ⇧⌘Z / Ctrl+Y = redo (not while typing or in a dialog).
+  // Keyboard: N = new task, L = log time, ⌘/Ctrl+Z = undo, ⇧⌘Z / Ctrl+Y = redo (not while typing or in a dialog).
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement
@@ -392,6 +406,9 @@ function Workspace({ store }: { store: Store }) {
       } else if (key === 'n' && !mod && !e.altKey) {
         e.preventDefault()
         newTask()
+      } else if (key === 'l' && !mod && !e.altKey) {
+        e.preventDefault()
+        setLogging({})
       }
     }
     window.addEventListener('keydown', onKey)
@@ -428,6 +445,11 @@ function Workspace({ store }: { store: Store }) {
       {openId && (
         <Suspense fallback={null}>
           <TaskDialog id={openId} onClose={closeTask} editTitle={openId === justMade} />
+        </Suspense>
+      )}
+      {logging && (
+        <Suspense fallback={null}>
+          <LogBox initialTask={logging.taskId} onClose={() => setLogging(null)} />
         </Suspense>
       )}
       {shareOpen && (

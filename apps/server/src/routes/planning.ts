@@ -8,6 +8,7 @@ import type { Db } from '../db'
 import { requireAccess, workspaceRole } from '../boards/access'
 import { requireWorkspace } from '../boards/workspaces'
 import { boardsFor } from './boards'
+import { loggedOn } from './time'
 import { planningProjects, workspaceMembers } from '../db/schema'
 import { HttpError, parse } from '../http'
 import { PlanningEngine } from '../planning/engine'
@@ -42,7 +43,12 @@ export const planningRoutes: FastifyPluginAsync = async (app) => {
     const boards = (await boardsFor(app.db, me.id))
       .filter((b) => b.workspaceId === id && !b.archivedAt)
       .map((b) => ({ id: b.id, name: b.name, background: b.background ?? null }))
-    return { plan, seq, canEdit, memberIds: members.map((m) => m.userId), activity, boards }
+    // Time logged on linked boards (everyone in the workspace sees it, like the plan).
+    const actuals = await loggedOn(
+      app.db,
+      plan.projects.flatMap((p) => (p.boardId ? [p.boardId] : [])),
+    )
+    return { plan, seq, canEdit, memberIds: members.map((m) => m.userId), activity, boards, actuals }
   })
 
   /** A board's project in its workspace's plan: who's booked on it, how much and until when (for its Timeline). */

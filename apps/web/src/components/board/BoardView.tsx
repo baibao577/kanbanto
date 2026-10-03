@@ -23,6 +23,7 @@ import { panScroll } from '@/lib/panScroll'
 import { pointerDrag } from '@/lib/pointerDrag'
 import { useNow } from '@/lib/useNow'
 import { cn } from '@/lib/utils'
+import { rollUp } from '@/components/time/logging'
 import { tone } from '@kanbanto/model/colors'
 import { ancestorsOf, statusCol } from '@kanbanto/model/indexer'
 import { filterCount, matchesFilter } from '@kanbanto/model/table'
@@ -89,7 +90,9 @@ export function BoardView({ search }: { search: string }) {
 }
 
 function Board({ search }: { search: string }) {
-  const { data, prefs, setPrefs, idx, run, openTask, createTask, focus, readOnly, counts, moveToBoard } = useBoard()
+  const { data, prefs, setPrefs, idx, run, openTask, createTask, focus, readOnly, counts, moveToBoard, logTime } = useBoard()
+  // Minutes logged on each card, with its subtasks'.
+  const timeOf = useMemo(() => rollUp(counts.time, idx.childrenOf), [counts.time, idx.childrenOf])
   const config = prefs.display.board
   // Filters (shared by every tab) narrow the cards, like search.
   const filter = prefs.filter
@@ -298,6 +301,8 @@ function Board({ search }: { search: string }) {
         comments={counts.comments[id]}
         files={counts.attachments[id]}
         lastComment={counts.lastComment[id]}
+        time={timeOf(id)}
+        onLogTime={logTime}
         item={item}
       />
     )

@@ -26,6 +26,7 @@ import type { TaskFields } from '@kanbanto/model/commands'
 import { EPOCH, PRIORITIES, PRIORITY_LABEL, type Priority } from '@kanbanto/model/types'
 import { ArchivedBanner } from './ArchivedTask'
 import { AttachmentsSection } from './Attachments'
+import { TimeField, TimeSection } from './CardTime'
 import { CommentsSection } from './Comments'
 import { Description } from './Description'
 import { useCardFiles } from '@/data/cardFiles'
@@ -103,7 +104,7 @@ function ArchivedCard({ id, onClose }: { id: string; onClose: () => void }) {
 }
 
 function TaskDetail({ id, onClose }: { id: string; onClose: () => void }) {
-  const { data, idx, run, openTask, createTask, focus, readOnly, onActivity, moveToBoard } = useBoard()
+  const { data, idx, run, openTask, createTask, focus, readOnly, onActivity, moveToBoard, logTime } = useBoard()
   // The card's files, shared by the Files section, comments and the description (# references).
   const cardFiles = useCardFiles(data.board.id, id, onActivity)
   const t = data.tasks[id]
@@ -117,6 +118,20 @@ function TaskDetail({ id, onClose }: { id: string; onClose: () => void }) {
   // A task can't move under itself or anything below it, and can't wait on itself.
   const notParent = useMemo(() => new Set([id, ...descendantsOf(idx, id)]), [idx, id])
   const notBlocker = useMemo(() => new Set([id, ...t.blockedBy]), [id, t.blockedBy])
+
+  // L: log time on this card (not while typing, or with another box open over it).
+  useEffect(() => {
+    if (!logTime) return
+    const onKey = (e: KeyboardEvent) => {
+      const el = e.target as HTMLElement
+      if (e.key.toLowerCase() !== 'l' || e.metaKey || e.ctrlKey || e.altKey) return
+      if (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName) || document.querySelectorAll('[role=dialog]').length > 1) return
+      e.preventDefault()
+      logTime(id)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [logTime, id])
 
   return (
     <>
@@ -254,6 +269,8 @@ function TaskDetail({ id, onClose }: { id: string; onClose: () => void }) {
             )}
           </Section>
 
+          <TimeSection taskId={id} />
+
           <CommentsSection taskId={id} cardFiles={cardFiles} />
         </div>
 
@@ -329,6 +346,9 @@ function TaskDetail({ id, onClose }: { id: string; onClose: () => void }) {
               </SideField>
               <SideField label="Reminders">
                 <Reminders task={t} readOnly={readOnly} onChange={(reminders) => patch({ reminders })} />
+              </SideField>
+              <SideField label="Time">
+                <TimeField taskId={id} />
               </SideField>
             </div>
             <div>

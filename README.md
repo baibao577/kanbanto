@@ -32,6 +32,9 @@
   months. It shows which projects are under or over their plan, who is booked over 100%, and when people are free.
   Prospects (work that might not happen) are planned apart, and a project linked to a board shows its plan on that
   board's Timeline.
+- **Log time:** type a card's name and the time it took ("1:30 review"); the cards you worked on that day come first.
+  My week shows your time on every board, a card per row and a day per column. On a board linked to a plan, logged
+  time shows next to each person's planned man-days.
 - **Comments and files:** discuss each card, @mention people, attach files and screenshots, and point to a file with `#`.
 - **Connect it:** an API with personal tokens, webhooks for each board, and an MCP endpoint so AI assistants like
   Claude can find, plan and update tasks for you.

@@ -20,6 +20,8 @@ export interface PlanState {
   activity: PlanningView['activity']
   /** The workspace's boards you can open (what a project can be linked to). */
   boards: PlanningView['boards']
+  /** Time logged on linked boards' cards (minutes by board, then by account), fresh with every check. */
+  actuals: PlanningView['actuals']
   /** Changes made here that the server hasn't confirmed yet. */
   unsaved: number
   /** The server can't be reached right now (changes are kept and sent when it can). */
@@ -102,6 +104,7 @@ export class PlanSync {
       memberIds: view.memberIds,
       activity: view.activity,
       boards: view.boards,
+      actuals: view.actuals,
       unsaved: 0,
       offline: false,
     }
@@ -242,7 +245,7 @@ export class PlanSync {
         }
         this.confirmed = view.plan
         this.seq = view.seq
-        this.set({ canEdit: view.canEdit, memberIds: view.memberIds, activity: view.activity, boards: view.boards })
+        this.set({ canEdit: view.canEdit, memberIds: view.memberIds, activity: view.activity, boards: view.boards, actuals: view.actuals })
         this.replay()
       } catch (e) {
         if (e instanceof ApiError && e.status === 404) this.emit({ type: 'gone' })

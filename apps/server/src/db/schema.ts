@@ -553,6 +553,38 @@ export const comments = pgTable(
   (t) => [index('comments_task_idx').on(t.boardId, t.taskId, t.createdAt)],
 )
 
+/**
+ * Time someone logged on a card. Like comments, the card is only named (no foreign key): an entry stays when its card
+ * is deleted (and is back with it on undo), but only entries on cards that exist count.
+ */
+export const timeEntries = pgTable(
+  'time_entries',
+  {
+    id: uuid('id').primaryKey(),
+    boardId: text('board_id')
+      .notNull()
+      .references(() => boards.id, { onDelete: 'cascade' }),
+    taskId: text('task_id').notNull(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'set null' }),
+    /** The day it counts for, where the person was. */
+    day: date('day', { mode: 'string' }).notNull(),
+    minutes: integer('minutes').notNull(),
+    note: text('note').notNull().default(''),
+    /** Someone else who changed it (a board owner or workspace admin fixing it). */
+    editedBy: uuid('edited_by').references(() => users.id, { onDelete: 'set null' }),
+    /** The app it was logged through ("API", "Claude"); null: the website. */
+    via: text('via'),
+    createdAt: at('created_at').notNull().defaultNow(),
+    updatedAt: at('updated_at').notNull().defaultNow(),
+  },
+  (t) => [
+    index('time_entries_task_idx').on(t.boardId, t.taskId),
+    index('time_entries_board_user_idx').on(t.boardId, t.userId),
+    index('time_entries_user_day_idx').on(t.userId, t.day),
+    check('time_entries_minutes_check', sql`${t.minutes} between 1 and 1440`),
+  ],
+)
+
 /** Things to tell someone about (an @mention for now). Shown under the bell, and in the daily email summary. */
 export const notifications = pgTable(
   'notifications',
