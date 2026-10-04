@@ -1,7 +1,7 @@
 import { createHmac, randomBytes } from 'node:crypto'
 import { newId } from '@kanbanto/model/ids'
 import type { Change } from '@kanbanto/model/records'
-import { and, asc, eq, lt, lte } from 'drizzle-orm'
+import { and, asc, eq, inArray, lt, lte, sql } from 'drizzle-orm'
 import type { FastifyBaseLogger } from 'fastify'
 import { fetch } from 'undici'
 import { decrypt } from './crypto'
@@ -157,13 +157,24 @@ export class Webhooks {
     if (this.busy) return 0
     this.busy = true
     try {
+      // The oldest few due for each webhook (not the oldest of all: one webhook's backlog would be the whole round).
+      const picked = await this.db.execute<{ id: string }>(sql`
+        select id from (
+          select d.id, d.created_at, row_number() over (partition by d.webhook_id order by d.created_at) as n
+          from ${webhookDeliveries} d
+          where d.status = 'pending' and d.next_attempt_at <= now()
+        ) due
+        where n <= 3
+        order by created_at
+        limit 60`)
+      const ids = [...picked].map((r) => r.id)
+      if (!ids.length) return 0
       const due = await this.db
         .select({ d: webhookDeliveries, h: webhooks })
         .from(webhookDeliveries)
         .innerJoin(webhooks, eq(webhooks.id, webhookDeliveries.webhookId))
-        .where(and(eq(webhookDeliveries.status, 'pending'), lte(webhookDeliveries.nextAttemptAt, new Date())))
+        .where(and(inArray(webhookDeliveries.id, ids), eq(webhookDeliveries.status, 'pending'), lte(webhookDeliveries.nextAttemptAt, new Date())))
         .orderBy(asc(webhookDeliveries.createdAt))
-        .limit(200)
       if (!due.length) return 0
       const mode = (await loadSettings(this.db)).webhooks
       // A few per webhook each round, sent side by side: one board's slow or silent address holds back only its
@@ -171,7 +182,7 @@ export class Webhooks {
       const perHook = new Map<string, typeof due>()
       for (const row of due) {
         const mine = perHook.get(row.h.id) ?? []
-        if (mine.length < 3 && perHook.size <= 20) perHook.set(row.h.id, [...mine, row])
+        perHook.set(row.h.id, [...mine, row])
       }
       // (One webhook's own deliveries still go in order.)
       await Promise.all(

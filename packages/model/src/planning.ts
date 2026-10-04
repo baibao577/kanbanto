@@ -294,7 +294,8 @@ export function personFacts(plan: PlanData, personId: string, today: number, wee
   let ifFrom: number | null = null
   let ifLoad = 0
   let ifProjects: string[] = []
-  for (let d = first; d <= lastAny; d++) {
+  // (However far ahead a stored block is, the walk is a hundred years at most.)
+  for (let d = first; d <= Math.min(lastAny, first + 36_600); d++) {
     if (!isWorkDay(d, week)) continue
     const l = loadOn(spans, d)
     if (ifFrom === null && l <= 100) {

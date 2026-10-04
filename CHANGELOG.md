@@ -116,7 +116,12 @@ then `git pull` (or download the new release) and `docker compose up -d --build`
   end when the password changes; turning an account off also removes its API tokens, connected apps and calendar
   link; simultaneous requests can't get past the wrong-password limit, the email limits, the file quota or the
   last-owner rule; a board made private stops showing its logged time in the workspace's plan; CI actions are pinned
-  to exact commits; a warning at startup when the database still has the default password.
+  to exact commits; a warning at startup when the database still has the default password. A third
+  pass: turning an account off also ends the share links, access codes and invites of the boards and workspaces that
+  person runs, so they can't come back under another address; plans stay within their size limits through undo and
+  splitting, plan dates are between 2000 and 2100, and an assistant's search text is capped; one webhook's backlog,
+  one person's pile of mentions or one odd reminder can no longer hold up webhooks, morning emails or calendar sync
+  for others; the image's base is named by its exact contents.
 - **Guides** for the people using it, in [`guides/`](guides/): a page for each thing you'd want to do (your first
   board, cards, sharing, workspaces, assistants, time and planning, calendars), with pictures taken from the app by a
   script, built into a small website with VitePress. **Guides** in the account menu opens them (at kanbanto.com by

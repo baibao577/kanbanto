@@ -44,7 +44,11 @@ const reminder = z
     at: z
       .string()
       .max(40)
-      .refine((s) => !Number.isNaN(Date.parse(s)), 'A reminder’s time is a moment, like 2026-10-31T14:30:00Z.')
+      // (A real moment, in years a calendar can show: what's built from it adds to it.)
+      .refine(
+        (s) => Date.parse(s) >= Date.UTC(2000, 0, 1) && Date.parse(s) < Date.UTC(2200, 0, 1),
+        'A reminder’s time is a moment, like 2026-10-31T14:30:00Z.',
+      )
       .optional(),
     beforeDue: z
       .number()

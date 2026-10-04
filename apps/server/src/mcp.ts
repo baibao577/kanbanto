@@ -264,7 +264,7 @@ function buildServer(app: FastifyInstance, me: SessionUser, token: TokenAccess) 
         board_id: z.string().optional().describe('Leave out to search more boards.'),
         workspace: WORKSPACE,
         parent_id: z.string().optional().describe('Only tasks under this task, at any depth (needs board_id).'),
-        text: z.string().optional().describe('Words in the title or description.'),
+        text: z.string().max(200).optional().describe('Words in the title or description.'),
         list: z.string().optional().describe('A list’s name or id.'),
         label: z.string().optional().describe('A label’s name or id.'),
         assignee: z.string().optional().describe('A person’s name or id, "me", or "nobody" for unassigned tasks.'),

@@ -102,6 +102,9 @@ Fixes go into the latest version. If you run Kanbanto yourself, keep it up to da
 **Platform admins**
 
 - Admin rights are granted only on the server (`admin grant`), never through the website.
+- Turning an account off keeps the person out: they're signed out everywhere; their API tokens, connected apps,
+  calendar link and desktop notifications are removed; and so are the share links, access codes and waiting invites
+  of the boards they own and the workspaces they run, so they can't come back in under another address.
 - Admins get **no access to boards** that aren't shared with them. They can make a password reset link for an account
   (to help someone locked out) — which would let them sign in as that person — so the person is told by email when
   a link is made, and using it signs them out everywhere.

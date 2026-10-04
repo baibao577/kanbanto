@@ -187,4 +187,21 @@ describe('the second pass', () => {
     await bob.ok('POST', '/api/auth/signin', { email: 'bob@example.com', password: 'correct horse' })
     expect((await bob.ok('GET', '/api/account/tokens')).tokens).toHaveLength(0)
   })
+
+  it('turning an account off ends the invite links of the boards they own, so they can’t come back under another address', async () => {
+    const ann = await Person.signUp(t.app, 'Ann')
+    await setPlatformAdmin(t.db, 'ann@example.com', true)
+    const mal = await Person.signUp(t.app, 'Mal')
+    const [{ id }] = (await mal.ok('GET', '/api/boards')).boards
+    const { link } = await mal.ok('PUT', `/api/boards/${id}/invites/link`, { role: 'editor' })
+    await ann.ok('PATCH', '/api/admin/settings', { openSignup: false })
+    await ann.ok('PATCH', `/api/admin/users/${mal.user.id}`, { disabled: true })
+    const again = await new Person(t.app).request('POST', '/api/auth/signup', {
+      name: 'Mal again',
+      email: 'mal2@example.com',
+      password: 'correct horse',
+      invite: link.token,
+    })
+    expect(again.status).toBe(403)
+  })
 })

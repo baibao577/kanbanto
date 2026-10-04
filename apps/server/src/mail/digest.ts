@@ -37,114 +37,121 @@ export async function sendDigests(app: FastifyInstance, now = new Date()) {
     .where(and(eq(users.mentionEmails, true), isNull(users.disabledAt)))
   let sent = 0
   for (const u of people) {
-    const tz = u.timeZone || 'UTC'
-    const today = dayIn(now, tz)
-    const hour = hourIn(now, tz)
-    if (hour < FROM_HOUR || hour >= UNTIL_HOUR) continue
-    if (u.lastDigestAt && dayIn(u.lastDigestAt, tz) === today) continue
+    // (One person's summary going wrong never stops the others'.)
+    try {
+      const tz = u.timeZone || 'UTC'
+      const today = dayIn(now, tz)
+      const hour = hourIn(now, tz)
+      if (hour < FROM_HOUR || hour >= UNTIL_HOUR) continue
+      if (u.lastDigestAt && dayIn(u.lastDigestAt, tz) === today) continue
 
-    const boardIds = (await boardsFor(app.db, u.id)).filter((b) => !b.archivedAt).map((b) => b.id)
-    const due: DigestItem[] = []
-    const overdue: DigestItem[] = []
-    const later: DigestItem[] = []
-    if (boardIds.length) {
-      // Open cards assigned to them, with a due date.
-      const mine = await app.db
-        .select({ title: tasks.title, due: tasks.due, board: boards.name })
-        .from(tasks)
-        .innerJoin(boards, eq(boards.id, tasks.boardId))
-        .innerJoin(lists, and(eq(lists.boardId, tasks.boardId), eq(lists.id, tasks.status)))
-        .where(
-          and(
-            inArray(tasks.boardId, boardIds),
-            eq(tasks.assigneeId, u.id),
-            isNull(tasks.archivedAt),
-            isNotNull(tasks.due),
-            ne(lists.category, 'done'),
-          ),
-        )
-      for (const t of mine) {
-        const timed = t.due!.length > 10
-        const day = timed ? dayIn(new Date(t.due!), tz) : t.due!
-        if (day === today) due.push({ task: t.title, board: t.board, note: timed ? timeIn(new Date(t.due!), tz) : undefined })
-        else if (day < today) overdue.push({ task: t.title, board: t.board, note: `was due ${dayWords(day)}` })
-      }
-      // Reminders going off later today, for them.
-      const withReminders = await app.db
-        .select({ title: tasks.title, due: tasks.due, assigneeId: tasks.assigneeId, reminders: tasks.reminders, board: boards.name })
-        .from(tasks)
-        .innerJoin(boards, eq(boards.id, tasks.boardId))
-        .where(
-          and(
-            inArray(tasks.boardId, boardIds),
-            isNotNull(tasks.reminders),
-            isNull(tasks.archivedAt),
-            or(eq(tasks.assigneeId, u.id), isNull(tasks.assigneeId)),
-          ),
-        )
-      for (const t of withReminders)
-        for (const r of t.reminders ?? []) {
-          if ((t.assigneeId ?? r.by) !== u.id) continue
-          const at = fireTime(r, { due: t.due ?? undefined })
-          if (at && at > now && dayIn(at, tz) === today) later.push({ task: t.title, board: t.board, note: timeIn(at, tz) })
+      const boardIds = (await boardsFor(app.db, u.id)).filter((b) => !b.archivedAt).map((b) => b.id)
+      const due: DigestItem[] = []
+      const overdue: DigestItem[] = []
+      const later: DigestItem[] = []
+      if (boardIds.length) {
+        // Open cards assigned to them, with a due date.
+        const mine = await app.db
+          .select({ title: tasks.title, due: tasks.due, board: boards.name })
+          .from(tasks)
+          .innerJoin(boards, eq(boards.id, tasks.boardId))
+          .innerJoin(lists, and(eq(lists.boardId, tasks.boardId), eq(lists.id, tasks.status)))
+          .where(
+            and(
+              inArray(tasks.boardId, boardIds),
+              eq(tasks.assigneeId, u.id),
+              isNull(tasks.archivedAt),
+              isNotNull(tasks.due),
+              ne(lists.category, 'done'),
+            ),
+          )
+        for (const t of mine) {
+          const timed = t.due!.length > 10
+          const day = timed ? dayIn(new Date(t.due!), tz) : t.due!
+          if (day === today) due.push({ task: t.title, board: t.board, note: timed ? timeIn(new Date(t.due!), tz) : undefined })
+          else if (day < today) overdue.push({ task: t.title, board: t.board, note: `was due ${dayWords(day)}` })
         }
-    }
-    const mentions = await app.db
-      .select({ id: notifications.id, actor: users.name, board: boards.name, task: tasks.title, body: comments.body })
-      .from(notifications)
-      .innerJoin(boards, eq(boards.id, notifications.boardId))
-      .leftJoin(users, eq(users.id, notifications.actorId))
-      .leftJoin(tasks, and(eq(tasks.boardId, notifications.boardId), eq(tasks.id, notifications.taskId)))
-      .leftJoin(comments, eq(comments.id, notifications.commentId))
-      .where(
-        and(
-          eq(notifications.userId, u.id),
-          eq(notifications.kind, 'mention'),
-          isNull(notifications.readAt),
-          isNull(notifications.emailedAt),
-          // (Only from boards they can still open: what's quoted is read now, not when they were mentioned.)
-          boardIds.length ? inArray(notifications.boardId, boardIds) : sql`false`,
-        ),
-      )
-      .orderBy(desc(notifications.createdAt))
-    if (!due.length && !overdue.length && !later.length && !mentions.length) continue
-
-    later.sort((a, b) => (a.note ?? '').localeCompare(b.note ?? ''))
-    const cut = <T>(xs: T[]) => ({ items: xs.slice(0, MAX_ITEMS), more: Math.max(0, xs.length - MAX_ITEMS) })
-    const result = await app.mail.queue({
-      kind: 'digest',
-      to: u.email,
-      requestedBy: null,
-      content: (brand) =>
-        emails.digest(brand, {
-          name: u.name,
-          site: `${site}/`,
-          day: dayWords(today),
-          due: cut(due),
-          overdue: cut(overdue),
-          reminders: cut(later),
-          mentions: cut(
-            mentions.map((m) => ({
-              task: m.task ?? 'a deleted task',
-              board: m.board,
-              note: `${m.actor ?? 'Someone'}: “${excerpt(m.body ?? '', 120)}”`,
-            })),
-          ),
-        }),
-    })
-    if (!result.queued) continue
-    if (mentions.length)
-      await app.db
-        .update(notifications)
-        .set({ emailedAt: now })
+        // Reminders going off later today, for them.
+        const withReminders = await app.db
+          .select({ title: tasks.title, due: tasks.due, assigneeId: tasks.assigneeId, reminders: tasks.reminders, board: boards.name })
+          .from(tasks)
+          .innerJoin(boards, eq(boards.id, tasks.boardId))
+          .where(
+            and(
+              inArray(tasks.boardId, boardIds),
+              isNotNull(tasks.reminders),
+              isNull(tasks.archivedAt),
+              or(eq(tasks.assigneeId, u.id), isNull(tasks.assigneeId)),
+            ),
+          )
+        for (const t of withReminders)
+          for (const r of t.reminders ?? []) {
+            if ((t.assigneeId ?? r.by) !== u.id) continue
+            const at = fireTime(r, { due: t.due ?? undefined })
+            if (at && at > now && dayIn(at, tz) === today) later.push({ task: t.title, board: t.board, note: timeIn(at, tz) })
+          }
+      }
+      const mentions = await app.db
+        .select({ id: notifications.id, actor: users.name, board: boards.name, task: tasks.title, body: comments.body })
+        .from(notifications)
+        .innerJoin(boards, eq(boards.id, notifications.boardId))
+        .leftJoin(users, eq(users.id, notifications.actorId))
+        .leftJoin(tasks, and(eq(tasks.boardId, notifications.boardId), eq(tasks.id, notifications.taskId)))
+        .leftJoin(comments, eq(comments.id, notifications.commentId))
         .where(
-          inArray(
-            notifications.id,
-            mentions.map((m) => m.id),
+          and(
+            eq(notifications.userId, u.id),
+            eq(notifications.kind, 'mention'),
+            isNull(notifications.readAt),
+            isNull(notifications.emailedAt),
+            // (Only from boards they can still open: what's quoted is read now, not when they were mentioned.)
+            boardIds.length ? inArray(notifications.boardId, boardIds) : sql`false`,
           ),
         )
-    await app.db.update(users).set({ lastDigestAt: now }).where(eq(users.id, u.id))
-    sent++
+        .orderBy(desc(notifications.createdAt))
+        // (The email shows a few and counts the rest: there's no need to read every one.)
+        .limit(500)
+      if (!due.length && !overdue.length && !later.length && !mentions.length) continue
+
+      later.sort((a, b) => (a.note ?? '').localeCompare(b.note ?? ''))
+      const cut = <T>(xs: T[]) => ({ items: xs.slice(0, MAX_ITEMS), more: Math.max(0, xs.length - MAX_ITEMS) })
+      const result = await app.mail.queue({
+        kind: 'digest',
+        to: u.email,
+        requestedBy: null,
+        content: (brand) =>
+          emails.digest(brand, {
+            name: u.name,
+            site: `${site}/`,
+            day: dayWords(today),
+            due: cut(due),
+            overdue: cut(overdue),
+            reminders: cut(later),
+            mentions: cut(
+              mentions.map((m) => ({
+                task: m.task ?? 'a deleted task',
+                board: m.board,
+                note: `${m.actor ?? 'Someone'}: “${excerpt(m.body ?? '', 120)}”`,
+              })),
+            ),
+          }),
+      })
+      if (!result.queued) continue
+      if (mentions.length)
+        await app.db
+          .update(notifications)
+          .set({ emailedAt: now })
+          .where(
+            inArray(
+              notifications.id,
+              mentions.map((m) => m.id),
+            ),
+          )
+      await app.db.update(users).set({ lastDigestAt: now }).where(eq(users.id, u.id))
+      sent++
+    } catch (e) {
+      app.log.error({ err: e instanceof Error ? e.message : e }, 'sending a morning summary')
+    }
   }
   return sent
 }

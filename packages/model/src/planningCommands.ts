@@ -95,6 +95,10 @@ export const PLAN_LIMITS = {
   plannedMd: 1_000_000,
   days: 3660,
   openLines: 20,
+  lines: 20_000,
+  /** The years a plan covers: what reads it walks through its days. */
+  from: '2000-01-01',
+  to: '2100-12-31',
 }
 
 const LISTS = { role: 'roles', person: 'people', project: 'projects', line: 'lines', block: 'blocks' } as const satisfies Record<
@@ -198,6 +202,7 @@ function run(plan: PlanData, cmd: PlanCommand, ctx: PlanContext): PlanChange[] {
     const s = toDay(b.start)
     const e = toDay(b.end)
     if (e < s) refuse('A block has to end on or after its start.')
+    if (s < toDay(PLAN_LIMITS.from) || e > toDay(PLAN_LIMITS.to)) refuse('Dates in a plan are between 2000 and 2100.')
     if (e - s > PLAN_LIMITS.days) refuse('A block can be up to ten years long.')
     if (!workDays(s, e, week)) refuse('A block needs at least one working day.')
     if (overlapsOnLine(on, b.projectId, b.personId, s, e, b.id, b.slot))
@@ -236,6 +241,7 @@ function run(plan: PlanData, cmd: PlanCommand, ctx: PlanContext): PlanChange[] {
     case 'block.split': {
       const b = block(cmd.id)
       if (!isDay(cmd.at) || !canSplit(b, toDay(cmd.at), week)) refuse('A block can only be split inside it, leaving working days on both sides.')
+      if (plan.blocks.length >= PLAN_LIMITS.blocks) refuse(`A plan can have up to ${PLAN_LIMITS.blocks} blocks.`)
       const id = fresh('blocks', cmd.newId ?? ctx.newId())
       const at = toDay(cmd.at)
       put('block', b, { ...b, end: fromDay(prevWorkDay(at - 1, week)) })
@@ -361,15 +367,13 @@ function run(plan: PlanData, cmd: PlanCommand, ctx: PlanContext): PlanChange[] {
       const into = person(cmd.into)
       if (from.userId) refuse('Only someone added by name can be linked to an account.')
       if (!into.userId || from.id === into.id) refuse('Pick someone in the workspace.')
-      let next = plan
+      // (Checked against the plan as it is: their own blocks on a project already keep clear of each other.)
       for (const b of plan.blocks.filter((x) => x.personId === from.id)) {
         const moved = { ...b, personId: into.id }
         const p = project(b.projectId)
-        if (overlapsOnLine(next, b.projectId, into.id, toDay(b.start), toDay(b.end), b.id))
+        if (overlapsOnLine(plan, b.projectId, into.id, toDay(b.start), toDay(b.end), b.id))
           refuse(`${from.name}'s time on ${p.name} overlaps ${into.name}'s there. Move one of them first.`)
-        const c = { entity: 'block', id: b.id, before: b, after: stamp(b, moved, now) } as PlanChange
-        out.push(c)
-        next = applyPlanChanges(next, [c])
+        out.push({ entity: 'block', id: b.id, before: b, after: stamp(b, moved, now) } as PlanChange)
       }
       for (const l of plan.lines.filter((x) => x.personId === from.id)) {
         drop('line', l)
@@ -405,6 +409,7 @@ function run(plan: PlanData, cmd: PlanCommand, ctx: PlanContext): PlanChange[] {
       project(cmd.projectId)
       person(cmd.personId)
       if (plan.lines.some((l) => l.projectId === cmd.projectId && l.personId === cmd.personId)) break
+      if (plan.lines.length >= PLAN_LIMITS.lines) refuse('This plan has as many people on projects as it can hold.')
       put('line', null, { id: fresh('lines', cmd.id ?? ctx.newId()), projectId: cmd.projectId, personId: cmd.personId })
       break
     }
@@ -464,6 +469,10 @@ function restore(
     out.push({ entity: c.entity, id: c.id, before: cur, after } as PlanChange)
   }
   const next = applyPlanChanges(plan, out)
+  // Undo can't make a plan bigger than adding to it could.
+  for (const list of ['projects', 'people', 'roles', 'blocks', 'lines'] as const)
+    if (next[list].length > PLAN_LIMITS[list] && next[list].length > plan[list].length)
+      refuse('That would make the plan too big, so it can’t be undone.')
   const has = (list: { id: string }[], id: string | null) => id === null || list.some((x) => x.id === id)
   for (const c of out) {
     if (c.entity !== 'project' || !c.after) continue

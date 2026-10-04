@@ -1,11 +1,23 @@
 import type { AdminGoogleCalendar, AdminSettings } from '@kanbanto/model/api'
-import { eq, sql } from 'drizzle-orm'
+import { and, eq, isNull, sql } from 'drizzle-orm'
 import type { FastifyPluginAsync, FastifyRequest } from 'fastify'
 import { z } from 'zod'
 import { createEmailToken } from '../auth/email-tokens'
 import { endAllSessions } from '../auth/sessions'
 import { decrypt, encrypt, encryptionReady } from '../crypto'
-import { apiTokens, boardMembers, calendarConnections, calendarFeeds, oauthCodes, oauthGrants, siteSettings, users } from '../db/schema'
+import {
+  apiTokens,
+  boardInvites,
+  boardMembers,
+  calendarConnections,
+  calendarFeeds,
+  oauthCodes,
+  oauthGrants,
+  siteSettings,
+  users,
+  workspaceInvites,
+  workspaceMembers,
+} from '../db/schema'
 import { endEmailTokens } from '../auth/email-tokens'
 import { HttpError, parse, siteUrl } from '../http'
 import { emails } from '../mail/templates'
@@ -60,7 +72,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
   })
 
   /**
-   * Turns an account off (signed out, can't sign in) or back on, or marks its email as confirmed (the admin vouches
+   * Turns an account off (signed out, can't sign in, and without the tokens, apps and invite links it held) or back on, or marks its email as confirmed (the admin vouches
    * for it, e.g. an address that can't receive the confirmation email). Admin rights are only changed on the server.
    */
   app.patch('/users/:id', async (req) => {
@@ -88,6 +100,26 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       await app.db.delete(oauthGrants).where(eq(oauthGrants.userId, id))
       await app.db.delete(oauthCodes).where(eq(oauthCodes.userId, id))
       await app.db.delete(calendarFeeds).where(eq(calendarFeeds.userId, id))
+      // And the ways back in that they hold: the share links, access codes and waiting invites of the boards they
+      // own and the workspaces they run (and any they sent). The others there can make new ones.
+      await app.db
+        .update(boardInvites)
+        .set({ revokedAt: new Date() })
+        .where(
+          and(
+            isNull(boardInvites.revokedAt),
+            sql`(${boardInvites.createdBy} = ${id} or exists (select 1 from ${boardMembers} m where m.board_id = ${boardInvites.boardId} and m.user_id = ${id} and m.role = 'owner'))`,
+          ),
+        )
+      await app.db
+        .update(workspaceInvites)
+        .set({ revokedAt: new Date() })
+        .where(
+          and(
+            isNull(workspaceInvites.revokedAt),
+            sql`(${workspaceInvites.createdBy} = ${id} or exists (select 1 from ${workspaceMembers} m where m.workspace_id = ${workspaceInvites.workspaceId} and m.user_id = ${id} and m.role = 'admin'))`,
+          ),
+        )
       app.hub.signOut(id)
     }
     return { ok: true }
