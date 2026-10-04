@@ -28,6 +28,8 @@ services:
       # (see docs/configuration.md). Empty: set email up in the Platform console, or not at all.
       SMTP_URL: ${SMTP_URL:-}
       SMTP_FROM: ${SMTP_FROM:-}
+      # Optional: where "Guides" in the account menu goes (default: the guides at kanbanto.com; off: no such item).
+      GUIDES_URL: ${GUIDES_URL:-}
       LOG_FORMAT: ${LOG_FORMAT:-}
     volumes:
       # Attachments kept on this server (until you switch to an S3/R2 bucket in the Platform console).

@@ -13,7 +13,8 @@ export default defineConfig({
   appearance: false,
   head: [['link', { rel: 'icon', type: 'image/svg+xml', href: '/guides/favicon.svg' }]],
   themeConfig: {
-    logo: '/favicon.svg',
+    // (Not the tab's icon, which turns light when the computer is in dark mode: these pages are always light.)
+    logo: '/logo.svg',
     siteTitle: 'Kanbanto guides',
     search: { provider: 'local' },
     outline: { level: [2, 3], label: 'On this page' },

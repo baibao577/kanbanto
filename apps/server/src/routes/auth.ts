@@ -134,6 +134,7 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
       /** The site can send email (so password reset works, and new accounts confirm their email). */
       emailEnabled: app.mail.platformReady,
       links: app.siteLinks,
+      guidesUrl: app.guidesUrl,
     }
   })
 

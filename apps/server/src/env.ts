@@ -12,6 +12,22 @@ function trustProxy(value: string | undefined): boolean | number | string {
   return v
 }
 
+/** How to use Kanbanto, for the people using it: the `guides` folder, published. */
+export const GUIDES = 'https://kanbanto.com/guides/'
+
+/**
+ * GUIDES_URL: where "Guides" in the account menu goes. Unset (or empty): the guides at kanbanto.com. An address of
+ * your own replaces it: a copy of the guides you serve, your team's handbook, or a page on this site (/help). `off`
+ * takes the item out of the menu.
+ */
+export function guidesUrl(value: string | undefined): string | null {
+  const v = value?.trim()
+  if (!v) return GUIDES
+  if (v === 'off') return null
+  if (/^https?:\/\//i.test(v) || /^\/[^/]/.test(v)) return v
+  throw new Error(`GUIDES_URL is “${v}”. It’s a web address (https://…), a page on this site (/help), or “off”.`)
+}
+
 /** Settings from the environment, checked once at startup. */
 export const env = {
   databaseUrl: process.env.DATABASE_URL ?? 'postgres://kankan:kankan@localhost:5433/kankan',
@@ -55,6 +71,8 @@ export const env = {
    * src/pages.ts. The Docker image looks in /app/pages, filled from a `pages` folder beside the Dockerfile.
    */
   pagesDir: process.env.PAGES_DIR || undefined,
+  /** Where "Guides" in the account menu goes (null: there's no such item). See `guidesUrl`. */
+  guidesUrl: guidesUrl(process.env.GUIDES_URL),
   /** 'log' prints emails to the terminal instead of sending them (development). Default: send them. */
   mailTransport: process.env.MAIL_TRANSPORT === 'log' ? ('log' as const) : ('resend' as const),
 }

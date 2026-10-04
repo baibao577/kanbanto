@@ -51,6 +51,8 @@ export interface Me {
   emailEnabled: boolean
   /** Links the site's operator shows under the sign-in form (none by default). */
   links: SiteLink[]
+  /** Where "Guides" in the account menu goes: how to use Kanbanto. Null: the site has taken the item out. */
+  guidesUrl: string | null
 }
 
 export type SmtpSecurity = 'tls' | 'starttls' | 'none'

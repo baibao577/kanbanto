@@ -21,6 +21,7 @@ With Docker Compose, put these in `.env` next to `docker-compose.yml` (start fro
 | `ENCRYPTION_KEY` | made on first start | The key that encrypts the email keys, mail server passwords and storage keys saved in the Platform console: 32 random bytes in base64. Without it, Kanbanto makes one and keeps it in the `config` volume (`node dist/cli.js key` shows it). Set it to bring the key from a backup or another server. |
 | `SMTP_URL` | — | Send email through this SMTP server instead of setting email up in the Platform console, e.g. `smtp://user:password@smtp.example.com:587`. See [below](#smtp_url). |
 | `SMTP_FROM` | — | The sender for `SMTP_URL`, e.g. `Kanbanto <kanbanto@example.com>`. Required with `SMTP_URL`. |
+| `GUIDES_URL` | the guides at kanbanto.com | Where **Guides** in the account menu goes: how to use Kanbanto, for the people using it. Put your own address here (a copy of the [`guides`](../guides) folder you serve, your team's handbook, or a page on this site like `/help`), or `off` to take the item out of the menu. |
 | `DOMAIN` | — | Your domain, for the [HTTPS add-on](self-hosting.md#https). |
 | `DB_PORT` | `5433` | The port the database is reachable on — only from this machine (`127.0.0.1`), for backups and development. |
 | `LOG_FORMAT` | readable lines | `json`: one JSON object per line, for log collectors. |
@@ -45,6 +46,7 @@ the settings above.
 | `PAGES_DIR` | — (Docker image: `/app/pages`) | Folder with your site's own pages. See [Your own pages](#your-own-pages). |
 | `NODE_ENV` | — (Docker image: `production`) | `production` for real use. |
 | `SMTP_URL` / `SMTP_FROM` | — | As above. |
+| `GUIDES_URL` | the guides at kanbanto.com | As above. |
 | `LOG_FORMAT` | readable lines | As above. |
 | `MAIL_TRANSPORT` | — | `log` prints emails to the terminal instead of sending them — for development only. |
 | `ALLOW_PRIVATE_BUCKETS` | — | `true` lets people's own storage be on a private network address (development and tests only: it would let anyone make the server reach your network). |

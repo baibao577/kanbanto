@@ -61,6 +61,8 @@ declare module 'fastify' {
     calendar: CalendarSync
     /** Links to the site's own pages, shown under the sign-in form (see src/pages.ts). */
     siteLinks: SiteLink[]
+    /** Where "Guides" in the account menu goes; null: no such item (GUIDES_URL). */
+    guidesUrl: string | null
   }
 }
 
@@ -99,6 +101,8 @@ export async function buildApp(
     google?: GoogleApi
     /** The folder of the site's own pages (default: PAGES_DIR). */
     pagesDir?: string
+    /** Where "Guides" in the account menu goes, or null for none (default: GUIDES_URL). */
+    guidesUrl?: string | null
   } = {},
 ): Promise<FastifyInstance> {
   const app = Fastify({
@@ -113,6 +117,7 @@ export async function buildApp(
   })
   const pagesDir = opts.pagesDir ?? env.pagesDir
   app.decorate('siteLinks', siteLinks(pagesDir))
+  app.decorate('guidesUrl', opts.guidesUrl !== undefined ? opts.guidesUrl : env.guidesUrl)
   const hub = new LiveHub()
   const mail = new Mailer(db, opts.transport ?? providerTransport, opts.serverSender !== undefined ? opts.serverSender : serverSender(env))
   app.decorate('db', db)

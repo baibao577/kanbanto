@@ -1,4 +1,4 @@
-import { Desktop, MagnifyingGlass, Moon, ShieldCheck, SignOut, Sun, Timer, UserCircle } from '@phosphor-icons/react'
+import { ArrowSquareOut, BookOpenText, Desktop, MagnifyingGlass, Moon, ShieldCheck, SignOut, Sun, Timer, UserCircle } from '@phosphor-icons/react'
 import { navigate } from '@/app/router'
 import { useAuth } from '@/app/use-auth'
 import { useTheme } from '@/app/use-theme'
@@ -19,9 +19,9 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 
-/** Your avatar: search all cards, account, appearance, the platform console (platform admins), sign out. */
+/** Your avatar: search all cards, your week, the guides, account, appearance, the platform console (platform admins), sign out. */
 export function AccountMenu() {
-  const { user, signOut } = useAuth()
+  const { user, signOut, guidesUrl } = useAuth()
   const { theme, setTheme } = useTheme()
   if (!user) return null
 
@@ -46,6 +46,15 @@ export function AccountMenu() {
           <DropdownMenuItem onSelect={() => navigate({ page: 'time' })}>
             <Timer /> My week
           </DropdownMenuItem>
+          {guidesUrl && (
+            <DropdownMenuItem asChild>
+              {/* (How to use Kanbanto: another site, so it opens beside the app.) */}
+              <a href={guidesUrl} target="_blank" rel="noreferrer">
+                <BookOpenText /> Guides
+                <ArrowSquareOut className="ml-auto size-3.5 text-muted-foreground" />
+              </a>
+            </DropdownMenuItem>
+          )}
           <DropdownMenuItem onSelect={() => navigate({ page: 'account' })}>
             <UserCircle /> Account settings
           </DropdownMenuItem>

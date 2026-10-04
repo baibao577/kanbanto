@@ -4,8 +4,8 @@ Click your initials at the top right for your account menu.
 
 ![The account menu](/images/account-menu.webp){.small}
 
-From here: **Search all cards**, **My week**, **Account settings**, the appearance (light, dark, or following your
-device), and signing out. People who run the site also see **Platform console**, where the site itself is set up.
+From here: **Search all cards**, **My week**, **Guides** (these pages), **Account settings**, the appearance (light,
+dark, or following your device), and signing out. People who run the site also see **Platform console**, where the site itself is set up.
 
 ## Account settings
 

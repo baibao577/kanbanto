@@ -3,6 +3,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { buildApp } from '../src/app'
+import { GUIDES, guidesUrl } from '../src/env'
 import { reset, setup } from './helpers'
 
 let t: Awaited<ReturnType<typeof setup>>
@@ -57,5 +58,18 @@ describe('the site’s own pages', () => {
     put('links.json', '{ not json')
     await expect(buildApp(t.db, { transport: t.mail, pagesDir: dir })).rejects.toThrow(/isn’t valid JSON/)
     await expect(buildApp(t.db, { transport: t.mail, pagesDir: path.join(dir, 'nope') })).rejects.toThrow(/no such folder/)
+  })
+
+  it('the guides: kanbanto.com’s unless the site names its own, or takes the link out', async () => {
+    expect((await t.app.inject({ method: 'GET', url: '/api/auth/me' })).json().guidesUrl).toBe(GUIDES)
+    const app = await buildApp(t.db, { transport: t.mail, guidesUrl: null })
+    expect((await app.inject({ method: 'GET', url: '/api/auth/me' })).json().guidesUrl).toBeNull()
+    await app.close()
+    // GUIDES_URL: nothing (Docker Compose passes it empty) is the default, not "off".
+    expect([guidesUrl(undefined), guidesUrl(''), guidesUrl('  ')]).toEqual([GUIDES, GUIDES, GUIDES])
+    expect(guidesUrl('off')).toBeNull()
+    expect(guidesUrl(' https://wiki.example.com/kanbanto ')).toBe('https://wiki.example.com/kanbanto')
+    expect(guidesUrl('/help')).toBe('/help')
+    for (const bad of ['javascript:alert(1)', 'wiki.example.com', '//evil.example.com']) expect(() => guidesUrl(bad)).toThrow(/GUIDES_URL/)
   })
 })

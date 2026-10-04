@@ -98,6 +98,7 @@ then `git pull` (or download the new release) and `docker compose up -d --build`
   disk or in an S3-compatible bucket (Cloudflare R2, Amazon S3, MinIO); people can bring their own.
 - **Guides** for the people using it, in [`guides/`](guides/): a page for each thing you'd want to do (your first
   board, cards, sharing, workspaces, assistants, time and planning, calendars), with pictures taken from the app by a
-  script, built into a small website with VitePress.
+  script, built into a small website with VitePress. **Guides** in the account menu opens them (at kanbanto.com by
+  default; `GUIDES_URL` points it at your own, or `off` takes it out).
 - **Self-hosting:** one Docker Compose file, an optional HTTPS add-on, backups and restores, a Platform console for
   settings, and server commands for the rest. The encryption key for saved keys is made automatically.
