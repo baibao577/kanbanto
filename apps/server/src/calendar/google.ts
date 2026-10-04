@@ -38,14 +38,22 @@ export interface GoogleEvent {
 export class GoogleError extends Error {
   readonly status: number
   readonly refused: boolean
-  constructor(status: number, message: string, refused = false) {
+  /** Google's short name for what went wrong ("invalid_client": it doesn't know this client ID and secret). */
+  readonly reason: string
+  constructor(status: number, message: string, refused = false, reason = '') {
     super(message)
     this.status = status
     this.refused = refused
+    this.reason = reason
   }
 }
 
+/** Google doesn't accept the site's Google app (its client ID and secret): the site's setting is wrong, not the person's connection. */
+export const badApp = (e: unknown) => e instanceof GoogleError && e.reason === 'invalid_client'
+
 export interface GoogleApi {
+  /** Asks Google whether it knows this client ID and secret. Null: it does. Otherwise why not, in Google's words. */
+  checkApp(app: GoogleApp, redirectUri: string): Promise<string | null>
   /** Where to send the person to sign in and allow the connection. */
   authUrl(app: GoogleApp, redirectUri: string, state: string): string
   /** Swaps the code Google sent them back with for a refresh token (kept) and who they are. */
@@ -109,7 +117,7 @@ async function token(params: Record<string, string>): Promise<Record<string, unk
   if (res.ok) return (await res.json()) as Record<string, unknown>
   const { message, reason } = await problem(res)
   // invalid_grant: the code or refresh token is no good (used, expired, or the person took the access away).
-  throw new GoogleError(res.status, message, reason === 'invalid_grant' || reason === 'invalid_client' || reason === 'unauthorized_client')
+  throw new GoogleError(res.status, message, reason === 'invalid_grant' || reason === 'invalid_client' || reason === 'unauthorized_client', reason)
 }
 
 /** The email in an ID token. It came straight from Google over HTTPS, so its signature isn't checked again. */
@@ -126,6 +134,25 @@ function emailIn(idToken: unknown): string | null {
 const cal = (id: string) => encodeURIComponent(id)
 
 export const google: GoogleApi = {
+  async checkApp(app, redirectUri) {
+    try {
+      // A made-up code: Google checks who's asking before it looks at the code, so the answer is about the client.
+      await token({
+        client_id: app.clientId,
+        client_secret: app.clientSecret,
+        redirect_uri: redirectUri,
+        grant_type: 'authorization_code',
+        code: 'kanbanto-check',
+      })
+      return null
+    } catch (e) {
+      if (badApp(e)) return (e as GoogleError).message
+      // The code was refused, as it should be: the client itself is fine.
+      if (e instanceof GoogleError && e.status >= 400 && e.status < 500) return null
+      throw e
+    }
+  },
+
   authUrl(app, redirectUri, state) {
     const q = new URLSearchParams({
       client_id: app.clientId,
@@ -206,6 +233,8 @@ export class MemoryGoogle implements GoogleApi {
   revoked: string[] = []
   calls = 0
   fail: GoogleError | null = null
+  /** Set to Google's words for it ("The provided client secret is invalid.") to have the site's Google app refused. */
+  badApp: string | null = null
   /** What signing in gives: the account, and whether they left the calendar permission ticked. */
   account = { email: 'someone@gmail.com', calendar: true }
   private n = 0
@@ -225,11 +254,15 @@ export class MemoryGoogle implements GoogleApi {
     return [...(this.calendars.get(calendarId)?.values() ?? [])].map((e) => e.summary).sort()
   }
 
+  async checkApp() {
+    return this.badApp
+  }
   authUrl(app: GoogleApp, redirectUri: string, state: string) {
     return `https://accounts.google.com/o/oauth2/v2/auth?${new URLSearchParams({ client_id: app.clientId, redirect_uri: redirectUri, state })}`
   }
   async exchange(_app: GoogleApp, _redirectUri: string, code: string) {
     this.step()
+    if (this.badApp) throw new GoogleError(401, this.badApp, true, 'invalid_client')
     if (code !== 'good-code') throw new GoogleError(400, 'Bad Request', true)
     const refreshToken = `refresh-${++this.n}`
     this.grants.set(refreshToken, this.account.email)

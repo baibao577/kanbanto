@@ -41,8 +41,9 @@ calendars of its own and manage the events in them. It can't see or change their
    - Everyone on your site is in your Google Workspace: choose **Internal**, and you're done with this step.
    - Otherwise choose **External**, and then **publish the app** ("In production"). Left in "Testing", Google ends
      every connection after 7 days, and only test users you list can connect.
-   - Under **Data access**, add the scope `https://www.googleapis.com/auth/calendar.app.created`. Google may ask to
-     review an External app before it lets everyone connect without a warning page.
+   - Under **Data access**, add the scopes `https://www.googleapis.com/auth/calendar.app.created`, `openid` and
+     `https://www.googleapis.com/auth/userinfo.email`, typed in full. Google lists all three as non-sensitive (checked
+     in October 2026), so there's no scope review: at most a quick check of the app's name, logo and links.
 3. Under **Credentials** (Clients), create an **OAuth client ID** of type **Web application**. Add the **authorized
    redirect URI** that the Platform console shows you: your site's address followed by
    `/api/account/calendar/google/callback`.
@@ -68,6 +69,11 @@ off stops every link.
 
 ## When it doesn't update
 
+- **"Google doesn't accept this client ID and secret"** when you save them: copy both from the same client. Google
+  shows the whole secret only when it's made; if you only see a shortened one, add a new secret to the client and
+  copy that. A secret made a moment ago can take a few minutes before Google accepts it: try again shortly. The same
+  cause, found later (the secret was replaced in Google), shows people "Google Calendar isn't set up correctly on this
+  site" when they connect.
 - **"Last problem" in Account settings → Calendar** says what Google answered. When Google can't be reached,
   Kanbanto tries again after 1, 5 and 30 minutes, then every few hours, and catches up by itself.
 - **"Connect again"** means Google no longer accepts the connection: the person took the access away in their Google

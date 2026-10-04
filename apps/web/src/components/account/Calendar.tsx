@@ -22,6 +22,8 @@ const PROBLEMS: Record<string, string> = {
   expired: 'That took too long, or was started in another browser. Connect Google Calendar again.',
   signin: 'Sign in, then connect Google Calendar again.',
   off: 'Google Calendar isn’t set up on this site.',
+  setup:
+    'Google Calendar isn’t set up correctly on this site: Google doesn’t accept the site’s client ID and secret. A platform admin can enter them again (Platform console → Integrations).',
   failed: 'Google Calendar couldn’t be connected. Try again in a moment.',
 }
 

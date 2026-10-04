@@ -8,6 +8,7 @@ import { z } from 'zod'
 import type { SessionUser } from '../auth/sessions'
 import { requireAccess } from '../boards/access'
 import { boardsInCalendar, calendarChoices, setBoardOff, taskUrl } from '../calendar/items'
+import { badApp } from '../calendar/google'
 import { googleApp } from '../calendar/sync'
 import { decrypt, encrypt, encryptionReady } from '../crypto'
 import { calendarConnections, calendarFeeds, users } from '../db/schema'
@@ -129,7 +130,7 @@ export const calendarRoutes: FastifyPluginAsync = async (app) => {
   /**
    * Google sends them back here. Whatever happened, they land on Account → Calendar, which says what went wrong:
    * denied (they said no), permission (they left the calendar box unticked), expired (took too long, or this isn't
-   * the browser that started it), signin, off, failed.
+   * the browser that started it), signin, off, setup (Google doesn't accept the site's client ID and secret), failed.
    */
   app.get('/account/calendar/google/callback', async (req, reply) => {
     const back = (problem?: string) => reply.redirect(`${siteUrl(req)}/#/account/calendar${problem ? `?problem=${problem}` : ''}`)
@@ -153,7 +154,7 @@ export const calendarRoutes: FastifyPluginAsync = async (app) => {
       await app.calendar.connect(req.user.id, grant)
     } catch (e) {
       req.log.warn({ err: loggable(e) }, 'connecting Google Calendar')
-      return back('failed')
+      return back(badApp(e) ? 'setup' : 'failed')
     }
     return back()
   })

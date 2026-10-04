@@ -9,7 +9,7 @@ import type { Db } from '../db'
 import { calendarBoards, calendarConnections, calendarEvents, siteSettings, users } from '../db/schema'
 import { HttpError } from '../http'
 import { loadSettings } from '../settings'
-import { GoogleError, type GoogleApi, type GoogleApp, type GoogleEvent } from './google'
+import { badApp, GoogleError, type GoogleApi, type GoogleApp, type GoogleEvent } from './google'
 import { boardsInCalendar, taskUrl, type CalendarBoard } from './items'
 
 /**
@@ -232,7 +232,8 @@ export class CalendarSync {
       else if (e instanceof CalendarGone) {
         await this.forget(c.userId)
         this.dirty = true
-      } else if (e instanceof GoogleError && e.refused) {
+      } else if (e instanceof GoogleError && e.refused && !badApp(e)) {
+        // (When it's the site's Google app that Google refuses, connecting again wouldn't help: that waits and retries.)
         this.tokens.delete(c.userId)
         await set({ failingSince: now, lastError: 'Google no longer accepts this connection. Connect it again.' })
       } else {

@@ -4,7 +4,7 @@ import type { FastifyPluginAsync, FastifyRequest } from 'fastify'
 import { z } from 'zod'
 import { createEmailToken } from '../auth/email-tokens'
 import { endAllSessions } from '../auth/sessions'
-import { encrypt, encryptionReady } from '../crypto'
+import { decrypt, encrypt, encryptionReady } from '../crypto'
 import { boardMembers, calendarConnections, siteSettings, users } from '../db/schema'
 import { HttpError, parse, siteUrl } from '../http'
 import { emails } from '../mail/templates'
@@ -150,7 +150,10 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
 
   app.get('/calendar/google', googleCalendar)
 
-  /** Saves the Google app's client ID and secret (the secret encrypted, and never sent back). Leave the secret out to keep it. */
+  /**
+   * Saves the Google app's client ID and secret (the secret encrypted, and never sent back). Leave the secret out to
+   * keep it. Google is asked first whether it knows them: nothing is saved unless it does.
+   */
   app.put('/calendar/google', async (req) => {
     const body = parse(
       z.object({
@@ -162,6 +165,24 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     if (!encryptionReady()) throw new HttpError(503, 'Keys can’t be saved until the server has an encryption key. Restart Kanbanto to make one.')
     const [saved] = await app.db.select({ secret: siteSettings.googleClientSecretEncrypted }).from(siteSettings)
     if (!body.clientSecret && !saved?.secret) throw new HttpError(400, 'Enter the client secret from Google.')
+    let clientSecret = body.clientSecret
+    if (!clientSecret)
+      try {
+        clientSecret = decrypt(saved!.secret!)
+      } catch {
+        throw new HttpError(400, 'The saved client secret can’t be read any more. Enter it again.')
+      }
+    let refused: string | null
+    try {
+      refused = await app.calendar.google.checkApp({ clientId: body.clientId, clientSecret }, googleRedirectUri(req))
+    } catch {
+      throw new HttpError(502, 'Couldn’t reach Google to check the client ID and secret. Try again in a moment.')
+    }
+    if (refused)
+      throw new HttpError(
+        400,
+        `Google doesn’t accept this client ID and secret (“${refused}”). Copy both from the same client. Google shows the whole secret only when it’s made: if you only see a shortened one, add a new secret to the client and copy that. A secret made a moment ago can take a few minutes to start working: try again shortly.`,
+      )
     const set = { googleClientId: body.clientId, ...(body.clientSecret && { googleClientSecretEncrypted: encrypt(body.clientSecret) }) }
     await app.db
       .insert(siteSettings)

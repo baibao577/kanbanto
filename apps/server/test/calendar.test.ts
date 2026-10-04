@@ -166,6 +166,13 @@ describe('the site’s Google app', () => {
     })
     expect((await ann.request('PUT', '/api/admin/calendar/google', { clientId: 'app-id' })).status).toBe(400)
 
+    // Google is asked first: an ID and secret it doesn't know aren't saved, and the answer says why.
+    t.google.badApp = 'The provided client secret is invalid.'
+    const wrong = await ann.request('PUT', '/api/admin/calendar/google', { clientId: 'app-id', clientSecret: 'GOCSPX-shortened' })
+    expect(wrong).toMatchObject({ status: 400, body: { error: expect.stringMatching(/Google doesn’t accept.*client secret is invalid/) } })
+    expect((await ann.ok('GET', '/api/admin/calendar/google')).configured).toBe(false)
+    t.google.badApp = null
+
     const saved = await ann.ok('PUT', '/api/admin/calendar/google', { clientId: ' app-id ', clientSecret: 'GOCSPX-secret' })
     expect(saved).toMatchObject({ clientId: 'app-id', configured: true, connections: 0 })
     expect(JSON.stringify(saved)).not.toContain('GOCSPX')
@@ -202,6 +209,11 @@ describe('connecting Google Calendar', () => {
     expect(r.headers.location).toMatch(/\?problem=signin$/)
 
     t.google.account.calendar = true
+    // The site's own Google app refused by Google (its secret was replaced there): that's said, not "try again".
+    t.google.badApp = 'The provided client secret is invalid.'
+    expect(await connect(ann)).toMatch(/\?problem=setup$/)
+    t.google.badApp = null
+
     expect(await connect(ann)).toMatch(/#\/account\/calendar$/)
     expect((await ann.ok('GET', '/api/account/calendar')).google).toMatchObject({ email: 'someone@gmail.com', reconnect: false, problem: null })
     const [c] = await t.db.select().from(calendarConnections)
