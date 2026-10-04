@@ -3,7 +3,7 @@
 
 # (The base image is named by its exact contents, so a build can't pick up a changed one unnoticed. Dependabot
 # proposes the newer one each week.)
-FROM node:24-alpine@sha256:ebfe2f90462722a7a4de65e91990e97fe0d401c70e0e762c5b53302f905ec1c1 AS build
+FROM node:26-alpine@sha256:0b36e8c136b94cd4fcf02188228e76c31ad5872eef3fec8cbd2eee500cfd9e80 AS build
 RUN corepack enable
 WORKDIR /repo
 # Dependencies first, so they're cached until a package.json or the lockfile changes.
@@ -20,7 +20,7 @@ RUN pnpm --filter @kanbanto/web build \
  # The site's own pages (a privacy policy, terms…), if there's a `pages` folder beside this file: see docs/configuration.md.
  && mkdir -p /out/pages && if [ -d pages ]; then cp -R pages/. /out/pages/; fi
 
-FROM node:24-alpine@sha256:ebfe2f90462722a7a4de65e91990e97fe0d401c70e0e762c5b53302f905ec1c1
+FROM node:26-alpine@sha256:0b36e8c136b94cd4fcf02188228e76c31ad5872eef3fec8cbd2eee500cfd9e80
 ENV NODE_ENV=production \
     PORT=3000 \
     WEB_DIST=/app/web \
