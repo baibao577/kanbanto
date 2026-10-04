@@ -12,12 +12,14 @@ import type { Db } from './db'
 import { env } from './env'
 import { dbErrorCode, loggable } from './errors'
 import { HttpError, siteUrl } from './http'
+import type { SiteLink } from '@kanbanto/model/api'
 import { LiveHub } from './live'
 import { Webhooks } from './webhooks'
 import { google, type GoogleApi } from './calendar/google'
 import { CalendarSync } from './calendar/sync'
 import { calendarRoutes } from './routes/calendar'
 import { Push } from './push'
+import { servePages, siteLinks } from './pages'
 import { presetRoutes } from './routes/presets'
 import { pushRoutes } from './routes/push'
 import { Mailer } from './mail/mailer'
@@ -57,6 +59,8 @@ declare module 'fastify' {
     webhooks: Webhooks
     push: Push
     calendar: CalendarSync
+    /** Links to the site's own pages, shown under the sign-in form (see src/pages.ts). */
+    siteLinks: SiteLink[]
   }
 }
 
@@ -93,6 +97,8 @@ export async function buildApp(
     serverSender?: Sender | null
     /** Google, for calendar connections (tests pass a stand-in). */
     google?: GoogleApi
+    /** The folder of the site's own pages (default: PAGES_DIR). */
+    pagesDir?: string
   } = {},
 ): Promise<FastifyInstance> {
   const app = Fastify({
@@ -105,6 +111,8 @@ export async function buildApp(
     // Requests are small JSON; the routes that need more say so (board import, file uploads).
     bodyLimit: 1024 * 1024,
   })
+  const pagesDir = opts.pagesDir ?? env.pagesDir
+  app.decorate('siteLinks', siteLinks(pagesDir))
   const hub = new LiveHub()
   const mail = new Mailer(db, opts.transport ?? providerTransport, opts.serverSender !== undefined ? opts.serverSender : serverSender(env))
   app.decorate('db', db)
@@ -264,5 +272,6 @@ export async function buildApp(
         : reply.sendFile('index.html'),
     )
   }
+  if (pagesDir) servePages(app, pagesDir)
   return app
 }

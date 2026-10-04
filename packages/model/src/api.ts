@@ -36,12 +36,21 @@ export interface PublicUser {
   inboxBoardId: string | null
 }
 
+/** A link to one of the site's own pages (its privacy policy, terms…), or to anywhere else. */
+export interface SiteLink {
+  label: string
+  /** A page on this site (/privacy), or a full address. */
+  url: string
+}
+
 /** GET /api/auth/me */
 export interface Me {
   user: PublicUser | null
   openSignup: boolean
   /** The site can send email: password reset works, and new accounts must confirm their email. */
   emailEnabled: boolean
+  /** Links the site's operator shows under the sign-in form (none by default). */
+  links: SiteLink[]
 }
 
 export type SmtpSecurity = 'tls' | 'starttls' | 'none'

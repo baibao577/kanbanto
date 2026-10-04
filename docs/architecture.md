@@ -55,6 +55,7 @@ apps/server/      Fastify + Drizzle + PostgreSQL
                     templates.tsx + components.tsx (the emails), digest.ts
   src/storage/      stores.ts (server disk; S3-compatible via aws4fetch), service.ts (quotas, buckets),
                     egress.ts (people's own buckets: public addresses only)
+  src/pages.ts      The site's own pages (PAGES_DIR: a privacy policy, terms…) and the links under the sign-in form
   src/crypto.ts     AES-256-GCM for stored secrets; the master key (ENCRYPTION_KEY or the key file)
   src/live.ts       WebSocket fan-out per board
   src/cli.ts        Server commands (admin grant/revoke/list, user password, key, secret)

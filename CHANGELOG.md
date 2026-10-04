@@ -27,6 +27,8 @@ then `git pull` (or download the new release) and `docker compose up -d --build`
   for Apple Calendar, Outlook and others. Your cards are the ones assigned to you, plus nobody's cards on boards
   only you are on; you choose which boards are in it. Platform admins turn each on in the console (Google Calendar
   needs a Google app, see [Calendar](docs/calendar.md)).
+- **Your site's own pages:** a `pages` folder (an about page, a privacy policy, terms) is served next to the app,
+  with links to them under the sign-in form. See [Your own pages](docs/configuration.md#your-own-pages).
 - **Priorities** (urgent, high, medium, low) on tasks: shown on cards, and in the Outline, filters and sorting. Boards
   can say **what they're for**.
 - **Move a task to another board**, with its subtasks, comments and files (from its menu, or the card's panel). You see

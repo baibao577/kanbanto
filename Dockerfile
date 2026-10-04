@@ -14,17 +14,21 @@ COPY . .
 RUN pnpm --filter @kanbanto/web build \
  && pnpm --filter @kanbanto/server build \
  # Just the server with its production dependencies (the shared model is bundled into it).
- && pnpm --filter @kanbanto/server deploy --prod --legacy /out/server
+ && pnpm --filter @kanbanto/server deploy --prod --legacy /out/server \
+ # The site's own pages (a privacy policy, terms…), if there's a `pages` folder beside this file: see docs/configuration.md.
+ && mkdir -p /out/pages && if [ -d pages ]; then cp -R pages/. /out/pages/; fi
 
 FROM node:24-alpine
 ENV NODE_ENV=production \
     PORT=3000 \
     WEB_DIST=/app/web \
     UPLOADS_DIR=/data/uploads \
+    PAGES_DIR=/app/pages \
     KEY_FILE=/data/config/encryption.key
 WORKDIR /app/server
 COPY --from=build --chown=node:node /out/server ./
 COPY --from=build --chown=node:node /repo/apps/web/dist /app/web
+COPY --from=build --chown=node:node /out/pages /app/pages
 # Attachments kept on the server's disk, and the encryption key Kanbanto makes for itself. Mount volumes at these paths
 # so they survive rebuilds (docker-compose.yml does). No VOLUME instruction: some hosts (Railway) refuse it, and a
 # host's own volumes or settings (ENCRYPTION_KEY, a bucket for files) take its place.

@@ -50,6 +50,11 @@ export const env = {
    */
   smtpUrl: process.env.SMTP_URL || undefined,
   smtpFrom: process.env.SMTP_FROM || undefined,
+  /**
+   * A folder of the site's own pages (an about page, a privacy policy, terms), served next to the app: see
+   * src/pages.ts. The Docker image looks in /app/pages, filled from a `pages` folder beside the Dockerfile.
+   */
+  pagesDir: process.env.PAGES_DIR || undefined,
   /** 'log' prints emails to the terminal instead of sending them (development). Default: send them. */
   mailTransport: process.env.MAIL_TRANSPORT === 'log' ? ('log' as const) : ('resend' as const),
 }

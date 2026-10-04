@@ -42,11 +42,40 @@ the settings above.
 | `PORT` / `HOST` | `3000` / `0.0.0.0` | Where the server listens. |
 | `UPLOADS_DIR` | `./data/uploads` (Docker image: `/data/uploads`) | Folder for attachments kept on the server's disk. Must be persistent (a volume). |
 | `WEB_DIST` | — (Docker image: `/app/web`) | Folder with the built web app; when set, the server serves it. |
+| `PAGES_DIR` | — (Docker image: `/app/pages`) | Folder with your site's own pages. See [Your own pages](#your-own-pages). |
 | `NODE_ENV` | — (Docker image: `production`) | `production` for real use. |
 | `SMTP_URL` / `SMTP_FROM` | — | As above. |
 | `LOG_FORMAT` | readable lines | As above. |
 | `MAIL_TRANSPORT` | — | `log` prints emails to the terminal instead of sending them — for development only. |
 | `ALLOW_PRIVATE_BUCKETS` | — | `true` lets people's own storage be on a private network address (development and tests only: it would let anyone make the server reach your network). |
+
+### Your own pages
+
+A site that's open to the public usually needs a few pages the app doesn't have: an about page, a privacy policy,
+terms, an imprint. Put them in a folder named `pages` beside `docker-compose.yml` and rebuild
+(`docker compose up -d --build`); without Docker, point `PAGES_DIR` at the folder.
+
+| In the folder | Where it's served |
+|---|---|
+| `privacy.html` | `/privacy` (and `/privacy.html`) |
+| `img/team.png` | `/img/team.png` |
+| `links.json` | Not served: the links shown under the sign-in form |
+
+`links.json` is a list of up to 8 links, to your pages or anywhere else:
+
+```json
+[
+  { "label": "About", "url": "/welcome" },
+  { "label": "Privacy", "url": "/privacy" },
+  { "label": "Terms", "url": "/terms" }
+]
+```
+
+- Pages are plain files: HTML, CSS, scripts, pictures, PDFs. Other kinds of files and hidden files aren't served.
+- The main address (`/`) stays the app's, so a page can't be named `index.html`; neither can it sit under `/api`,
+  `/oauth` or `/assets`.
+- Pages are found when Kanbanto starts: restart after adding one.
+- They are part of the same site as the app, so only put pages there that you wrote or trust.
 
 ### `SMTP_URL`
 

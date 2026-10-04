@@ -176,6 +176,11 @@ seconds), or in any calendar app through a private **calendar link**. Both are o
 **Platform console → Integrations**; Google Calendar needs a Google app that you make once. See
 **[Calendar](calendar.md)**.
 
+## Your own pages
+
+A privacy policy, terms or an about page for your site: put them in a `pages` folder and Kanbanto serves them, with
+links under the sign-in form. See **[Your own pages](configuration.md#your-own-pages)**.
+
 ## File storage
 
 Card and comment attachments are stored on **the server's disk** by default (the `uploads` Docker volume), which is
