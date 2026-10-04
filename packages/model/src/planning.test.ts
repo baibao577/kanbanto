@@ -232,6 +232,24 @@ describe('plan commands', () => {
     expect(refusal(p, { type: 'block.split', id: '1', at: '2026-10-05' })).toMatch(/only be split inside/)
   })
 
+  it('removing someone with thousands of blocks is quick, and their blocks land on lines that don’t overlap', () => {
+    let p = example()
+    p = exec(p, block('seed', 'a', 'bob', '2026-10-05', '2026-10-05')).plan
+    const seed = p.blocks[0]
+    // Two blocks on each of 4,000 days, on two projects: every second one needs a line of its own.
+    const many = Array.from({ length: 8000 }, (_, i) => {
+      const day = new Date(Date.UTC(2030, 0, 1 + Math.floor(i / 2))).toISOString().slice(0, 10)
+      return { ...seed, id: `m${i}`, projectId: i % 2 ? 'a' : 'b', start: day, end: day }
+    })
+    p = { ...p, blocks: [...many] }
+    const started = Date.now()
+    const r = exec(p, { type: 'person.remove', id: 'bob' })
+    expect(Date.now() - started).toBeLessThan(3000)
+    expect(r.plan.blocks.every((b) => b.personId === null)).toBe(true)
+    const seen = new Set(r.plan.blocks.map((b) => `${b.projectId} ${b.slot} ${b.start}`))
+    expect(seen.size).toBe(8000)
+  })
+
   it('removing a person turns their time into time nobody has yet; members stay', () => {
     let p = example()
     p = exec(p, block('1', 'a', 'bob', '2026-10-05', '2026-10-09')).plan

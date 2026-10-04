@@ -387,18 +387,28 @@ function run(plan: PlanData, cmd: PlanCommand, ctx: PlanContext): PlanChange[] {
     case 'person.remove': {
       const p = person(cmd.id)
       if (p.userId && ctx.members.has(p.userId)) refuse('People in the workspace stay in its plan. Remove them from the workspace first.')
-      // Their time goes to the first "not assigned yet" line it fits on, or to a new one.
-      let next = plan
+      // Their time goes to the first "not assigned yet" line it fits on, or to a new one. What's on those lines is
+      // looked up once per project, so a person with a great many blocks is no slower per block than one with a few.
+      const open = new Map<string, { lines: [number, number][][]; was: number }>()
       for (const b of plan.blocks.filter((x) => x.personId === p.id)) {
-        const pr = next.projects.find((x) => x.id === b.projectId)!
-        let slot = 0
-        while (slot < pr.openLines && overlapsOnLine(next, b.projectId, null, toDay(b.start), toDay(b.end), b.id, slot)) slot++
-        const cs: PlanChange[] = []
-        if (slot === pr.openLines)
-          cs.push({ entity: 'project', id: pr.id, before: pr, after: stamp(pr, { ...pr, openLines: pr.openLines + 1 }, now) })
-        cs.push({ entity: 'block', id: b.id, before: b, after: stamp(b, { ...b, personId: null, slot }, now) })
-        out.push(...cs)
-        next = applyPlanChanges(next, cs)
+        let of = open.get(b.projectId)
+        if (!of) {
+          const pr = project(b.projectId)
+          of = { lines: Array.from({ length: pr.openLines }, () => []), was: pr.openLines }
+          for (const x of plan.blocks) if (x.projectId === b.projectId && x.personId === null) of.lines[x.slot]?.push([toDay(x.start), toDay(x.end)])
+          open.set(b.projectId, of)
+        }
+        const [s, e] = [toDay(b.start), toDay(b.end)]
+        let slot = of.lines.findIndex((taken) => !taken.some(([from, to]) => from <= e && s <= to))
+        if (slot < 0) slot = of.lines.push([]) - 1
+        of.lines[slot].push([s, e])
+        out.push({ entity: 'block', id: b.id, before: b, after: stamp(b, { ...b, personId: null, slot }, now) } as PlanChange)
+      }
+      for (const [id, of] of open) {
+        if (of.lines.length === of.was) continue
+        const pr = project(id)
+        // (Before the blocks that go on its new lines.)
+        out.unshift({ entity: 'project', id, before: pr, after: stamp(pr, { ...pr, openLines: of.lines.length }, now) } as PlanChange)
       }
       for (const l of plan.lines) if (l.personId === p.id) drop('line', l)
       drop('person', p)
