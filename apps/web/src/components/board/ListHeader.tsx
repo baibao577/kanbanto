@@ -1,4 +1,14 @@
-import { ArrowLeft, ArrowRight, ArrowsInLineHorizontal, DotsThree, EyeSlash, PencilSimple, SortAscending, Trash } from '@phosphor-icons/react'
+import {
+  Archive,
+  ArrowLeft,
+  ArrowRight,
+  ArrowsInLineHorizontal,
+  DotsThree,
+  EyeSlash,
+  PencilSimple,
+  SortAscending,
+  Trash,
+} from '@phosphor-icons/react'
 import { useState } from 'react'
 import { toast } from 'sonner'
 import { useBoard } from '@/app/board-context'
@@ -39,11 +49,16 @@ interface Props {
   count: number
   editing: boolean
   setEditing: (id: string | null) => void
+  /** Asks which of a done list's older cards to archive (see ArchiveOlderDialog). */
+  onArchiveOlder: () => void
   className?: string
 }
 
-/** A status list's header: rename in place, color, the order of its cards, what it counts as, reorder, hide, delete. */
-export function ListHeader({ col, count, editing, setEditing, className }: Props) {
+/**
+ * A status list's header: rename in place, color, the order of its cards, what it counts as, reorder, hide, delete;
+ * and, for a list of finished work, archiving its older cards.
+ */
+export function ListHeader({ col, count, editing, setEditing, onArchiveOlder, className }: Props) {
   const { data, idx, prefs, setPrefs, run, undo, readOnly } = useBoard()
   const [deleting, setDeleting] = useState(false)
   const columns = data.columns
@@ -219,6 +234,11 @@ export function ListHeader({ col, count, editing, setEditing, className }: Props
             </DropdownMenuRadioGroup>
 
             <DropdownMenuSeparator />
+            {col.category === 'done' && (
+              <DropdownMenuItem onSelect={onArchiveOlder}>
+                <Archive /> Archive older cards…
+              </DropdownMenuItem>
+            )}
             <DropdownMenuItem onSelect={hide}>
               <EyeSlash /> Hide list
             </DropdownMenuItem>

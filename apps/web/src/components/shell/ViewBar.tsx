@@ -1,6 +1,8 @@
 import { CaretRight, Crosshair, Timer, X } from '@phosphor-icons/react'
-import { createContext, useContext, useMemo, useState, type CSSProperties, type ReactNode } from 'react'
+import { createContext, useContext, useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
+import type { CardsPage } from '@kanbanto/model/api'
+import { api } from '@/api/client'
 import { useBoard } from '@/app/board-context'
 import { navigate } from '@/app/router'
 import { Button } from '@/components/ui/button'
@@ -75,14 +77,33 @@ export function ViewBar({ children, search, style }: { children: ReactNode; sear
   )
 }
 
+/** How many of a board's archived cards match some words: asked a moment after the typing stops (0 until then). */
+function useArchivedHits(boardId: string, q: string, skip: boolean): number {
+  const [hits, setHits] = useState({ q: '', n: 0 })
+  useEffect(() => {
+    if (!q || skip) return
+    let alive = true
+    const timer = setTimeout(
+      () =>
+        api<CardsPage>('GET', `/cards?state=archived&board=${encodeURIComponent(boardId)}&q=${encodeURIComponent(q)}&limit=1`).then(
+          (r) => alive && setHits({ q, n: r.total }),
+          () => {},
+        ),
+      350,
+    )
+    return () => {
+      alive = false
+      clearTimeout(timer)
+    }
+  }, [boardId, q, skip])
+  return q && hits.q === q ? hits.n : 0
+}
+
 function ScopeTrail({ search }: { search: string }) {
-  const { data, prefs, idx, focus } = useBoard()
+  const { data, prefs, idx, focus, access } = useBoard()
   const focusId = prefs.focusId && prefs.focusId in data.tasks ? prefs.focusId : undefined
-  // Searching also looks through archived cards, and says so (they're on the Cards page).
-  const words = search.toLowerCase().split(/\s+/).filter(Boolean)
-  const archivedHits = words.length
-    ? Object.values(data.archived ?? {}).filter((t) => words.every((w) => `${t.title} ${t.description ?? ''}`.toLowerCase().includes(w))).length
-    : 0
+  // Searching also looks through archived cards, and says so (they're on the Cards page, not here).
+  const archivedHits = useArchivedHits(data.board.id, search.trim(), access.via === 'public')
 
   if (!focusId)
     return (

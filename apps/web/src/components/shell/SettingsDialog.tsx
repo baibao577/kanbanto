@@ -261,8 +261,8 @@ function JustForYou() {
 
 function DeleteBoard({ onDeleted }: { onDeleted: () => void }) {
   const { data, counts } = useBoard()
-  // Time logged on its cards goes with it (and out of Planning's actual man-days).
-  const logged = Object.entries(counts.time).reduce((s, [id, m]) => (id in data.tasks || id in (data.archived ?? {}) ? s + m : s), 0)
+  // Time logged on its cards, archived ones too, goes with it (and out of Planning's actual man-days).
+  const logged = Object.values(counts.time).reduce((s, m) => s + m, 0)
   return (
     <Section title="Archive or delete" hint="For the board’s owners.">
       <div className="space-y-3 rounded-xl border bg-card p-4">

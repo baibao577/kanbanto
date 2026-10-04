@@ -37,6 +37,10 @@ const schemas = {
       blockedBy: { type: 'array', items: str, description: 'Tasks it waits on.' },
       description: str,
       priority: { enum: ['urgent', 'high', 'medium', 'low'], description: 'Unset: no priority.' },
+      doneAt: { ...str, format: 'date-time', description: 'When it got done (entered a done list). Unset while it isn’t done.' },
+      archivedAt: { ...str, format: 'date-time', description: 'When it was archived. Only on archived tasks.' },
+      archivedList: { ...str, description: 'The list it was archived from, by name.' },
+      archivedDone: { type: 'boolean', description: 'It was archived from a done list: archived as completed.' },
       createdAt: { ...str, format: 'date-time' },
       updatedAt: { ...str, format: 'date-time' },
       version: { type: 'integer' },
@@ -214,11 +218,60 @@ The answer lists the records that changed.
         get: {
           tags: ['Boards'],
           summary: 'A board, with everything on it',
-          parameters: [id('id')],
+          description:
+            'Its lists, labels, people and every card on it. Archived cards aren’t on a board, and aren’t sent with it: `GET /api/boards/{id}/archived` gives them (by date, a page at a time), or `archived=all` sends everything at once.',
+          parameters: [
+            id('id'),
+            {
+              name: 'archived',
+              in: 'query',
+              schema: { enum: ['all'], description: 'Also every archived card, in `data.archived` (for an export or a backup).' },
+            },
+          ],
           responses: {
             200: json(
               obj({ data: ref('BoardData'), seq: { type: 'integer', description: 'Goes up by one with every change.' }, access: { type: 'object' } }),
             ),
+            404: json(ref('Error'), 'No such board, or no access'),
+          },
+        },
+      },
+      '/api/boards/{id}/archived': {
+        get: {
+          tags: ['Boards'],
+          summary: 'A board’s archived cards, by date',
+          description:
+            'Archived cards as the board keeps them (each with `archivedAt`, the list it was in as `archivedList`, and `archivedDone`: whether that meant finished). Give a stretch of time with `from` and `to` to get the ones archived then (or, with `when`, done or made then), newest first; without one, all of them. For more, pass `nextOffset` back as `offset`. To search archived cards by words, people or labels, across boards, use `GET /api/cards`.',
+          parameters: [
+            id('id'),
+            {
+              name: 'when',
+              in: 'query',
+              schema: {
+                enum: ['archived', 'done', 'created', 'any'],
+                default: 'archived',
+                description: 'Which date `from` and `to` are about. `done`: only cards archived as completed. `any`: whichever falls in the range.',
+              },
+            },
+            {
+              name: 'from',
+              in: 'query',
+              schema: { ...str, description: 'On or after this: a day or a moment (ISO), or a time back from now like `24h`, `3d` or `2w`.' },
+            },
+            { name: 'to', in: 'query', schema: { ...str, description: 'Before this (the same forms).' } },
+            {
+              name: 'task',
+              in: 'query',
+              schema: {
+                ...str,
+                description: 'One archived card instead: it, the archived cards above it, and the ones under it (none if it isn’t archived).',
+              },
+            },
+            { name: 'offset', in: 'query', schema: { type: 'integer', minimum: 0 } },
+            { name: 'limit', in: 'query', schema: { type: 'integer', minimum: 1, maximum: 1000, default: 200 } },
+          ],
+          responses: {
+            200: json(obj({ tasks: { type: 'array', items: ref('Task') }, total: { type: 'integer' }, nextOffset: nullable({ type: 'integer' }) })),
             404: json(ref('Error'), 'No such board, or no access'),
           },
         },

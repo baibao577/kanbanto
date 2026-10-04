@@ -1,4 +1,5 @@
-import type { BoardAccess, BoardSummary, Role } from '@kanbanto/model/api'
+import type { ArchivedPage, BoardAccess, BoardSummary, Role } from '@kanbanto/model/api'
+import { ARCHIVED_DATES, archivedFamily, archivedIn } from '@kanbanto/model/archived'
 import { isBackground, type BoardBackground } from '@kanbanto/model/colors'
 import { CommandSchema } from '@kanbanto/model/schema'
 import { readBoardFile } from '@kanbanto/model/transfer'
@@ -36,6 +37,14 @@ const CreateBoard = z.object({
   workspaceId: z.uuid().nullable().optional(),
 })
 const Params = z.object({ id: z.string().min(1).max(100) })
+const ArchivedQuery = z.object({
+  task: z.string().min(1).max(100).optional(),
+  when: z.enum(ARCHIVED_DATES).optional(),
+  from: z.string().max(40).optional(),
+  to: z.string().max(40).optional(),
+  offset: z.coerce.number().int().min(0).optional(),
+  limit: z.coerce.number().int().min(1).max(1000).optional(),
+})
 const Mutation = z.object({ mutationId: z.string().min(1).max(100), command: CommandSchema })
 const MB = 1024 * 1024
 
@@ -141,10 +150,17 @@ export const boardRoutes: FastifyPluginAsync = async (app) => {
     return { id: await importBoard(app.db, user.id, data) }
   })
 
+  /**
+   * The board as it is now. Its archived cards aren't sent with it (a board can have many more of them than cards):
+   * `GET /boards/:id/archived` gives them, and `?archived=all` sends everything at once (an export, a backup).
+   */
   app.get('/boards/:id', async (req) => {
     const { id } = parse(Params, req.params)
+    const { archived: withArchived } = parse(z.object({ archived: z.enum(['all']).optional() }), req.query)
     const { board, access } = await requireAccess(app.db, req.user, id, 'viewer')
-    const { data, seq } = await app.engine.snapshot(id)
+    const { data: whole, seq } = await app.engine.snapshot(id)
+    const { archived: _putAway, ...onBoard } = whole
+    const data = withArchived ? whole : onBoard
     const counts = {
       comments: await commentCounts(app.db, id),
       attachments: await attachmentCounts(app.db, id),
@@ -165,6 +181,31 @@ export const boardRoutes: FastifyPluginAsync = async (app) => {
       archivedAt: board.archivedAt?.toISOString() ?? null,
     }
     return { data, seq, access: shown, counts, canComment: access.via !== 'public' }
+  })
+
+  /**
+   * A board's archived cards, as the board keeps them. `task`: that one, with the archived cards above and under it
+   * (what the app needs to show or restore it; none when it isn't an archived card: the app asks about any card it
+   * doesn't find on the board). Otherwise the ones archived from `from` up to `to` (or, with `when`, done or made
+   * then, or any of these), newest first, a page at a time; without a range, all of them.
+   */
+  app.get('/boards/:id/archived', async (req): Promise<ArchivedPage> => {
+    const { id } = parse(Params, req.params)
+    const q = parse(ArchivedQuery, req.query)
+    await requireAccess(app.db, req.user, id, 'viewer')
+    const archived = (await app.engine.snapshot(id)).data.archived ?? {}
+    if (q.task) {
+      const tasks = archivedFamily(archived, q.task)
+      return { tasks, total: tasks.length, nextOffset: null }
+    }
+    const all = archivedIn(archived, {
+      when: q.when,
+      from: parseMoment(q.from, 'from', null)?.getTime(),
+      to: parseMoment(q.to, 'to', null)?.getTime(),
+    })
+    const offset = q.offset ?? 0
+    const tasks = all.slice(offset, offset + (q.limit ?? 200))
+    return { tasks, total: all.length, nextOffset: offset + tasks.length < all.length ? offset + tasks.length : null }
   })
 
   /** Stars a board as one of your favourites, or unstars it. */

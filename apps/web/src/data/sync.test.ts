@@ -74,8 +74,10 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
+// (Like the real server: the board comes without its archived cards.)
+const onBoard = ({ archived: _putAway, ...data }: BoardData): BoardData => data
 const snapshot = (): BoardSnapshot => ({
-  data: server,
+  data: onBoard(server),
   seq,
   access: { role: 'editor', via: 'member', visibility: 'invited', publicLink: false, workspace: null, archivedAt: null },
   counts: { comments: {}, attachments: {}, lastComment: {}, time: {} },
@@ -164,5 +166,50 @@ describe('BoardSync', () => {
     await settle()
     expect(server.tasks.A.title).toBe('Written before the session ended')
     expect(storage.size).toBe(0)
+  })
+
+  it('archived cards come apart from the board: once fetched, one can be restored, and they stay through a refetch', async () => {
+    // Archived before the board was opened: "Design", with its two subtasks.
+    const put = execute(server, { type: 'task.archive', id: 'A2' }, { now: new Date().toISOString(), newId, idx: indexFor(server) })
+    if ('error' in put) throw new Error(put.error)
+    server = applyChanges(server, put.changes)
+    const { sync } = open()
+    expect(sync.getState().data.archived).toBeUndefined()
+    expect(sync.run({ type: 'task.restore', id: 'A2' })).toEqual({ error: 'That task isn’t archived.' })
+
+    sync.learnArchived(Object.values(server.archived!))
+    expect(Object.keys(sync.getState().data.archived!).sort()).toEqual(['A2', 'A2a', 'A2b'])
+    // Fetching the board again (a missed change, say) doesn't lose them.
+    await sync.resync()
+    expect(Object.keys(sync.getState().data.archived!).sort()).toEqual(['A2', 'A2a', 'A2b'])
+
+    expect('changes' in sync.run({ type: 'task.restore', id: 'A2' })).toBe(true)
+    expect(sync.getState().data.tasks.A2a.parentId).toBe('A2')
+    await settle()
+    expect(server.tasks.A2).toBeDefined()
+    expect(sync.getState().data.archived).toEqual({})
+    // What's back on the board isn't taken for archived again, whatever an old answer says.
+    sync.learnArchived(put.changes.map((c) => c.after as BoardData['tasks'][string]))
+    expect(sync.getState().data.archived).toEqual({})
+  })
+
+  it('archiving a done list’s older cards is one change, and undo brings them all back', async () => {
+    const { sync } = open()
+    const done = server.columns.find((c) => c.category === 'done')!.id
+    for (const title of ['Shipped', 'Also shipped']) sync.run({ type: 'task.create', parentId: null, fields: { title, status: done } })
+    await settle()
+    const before = Object.keys(sync.getState().data.tasks).length
+    const r = sync.run({ type: 'tasks.archiveDone', status: done, before: new Date(Date.now() + 1000).toISOString() })
+    if ('error' in r) throw new Error(r.error)
+    expect(r.changes).toHaveLength(2)
+    expect(Object.keys(sync.getState().data.tasks)).toHaveLength(before - 2)
+    await settle()
+    expect(Object.keys(server.archived!)).toHaveLength(2)
+    // Undo, the way the app does it: the same records put back.
+    const undo = sync.run({ type: 'records.restore', changes: invertChanges(sync.getState().data, r.changes, new Date().toISOString()) })
+    expect('changes' in undo).toBe(true)
+    await settle()
+    expect(Object.keys(server.tasks)).toHaveLength(before)
+    expect(server.archived).toEqual({})
   })
 })

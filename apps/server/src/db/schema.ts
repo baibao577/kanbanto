@@ -819,7 +819,7 @@ export const oauthGrants = pgTable(
 
 /**
  * What happened on a board, as short lines of text ("moved “Deploy” to Done"), one row per change that said something.
- * For "what's new" (the MCP tool recent_activity). Kept 90 days.
+ * For "what's new" (the MCP tool recent_activity) and "what was worked on then" (find_tasks). Kept 180 days.
  */
 export const boardActivity = pgTable(
   'board_activity',

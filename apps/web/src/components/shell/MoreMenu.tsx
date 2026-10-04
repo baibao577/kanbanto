@@ -1,7 +1,7 @@
 import { Archive, ArrowsLeftRight, Buildings, ChartBar, DotsThree, DownloadSimple, GearSix, LockSimple, PaintBucket } from '@phosphor-icons/react'
 import { useState } from 'react'
 import { toast } from 'sonner'
-import type { WorkspaceSummary } from '@kanbanto/model/api'
+import type { CardsPage, WorkspaceSummary } from '@kanbanto/model/api'
 import { api, errorMessage } from '@/api/client'
 import { useBoard } from '@/app/board-context'
 import { navigate } from '@/app/router'
@@ -28,8 +28,15 @@ export interface MoreMenuProps {
 /** The board's ⋯ menu: settings, background, stats, moving it (owners), export. */
 export function MoreMenu({ onOpenSettings, onOpenStats, onExport }: MoreMenuProps) {
   const { data, run, readOnly, access } = useBoard()
-  const archived = Object.values(data.archived ?? {}).filter((t) => !(t.parentId && data.archived?.[t.parentId])).length
   const owner = access.role === 'owner'
+  // How many archived cards it has: asked when the menu opens (they aren't sent with the board).
+  const [archived, setArchived] = useState(0)
+  const countArchived = () =>
+    access.via !== 'public' &&
+    api<CardsPage>('GET', `/cards?state=archived&board=${encodeURIComponent(data.board.id)}&limit=1`).then(
+      (r) => setArchived(r.total),
+      () => {},
+    )
   // Where it can move: loaded when the menu opens (owners only).
   const [spaces, setSpaces] = useState<WorkspaceSummary[] | null>(null)
   const from = access.workspace
@@ -49,14 +56,15 @@ export function MoreMenu({ onOpenSettings, onOpenStats, onExport }: MoreMenuProp
 
   return (
     <DropdownMenu
-      onOpenChange={(o) =>
-        o &&
-        owner &&
-        api<{ workspaces: WorkspaceSummary[] }>('GET', '/workspaces').then(
-          (r) => setSpaces(r.workspaces),
-          () => setSpaces([]),
-        )
-      }
+      onOpenChange={(o) => {
+        if (!o) return
+        void countArchived()
+        if (owner)
+          void api<{ workspaces: WorkspaceSummary[] }>('GET', '/workspaces').then(
+            (r) => setSpaces(r.workspaces),
+            () => setSpaces([]),
+          )
+      }}
     >
       <DropdownMenuTrigger asChild>
         <Button variant="ghost" size="icon" className="size-8" aria-label="More">

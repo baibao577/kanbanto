@@ -1,7 +1,7 @@
 import type { PresetSettings } from './prefs'
 import type { Change } from './records'
 import type { CardDate, CardMomentKind, CardSort, CardState } from './search'
-import type { BoardData, Category, Priority } from './types'
+import type { BoardData, Category, Priority, Task } from './types'
 import type { ColorName } from './colors'
 import type { PlanData } from './planning'
 import type { PlanChange } from './planningCommands'
@@ -168,6 +168,7 @@ export interface TaskCounts {
 
 /** GET /api/boards/:id */
 export interface BoardSnapshot {
+  /** The board, without its archived cards (see ArchivedPage) unless asked for with `?archived=all`. */
   data: BoardData
   /** The board's change counter when this was read. */
   seq: number
@@ -175,6 +176,15 @@ export interface BoardSnapshot {
   counts: TaskCounts
   /** You can comment (members, including viewers; not anonymous visitors of public boards). */
   canComment: boolean
+}
+
+/** GET /api/boards/:id/archived: archived cards as the board keeps them, newest first by the date asked about. */
+export interface ArchivedPage {
+  tasks: Task[]
+  /** How many there are in all (in the range asked for). */
+  total: number
+  /** Pass back as `offset` for the next page; null at the end. */
+  nextOffset: number | null
 }
 
 export interface CommentView {

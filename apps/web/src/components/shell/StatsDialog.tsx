@@ -1,6 +1,9 @@
 import { ArrowDown, ArrowUp, CalendarCheck, ChartBar, HourglassHigh, Kanban, Moon, Timer, type Icon } from '@phosphor-icons/react'
-import { Fragment, useMemo, useState, type ReactNode } from 'react'
+import { Fragment, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
+import type { ArchivedPage } from '@kanbanto/model/api'
+import type { BoardData, Task, TaskMap } from '@kanbanto/model/types'
+import { api } from '@/api/client'
 import { useBoard } from '@/app/board-context'
 import { StatusDot } from '@/components/common/bits'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
@@ -8,7 +11,7 @@ import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { formatDay } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { fromDay } from '@kanbanto/model/dates'
-import { boardStats, DONE_BUCKETS, STAT_PERIODS, type BoardStats, type StatCard } from '@kanbanto/model/stats'
+import { boardStats, DONE_BUCKETS, HEAT_WEEKS, STAT_PERIODS, type BoardStats, type StatCard } from '@kanbanto/model/stats'
 
 const HOUR = 3_600_000
 const DAY = 24 * HOUR
@@ -68,9 +71,46 @@ function TipRow({ color, value, label }: { color?: string; value: ReactNode; lab
   )
 }
 
+/** How far back the stats look (days): the longest period and the one before it, or the weeks of the done calendar. */
+const LOOK_BACK = Math.max(Math.max(...STAT_PERIODS) * 2, (HEAT_WEEKS + 1) * 7) + 2
+
+/**
+ * The board with the archived cards its stats count: the ones made, done or archived in the time they look back on,
+ * fetched while the dialog is open (a board comes without its archived cards). Until they arrive: the board as it is.
+ */
+function useWithArchived(data: BoardData, open: boolean): BoardData {
+  const [fetched, setFetched] = useState<TaskMap | null>(null)
+  const boardId = data.board.id
+  useEffect(() => {
+    if (!open) return
+    let alive = true
+    const load = async () => {
+      const all: Task[] = []
+      for (let offset: number | null = 0; offset !== null && alive;) {
+        const path = `/boards/${encodeURIComponent(boardId)}/archived?when=any&from=${LOOK_BACK}d&limit=1000&offset=${offset}`
+        const page: ArchivedPage = await api<ArchivedPage>('GET', path)
+        all.push(...page.tasks)
+        offset = page.nextOffset
+      }
+      if (alive) setFetched(Object.fromEntries(all.map((t) => [t.id, t])))
+    }
+    load().catch(() => {})
+    return () => {
+      alive = false
+    }
+  }, [open, boardId])
+  return useMemo(() => {
+    if (!fetched) return data
+    // (What's been archived here since counts; what's back on the board doesn't count twice.)
+    const archived = Object.fromEntries(Object.entries({ ...fetched, ...data.archived }).filter(([id]) => !data.tasks[id]))
+    return { ...data, archived }
+  }, [data, fetched])
+}
+
 /** Board stats: how the board is doing at a glance. Opened from the board's ⋯ menu. */
 export function StatsDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
-  const { data, idx, counts, openTask } = useBoard()
+  const { data: board, idx, counts, openTask } = useBoard()
+  const data = useWithArchived(board, open)
   const [period, setPeriod] = useState<number>(30)
   const s = useMemo(
     () => (open ? boardStats(data, idx, { days: period, lastComment: counts.lastComment }) : null),

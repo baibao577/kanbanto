@@ -136,7 +136,8 @@ export interface Task extends Meta {
   activeAt?: string
   /**
    * When it got done: the moment it entered a done list (kept while it stays in one, and through archiving). Unset
-   * while it isn't done. What a parent whose list follows its subtasks shows is worked out from theirs (see the index).
+   * while it isn't done. What a parent whose list follows its subtasks shows is worked out from theirs (see the index);
+   * archived as completed, it's written here, since the index only covers what's on the board.
    */
   doneAt?: string
   /** Timeline bar color; unset = its status color. */
@@ -229,7 +230,8 @@ export interface BoardData {
   tasks: TaskMap
   /**
    * Archived tasks, kept apart so views, counts and rules only ever see `tasks`. They come back with task.restore,
-   * or go for good with task.delete. (Missing: none.)
+   * or go for good with task.delete. The server holds them all; the app is sent a board without them and asks for
+   * the ones it needs (an archived card someone opens), so there this is only the ones it has. (Missing: none.)
    */
   archived?: TaskMap
 }

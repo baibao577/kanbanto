@@ -60,8 +60,11 @@ Without MCP, use the REST API (see "REST fallback" below).
   lists what's coming up: good for a morning check-in.
 - **Putting work away:** `archive_task` archives a finished or paused task (with its subtasks); it's restorable, so
   prefer it to asking the user to delete. For finished work, pass `completed: true` ("archived as completed": it moves
-  to the done list first); archived results say `completed` and the list they were archived from. `find_tasks` and `list_boards` include archived things only with
-  `include_archived`.
+  to the done list first); archived results say `completed` and the list they were archived from. To tidy a board
+  ("archive what we finished more than a month ago"), `archive_done_tasks` with `older_than_days`: try it with
+  `dry_run: true` first and say how many tasks would go. Archived tasks aren't on the board: `find_tasks` finds them
+  when you ask by when tasks got done (`done_after`, `done_before`) or were archived (`archived_after`,
+  `archived_before`), or with `include_archived`; `list_boards` shows archived boards with `include_archived`.
 - There are no tools for sharing, inviting people or deleting boards and tasks, on purpose. If something should go or
   be shared, say so and point the user to the app.
 
@@ -86,10 +89,16 @@ Without MCP, use the REST API (see "REST fallback" below).
   `idle_days`. Suggest what to do: nudge the assignee, archive it, or move it back.
 - *Meeting notes → tasks* → propose the list first (titles, owners, due dates), then `create_tasks`: a parent task for
   the meeting with the action items as subtasks, on the board the meeting was about.
-- *"What happened last week / in September?"* → `recent_activity` with `since` and `until` (kept 90 days); page with
+- *"What happened last week / in September?"* → `recent_activity` with `since` and `until` (kept 180 days); page with
   `next_until`. For what was created or touched in a period, `find_tasks` with `created_after` / `changed_before` etc.
-- *"What did I finish this week?"* → `find_tasks` with `assignee: "me"` and `done_after: "7d"` (add `include_archived`
-  for cards put away since); each result says when it got done (`done_at`).
+- *"What did I finish this week?"* / *"…from January to March?"* → `find_tasks` with `assignee: "me"` and
+  `done_after: "7d"` (or `done_after: "2026-01-01"`, `done_before: "2026-04-01"`); cards archived since are found too,
+  and each result says when it got done (`done_at`).
+- *"What was I working on in January to March?"* → `find_tasks` with `assignee: "me"`, `worked_after: "2026-01-01"`
+  and `worked_before: "2026-04-01"`: tasks made or changed in that stretch (edited, moved, finished, commented on,
+  time logged, archived), done and archived ones too. Each result says what happened then (`worked`). For a stretch
+  more than 180 days back, say that a task changed then and changed again later may be missing: only a task's last
+  change is kept that long (comments and logged time are kept for good).
 - *"Plan X"* → find or create the parent task, then `create_tasks` with its subtasks; offer to set due dates and
   assignees.
 - *"My day" / "what do I need to do today?"* → `reminders` (coming up today, and what went off), `find_tasks` with

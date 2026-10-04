@@ -81,11 +81,12 @@ async function entryViews(db: Db | Tx, where: ReturnType<typeof and>, canEdit: (
   }))
 }
 
-/** Minutes logged on each card of a board (for the totals on cards). */
+/** Minutes logged on each card of a board that still exists, archived ones included (for the totals on cards). */
 export async function timeCounts(db: Db | Tx, boardId: string) {
   const rows = await db
     .select({ taskId: timeEntries.taskId, n: sql<number>`sum(${timeEntries.minutes})::int` })
     .from(timeEntries)
+    .innerJoin(tasks, and(eq(tasks.boardId, timeEntries.boardId), eq(tasks.id, timeEntries.taskId)))
     .where(eq(timeEntries.boardId, boardId))
     .groupBy(timeEntries.taskId)
   return Object.fromEntries(rows.map((r) => [r.taskId, r.n]))

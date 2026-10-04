@@ -1,11 +1,14 @@
 import type { ActivityItem } from '@kanbanto/model/activity'
-import { and, desc, eq, gte, inArray, lt } from 'drizzle-orm'
+import { and, desc, eq, gte, inArray, lt, lte } from 'drizzle-orm'
 import type { Db } from '../db'
-import { boardActivity, comments, tasks, users } from '../db/schema'
+import { boardActivity, comments, tasks, timeEntries, users } from '../db/schema'
 import { HttpError } from '../http'
 
-/** How long the activity log keeps changes (see pruneActivity). */
-export const ACTIVITY_DAYS = 90
+/**
+ * How long the activity log keeps changes (see pruneActivity). Long enough to look back on a couple of quarters
+ * ("what was I working on in spring?"): a card itself only keeps its last change.
+ */
+export const ACTIVITY_DAYS = 180
 
 /** One thing that happened on a board: a change (in words), or a comment. */
 export type ActivityEntry = {
@@ -93,4 +96,53 @@ export async function readActivity(
     ...said.map((c) => ({ ...c, kind: 'comment' as const })),
   ].sort((x, y) => y.at.getTime() - x.at.getTime())
   return { entries: all.slice(0, q.limit), more: all.length > q.limit }
+}
+
+/** A sign that a card was worked on, besides its own dates (made, last changed, done, archived). */
+export type WorkSign = 'commented' | 'time logged' | 'changed'
+
+/**
+ * Signs of work on some boards' cards in a stretch of time (`from` up to, not including, `to`; either may be open):
+ * a comment written then, time logged for a day in it (`dayOf`: the day a moment falls on where the person asking
+ * is), a change in the activity log (which goes back ACTIVITY_DAYS days: before that, only a card's last change is
+ * known, from the card itself). `${boardId}:${taskId}` → the signs found.
+ */
+export async function workSigns(
+  db: Db,
+  boardIds: string[],
+  from: Date | null,
+  to: Date | null,
+  dayOf: (moment: Date) => string,
+): Promise<Map<string, Set<WorkSign>>> {
+  const out = new Map<string, Set<WorkSign>>()
+  if (!boardIds.length) return out
+  const add = (boardId: string, taskId: string, sign: WorkSign) => {
+    const key = `${boardId}:${taskId}`
+    const signs = out.get(key)
+    if (signs) signs.add(sign)
+    else out.set(key, new Set([sign]))
+  }
+  const commented = await db
+    .selectDistinct({ boardId: comments.boardId, taskId: comments.taskId })
+    .from(comments)
+    .where(and(inArray(comments.boardId, boardIds), from ? gte(comments.createdAt, from) : undefined, to ? lt(comments.createdAt, to) : undefined))
+  for (const c of commented) add(c.boardId, c.taskId, 'commented')
+  const logged = await db
+    .selectDistinct({ boardId: timeEntries.boardId, taskId: timeEntries.taskId })
+    .from(timeEntries)
+    .where(
+      and(
+        inArray(timeEntries.boardId, boardIds),
+        from ? gte(timeEntries.day, dayOf(from)) : undefined,
+        // (`to` isn't part of the stretch: the day just before it is the last one.)
+        to ? lte(timeEntries.day, dayOf(new Date(to.getTime() - 1))) : undefined,
+      ),
+    )
+  for (const e of logged) add(e.boardId, e.taskId, 'time logged')
+  const changes = await db
+    .select({ boardId: boardActivity.boardId, items: boardActivity.items })
+    .from(boardActivity)
+    .where(and(inArray(boardActivity.boardId, boardIds), from ? gte(boardActivity.at, from) : undefined, to ? lt(boardActivity.at, to) : undefined))
+  for (const c of changes) for (const item of c.items as ActivityItem[]) if (item.taskId) add(c.boardId, item.taskId, 'changed')
+  return out
 }

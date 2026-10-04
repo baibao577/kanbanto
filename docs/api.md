@@ -36,19 +36,30 @@ curl -X POST https://kanbanto.example.com/api/boards/<board id>/mutations \
 - The answer lists the records that changed (`changes`: each with `before` and `after`).
 - A refused command answers 422 with the reason (for example, moving a task inside its own subtask).
 - `/api/docs` lists every command and its fields: `task.create`, `task.update`, `task.move`, `tasks.moveToList`,
-  `task.archive`, `task.restore`, `task.delete`, and the ones for lists, labels and the board.
+  `task.archive`, `tasks.archiveDone`, `task.restore`, `task.delete`, and the ones for lists, labels and the board.
 - **Archiving** (`task.archive`) puts a task and its subtasks away: they're out of the board and its counts, kept (with
-  comments and files) under `archived` in `GET /api/boards/<id>`, and come back with `task.restore`. `task.delete` on
-  an archived task deletes it for good. A whole board is archived (read-only) with `POST /api/boards/<id>/archive`.
-  `GET /api/cards?state=archived&board=<id>&q=<words>` lists archived cards across your boards, newest first, in pages.
+  comments and files), and come back with `task.restore`. `task.delete` on an archived task deletes it for good.
+  `tasks.archiveDone` tidies a done list in one go: `{"type":"tasks.archiveDone","status":"<list id>","before":"2026-09-01T00:00:00Z"}`
+  archives its top-level tasks that got done before that moment, each with its subtasks (a finished task under
+  unfinished work stays). A whole board is archived (read-only) with `POST /api/boards/<id>/archive`.
+- **Archived tasks aren't sent with the board** (a board can have far more of them than tasks on it). Ask for them:
+  - `GET /api/boards/<id>/archived?from=2026-01-01&to=2026-04-01` gives the ones archived in that stretch of time,
+    as the board keeps them, newest first, 200 at a time (`limit` up to 1000; pass `nextOffset` back as `offset`).
+    `when=done` or `when=created` asks by another date, `when=any` by any of the three; `from` and `to` also take
+    `30d`, `2w` or `24h` (that long ago). Without a range: all of them.
+  - `GET /api/boards/<id>/archived?task=<task id>` gives one, with the archived tasks above and under it (an empty
+    list if that task isn't archived).
+  - `GET /api/boards/<id>?archived=all` sends the board with everything, under `data.archived` (an export, a backup).
+  - `GET /api/cards?state=archived&board=<id>&q=<words>` searches them, across your boards, newest first, in pages.
 - **Searching every board**: `GET /api/cards?state=all` (or `active`, for cards still on their boards) takes the same
   filters as the Search cards page: `q` (words in the title, description or a comment), `assignee=me`, `completed`,
   `kind`, `priority`, `label`, `due`, and a time range (`from`, `to`) about one of a card's dates (`when=done`,
   `created`, `changed` or `archived`). What I finished this week: `?state=all&assignee=me&when=done&from=2026-09-28`.
   A task's `doneAt` is when it entered a done list.
 
-`GET /api/boards/<id>` returns the whole board: its lists, labels, people and tasks (a task's `status` is its list's id;
-`parentId` makes the tree; `priority` is `urgent`, `high`, `medium` or `low`).
+`GET /api/boards/<id>` returns the whole board: its lists, labels, people and the tasks on it (a task's `status` is
+its list's id; `parentId` makes the tree; `priority` is `urgent`, `high`, `medium` or `low`). Its archived tasks come
+separately (see above).
 
 `POST /api/boards/<id>/tasks/<task id>/move` with `{"boardId": "<other board>"}` moves a task, with its subtasks,
 comments and files, to another board you can edit (optionally `"list": "<list id there>"`). It gets a new id there,
@@ -60,7 +71,7 @@ it under the bell and by email, and the board's webhooks get a `reminder.due` ev
 
 `GET /api/boards/<id>/activity?since=2026-09-01&until=2026-09-15` says what happened in a stretch of time, newest
 first: each change in words ("moved “Deploy” to Done"), who made it and through which app (`via`), and comments.
-`since` and `until` also take `24h`, `3d` or `2w` (back from now). Changes are kept for 90 days. For more, ask again
+`since` and `until` also take `24h`, `3d` or `2w` (back from now). Changes are kept for 180 days. For more, ask again
 with `until` set to the answer's `nextUntil`.
 
 **Dates.** A task's `start` and `due` are a whole day, `2026-10-15`, or with a time an exact moment in UTC,
@@ -134,7 +145,7 @@ claude mcp add --transport http kanbanto https://kanbanto.example.com/api/mcp --
 |---|---|
 | `list_boards` | The boards you can open: where each lives (a workspace, "Personal" or "Shared with you"), what it's for, and which is your Inbox |
 | `get_board` | A board's lists, labels, people and its open tasks as an outline: the top levels, or the part under one task |
-| `find_tasks` | Search one board, one workspace or everything: text, list, label, assignee (`me`, `nobody`), priority, blocked, due, created, changed or done between two times; sorted and paged |
+| `find_tasks` | Search one board, one workspace or everything: text, list, label, assignee (`me`, `nobody`), priority, blocked, due, created, changed, done or archived between two times; sorted and paged. Asking by when tasks got done also finds the ones archived since. `worked_after` / `worked_before`: what was worked on in a stretch of time (made or changed then), each result saying what happened |
 | `team_overview` | How a board or workspace is doing: tasks per list, each person's open, overdue and blocked work, what needs attention, and the time each person logged on it this week |
 | `reminders` | Your reminders coming up in the next days, and the ones that went off today |
 | `recent_activity` | What happened in a stretch of time (default: the last day), optionally by one person: changes, who made them and through which app, and comments |
@@ -146,6 +157,7 @@ claude mcp add --transport http kanbanto https://kanbanto.example.com/api/mcp --
 | `move_task` | Change a task's parent or its place among siblings |
 | `set_reminder` | Add a reminder (at a time, or some minutes before it's due) or remove one; it goes to the task's assignee |
 | `archive_task` | Archive a task with its subtasks, or restore it (`restore: true`); nothing is lost |
+| `archive_done_tasks` | Tidy a board: archive a done list's top-level tasks that got done more than some days ago, with their subtasks (`dry_run` says what would go) |
 | `move_to_board` | Move a task, with its subtasks, comments and files, to another board (say, from the Inbox) |
 | `create_board` | A new board in Personal or a workspace, with what it's for |
 | `update_board` | Name, what it's for, background, how a parent task's status is set |
@@ -156,7 +168,7 @@ claude mcp add --transport http kanbanto https://kanbanto.example.com/api/mcp --
 | `add_comment` | Comment as you; `@Name` notifies people |
 
 Read-only tokens get the reading tools only (`list_boards` to `plan_overview`). Plans can be read but not changed
-through MCP: planners change them in the app's Planning tab. Every change on a board is kept as a line of activity for 90 days ("Ann moved
+through MCP: planners change them in the app's Planning tab. Every change on a board is kept as a line of activity for 180 days ("Ann moved
 “Deploy” to Done", marked with the app it came through), which is what `recent_activity` reads. Sharing (inviting people, links,
 roles) and deleting boards or tasks aren't tools, on purpose: an assistant reads text other people wrote, and those
 can't be undone. People do them in the app.

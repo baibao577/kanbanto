@@ -1,6 +1,6 @@
 import { normalizeTaskDate } from './dates'
 import { applyChanges, current } from './changes'
-import { buildIndex, isLeaf, statusCol, wouldCycle, type TaskIndex } from './indexer'
+import { buildIndex, descendantsOf, isLeaf, statusCol, wouldCycle, type TaskIndex } from './indexer'
 import { comparePositions, positionBetween, positionsBetween } from './position'
 import { stamp, type Change } from './records'
 import type { Board, BoardData, Category, LabelDef, Priority, Reminder, StatusColumn, Task } from './types'
@@ -41,6 +41,11 @@ export type Command =
    * finish it first (it and its unfinished subtasks go to the first done list), so it's archived as completed.
    */
   | { type: 'task.archive'; id: string; complete?: boolean }
+  /**
+   * Tidies a done list: archives its top-level cards that got done before `before` (a moment), each with its subtasks
+   * (see `doneBefore`). A finished card under another card stays: it goes with that card, once that one is done.
+   */
+  | { type: 'tasks.archiveDone'; status: string; before: string }
   /** Brings an archived task (and its subtasks) back, where it was if it still can be. */
   | { type: 'task.restore'; id: string }
   | { type: 'column.create'; id?: string; name: string; category: Category }
@@ -107,7 +112,19 @@ function run(data: BoardData, cmd: Command, ctx: Context): Change[] {
       entity: 'task',
       id: next.id,
       before,
-      after: stamp(before, { ...next, activeAt: activeAt(before, next, now), ...(done && { doneAt: doneAt ?? now }) }, now),
+      after: stamp(before, { ...next, activeAt: activeAt(before, next, now), ...((done || next.archivedDone) && { doneAt: doneAt ?? now }) }, now),
+    })
+  }
+  // Putting a task away: it keeps the list it was in and whether that was finished, for good; a finished one keeps
+  // when it got done too (a parent that follows its subtasks has no moment of its own: the index has it).
+  const putAway = (id: string, t: Task, col: StatusColumn) => {
+    const was = ctx.idx.category.get(id) === 'done' ? ctx.idx.doneAt.get(id) : undefined
+    putTask(data.tasks[id], {
+      ...t,
+      ...(!t.doneAt && was !== undefined && { doneAt: new Date(was).toISOString() }),
+      archivedAt: now,
+      archivedList: col.name,
+      archivedDone: col.category === 'done',
     })
   }
 
@@ -194,11 +211,17 @@ function run(data: BoardData, cmd: Command, ctx: Context): Change[] {
             tasks[id] = { ...tasks[id], status: ctx.idx.firstOf.done }
         idx = buildIndex(tasks, data.board.mode, data.columns, data.members)
       }
-      // Each keeps where it was archived from, and whether that was finished, for good.
-      for (const id of ids) {
-        const col = statusCol(idx, id)
-        putTask(data.tasks[id], { ...tasks[id], archivedAt: now, archivedList: col.name, archivedDone: col.category === 'done' })
-      }
+      for (const id of ids) putAway(id, tasks[id], statusCol(idx, id))
+      break
+    }
+
+    case 'tasks.archiveDone': {
+      const col = data.columns.find((c) => c.id === cmd.status) ?? reject('That list no longer exists.')
+      if (col.category !== 'done') reject('Only a list for finished work can be tidied this way.')
+      const before = Date.parse(cmd.before)
+      if (Number.isNaN(before)) reject('That isn’t a date.')
+      for (const top of doneBefore(ctx.idx, col.id, before))
+        for (const id of [top, ...descendantsOf(ctx.idx, top)]) putAway(id, data.tasks[id], statusCol(ctx.idx, id))
       break
     }
 
@@ -435,6 +458,17 @@ const siblingsOf = (data: BoardData, parentId: string | null, except: string) =>
   Object.values(data.tasks)
     .filter((t) => t.parentId === parentId && t.id !== except)
     .sort((a, b) => comparePositions(a.order, b.order))
+
+/**
+ * The cards `tasks.archiveDone` puts away: the top-level cards showing in list `status` that got done before `before`
+ * (ms), oldest first. When a card got done is the index's `doneAt`: the moment it entered a done list, or, for a
+ * parent that follows its subtasks, the moment the last of them did.
+ */
+export function doneBefore(idx: TaskIndex, status: string, before: number): string[] {
+  return idx.roots
+    .filter((id) => idx.status.get(id) === status && idx.doneAt.has(id) && idx.doneAt.get(id)! < before)
+    .sort((a, b) => idx.doneAt.get(a)! - idx.doneAt.get(b)!)
+}
 
 /** Everything under `id` in a set of tasks (by parent links; for archived tasks, which aren't indexed). */
 function subtree(tasks: Record<string, Task>, id: string): string[] {

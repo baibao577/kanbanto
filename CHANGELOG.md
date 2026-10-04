@@ -20,7 +20,7 @@ then `git pull` (or download the new release) and `docker compose up -d --build`
 - **Integrations:** personal API tokens (once a platform admin turns them on), webhooks per board with signed
   deliveries and retries, an MCP endpoint for AI assistants, a Skill for Claude Code, and an API reference at
   `/api/docs` on every site. Claude on the web and in Claude Desktop (and ChatGPT) can connect by signing in (OAuth),
-  when a platform admin allows it. For assistants: a 90-day activity log of who changed what (and through which app),
+  when a platform admin allows it. For assistants: a 180-day activity log of who changed what (and through which app),
   a team overview, searches by priority, label and time, and an Inbox for quick capture.
 - **Cards in your calendar:** connect Google Calendar (Account settings → Calendar) and your cards' due dates and
   reminders appear in a calendar of Kanbanto's own there, updated within seconds; or make a private calendar link
@@ -63,6 +63,17 @@ then `git pull` (or download the new release) and `docker compose up -d --build`
 - **Done cards out of the way:** Display → Done lists shows only cards done or touched lately (14 days, or the
   number you choose), with "12 older · Show". The Outline and Timeline can hide done tasks, with a line saying how
   many.
+- **Archive older done cards:** a done list's menu (or "Archive…" beside its older cards) archives, in one go, the
+  cards done more than a number of days ago, each with its subtasks. It says how many will go first, and Undo brings
+  them back. A finished card under work that isn't finished stays. Assistants do the same with `archive_done_tasks`.
+- **Big boards stay light:** archived cards are no longer downloaded with a board; the app fetches one when it's
+  opened, and the ones Stats and Export need. In the API, `GET /api/boards/<id>/archived` gives a board's archived
+  cards by date range (archived, done or made between two moments), and `find_tasks` finds them by when they got done
+  or were archived, so "what did we finish in March?" still has an answer after the cards are put away.
+- **"What was I working on in January to March?"** Assistants can ask for the tasks worked on in a stretch of time
+  (`find_tasks` with `worked_after` and `worked_before`): made or changed then, where a change is an edit, a move, a
+  comment, logged time, finishing or archiving. Each result says what happened. Changes older than the 180-day
+  activity log are only known when they were a task's last one.
 - **More board backgrounds:** 12 designs besides the 12 colors (sunset, ocean, aurora, forest, midnight, …), and a
   custom one: pick any hue and a light, medium or deep shade, and the gradient and text colors are made for you.
 - **Favourite boards:** star a board on the boards page or from its name menu; favourites come first on both.

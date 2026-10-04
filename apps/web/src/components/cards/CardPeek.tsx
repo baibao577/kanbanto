@@ -8,7 +8,7 @@ import { BoardContext, type BoardContextValue } from '@/app/board-context'
 import { hrefFor, navigate } from '@/app/router'
 import { TaskDialog } from '@/components/task/TaskDialog'
 import { prefsStoreFor } from '@/data/prefsStore'
-import { useBoardStore } from '@/data/useBoardStore'
+import { useArchivedCard, useBoardStore } from '@/data/useBoardStore'
 
 /**
  * A card from another board, opened in place (the Search cards page): the same card dialog as on its board, kept
@@ -22,6 +22,8 @@ export function CardPeek({ boardId, taskId, viewOnly, onClose }: { boardId: stri
     else onClose()
   })
   const [openId, setOpenId] = useState(taskId)
+  // (An archived card isn't sent with its board: it's fetched.)
+  useArchivedCard(store, openId)
   const { data, access } = store
   const idx = useMemo(() => (data ? indexFor(data) : null), [data])
 

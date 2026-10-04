@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useReducer, useRef, useState, useSyncExternalStore } from 'react'
-import type { BoardSnapshot } from '@kanbanto/model/api'
+import type { ArchivedPage, BoardSnapshot } from '@kanbanto/model/api'
 import { invertChanges } from '@kanbanto/model/changes'
 import type { Command } from '@kanbanto/model/commands'
 import { cleanPrefs, defaultPrefs, prefsReducer } from '@kanbanto/model/prefs'
 import type { Change } from '@kanbanto/model/records'
+import type { BoardData } from '@kanbanto/model/types'
 import { api, ApiError } from '@/api/client'
 import type { PrefsStore } from './prefsStore'
 import { BoardSync, type SyncEvent, type SyncState, type TaskActivity } from './sync'
@@ -110,8 +111,23 @@ export function useBoardStore(boardId: string, prefsStore: PrefsStore, onEvent: 
     [sync],
   )
 
+  /** Fetches an archived card with the archived cards above and under it (see `useArchivedCard`). Quiet when there's none. */
+  const loadArchived = useCallback(
+    async (taskId: string) => {
+      if (!sync) return
+      try {
+        const page = await api<ArchivedPage>('GET', `/boards/${encodeURIComponent(boardId)}/archived?task=${encodeURIComponent(taskId)}`)
+        sync.learnArchived(page.tasks)
+      } catch {
+        // The board is gone, or the server can't be reached: there's nothing to show.
+      }
+    },
+    [sync, boardId],
+  )
+
   return {
     data,
+    loadArchived,
     access: state?.access ?? null,
     counts: state?.counts ?? NO_COUNTS,
     canComment: state?.canComment ?? false,
@@ -129,4 +145,27 @@ export function useBoardStore(boardId: string, prefsStore: PrefsStore, onEvent: 
     canUndo: depth.undo > 0,
     canRedo: depth.redo > 0,
   }
+}
+
+/**
+ * A board comes without its archived cards. When `id` isn't a card on it, this asks the server whether it's an
+ * archived one, and keeps what comes back with the board (so it opens, and can be restored). True while that isn't
+ * known yet.
+ */
+export function useArchivedCard(
+  store: { data: BoardData | null; loadArchived: (taskId: string) => Promise<void> },
+  id: string | null | undefined,
+): boolean {
+  const { data, loadArchived } = store
+  const [asked, setAsked] = useState<string | null>(null)
+  const missing = !!id && !!data && !data.tasks[id] && !data.archived?.[id]
+  useEffect(() => {
+    if (!missing || !id || asked === id) return
+    let alive = true
+    void loadArchived(id).then(() => alive && setAsked(id))
+    return () => {
+      alive = false
+    }
+  }, [missing, id, asked, loadArchived])
+  return missing && asked !== id
 }

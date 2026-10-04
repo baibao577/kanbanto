@@ -11,6 +11,7 @@ import type { Db } from '../db'
 import { attachments, boardActivity, boards, comments, notifications, timeEntries } from '../db/schema'
 import { HttpError } from '../http'
 import type { LiveHub } from '../live'
+import { ACTIVITY_DAYS } from './activityLog'
 import { loadBoard, writeChanges } from './store'
 
 export interface MutationResult {
@@ -18,12 +19,13 @@ export interface MutationResult {
   changes: Change[]
 }
 
-/** Boards kept in memory, and how big they may be all together (in records: tasks, lists, labels, people). */
+/** Boards kept in memory, and how big they may be all together (in records: tasks, archived ones too, lists, labels, people). */
 const CACHE_BOARDS = 200
 const CACHE_RECORDS = 200_000
 const REMEMBERED_MUTATIONS = 500
 
-const sizeOf = (d: BoardData) => Object.keys(d.tasks).length + d.columns.length + d.labels.length + d.members.length + 1
+const sizeOf = (d: BoardData) =>
+  Object.keys(d.tasks).length + Object.keys(d.archived ?? {}).length + d.columns.length + d.labels.length + d.members.length + 1
 
 /**
  * Runs commands against boards: the same `execute` the app runs, but here it's the one that counts.
@@ -213,7 +215,7 @@ export class BoardEngine {
   }
 }
 
-/** The activity log is kept 90 days. */
+/** The activity log is kept ACTIVITY_DAYS days: older lines are removed. */
 export async function pruneActivity(db: Db) {
-  await db.delete(boardActivity).where(lt(boardActivity.at, new Date(Date.now() - 90 * 24 * 60 * 60 * 1000)))
+  await db.delete(boardActivity).where(lt(boardActivity.at, new Date(Date.now() - ACTIVITY_DAYS * 24 * 60 * 60 * 1000)))
 }

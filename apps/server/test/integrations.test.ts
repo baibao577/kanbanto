@@ -2,7 +2,7 @@ import { createHmac } from 'node:crypto'
 import { createServer, type Server } from 'node:http'
 import { eq } from 'drizzle-orm'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
-import { tasks, webhookDeliveries } from '../src/db/schema'
+import { boardActivity, comments, tasks, webhookDeliveries } from '../src/db/schema'
 import { mid, Person, reset, setPlatformAdmin, setup } from './helpers'
 
 let t: Awaited<ReturnType<typeof setup>>
@@ -214,6 +214,7 @@ describe('MCP', () => {
       'move_task',
       'set_reminder',
       'archive_task',
+      'archive_done_tasks',
       'move_to_board',
       'create_board',
       'update_board',
@@ -442,12 +443,15 @@ describe('MCP', () => {
     await ann.ok('POST', `/api/boards/${id}/mutations`, { mutationId: mid(), command: { type: 'task.archive', id: 'A2' } })
     const snap = await ann.ok('GET', `/api/boards/${id}`)
     expect(snap.data.tasks.A2).toBeUndefined()
-    expect(Object.keys(snap.data.archived).sort()).toEqual(['A2', 'A2a', 'A2b'])
+    // (Archived cards aren't sent with the board: they're asked for.)
+    expect(snap.data.archived).toBeUndefined()
+    const put = await ann.ok('GET', `/api/boards/${id}/archived`)
+    expect(put.tasks.map((t: { id: string }) => t.id).sort()).toEqual(['A2', 'A2a', 'A2b'])
     expect(await count()).toBe(before - 3)
     expect((await ann.ok('GET', `/api/boards/${id}/activity`)).activity[0].items[0].text).toMatch(/^archived “/)
 
     // Assistants find it only when asked, and can bring it back.
-    const title = snap.data.archived.A2.title
+    const title = put.tasks.find((t: { id: string }) => t.id === 'A2').title
     const ids = (r: { tasks: { id: string }[] }) => r.tasks.map((x) => x.id)
     expect(ids(await call('find_tasks', { board_id: id, text: title }))).not.toContain('A2')
     const found = await call('find_tasks', { board_id: id, text: title, include_archived: true })
@@ -469,7 +473,7 @@ describe('MCP', () => {
     })
     await ann.ok('POST', `/api/boards/${other}/mutations`, { mutationId: mid(), command: { type: 'task.archive', id: 'x1', complete: true } })
     const all = await ann.ok('GET', '/api/cards?state=archived')
-    expect(all.cards.map((c: { title: string }) => c.title)).toEqual(['Old idea', snap.data.archived.A3?.title ?? 'Deploy'])
+    expect(all.cards.map((c: { title: string }) => c.title)).toEqual(['Old idea', 'Deploy'])
     expect(all.cards[1]).toMatchObject({ board: { id }, path: ['Launch website'], canEdit: true })
     expect((await ann.ok('GET', `/api/cards?board=${id}`)).total).toBe(1)
     expect((await ann.ok('GET', '/api/cards?q=idea')).cards.map((c: { id: string }) => c.id)).toEqual(['x1'])
@@ -570,6 +574,58 @@ describe('MCP', () => {
     expect(r.body.result?.isError ?? !!r.body.error).toBe(true)
   })
 
+  it('worked on in a stretch of time: find_tasks finds what was made or changed then, and says what happened', async () => {
+    const { ann, id } = await site({ apiTokens: true })
+    const mcp = withToken(await makeToken(ann, 'write'))
+    const call = async (name: string, args: object) => toolResult(await rpc(mcp, 'tools/call', { name, arguments: args }))
+    const ago = (days: number) => new Date(Date.now() - days * 86_400_000)
+    // Everything on the board is 200 days old, except: A3 was made 100 days ago, and C1 last changed then.
+    await t.db.update(tasks).set({ createdAt: ago(200), activeAt: ago(200), updatedAt: ago(200) })
+    await t.db
+      .update(tasks)
+      .set({ doneAt: ago(200) })
+      .where(eq(tasks.id, 'A1'))
+    await t.db
+      .update(tasks)
+      .set({ createdAt: ago(100) })
+      .where(eq(tasks.id, 'A3'))
+    await t.db
+      .update(tasks)
+      .set({ activeAt: ago(100), updatedAt: ago(100) })
+      .where(eq(tasks.id, 'C1'))
+    // B1 was commented on 100 days ago; time was logged on A2a for a day then; B2 was changed 85 days ago (and again
+    // since: only the activity log remembers).
+    await call('add_comment', { board_id: id, task_id: 'B1', text: 'Sent the first batch' })
+    await t.db.update(comments).set({ createdAt: ago(100) })
+    await call('log_time', { board_id: id, task_id: 'A2a', time: '2h', day: ago(100).toISOString().slice(0, 10) })
+    await t.db.insert(boardActivity).values({
+      id: '00000000-0000-4000-8000-000000000085',
+      boardId: id,
+      actorId: ann.user.id,
+      at: ago(85),
+      command: 'task.update',
+      items: [{ taskId: 'B2', text: 'renamed “Book a photographer”' }],
+    })
+
+    const then = { board_id: id, worked_after: ago(120).toISOString(), worked_before: ago(80).toISOString() }
+    const found = await call('find_tasks', then)
+    const why = Object.fromEntries(found.tasks.map((x: { id: string; worked: string[] }) => [x.id, x.worked]))
+    expect(why).toEqual({ A3: ['made'], C1: ['changed'], B1: ['commented on'], A2a: ['time logged'], B2: ['changed'] })
+    // It combines with the other filters, and a stretch nothing happened in finds nothing.
+    expect((await call('find_tasks', { ...then, text: 'photographer' })).tasks.map((x: { id: string }) => x.id)).toEqual(['B2'])
+    expect((await call('find_tasks', { board_id: id, worked_after: ago(60).toISOString(), worked_before: ago(30).toISOString() })).total).toBe(0)
+    // Lately: the task the time was logged on isn't there (the time was for a day long ago); nor is the commented one.
+    expect((await call('find_tasks', { board_id: id, worked_after: '1h' })).total).toBe(0)
+
+    // Done and archived tasks are found too: A3 is finished and put away today, and still was made back then.
+    await call('archive_task', { board_id: id, task_id: 'A3', completed: true })
+    const after = await call('find_tasks', then)
+    expect(after.tasks.find((x: { id: string }) => x.id === 'A3')).toMatchObject({ archived: expect.any(String), worked: ['made'] })
+    const today = await call('find_tasks', { board_id: id, worked_after: '1h' })
+    expect(today.tasks.find((x: { id: string }) => x.id === 'A3').worked).toEqual(['changed', 'done', 'archived'])
+    expect((await call('find_tasks', { board_id: id, worked_after: 'last spring' })).error).toMatch(/worked_after looks like/)
+  })
+
   it('stale work: find_tasks idle_days and sort, counting comments and subtasks; favourites in list_boards', async () => {
     const { ann, id } = await site({ apiTokens: true })
     const mcp = withToken(await makeToken(ann, 'write'))
@@ -590,18 +646,38 @@ describe('MCP', () => {
     expect(ids).not.toContain('A')
     expect(stale.tasks[0].idle_days).toBeGreaterThanOrEqual(29)
 
-    // What got done, and when: asking by the done date finds done tasks, archived ones too when asked.
+    // What got done, and when: asking by the done date finds done tasks, the ones archived since too (they're
+    // what a board's finished work becomes).
     await call('update_task', { board_id: id, task_id: 'B1', list: 'Done' })
     const finished = await call('find_tasks', { board_id: id, done_after: '1h' })
     expect(finished.tasks.map((x: { id: string }) => x.id)).toEqual(['B1'])
     expect(finished.tasks[0]).toMatchObject({ done: true, done_at: expect.any(String) })
     expect((await call('find_tasks', { board_id: id, done_before: '1h' })).tasks.map((x: { id: string }) => x.id)).toEqual(['A1'])
     await call('archive_task', { board_id: id, task_id: 'B1' })
-    expect((await call('find_tasks', { board_id: id, done_after: '1h' })).total).toBe(0)
-    expect((await call('find_tasks', { board_id: id, done_after: '1h', include_archived: true })).tasks[0]).toMatchObject({
-      id: 'B1',
-      done_at: finished.tasks[0].done_at,
-    })
+    const since = await call('find_tasks', { board_id: id, done_after: '1h' })
+    expect(since.total).toBe(1)
+    expect(since.tasks[0]).toMatchObject({ id: 'B1', archived: expect.any(String), completed: true, done_at: finished.tasks[0].done_at })
+    // Other searches still leave archived tasks out, unless asked.
+    expect((await call('find_tasks', { board_id: id, text: since.tasks[0].title, include_done: true })).total).toBe(0)
+
+    // By when tasks were archived: only archived ones.
+    const put = await call('find_tasks', { board_id: id, archived_after: '1h' })
+    expect(put.tasks.map((x: { id: string }) => x.id)).toEqual(['B1'])
+    expect((await call('find_tasks', { board_id: id, archived_before: '1h' })).total).toBe(0)
+    expect((await call('find_tasks', { board_id: id, archived_after: 'soon' })).error).toMatch(/archived_after looks like/)
+
+    // A done list's older cards, all at once: first what would go, then for real.
+    await call('create_tasks', { board_id: id, tasks: [{ title: 'Shipped', list: 'Done' }] })
+    const would = await call('archive_done_tasks', { board_id: id, older_than_days: 0, dry_run: true })
+    expect(would).toMatchObject({ would_archive: 1, with_subtasks: 1, lists: ['Done'], tasks: [{ title: 'Shipped' }] })
+    expect((await call('find_tasks', { board_id: id, text: 'Shipped', include_done: true })).total).toBe(1)
+    expect((await call('archive_done_tasks', { board_id: id, older_than_days: 365 })).archived).toBe(0)
+    expect(await call('archive_done_tasks', { board_id: id, older_than_days: 0 })).toMatchObject({ archived: 1 })
+    // A1 is done too, but under "Launch website", which isn't: it stays.
+    expect((await call('find_tasks', { board_id: id, include_done: true })).tasks.map((x: { id: string }) => x.id)).toContain('A1')
+    const away = await call('find_tasks', { board_id: id, archived_after: '1h' })
+    expect(away.tasks.map((x: { title: string }) => x.title).sort()).toEqual(['Send invites', 'Shipped'])
+    expect((await call('archive_done_tasks', { board_id: id, older_than_days: 0, list: 'To Do' })).error).toMatch(/isn’t a list for finished work/)
 
     expect((await call('list_boards', {})).boards[0].favorite).toBeUndefined()
     await ann.ok('PUT', `/api/boards/${id}/favorite`, { favorite: true })
@@ -648,10 +724,11 @@ describe('API reference', () => {
   it('describes the API (with every command) and shows it at /api/docs', async () => {
     const spec = await new Person(t.app).ok('GET', '/api/openapi.json')
     expect(spec.openapi).toBe('3.1.0')
-    expect(spec.components.schemas.Command.oneOf).toHaveLength(16)
+    expect(spec.components.schemas.Command.oneOf).toHaveLength(17)
     expect(spec.components.schemas.PlanCommand.oneOf).toHaveLength(22)
     expect(Object.keys(spec.paths)).toEqual(
       expect.arrayContaining([
+        '/api/boards/{id}/archived',
         '/api/boards/{id}/tasks/{taskId}/time',
         '/api/time/week',
         '/api/workspaces/{id}/planning/mutations',

@@ -30,6 +30,7 @@ import { filterCount, matchesFilter } from '@kanbanto/model/table'
 import type { TaskFields } from '@kanbanto/model/commands'
 import type { StatusColumn } from '@kanbanto/model/types'
 import { buildView, cellKey, groupCell, groupsSubtasks, NO_ROW, UNASSIGNED, type Lane } from '@kanbanto/model/view'
+import { ArchiveOlderDialog } from './ArchiveOlderDialog'
 import { cardIndexAt, cellAt, dragging, itemIndexAt, listIndexAt, type GroupDrag } from './dnd'
 import { BLOCKED, blockReason as blockReasonIn, dropCommand, dropGroupCommand, groupOf as groupOfIn, newCardIn, type DropContext } from './dropRules'
 import { GroupHeader } from './GroupHeader'
@@ -109,6 +110,8 @@ function Board({ search }: { search: string }) {
   const [colLimit, setColLimit] = useState(COLS_STEP)
   const [cellLimits, setCellLimits] = useState<Record<string, number>>({})
   const [editingList, setEditingList] = useState<string | null>(null)
+  // The done list whose older cards are being archived (its dialog is open).
+  const [archivingList, setArchivingList] = useState<string | null>(null)
   const [cardDrop, setCardDrop] = useState<CardDrop | null>(null)
   const [listDrag, setListDrag] = useState<{ id: string; height: number } | null>(null)
   const [listDrop, setListDrop] = useState<number | null>(null)
@@ -507,13 +510,22 @@ function Board({ search }: { search: string }) {
   const doneLine = (key: string) => {
     if (!isDone(key)) return null
     const older = view.olderDone.get(key)
+    const link = 'font-medium text-foreground/80 hover:text-foreground hover:underline'
     const line = (text: string, action: string, onClick: () => void) => (
       <p className="px-3 pb-1.5 text-xs text-muted-foreground">
         {text}
         {' · '}
-        <button onClick={onClick} className="font-medium text-foreground/80 hover:text-foreground hover:underline">
+        <button onClick={onClick} className={link}>
           {action}
         </button>
+        {!readOnly && (
+          <>
+            {' · '}
+            <button onClick={() => setArchivingList(key)} className={link}>
+              Archive…
+            </button>
+          </>
+        )}
       </p>
     )
     if (older) return line(`${older} older`, 'Show', () => setShowOlder(toggleIn(showOlder, key)))
@@ -528,6 +540,7 @@ function Board({ search }: { search: string }) {
           count={colCount(c.key)}
           editing={editingList === c.key}
           setEditing={setEditingList}
+          onArchiveOlder={() => setArchivingList(c.key)}
           className={joined ? 'rounded-t-xl' : 'rounded-xl'}
         />
         {doneLine(c.key)}
@@ -732,6 +745,9 @@ function Board({ search }: { search: string }) {
             )}
           </div>
         </div>
+      )}
+      {archivingList && idx.colById.has(archivingList) && (
+        <ArchiveOlderDialog col={idx.colById.get(archivingList)!} open onOpenChange={(o) => !o && setArchivingList(null)} />
       )}
     </>
   )

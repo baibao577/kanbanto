@@ -1,6 +1,6 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
-import type { Command, TaskFields } from '@kanbanto/model/commands'
+import { doneBefore, type Command, type TaskFields } from '@kanbanto/model/commands'
 import { BOARD_DESIGNS, COLORS, isBackground, LABEL_COLOR_CYCLE, type BoardBackground, type ColorName } from '@kanbanto/model/colors'
 import { newId } from '@kanbanto/model/ids'
 import { idleDays, lastActivity } from '@kanbanto/model/age'
@@ -17,7 +17,7 @@ import { z } from 'zod'
 import type { SessionUser } from './auth/sessions'
 import type { TokenAccess } from './auth/apiTokens'
 import { requireAccess } from './boards/access'
-import { ACTIVITY_DAYS, parseMoment, readActivity } from './boards/activityLog'
+import { ACTIVITY_DAYS, parseMoment, readActivity, workSigns } from './boards/activityLog'
 import { comments, reminderSends, tasks, users, workspaceMembers, workspaces } from './db/schema'
 import { HttpError } from './http'
 import { createBoard } from './boards/service'
@@ -46,7 +46,7 @@ const INSTRUCTIONS = `Kanbanto is a kanban board app where tasks nest: a task ca
 - Dates are whole days (2026-10-15) or, with a time, UTC moments (2026-10-15T07:30:00Z): mention times in the user's time zone.
 - Break work down with create_tasks and a parent_id (meeting notes: a parent task for the meeting, its action items as subtasks). Move tasks between lists with update_task (list) and in the tree with move_task.
 - Reminders: set_reminder ("remind me Monday 1pm", "a day before it's due"); they go to the task's assignee (or the person who set it). reminders lists what's coming up for them.
-- Finished or paused work can be put away with archive_task (restorable, nothing lost); find_tasks and list_boards include archived things only when asked.
+- Finished or paused work can be put away with archive_task (restorable, nothing lost), and a done list's older cards all at once with archive_done_tasks. Archived tasks aren't on the board: find_tasks finds them when you ask by when tasks got done (done_after, done_before) or were archived (archived_after, archived_before), or with include_archived. For "what did we finish in March", ask find_tasks with that stretch of time (done_after, done_before); for "what was I working on in January to March", with worked_after and worked_before (and assignee "me"): tasks made or changed then.
 - Boards: create_board makes one; update_board, manage_lists and manage_labels change its settings. Sharing boards, inviting people, and deleting boards or tasks are done by people in the app: point them there.
 - Time: log_time logs time someone spent on a task ("2h on the login task yesterday"); get_task shows a task's logged time; my_week shows the person's week across boards (which days are empty). Only log what the person says they spent: never estimate hours for them.
 - Plans: each workspace can have a resource plan (who works on which project, how much of their time, when; planned vs logged man-days). plan_overview reads it. Plans are changed by planners in the app's Planning tab, not here: point them there.
@@ -259,7 +259,7 @@ function buildServer(app: FastifyInstance, me: SessionUser, token: TokenAccess) 
     {
       title: 'Find tasks',
       description:
-        'Searches tasks on one board, one workspace, or every board you can open. All filters are optional and combine. Done tasks are left out unless include_done is true (or you ask by when they got done). When there are more, pass next_offset back as offset.',
+        'Searches tasks on one board, one workspace, or every board you can open. All filters are optional and combine. Done tasks are left out unless include_done is true, or you ask by when they got done: then archived tasks that were completed are found too (marked archived). worked_after and worked_before find what was worked on in a stretch of time. When there are more, pass next_offset back as offset.',
       inputSchema: {
         board_id: z.string().optional().describe('Leave out to search more boards.'),
         workspace: WORKSPACE,
@@ -281,6 +281,18 @@ function buildServer(app: FastifyInstance, me: SessionUser, token: TokenAccess) 
           .optional()
           .describe(`Only done tasks that got done on or after this ("7d": finished in the last week); results show done_at. ${MOMENT}`),
         done_before: z.string().optional().describe(`Only done tasks that got done before this. ${MOMENT}`),
+        archived_after: z
+          .string()
+          .optional()
+          .describe(`Only archived tasks, archived on or after this ("30d": put away in the last month). ${MOMENT}`),
+        archived_before: z.string().optional().describe(`Only archived tasks, archived before this. ${MOMENT}`),
+        worked_after: z
+          .string()
+          .optional()
+          .describe(
+            `Tasks worked on in a stretch of time: made or changed on or after this (and before worked_before). A change is an edit, a move to another list (finishing it too), a comment, time logged, or archiving it. Done and archived tasks are found too, and each result says what happened then (worked). Changes older than ${ACTIVITY_DAYS} days are only known when they were a task's last one: say so if the stretch is older. ${MOMENT}`,
+          ),
+        worked_before: z.string().optional().describe(`Tasks worked on before this (see worked_after). ${MOMENT}`),
         idle_days: z
           .number()
           .int()
@@ -291,7 +303,12 @@ function buildServer(app: FastifyInstance, me: SessionUser, token: TokenAccess) 
             'Stale work: only open tasks with no activity for at least this many days (not moved to another list, edited or commented on, and nor were their subtasks). Results then show idle_days.',
           ),
         include_done: z.boolean().optional(),
-        include_archived: z.boolean().optional().describe('Also archived tasks (marked archived; they have no list position or progress).'),
+        include_archived: z
+          .boolean()
+          .optional()
+          .describe(
+            'Also archived tasks (marked archived; they have no list position or progress). Not needed when asking by when tasks got done or were archived.',
+          ),
         sort: z
           .enum(['outline', 'due', 'priority', 'updated', 'idle'])
           .optional()
@@ -322,6 +339,10 @@ function buildServer(app: FastifyInstance, me: SessionUser, token: TokenAccess) 
         changed_before?: string
         done_after?: string
         done_before?: string
+        archived_after?: string
+        archived_before?: string
+        worked_after?: string
+        worked_before?: string
         idle_days?: number
         include_done?: boolean
         include_archived?: boolean
@@ -342,9 +363,43 @@ function buildServer(app: FastifyInstance, me: SessionUser, token: TokenAccess) 
         const finished =
           a.done_after || a.done_before ? [time(a.done_after, 'done_after') ?? -Infinity, time(a.done_before, 'done_before') ?? Infinity] : null
         const gotDone = (ms: number | null | undefined) => !finished || (ms != null && ms >= finished[0] && ms < finished[1])
+        // Asking when tasks were archived is asking for archived tasks (and only them).
+        const putAway =
+          a.archived_after || a.archived_before
+            ? [time(a.archived_after, 'archived_after') ?? -Infinity, time(a.archived_before, 'archived_before') ?? Infinity]
+            : null
         const within = (iso: string, [from, to]: number[]) => {
           const t = Date.parse(iso)
           return t >= from && t < to
+        }
+        // Worked on in a stretch of time: made then, or changed then. A card keeps only its last change; comments,
+        // logged time and the activity log (for as far back as it goes) know of the earlier ones.
+        const worked =
+          a.worked_after || a.worked_before
+            ? { from: parseMoment(a.worked_after, 'worked_after', null), to: parseMoment(a.worked_before, 'worked_before', null) }
+            : null
+        const span = worked ? [worked.from?.getTime() ?? -Infinity, worked.to?.getTime() ?? Infinity] : []
+        const signs = worked
+          ? await workSigns(
+              app.db,
+              chosen.map((b) => b.id),
+              worked.from,
+              worked.to,
+              (moment) => dayIn(moment, zone),
+            )
+          : null
+        /** What happened to a task in the stretch asked about, in order: empty when nothing did. */
+        const workOn = (boardId: string, t: Task, doneAt: number | null | undefined): string[] => {
+          const inSpan = (ms: number | null | undefined) => ms != null && ms >= span[0] && ms < span[1]
+          const more = signs!.get(`${boardId}:${t.id}`)
+          return [
+            ...(inSpan(Date.parse(t.createdAt)) ? ['made'] : []),
+            ...(inSpan(Date.parse(t.activeAt ?? t.updatedAt)) || more?.has('changed') ? ['changed'] : []),
+            ...(more?.has('commented') ? ['commented on'] : []),
+            ...(more?.has('time logged') ? ['time logged'] : []),
+            ...(inSpan(doneAt) ? ['done'] : []),
+            ...(t.archivedAt && inSpan(Date.parse(t.archivedAt)) ? ['archived'] : []),
+          ]
         }
         const aging = !!a.idle_days || a.sort === 'idle'
         const found: { task: Task; row: Record<string, unknown>; active?: number }[] = []
@@ -367,10 +422,12 @@ function buildServer(app: FastifyInstance, me: SessionUser, token: TokenAccess) 
           if (list === undefined || label === undefined || who === undefined) continue
           if (a.parent_id && !data.tasks[a.parent_id]) throw new HttpError(404, 'There’s no such parent task on this board.')
           const commented = aging ? await lastComments(app.db, boardId) : undefined
-          for (const id of a.parent_id ? descendantsOf(idx, a.parent_id) : idx.preorder) {
+          for (const id of putAway ? [] : a.parent_id ? descendantsOf(idx, a.parent_id) : idx.preorder) {
             const t = data.tasks[id]
-            if (!a.include_done && !finished && idx.category.get(id) === 'done') continue
+            if (!a.include_done && !finished && !worked && idx.category.get(id) === 'done') continue
             if (!gotDone(idx.doneAt.get(id))) continue
+            const work = worked ? workOn(boardId, t, idx.doneAt.get(id)) : null
+            if (work && !work.length) continue
             if (list && idx.status.get(id) !== list) continue
             if (label && !t.labels.includes(label)) continue
             if (who && t.assigneeId !== who) continue
@@ -393,12 +450,17 @@ function buildServer(app: FastifyInstance, me: SessionUser, token: TokenAccess) 
                 workspace: b.place,
                 ...brief(data, idx, t),
                 ...(aging && { idle_days: idleDays(active!) }),
+                ...(work && { worked: work }),
               },
             })
           }
-          // Archived tasks: the filters that still mean something for them.
-          if (a.include_archived && !a.parent_id && !list && a.blocked === undefined && !a.idle_days)
+          // Archived tasks: the filters that still mean something for them. What got done in a stretch of time has
+          // often been put away since, so asking by the done date looks here too.
+          if ((a.include_archived || finished || putAway || worked) && !a.parent_id && !list && a.blocked === undefined && !a.idle_days)
             for (const t of Object.values(data.archived ?? {})) {
+              if (putAway && !within(t.archivedAt!, putAway)) continue
+              const work = worked ? workOn(boardId, t, t.archivedDone ? Date.parse(t.doneAt ?? t.archivedAt!) : null) : null
+              if (work && !work.length) continue
               if (label && !t.labels.includes(label)) continue
               if (who && t.assigneeId !== who) continue
               if (nobody && t.assigneeId) continue
@@ -408,7 +470,10 @@ function buildServer(app: FastifyInstance, me: SessionUser, token: TokenAccess) 
               if (!within(t.createdAt, created) || !within(t.updatedAt, changed)) continue
               if (!gotDone(t.archivedDone ? Date.parse(t.doneAt ?? t.archivedAt!) : null)) continue
               if (!hasWords(words, `${t.title} ${t.description ?? ''}`.toLowerCase())) continue
-              found.push({ task: t, row: { board_id: boardId, board: data.board.name, workspace: b.place, ...archivedBrief(data, t) } })
+              found.push({
+                task: t,
+                row: { board_id: boardId, board: data.board.name, workspace: b.place, ...archivedBrief(data, t), ...(work && { worked: work }) },
+              })
             }
         }
         // Sorting is stable: ties keep board order. Tasks without the value go last.
@@ -1033,6 +1098,40 @@ function buildServer(app: FastifyInstance, me: SessionUser, token: TokenAccess) 
         const after = (await open(a.board_id, 'viewer')).data
         const now = after.archived?.[t.id]
         return { task_id: t.id, title: t.title, archived: !a.restore, ...(now && { completed: !!now.archivedDone, archived_from: now.archivedList }) }
+      }),
+    )
+
+    server.registerTool(
+      'archive_done_tasks',
+      {
+        title: 'Archive a done list’s older tasks',
+        description:
+          'Tidies a board: archives the top-level tasks in a done list that got done more than older_than_days ago, each with its subtasks (restorable with archive_task, nothing lost). A finished task under unfinished work stays. dry_run: true only says what would go. Do it when the person asks to clean up or archive old done work; say how many went.',
+        inputSchema: {
+          board_id: z.string(),
+          older_than_days: z.number().int().min(0).max(3650).describe('Done more than this many days ago. 0: every finished top-level task.'),
+          list: z.string().optional().describe('A done list’s name or id. Leave out for every done list.'),
+          dry_run: z.boolean().optional(),
+        },
+        annotations: { destructiveHint: false, idempotentHint: true, openWorldHint: false },
+      },
+      tool(async (a: { board_id: string; older_than_days: number; list?: string; dry_run?: boolean }) => {
+        const { data, idx } = await open(a.board_id, 'editor')
+        const lists = a.list ? [pick(idx.columns, a.list, 'list')] : idx.columns.filter((c) => c.category === 'done')
+        if (a.list && lists[0].category !== 'done') throw new HttpError(400, `“${lists[0].name}” isn’t a list for finished work.`)
+        const before = Date.now() - a.older_than_days * 86_400_000
+        const going = lists.flatMap((c) => doneBefore(idx, c.id, before))
+        const withSubtasks = going.reduce((n, id) => n + 1 + idx.subTotal.get(id)!, 0)
+        const sample = going.slice(0, 20).map((id) => ({ id, title: data.tasks[id].title, done_at: new Date(idx.doneAt.get(id)!).toISOString() }))
+        if (!a.dry_run)
+          for (const c of lists) await run(a.board_id, { type: 'tasks.archiveDone', status: c.id, before: new Date(before).toISOString() })
+        return {
+          ...(a.dry_run ? { would_archive: going.length } : { archived: going.length }),
+          with_subtasks: withSubtasks,
+          lists: lists.map((c) => c.name),
+          tasks: sample,
+          ...(going.length > sample.length && { more: going.length - sample.length }),
+        }
       }),
     )
 

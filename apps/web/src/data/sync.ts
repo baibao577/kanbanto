@@ -4,7 +4,7 @@ import { execute, type Command } from '@kanbanto/model/commands'
 import { newId } from '@kanbanto/model/ids'
 import { indexFor } from '@kanbanto/model/indexer'
 import type { Change } from '@kanbanto/model/records'
-import type { BoardData } from '@kanbanto/model/types'
+import type { BoardData, Task } from '@kanbanto/model/types'
 import { api, ApiError } from '@/api/client'
 
 export type Connection = 'connecting' | 'live' | 'offline'
@@ -141,6 +141,18 @@ export class BoardSync {
     return r
   }
 
+  /**
+   * Archived cards fetched from the server (a board comes without them): kept with the server's copy, so they can be
+   * shown and restored like before. Ones already here, or back on the board since, are left as they are.
+   */
+  learnArchived(tasks: Task[]) {
+    const known = this.confirmed.archived ?? {}
+    const fresh = tasks.filter((t) => t.archivedAt && !this.confirmed.tasks[t.id] && !known[t.id])
+    if (!fresh.length) return
+    this.confirmed = { ...this.confirmed, archived: { ...known, ...Object.fromEntries(fresh.map((t) => [t.id, t])) } }
+    this.replay()
+  }
+
   close() {
     this.closed = true
     this.socket?.close()
@@ -244,7 +256,9 @@ export class BoardSync {
     this.resyncing ??= (async () => {
       try {
         const snap = await api<BoardSnapshot>('GET', `/boards/${encodeURIComponent(this.boardId)}`)
-        this.confirmed = snap.data
+        // The archived cards fetched so far stay (the board comes without them), unless they're back on it.
+        const learned = Object.entries(this.confirmed.archived ?? {}).filter(([id]) => !snap.data.tasks[id])
+        this.confirmed = learned.length ? { ...snap.data, archived: Object.fromEntries(learned) } : snap.data
         this.seq = snap.seq
         this.set({ access: snap.access, counts: snap.counts, canComment: snap.canComment })
         this.replay()

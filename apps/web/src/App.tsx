@@ -25,7 +25,7 @@ import { VIEWS } from '@/components/views'
 import { lastBoard, rememberBoard } from '@/data/lastBoard'
 import { prefsStoreFor } from '@/data/prefsStore'
 import { exportBoard } from '@/data/transfer'
-import { useBoardStore } from '@/data/useBoardStore'
+import { useArchivedCard, useBoardStore } from '@/data/useBoardStore'
 
 // Dialogs load the first time they're opened.
 const StatsDialog = lazy(() => import('@/components/shell/StatsDialog').then((m) => ({ default: m.StatsDialog })))
@@ -280,6 +280,8 @@ function Workspace({ store }: { store: Store }) {
   const layout = route.layout ?? store.prefs.layout
   const wantedFocus = route.layout ? route.focus : store.prefs.focusId
   const focusId = wantedFocus && data.tasks[wantedFocus] ? wantedFocus : undefined
+  // (An archived card isn't sent with the board: one in the address is fetched first.)
+  const looking = useArchivedCard(store, route.task)
   const openId = route.task && (data.tasks[route.task] || data.archived?.[route.task]) ? route.task : null
   const prefs = useMemo(() => ({ ...store.prefs, layout, focusId }), [store.prefs, layout, focusId])
 
@@ -287,14 +289,14 @@ function Workspace({ store }: { store: Store }) {
   useEffect(() => {
     const r = currentRoute()
     if (r.page !== 'board' || r.id !== data.board.id) return
-    const fixed: BoardRoute = { page: 'board', id: r.id, layout, focus: focusId, task: openId ?? undefined }
+    const fixed: BoardRoute = { page: 'board', id: r.id, layout, focus: focusId, task: openId ?? (looking ? r.task : undefined) }
     const depth = (history.state as { taskDepth?: number } | null)?.taskDepth
     if (fixed.task && !depth) {
       // Arrived with a task open (a link, or a new tab): put the page under it, so closing the task goes there.
       navigate({ ...fixed, task: undefined }, { replace: true })
       navigate(fixed, { state: { taskDepth: 1 } })
     } else if (hrefFor(fixed) !== hrefFor(r)) navigate(fixed, { replace: true, state: history.state })
-  }, [route, layout, focusId, openId, data.board.id])
+  }, [route, layout, focusId, openId, looking, data.board.id])
 
   // Remember the tab and focus for the next time this board is opened without them in the address.
   const { setPrefs: savePrefs } = store
@@ -430,7 +432,7 @@ function Workspace({ store }: { store: Store }) {
           unsaved={store.unsaved}
           onOpenSettings={() => setSettingsOpen(true)}
           onOpenStats={() => setStatsOpen(true)}
-          onExport={() => exportBoard(data)}
+          onExport={() => void exportBoard(data).catch((e) => toast.error(errorMessage(e)))}
         />
         {access.archivedAt && <ArchivedBanner boardId={data.board.id} owner={access.role === 'owner'} />}
         <ViewBar search={search} style={prefs.layout === 'board' ? canvasStyle(data.board.background) : undefined}>

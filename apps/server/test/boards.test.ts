@@ -156,6 +156,93 @@ describe('boards', () => {
   })
 })
 
+describe('archived cards', () => {
+  const ids = (r: { tasks: { id: string }[] }) => r.tasks.map((x) => x.id)
+
+  it('aren’t sent with the board; they’re asked for: all of them, one with its family, or by date', async () => {
+    const ann = await Person.signUp(t.app, 'Ann')
+    const [{ id }] = (await ann.ok('GET', '/api/boards')).boards
+    await mutate(ann, id, { type: 'task.archive', id: 'A2' }) // with its subtasks A2a and A2b
+    const { data } = await load(ann, id)
+    expect(data.tasks.A2).toBeUndefined()
+    expect(data.archived).toBeUndefined()
+    // Everything at once, for an export or a backup.
+    const whole = await ann.ok('GET', `/api/boards/${id}?archived=all`)
+    expect(Object.keys(whole.data.archived).sort()).toEqual(['A2', 'A2a', 'A2b'])
+    expect((await ann.request('GET', `/api/boards/${id}?archived=some`)).status).toBe(400)
+
+    // One card: with the archived cards above and under it.
+    expect(ids(await ann.ok('GET', `/api/boards/${id}/archived?task=A2a`))).toEqual(['A2', 'A2a'])
+    expect(ids(await ann.ok('GET', `/api/boards/${id}/archived?task=A2`)).sort()).toEqual(['A2', 'A2a', 'A2b'])
+    // (A card that isn't archived: nothing, not an error. The app asks about any card it doesn't find on the board.)
+    expect(await ann.ok('GET', `/api/boards/${id}/archived?task=A1`)).toEqual({ tasks: [], total: 0, nextOffset: null })
+
+    // By when they were archived (or done, or made), a page at a time.
+    const recent = await ann.ok('GET', `/api/boards/${id}/archived?from=1h&limit=2`)
+    expect(recent).toMatchObject({ total: 3, nextOffset: 2 })
+    expect(recent.tasks).toHaveLength(2)
+    expect(await ann.ok('GET', `/api/boards/${id}/archived?from=1h&limit=2&offset=2`)).toMatchObject({ total: 3, nextOffset: null })
+    expect((await ann.ok('GET', `/api/boards/${id}/archived?to=1h`)).total).toBe(0)
+    // (A2 wasn't finished: asking by when cards got done doesn't find it.)
+    expect((await ann.ok('GET', `/api/boards/${id}/archived?when=done`)).total).toBe(0)
+    expect((await ann.ok('GET', `/api/boards/${id}/archived?when=any&from=1h`)).total).toBe(3)
+    expect((await ann.request('GET', `/api/boards/${id}/archived?from=soon`)).status).toBe(400)
+
+    // Only for people who can open the board.
+    const bob = await Person.signUp(t.app, 'Bob')
+    expect((await bob.request('GET', `/api/boards/${id}/archived`)).status).toBe(404)
+
+    await mutate(ann, id, { type: 'task.restore', id: 'A2' })
+    expect((await ann.ok('GET', `/api/boards/${id}/archived`)).total).toBe(0)
+    expect((await load(ann, id)).data.tasks.A2a.parentId).toBe('A2')
+  })
+
+  it('a done list’s older cards are archived in one go, and undo brings them back', async () => {
+    const ann = await Person.signUp(t.app, 'Ann')
+    const { id } = await ann.ok('POST', '/api/boards', { name: 'Plan' })
+    const lists = (await load(ann, id)).data.columns
+    const done = lists.find((c) => c.category === 'done')!.id
+    const todo = lists.find((c) => c.category === 'todo')!.id
+    for (const [task, parentId, status] of [
+      ['a', null, done],
+      ['a1', 'a', done],
+      ['b', null, done],
+      ['open', null, todo],
+      ['open1', 'open', done],
+      ['open2', 'open', todo],
+    ] as const)
+      await mutate(ann, id, { type: 'task.create', id: task, parentId, fields: { title: task, status } })
+    const ago = (ms: number) => new Date(Date.now() - ms).toISOString()
+
+    // Nothing was done more than a day ago: no change.
+    expect((await mutate(ann, id, { type: 'tasks.archiveDone', status: done, before: ago(86_400_000) })).body.changes).toEqual([])
+    const start = (await load(ann, id)).data
+    const r = await mutate(ann, id, { type: 'tasks.archiveDone', status: done, before: ago(-60_000) })
+    expect(r.status).toBe(200)
+    // The finished top-level cards went, with their subtasks; a finished card under unfinished work stays.
+    expect(Object.keys((await load(ann, id)).data.tasks).sort()).toEqual(['open', 'open1', 'open2'])
+    const put = await ann.ok('GET', `/api/boards/${id}/archived?when=done&from=1h`)
+    expect(ids(put).sort()).toEqual(['a', 'a1', 'b'])
+    expect(put.tasks.every((x: { archivedDone: boolean; doneAt?: string }) => x.archivedDone && x.doneAt)).toBe(true)
+    expect((await ann.ok('GET', `/api/boards/${id}/activity`)).activity[0].items[0].text).toMatch(/^archived “.+” as completed$/)
+
+    const now = applyChanges(start, r.body.changes)
+    const undo = await mutate(ann, id, { type: 'records.restore', changes: invertChanges(now, r.body.changes, new Date().toISOString()) })
+    expect(undo.status).toBe(200)
+    expect(Object.keys((await load(ann, id)).data.tasks).sort()).toEqual(['a', 'a1', 'b', 'open', 'open1', 'open2'])
+    expect((await ann.ok('GET', `/api/boards/${id}/archived`)).total).toBe(0)
+
+    // Only a list for finished work, and only by people who can edit.
+    const wrong = await mutate(ann, id, { type: 'tasks.archiveDone', status: todo, before: ago(0) })
+    expect(wrong.status).toBe(422)
+    expect(wrong.body.error).toMatch(/finished work/)
+    const bob = await Person.signUp(t.app, 'Bob')
+    const { link } = await ann.ok('PUT', `/api/boards/${id}/invites/link`, { role: 'viewer' })
+    await bob.ok('POST', '/api/join', { invite: link.token })
+    expect((await mutate(bob, id, { type: 'tasks.archiveDone', status: done, before: ago(-60_000) })).status).toBe(403)
+  })
+})
+
 describe('sharing', () => {
   /** Ann and her board, plus Bob. */
   async function annAndBoard() {
