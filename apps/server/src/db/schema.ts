@@ -102,6 +102,11 @@ export const siteSettings = pgTable('site_settings', {
   /** The site's key pair for desktop notifications (Web Push, "VAPID"): made on first use; the private half encrypted. */
   vapidPublicKey: text('vapid_public_key'),
   vapidPrivateKeyEncrypted: text('vapid_private_key_encrypted'),
+  /** People can make a private calendar link (an address calendar apps subscribe to). Off until a platform admin turns it on. */
+  calendarLinks: boolean('calendar_links').notNull().default(SETTING_DEFAULTS.calendarLinks),
+  /** The site's Google app, for connecting people's Google Calendar (an OAuth client): its id, and its secret encrypted. */
+  googleClientId: text('google_client_id'),
+  googleClientSecretEncrypted: text('google_client_secret_encrypted'),
 })
 
 // ── Email ──────────────────────────────────────────────────────────────────────
@@ -905,4 +910,78 @@ export const boardFavorites = pgTable(
     createdAt: at('created_at').notNull().defaultNow(),
   },
   (t) => [primaryKey({ columns: [t.userId, t.boardId] })],
+)
+
+// ── Calendars ──────────────────────────────────────────────────────────────────
+
+/**
+ * A person's private calendar link: an address calendar apps subscribe to (see src/routes/calendar.ts). Found by the
+ * SHA-256 of its token; an encrypted copy is kept so the link can be shown to them again.
+ */
+export const calendarFeeds = pgTable('calendar_feeds', {
+  userId: uuid('user_id')
+    .primaryKey()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  tokenHash: text('token_hash').notNull().unique(),
+  tokenEncrypted: text('token_encrypted').notNull(),
+  createdAt: at('created_at').notNull().defaultNow(),
+})
+
+/** A person's Google Calendar connection: Kanbanto keeps a calendar of its own there up to date (see src/calendar/sync.ts). */
+export const calendarConnections = pgTable('calendar_connections', {
+  userId: uuid('user_id')
+    .primaryKey()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  /** The Google account, to show "Connected as …". */
+  googleEmail: text('google_email'),
+  refreshTokenEncrypted: text('refresh_token_encrypted').notNull(),
+  /** The calendar Kanbanto made in their Google account (null until the first sync makes it). */
+  calendarId: text('calendar_id'),
+  /** The last problem, in words. With `failingSince`: Google refuses the connection, and it waits to be connected again. */
+  lastError: text('last_error'),
+  failingSince: at('failing_since'),
+  /** Tries in a row that Google didn't answer; the next one waits longer each time. */
+  attempts: integer('attempts').notNull().default(0),
+  nextAttemptAt: at('next_attempt_at').notNull().defaultNow(),
+  lastSyncedAt: at('last_synced_at'),
+  createdAt: at('created_at').notNull().defaultNow(),
+})
+
+/**
+ * A person's calendar and one board: whether they left it out (`off`, for the link and Google alike), and the board's
+ * change number (`boards.seq`) when it was last sent to Google. A different number means there's something to send.
+ */
+export const calendarBoards = pgTable(
+  'calendar_boards',
+  {
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    boardId: text('board_id')
+      .notNull()
+      .references(() => boards.id, { onDelete: 'cascade' }),
+    off: boolean('off').notNull().default(false),
+    syncedSeq: bigint('synced_seq', { mode: 'number' }),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.boardId] })],
+)
+
+/**
+ * The events Kanbanto put in someone's Google calendar: one per part of a task ('due', or 'r:<reminder id>'), with
+ * what was last sent (a hash; null: not there yet). The board isn't a foreign key on purpose: when a board is deleted,
+ * these rows are what's left to remove its events from Google.
+ */
+export const calendarEvents = pgTable(
+  'calendar_events',
+  {
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    boardId: text('board_id').notNull(),
+    taskId: text('task_id').notNull(),
+    part: text('part').notNull(),
+    eventId: text('event_id').notNull(),
+    sentHash: text('sent_hash'),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.boardId, t.taskId, t.part] })],
 )

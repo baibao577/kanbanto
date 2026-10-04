@@ -22,6 +22,11 @@ then `git pull` (or download the new release) and `docker compose up -d --build`
   `/api/docs` on every site. Claude on the web and in Claude Desktop (and ChatGPT) can connect by signing in (OAuth),
   when a platform admin allows it. For assistants: a 90-day activity log of who changed what (and through which app),
   a team overview, searches by priority, label and time, and an Inbox for quick capture.
+- **Cards in your calendar:** connect Google Calendar (Account settings → Calendar) and your cards' due dates and
+  reminders appear in a calendar of Kanbanto's own there, updated within seconds; or make a private calendar link
+  for Apple Calendar, Outlook and others. Your cards are the ones assigned to you, plus nobody's cards on boards
+  only you are on; you choose which boards are in it. Platform admins turn each on in the console (Google Calendar
+  needs a Google app, see [Calendar](docs/calendar.md)).
 - **Priorities** (urgent, high, medium, low) on tasks: shown on cards, and in the Outline, filters and sorting. Boards
   can say **what they're for**.
 - **Move a task to another board**, with its subtasks, comments and files (from its menu, or the card's panel). You see

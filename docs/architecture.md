@@ -14,7 +14,8 @@ Browser (React app)  ──HTTP /api──▶  Kanbanto server (Node, Fastify)  
 One Docker image holds both halves: the server answers `/api` and serves the built web app on the same port.
 On start, it loads (or makes) the encryption key, runs database migrations, and moves any secrets saved with the old
 public development key onto the real one. Background jobs run inside the same process:
-- the mention digest, every hour;
+- reminders whose moment has come, every minute; the morning summary email, checked every 10 minutes;
+- the email outbox, webhook deliveries and Google Calendar sync, every 5 seconds;
 - clean-up (expired sessions, old trash, unused uploads), every 6 hours.
 
 ## Code layout
@@ -29,6 +30,7 @@ packages/model/   The board model and its rules: pure TypeScript, used by BOTH t
   time.ts           Logged time: reading what people type ("1:30 review"), showing it, man-days
   planning.ts, planningCommands.ts, planningSchema.ts   A workspace's plan (people's time on projects): its sums
                     (working days, man-days, loads), its commands and their rules (like commands.ts), their schemas
+  calendar.ts, ics.ts   What a board puts in a person's calendar (one rule for links and Google), and the .ics file
   api.ts            The API's request/response shapes, shared by server and web
   indexer.ts, view.ts, tree.ts, table.ts   The task tree, rolled-up status, what each view shows
 
@@ -40,9 +42,12 @@ apps/server/      Fastify + Drizzle + PostgreSQL
                     what), invites.ts, workspaces.ts (joining, leaving, moving boards)
   src/planning/     engine.ts (runs plan commands, one workspace at a time), store.ts (rows ⇄ records, seeding)
   src/routes/       auth, boards, sharing, workspaces, comments (and the bell), time (logged time, My week), files,
-                    email, admin, integrations (API tokens, a board's webhooks)
+                    email, admin, integrations (API tokens, a board's webhooks), calendar (your link, Google
+                    Calendar, the .ics feed)
   src/auth/apiTokens.ts   Bearer tokens: who they act as, and which routes they may use (TOKEN_ROUTES)
   src/webhooks.ts   Queues, signs and delivers webhooks (with retries), like the email outbox
+  src/calendar/     sync.ts (keeps people's Google calendars up to date), google.ts (Google's sign-in and calendar
+                    calls, and a stand-in for tests), items.ts (which boards are in someone's calendar)
   src/mcp.ts        The MCP endpoint (/api/mcp): tools for AI assistants, over the same access checks and commands
   src/oauth.ts      Apps connecting with sign-in (OAuth 2.1 for MCP): discovery, registration, consent, tokens
   src/openapi.ts    /api/openapi.json (commands described from their schema) and the reference page at /api/docs
@@ -110,8 +115,8 @@ The app uses hash routing, so any static host or proxy works without rewrite rul
 | `#/time?week=<monday>` | My week: your logged time on every board |
 | `#/signin`, `#/signup`, `#/forgot` | Signing in |
 | `#/verify/<token>`, `#/reset/<token>` | Links in emails |
-| `#/account/<section>` | Account settings: profile, password, notifications, email, storage |
-| `#/admin/<section>` | Platform console: overview, accounts, email, storage |
+| `#/account/<section>` | Account settings: profile, password, notifications, calendar, email, storage, api |
+| `#/admin/<section>` | Platform console: overview, accounts, email, storage, integrations |
 
 ## Accounts and sharing
 
@@ -152,6 +157,15 @@ The app uses hash routing, so any static host or proxy works without rewrite rul
   (checked after every name lookup, like people's buckets), or anywhere.
 - **MCP** is stateless: each POST to `/api/mcp` builds a server whose tools call the same functions the routes use
   (`requireAccess`, `engine.mutate`, `postComment`), as the token's person.
+- **Calendars** work from what should be there, not from what just happened. `calendarItems` (in the model) says
+  which events a board gives a person; the calendar link renders them as an .ics file on request, and
+  `CalendarSync` compares them with what it last sent to Google (`calendar_events`, by hash) and sends the
+  difference. It knows a board needs another look from the board's change number: `boards.seq` goes up with every
+  command and every change of people, sharing or archiving, and `calendar_boards.synced_seq` is the number last
+  sent for that person. So losing access, a list becoming a "done" list, or a restart need no special handling.
+  Boards a person can no longer open have their events removed (`calendar_events` has no foreign key to the board,
+  so a deleted board's events can still be found). Failures back off per connection and never give up; a refused
+  connection waits to be connected again.
 
 ## Email
 

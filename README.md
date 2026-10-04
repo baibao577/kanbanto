@@ -36,6 +36,8 @@
   My week shows your time on every board, a card per row and a day per column. On a board linked to a plan, logged
   time shows next to each person's planned man-days.
 - **Comments and files:** discuss each card, @mention people, attach files and screenshots, and point to a file with `#`.
+- **In your calendar:** due dates and reminders show up in Google Calendar (connected once, updated within seconds),
+  or in Apple Calendar, Outlook and others through a private calendar link.
 - **Connect it:** an API with personal tokens, webhooks for each board, and an MCP endpoint so AI assistants like
   Claude can find, plan and update tasks for you.
 - **Your own server, your own data.** Files stay on your server, or in your own Cloudflare R2 / Amazon S3 bucket.
@@ -132,15 +134,17 @@ That's your boards and accounts (`kanbanto-backup.dump`) and attached files (`ka
 or file storage, also keep Kanbanto's encryption key in a password manager: `docker compose exec app node dist/cli.js key`
 shows it. Bringing a copy back: see [Restore](docs/self-hosting.md#restore).
 
-### Optional: email and file storage
+### Optional: email, file storage and calendars
 
-Kanbanto works without either. Set them up any time in **Platform console**:
+Kanbanto works without them. Set them up any time in **Platform console**:
 
 - **Email** — for password resets, email invites and a daily summary of @mentions. Use your organisation's mail
   server or any email service that offers SMTP, or a free [Resend](https://resend.com) account with a domain name.
   [How to set up email](docs/email.md)
 - **File storage** — files are kept on your computer by default. You can use Cloudflare R2 or Amazon S3 instead.
   [How to set up storage](docs/self-hosting.md#file-storage)
+- **Calendars** — let people see their cards' due dates and reminders in Google Calendar or any calendar app.
+  [How to set up calendars](docs/calendar.md)
 
 Something not working? See [Troubleshooting](docs/troubleshooting.md).
 
@@ -153,6 +157,7 @@ covered step by step in the **[Self-hosting guide](docs/self-hosting.md)**.
 |---|---|
 | [Self-hosting](docs/self-hosting.md) | Servers, HTTPS, first admin, file storage, backups, upgrades, security checklist |
 | [Email](docs/email.md) | Sending email through your mail server (SMTP) or Resend |
+| [Calendar](docs/calendar.md) | Cards in Google Calendar (making the Google app) and in other calendar apps (calendar links) |
 | [Configuration](docs/configuration.md) | Every setting: `.env` variables, the Platform console, server commands |
 | [API, webhooks and AI](docs/api.md) | API tokens, commands, webhooks and checking their signatures, connecting AI assistants (MCP) |
 | [Troubleshooting](docs/troubleshooting.md) | Problems and fixes, by symptom |

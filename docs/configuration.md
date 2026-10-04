@@ -79,10 +79,13 @@ Open it from the menu under your initials (platform admins only). Each section h
 | **Integrations** `#/admin/integrations` | **People can make API tokens** (for scripts, other apps and AI assistants; turning it off stops every token) | Off |
 | | **Webhooks:** off, to public `https://` addresses only, or to any address including this server's network (only if you trust every board owner) | Off |
 | | **Apps that connect by signing in** (OAuth, for MCP: Claude on the web and Desktop, ChatGPT): off, known AI apps only, or any app. The site must be reachable from the internet over https. | Off |
+| | **People can make calendar links** (a private address calendar apps subscribe to; turning it off stops every link). See [Calendar](calendar.md). | Off |
+| | **Google Calendar:** the client ID and secret of a Google app you make once, so people can connect their Google Calendar. The secret is write-only and encrypted. See [Calendar](calendar.md). | Not set up |
 
 Things each person sets for themselves in **Account settings** (`#/account`): name, password, whether they get the
-daily mention email, their own Resend key for invites, their own storage bucket (at a public `https://` address), and
-their API tokens. Board owners add webhooks in Board settings. See [API, webhooks and AI](api.md).
+daily mention email, their calendar (Google Calendar, a calendar link, and which boards are in it), their own Resend
+key for invites, their own storage bucket (at a public `https://` address), and their API tokens. Board owners add
+webhooks in Board settings. See [API, webhooks and AI](api.md).
 
 ## 3. Server commands
 

@@ -153,7 +153,7 @@ export default function App() {
       if (!user) return <Redirect to={{ page: 'signin', next: here() }} />
       return (
         <Suspense fallback={null}>
-          <AccountView section={route.section} />
+          <AccountView section={route.section} problem={route.problem} />
         </Suspense>
       )
     case 'admin':

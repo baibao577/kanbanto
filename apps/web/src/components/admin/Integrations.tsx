@@ -1,8 +1,13 @@
-import { ArrowSquareOut } from '@phosphor-icons/react'
+import { ArrowSquareOut, Copy } from '@phosphor-icons/react'
+import { useState } from 'react'
 import { toast } from 'sonner'
-import type { AdminSettings, OAuthMode, WebhookMode } from '@kanbanto/model/api'
+import type { AdminGoogleCalendar, AdminSettings, OAuthMode, WebhookMode } from '@kanbanto/model/api'
 import { api, errorMessage } from '@/api/client'
+import { ConfirmDialog, type ConfirmRequest } from '@/components/common/ConfirmDialog'
 import { PageTitle, SettingsCard } from '@/components/settings/SettingsCard'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { Switch } from '@/components/ui/switch'
 import { useLoaded } from '@/data/useLoaded'
@@ -38,8 +43,8 @@ const OAUTH: { value: OAuthMode; title: string; hint: string }[] = [
 ]
 
 /**
- * Platform console → Integrations: whether people can make API tokens, where board owners may send webhooks, and which
- * apps may connect to people's accounts by signing in (OAuth, for MCP).
+ * Platform console → Integrations: whether people can make API tokens, where board owners may send webhooks, which
+ * apps may connect to people's accounts by signing in (OAuth, for MCP), and people's calendars (links, Google Calendar).
  */
 export function IntegrationsSection() {
   const [settings, load] = useLoaded(fetchSettings)
@@ -128,8 +133,164 @@ export function IntegrationsSection() {
               ))}
             </RadioGroup>
           </SettingsCard>
+
+          <SettingsCard
+            title="People can make calendar links"
+            description="Each person makes their own, in Account settings → Calendar: a private address that calendar apps (Apple Calendar, Outlook) subscribe to, showing the due dates and reminders of their cards. Turning this off stops every link at once."
+            action={
+              <Switch
+                checked={settings.calendarLinks}
+                aria-label="People can make calendar links"
+                onCheckedChange={(on) => void save({ calendarLinks: on }, on ? 'Calendar links turned on' : 'Calendar links turned off')}
+              />
+            }
+          >
+            <p className="text-xs text-muted-foreground">
+              A link works without signing in: anyone who has a person’s link can read the titles and dates of that person’s cards, and nothing else.
+            </p>
+          </SettingsCard>
+
+          <GoogleCalendar />
         </>
       )}
     </div>
+  )
+}
+
+const fetchGoogle = () => api<AdminGoogleCalendar>('GET', '/admin/calendar/google')
+
+/**
+ * The site's Google app, which lets people connect their Google Calendar: its client ID and secret, made once in
+ * Google Cloud. The secret is kept encrypted and never shown again.
+ */
+function GoogleCalendar() {
+  const [loaded, load] = useLoaded(fetchGoogle)
+  const [clientId, setClientId] = useState<string | null>(null)
+  const [secret, setSecret] = useState('')
+  const [confirm, setConfirm] = useState<ConfirmRequest | null>(null)
+  if (!loaded) return null
+  const id = clientId ?? loaded.clientId ?? ''
+
+  const save = async () => {
+    try {
+      await api('PUT', '/admin/calendar/google', { clientId: id, ...(secret.trim() && { clientSecret: secret }) })
+      toast('Saved. People can connect Google Calendar in Account settings → Calendar.')
+      setSecret('')
+      setClientId(null)
+      await load()
+    } catch (e) {
+      toast.error(errorMessage(e))
+    }
+  }
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(loaded.redirectUri)
+      toast('Address copied')
+    } catch {
+      toast.error('Couldn’t copy. Select it and copy it yourself.')
+    }
+  }
+
+  return (
+    <SettingsCard
+      title="Google Calendar"
+      description="Lets people connect their Google Calendar in Account settings → Calendar: Kanbanto keeps a calendar of its own in their Google account up to date with their cards. It needs a Google app, which you make once."
+    >
+      <ol className="list-decimal space-y-1 rounded-md bg-muted/50 py-2.5 pr-3 pl-7 text-xs leading-relaxed text-muted-foreground">
+        <li>
+          In{' '}
+          <a
+            href="https://console.cloud.google.com/apis/credentials"
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center gap-1 font-medium text-primary hover:underline"
+          >
+            Google Cloud <ArrowSquareOut className="size-3" />
+          </a>
+          , make a project and turn on the Google Calendar API.
+        </li>
+        <li>Set up the consent screen for “External” users, and publish it: left in “Testing”, Google ends every connection after 7 days.</li>
+        <li>Create an OAuth client ID of type “Web application”, with the address below as an authorized redirect URI.</li>
+        <li>Paste its client ID and client secret here.</li>
+      </ol>
+      <div className="space-y-1.5">
+        <Label htmlFor="google-redirect">Authorized redirect URI (give this to Google)</Label>
+        <div className="flex items-center gap-2">
+          <Input id="google-redirect" readOnly value={loaded.redirectUri} onFocus={(e) => e.target.select()} className="h-8 font-mono text-xs" />
+          <Button variant="outline" size="sm" className="h-8 shrink-0 gap-1.5" onClick={() => void copy()}>
+            <Copy /> Copy
+          </Button>
+        </div>
+      </div>
+      <form
+        className="space-y-3"
+        onSubmit={(e) => {
+          e.preventDefault()
+          void save()
+        }}
+      >
+        <div className="space-y-1.5">
+          <Label htmlFor="google-client-id">Client ID</Label>
+          <Input
+            id="google-client-id"
+            value={id}
+            onChange={(e) => setClientId(e.target.value)}
+            placeholder="1234567890-abc123.apps.googleusercontent.com"
+            autoComplete="off"
+            required
+          />
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="google-client-secret">Client secret</Label>
+          <Input
+            id="google-client-secret"
+            type="password"
+            value={secret}
+            onChange={(e) => setSecret(e.target.value)}
+            placeholder={loaded.configured ? 'Saved. Type a new one to replace it.' : 'GOCSPX-…'}
+            autoComplete="off"
+            required={!loaded.configured}
+          />
+          <p className="text-xs text-muted-foreground">It’s stored encrypted and never shown again.</p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button type="submit" disabled={!id.trim() || (!loaded.configured && !secret.trim())}>
+            Save
+          </Button>
+          {loaded.configured && (
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() =>
+                setConfirm({
+                  title: 'Stop using this Google app?',
+                  description:
+                    'Nobody can connect Google Calendar, and calendars already connected stop updating, until a Google app is saved again.',
+                  confirmLabel: 'Stop using it',
+                  destructive: true,
+                  onConfirm: () =>
+                    api('DELETE', '/admin/calendar/google').then(
+                      () => {
+                        toast('Google Calendar turned off')
+                        setClientId(null)
+                        void load()
+                      },
+                      (e) => toast.error(errorMessage(e)),
+                    ),
+                })
+              }
+            >
+              Stop using it
+            </Button>
+          )}
+          {loaded.configured && (
+            <span className="text-xs text-muted-foreground">
+              {loaded.connections === 1 ? '1 person has' : `${loaded.connections} people have`} connected Google Calendar.
+            </span>
+          )}
+        </div>
+      </form>
+      <ConfirmDialog request={confirm} onClose={() => setConfirm(null)} />
+    </SettingsCard>
   )
 }

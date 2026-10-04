@@ -14,6 +14,9 @@ import { dbErrorCode, loggable } from './errors'
 import { HttpError, siteUrl } from './http'
 import { LiveHub } from './live'
 import { Webhooks } from './webhooks'
+import { google, type GoogleApi } from './calendar/google'
+import { CalendarSync } from './calendar/sync'
+import { calendarRoutes } from './routes/calendar'
 import { Push } from './push'
 import { presetRoutes } from './routes/presets'
 import { pushRoutes } from './routes/push'
@@ -53,11 +56,16 @@ declare module 'fastify' {
     mail: Mailer
     webhooks: Webhooks
     push: Push
+    calendar: CalendarSync
   }
 }
 
-/** Share-link tokens in addresses are replaced, so logs are safe to paste into an issue. */
-export const redactUrl = (url: string) => url.replace(/(\/api\/invites\/)[^/?#]+/, '$1[token]')
+/** Tokens in addresses (share links, calendar links, Google's sign-in code) are replaced, so logs are safe to paste into an issue. */
+export const redactUrl = (url: string) =>
+  url
+    .replace(/(\/api\/invites\/)[^/?#]+/, '$1[token]')
+    .replace(/(\/api\/calendar\/feed\/)[^/?#]+/, '$1[token]')
+    .replace(/(\/api\/account\/calendar\/google\/callback)\?.*/, '$1?[…]')
 
 /**
  * Log lines: short and readable by default (LOG_FORMAT=json for log collectors). Each API request is one line;
@@ -83,6 +91,8 @@ export async function buildApp(
     mailWorker?: boolean
     /** The platform's sender set on the server (default: from SMTP_URL and SMTP_FROM). */
     serverSender?: Sender | null
+    /** Google, for calendar connections (tests pass a stand-in). */
+    google?: GoogleApi
   } = {},
 ): Promise<FastifyInstance> {
   const app = Fastify({
@@ -101,18 +111,25 @@ export async function buildApp(
   app.decorate('hub', hub)
   const engine = new BoardEngine(db, hub)
   const webhooks = new Webhooks(db)
-  engine.onChanged = (boardId, e) => void webhooks.boardChanged(boardId, e).catch((err) => app.log.error({ err: loggable(err) }, 'queueing webhooks'))
+  const calendar = new CalendarSync(db, engine, opts.google ?? google, () => mail.siteUrl ?? env.appUrl ?? null)
+  engine.onChanged = (boardId, e) => {
+    void webhooks.boardChanged(boardId, e).catch((err) => app.log.error({ err: loggable(err) }, 'queueing webhooks'))
+    calendar.kick()
+  }
   app.decorate('engine', engine)
   app.decorate('mail', mail)
   app.decorate('webhooks', webhooks)
   app.decorate('push', new Push(db, () => mail.siteUrl ?? env.appUrl ?? null, app.log))
+  app.decorate('calendar', calendar)
   if (opts.mailWorker) {
     await mail.start(app.log)
     webhooks.start(app.log)
+    calendar.start(app.log)
   } else await mail.refresh()
   app.addHook('onClose', async () => {
     mail.stop()
     webhooks.stop()
+    calendar.stop()
   })
 
   await app.register(fastifyCookie)
@@ -227,6 +244,7 @@ export async function buildApp(
   await app.register(workspaceRoutes, { prefix: '/api' })
   await app.register(planningRoutes, { prefix: '/api' })
   await app.register(integrationRoutes, { prefix: '/api' })
+  await app.register(calendarRoutes, { prefix: '/api' })
   await app.register(mcpRoutes, { prefix: '/api' })
   await app.register(oauthRoutes)
   await app.register(openApiRoutes)

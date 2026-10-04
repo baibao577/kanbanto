@@ -686,6 +686,41 @@ export interface AdminSettings {
   apiTokens: boolean
   webhooks: WebhookMode
   oauthApps: OAuthMode
+  /** People can make a private calendar link. */
+  calendarLinks: boolean
+}
+
+/** GET /api/admin/calendar/google: the site's Google app, for people's Google Calendar connections. */
+export interface AdminGoogleCalendar {
+  clientId: string | null
+  /** An ID and a secret are saved (the secret is never shown). */
+  configured: boolean
+  /** The address to add to the Google app, under "Authorized redirect URIs". */
+  redirectUri: string
+  /** How many people have connected their Google Calendar. */
+  connections: number
+}
+
+/** GET /api/account/calendar: your calendar link, your Google Calendar connection, and which boards are in them. */
+export interface AccountCalendar {
+  /** Calendar links are turned on for this site (by a platform admin). */
+  linksEnabled: boolean
+  /** This site can connect to Google Calendar (a platform admin set up its Google app). */
+  googleEnabled: boolean
+  /** Your link, if you made one: an address calendar apps subscribe to. */
+  link: { url: string; createdAt: string } | null
+  google: {
+    /** The Google account, when Google said which. */
+    email: string | null
+    connectedAt: string
+    lastSyncedAt: string | null
+    /** The last problem, in words (null: none). */
+    problem: string | null
+    /** Google no longer accepts the connection: it has to be connected again. */
+    reconnect: boolean
+  } | null
+  /** The boards whose cards can be in your calendar (by name), and whether you left each out. */
+  boards: { id: string; name: string; off: boolean }[]
 }
 
 /** GET /api/oauth/request: what the consent page shows. */

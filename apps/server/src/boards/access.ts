@@ -1,4 +1,4 @@
-import { and, eq } from 'drizzle-orm'
+import { and, eq, sql } from 'drizzle-orm'
 import type { SessionUser } from '../auth/sessions'
 import type { Db, Tx } from '../db'
 import { boardMembers, boards, workspaceMembers, type Role, type WorkspaceRole } from '../db/schema'
@@ -86,4 +86,33 @@ export async function requireAccess(
   if (board.archivedAt && (needed !== 'viewer' || opts.write) && !opts.archived)
     throw new HttpError(403, 'This board is archived. Restore it to make changes.', 'archived')
   return { board, access }
+}
+
+/**
+ * The boards `userId` can open (theirs, ones they were added to, ones shared with a workspace they're in), with each
+ * board's change number: what background work needs to see what's new, without the counts the boards page shows.
+ */
+export async function openBoards(db: Db | Tx, userId: string): Promise<{ id: string; name: string; seq: number; archivedAt: Date | null }[]> {
+  const rows = await db.execute<{
+    id: string
+    name: string
+    seq: string | number
+    archived_at: Date | null
+    visibility: BoardRow['visibility']
+    workspace_id: string | null
+    workspace_role: BoardRow['workspaceRole']
+    role: Role | null
+    in_workspace: boolean
+  }>(sql`
+      select b.id, b.name, b.seq, b.archived_at, b.visibility, b.workspace_id, b.workspace_role, m.role, (w.user_id is not null) as in_workspace
+      from boards b
+      left join board_members m on m.board_id = b.id and m.user_id = ${userId}
+      left join workspace_members w on w.workspace_id = b.workspace_id and w.user_id = ${userId}
+      where m.role is not null or (b.visibility = 'workspace' and w.user_id is not null)
+      order by b.name, b.id`)
+  return [...rows].flatMap((r) => {
+    const board = { id: r.id, visibility: r.visibility, publicLink: false, workspaceId: r.workspace_id, workspaceRole: r.workspace_role } as BoardRow
+    if (!accessFor(board, r.role, r.in_workspace)) return []
+    return [{ id: r.id, name: r.name, seq: Number(r.seq), archivedAt: r.archived_at ? new Date(r.archived_at) : null }]
+  })
 }

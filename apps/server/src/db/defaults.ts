@@ -24,4 +24,6 @@ export const SETTING_DEFAULTS = {
    * Off; known AI apps only (see src/oauth.ts); or any app (each person still approves each one).
    */
   oauthApps: 'off' as 'off' | 'known' | 'any',
+  /** People can make a private calendar link (an address calendar apps subscribe to). Off until a platform admin turns it on. */
+  calendarLinks: false,
 }

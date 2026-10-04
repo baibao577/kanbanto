@@ -1,13 +1,15 @@
-import type { AdminSettings } from '@kanbanto/model/api'
+import type { AdminGoogleCalendar, AdminSettings } from '@kanbanto/model/api'
 import { eq, sql } from 'drizzle-orm'
-import type { FastifyPluginAsync } from 'fastify'
+import type { FastifyPluginAsync, FastifyRequest } from 'fastify'
 import { z } from 'zod'
 import { createEmailToken } from '../auth/email-tokens'
 import { endAllSessions } from '../auth/sessions'
-import { boardMembers, siteSettings, users } from '../db/schema'
+import { encrypt, encryptionReady } from '../crypto'
+import { boardMembers, calendarConnections, siteSettings, users } from '../db/schema'
 import { HttpError, parse, siteUrl } from '../http'
 import { emails } from '../mail/templates'
 import { getSettings, requireUser } from './auth'
+import { googleRedirectUri } from './calendar'
 
 const UserParams = z.object({ id: z.uuid() })
 
@@ -105,12 +107,17 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     return { token }
   })
 
-  app.get('/settings', async (): Promise<AdminSettings> => {
-    const { openSignup, apiTokens, webhooks, oauthApps } = await getSettings(app.db)
-    return { openSignup, apiTokens, webhooks, oauthApps }
-  })
+  const settings = async (): Promise<AdminSettings> => {
+    const { openSignup, apiTokens, webhooks, oauthApps, calendarLinks } = await getSettings(app.db)
+    return { openSignup, apiTokens, webhooks, oauthApps, calendarLinks }
+  }
 
-  /** Sign-up, API tokens (turning them off stops every token working), where webhooks may go, and which apps may connect. */
+  app.get('/settings', settings)
+
+  /**
+   * Sign-up, API tokens (turning them off stops every token working), where webhooks may go, which apps may connect,
+   * and calendar links (turning them off stops every link working).
+   */
   app.patch('/settings', async (req): Promise<AdminSettings> => {
     const body = parse(
       z
@@ -119,6 +126,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
           apiTokens: z.boolean(),
           webhooks: z.enum(['off', 'public', 'any']),
           oauthApps: z.enum(['off', 'known', 'any']),
+          calendarLinks: z.boolean(),
         })
         .partial()
         .strict(),
@@ -129,7 +137,43 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         .insert(siteSettings)
         .values({ id: 1, ...body })
         .onConflictDoUpdate({ target: siteSettings.id, set: body })
-    const { openSignup, apiTokens, webhooks, oauthApps } = await getSettings(app.db)
-    return { openSignup, apiTokens, webhooks, oauthApps }
+    return settings()
+  })
+
+  // ── The site's Google app, for people's Google Calendar connections ───────────
+
+  const googleCalendar = async (req: FastifyRequest): Promise<AdminGoogleCalendar> => {
+    const [s] = await app.db.select({ id: siteSettings.googleClientId, secret: siteSettings.googleClientSecretEncrypted }).from(siteSettings)
+    const [{ n }] = await app.db.select({ n: sql<number>`count(*)::int` }).from(calendarConnections)
+    return { clientId: s?.id ?? null, configured: !!(s?.id && s.secret), redirectUri: googleRedirectUri(req), connections: n }
+  }
+
+  app.get('/calendar/google', googleCalendar)
+
+  /** Saves the Google app's client ID and secret (the secret encrypted, and never sent back). Leave the secret out to keep it. */
+  app.put('/calendar/google', async (req) => {
+    const body = parse(
+      z.object({
+        clientId: z.string().trim().min(1, 'Enter the client ID from Google.').max(300),
+        clientSecret: z.string().trim().min(1).max(300).optional(),
+      }),
+      req.body,
+    )
+    if (!encryptionReady()) throw new HttpError(503, 'Keys can’t be saved until the server has an encryption key. Restart Kanbanto to make one.')
+    const [saved] = await app.db.select({ secret: siteSettings.googleClientSecretEncrypted }).from(siteSettings)
+    if (!body.clientSecret && !saved?.secret) throw new HttpError(400, 'Enter the client secret from Google.')
+    const set = { googleClientId: body.clientId, ...(body.clientSecret && { googleClientSecretEncrypted: encrypt(body.clientSecret) }) }
+    await app.db
+      .insert(siteSettings)
+      .values({ id: 1, ...set })
+      .onConflictDoUpdate({ target: siteSettings.id, set })
+    app.calendar.changed()
+    return googleCalendar(req)
+  })
+
+  /** Stops using the Google app: calendars already connected stop updating, until one is set up again. */
+  app.delete('/calendar/google', async (req) => {
+    await app.db.update(siteSettings).set({ googleClientId: null, googleClientSecretEncrypted: null })
+    return googleCalendar(req)
   })
 }

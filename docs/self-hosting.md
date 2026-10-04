@@ -169,6 +169,13 @@ Optional, but it enables confirming new accounts' addresses, **forgot password**
 summary of @mentions**. Kanbanto sends through your organisation's mail server or any email service (SMTP), or through
 Resend: see **[Email](email.md)** for the settings of Microsoft 365, Google Workspace, Amazon SES and others.
 
+## Calendars
+
+Optional: people can see their cards' due dates and reminders in **Google Calendar** (kept up to date within
+seconds), or in any calendar app through a private **calendar link**. Both are off until you turn them on in
+**Platform console → Integrations**; Google Calendar needs a Google app that you make once. See
+**[Calendar](calendar.md)**.
+
 ## File storage
 
 Card and comment attachments are stored on **the server's disk** by default (the `uploads` Docker volume), which is

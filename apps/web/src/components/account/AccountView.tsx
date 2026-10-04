@@ -1,4 +1,4 @@
-import { Bell, Code, EnvelopeSimple, HardDrives, Key, UserCircle } from '@phosphor-icons/react'
+import { Bell, CalendarDots, Code, EnvelopeSimple, HardDrives, Key, UserCircle } from '@phosphor-icons/react'
 import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import type { PublicUser } from '@kanbanto/model/api'
@@ -12,6 +12,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { ApiTokensSection } from './ApiTokens'
+import { CalendarSection } from './Calendar'
 import { DesktopNotifications } from './DesktopNotifications'
 import { AccountEmailSection } from './EmailSending'
 import { AccountStorageSection } from './FileStorage'
@@ -20,13 +21,14 @@ const SECTIONS: (SettingsNavItem & { id: AccountSection })[] = [
   { id: 'profile', label: 'Profile', icon: UserCircle, href: { page: 'account' } },
   { id: 'password', label: 'Password', icon: Key, href: { page: 'account', section: 'password' } },
   { id: 'notifications', label: 'Notifications', icon: Bell, href: { page: 'account', section: 'notifications' } },
+  { id: 'calendar', label: 'Calendar', icon: CalendarDots, href: { page: 'account', section: 'calendar' } },
   { id: 'email', label: 'Email sending', icon: EnvelopeSimple, href: { page: 'account', section: 'email' } },
   { id: 'storage', label: 'File storage', icon: HardDrives, href: { page: 'account', section: 'storage' } },
   { id: 'api', label: 'API & apps', icon: Code, href: { page: 'account', section: 'api' } },
 ]
 
 /** Your account settings, laid out like the Platform console: a sidebar of sections, each on its own page. */
-export function AccountView({ section = 'profile' }: { section?: AccountSection }) {
+export function AccountView({ section = 'profile', problem }: { section?: AccountSection; problem?: string }) {
   const current = SECTIONS.find((s) => s.id === section) ?? SECTIONS[0]
   useEffect(() => {
     document.title = `${current.label} · Account · Kanbanto`
@@ -36,6 +38,7 @@ export function AccountView({ section = 'profile' }: { section?: AccountSection 
       {current.id === 'profile' && <Profile />}
       {current.id === 'password' && <Password />}
       {current.id === 'notifications' && <Notifications />}
+      {current.id === 'calendar' && <CalendarSection problem={problem} />}
       {current.id === 'email' && <AccountEmailSection />}
       {current.id === 'storage' && <AccountStorageSection />}
       {current.id === 'api' && <ApiTokensSection />}

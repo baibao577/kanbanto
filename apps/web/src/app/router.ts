@@ -17,7 +17,8 @@ import { CATEGORIES, LAYOUTS, PRIORITIES, type Category, type Layout, type Prior
  *   #/signin, #/signup       (?next=<where to go after>)
  *   #/forgot                 ask for a password reset email
  *   #/verify/<token>, #/reset/<token>   links from emails
- *   #/account/<section>      your account settings (profile, password, notifications, email, storage, api)
+ *   #/account/<section>      your account settings (profile, password, notifications, calendar, email, storage, api);
+ *                            ?problem=<what> says why connecting Google Calendar didn't work (see Calendar.tsx)
  *   #/admin/<section>        the Platform console (overview, accounts, email, storage, integrations)
  * Hash addresses work on any static host, with no server rewrite rules.
  */
@@ -66,13 +67,13 @@ export type Route =
   | { page: 'signin'; next?: string }
   | { page: 'signup'; next?: string }
   | { page: 'admin'; section?: AdminSection }
-  | { page: 'account'; section?: AccountSection }
+  | { page: 'account'; section?: AccountSection; problem?: string }
 
 export const ADMIN_SECTIONS = ['overview', 'accounts', 'email', 'storage', 'integrations'] as const
 export type AdminSection = (typeof ADMIN_SECTIONS)[number]
 export const WORKSPACE_SECTIONS = ['people', 'planning'] as const
 export type WorkspaceSection = Exclude<(typeof WORKSPACE_SECTIONS)[number], 'people'>
-export const ACCOUNT_SECTIONS = ['profile', 'password', 'notifications', 'email', 'storage', 'api'] as const
+export const ACCOUNT_SECTIONS = ['profile', 'password', 'notifications', 'calendar', 'email', 'storage', 'api'] as const
 export type AccountSection = (typeof ACCOUNT_SECTIONS)[number]
 
 export function parseRoute(hash: string): Route {
@@ -133,10 +134,11 @@ export function parseRoute(hash: string): Route {
     const next = new URLSearchParams(auth[2] ?? '').get('next')
     return { page: auth[1] as 'signin' | 'signup', ...(next && { next }) }
   }
-  const account = hash.match(/^#\/account(?:\/([a-z]+))?\/?$/)
+  const account = hash.match(/^#\/account(?:\/([a-z]+))?\/?(?:\?(.*))?$/)
   if (account) {
     const section = ACCOUNT_SECTIONS.find((s) => s === account[1])
-    return { page: 'account', ...(section && section !== 'profile' && { section }) }
+    const problem = new URLSearchParams(account[2] ?? '').get('problem')
+    return { page: 'account', ...(section && section !== 'profile' && { section }), ...(problem && { problem }) }
   }
   const admin = hash.match(/^#\/admin(?:\/([a-z]+))?\/?$/)
   if (admin) {
@@ -158,7 +160,8 @@ export function parseRoute(hash: string): Route {
 
 export function hrefFor(r: Route) {
   if (r.page === 'home') return '#/'
-  if (r.page === 'account') return r.section && r.section !== 'profile' ? `#/account/${r.section}` : '#/account'
+  if (r.page === 'account')
+    return `${r.section && r.section !== 'profile' ? `#/account/${r.section}` : '#/account'}${r.problem ? `?problem=${encodeURIComponent(r.problem)}` : ''}`
   if (r.page === 'admin') return r.section && r.section !== 'overview' ? `#/admin/${r.section}` : '#/admin'
   if (r.page === 'forgot') return '#/forgot'
   if (r.page === 'workspace') {

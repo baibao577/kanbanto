@@ -17,6 +17,7 @@ describe('router', () => {
       ['#/admin/storage', { page: 'admin', section: 'storage' }],
       ['#/account', { page: 'account' }],
       ['#/account/password', { page: 'account', section: 'password' }],
+      ['#/account/calendar?problem=denied', { page: 'account', section: 'calendar', problem: 'denied' }],
       ['#/forgot', { page: 'forgot' }],
       ['#/w/w-1', { page: 'workspace', id: 'w-1' }],
       ['#/w/w-1/planning', { page: 'workspace', id: 'w-1', section: 'planning' }],

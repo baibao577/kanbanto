@@ -42,7 +42,8 @@ Fixes go into the latest version. If you run Kanbanto yourself, keep it up to da
 
 **Keys and secrets**
 
-- **Email keys, mail server passwords and storage keys** saved in the website are encrypted (AES-256-GCM) with a key
+- **Email keys, mail server passwords, storage keys, the Google app's secret and people's calendar connections**
+  saved in the website are encrypted (AES-256-GCM) with a key
   that's never in the database: `ENCRYPTION_KEY`, or one Kanbanto makes on first start and keeps in its own volume.
   The browser only ever sees a short hint of a key, and never a password. Kanbanto won't start in production with the
   public development key.
@@ -74,6 +75,14 @@ Fixes go into the latest version. If you run Kanbanto yourself, keep it up to da
   known AI apps. Each person approves each app on a page that shows where it sends them back to; codes are one-time,
   PKCE is required, access tokens last an hour and refresh tokens are replaced on every use (only hashes are stored).
   These tokens only reach the MCP endpoint, and disconnecting (or turning the setting off) stops them at once.
+- **Calendar links** are off until a platform admin turns them on. A link is a long random address that works
+  without signing in and shows only its person's cards' titles and dates (and a link back to each card): whoever has
+  it can read those. Only its SHA-256 is looked up (an encrypted copy lets its person see it again), it's left out
+  of the server's logs, making a new one stops the old one, and it stops with its account or the setting.
+- **Google Calendar** needs a Google app set by a platform admin (its secret stored encrypted). Kanbanto asks each
+  person only for calendars it makes itself, so it can't read or change their other calendars; their Google refresh
+  token is stored encrypted. The titles and dates of their cards are sent to Google. Disconnecting removes the
+  calendar and gives the access back.
 - **AI assistants (MCP)** use API tokens or those sign-in tokens, with the same checks. There's no delete tool. Task text is written by people
   and can try to steer an assistant, so the docs recommend read-only tokens unless changes are needed.
 
