@@ -1,0 +1,84 @@
+import { defineConfig } from 'vitepress'
+
+// Kanbanto's guides: what you can do with it, for the people using it (the technical docs are in ../docs).
+// Built into plain pages by `pnpm build` (into .vitepress/dist), to be served under /guides.
+export default defineConfig({
+  title: 'Kanbanto guides',
+  description: 'How to use Kanbanto: boards, cards, tasks inside tasks, working with people and with your AI assistant.',
+  lang: 'en',
+  base: '/guides/',
+  cleanUrls: true,
+  // (This folder's own README is for people writing guides, not a guide.)
+  srcExclude: ['README.md'],
+  appearance: false,
+  head: [['link', { rel: 'icon', type: 'image/svg+xml', href: '/guides/favicon.svg' }]],
+  themeConfig: {
+    logo: '/favicon.svg',
+    siteTitle: 'Kanbanto guides',
+    search: { provider: 'local' },
+    outline: { level: [2, 3], label: 'On this page' },
+    docFooter: { prev: 'Before', next: 'Next' },
+    sidebar: [
+      {
+        text: 'Start here',
+        items: [
+          { text: 'What Kanbanto is', link: '/start/what-is-kanbanto' },
+          { text: 'Your first board', link: '/start/first-board' },
+          { text: 'Finding your way around', link: '/start/finding-your-way' },
+        ],
+      },
+      {
+        text: 'Everyday work',
+        items: [
+          { text: 'Cards', link: '/everyday/cards' },
+          { text: 'Writing a description', link: '/everyday/descriptions' },
+          { text: 'Tasks inside tasks', link: '/everyday/subtasks' },
+          { text: 'Due dates and reminders', link: '/everyday/dates-and-reminders' },
+          { text: 'Comments and files', link: '/everyday/comments-and-files' },
+          { text: 'Search and filters', link: '/everyday/search-and-filters' },
+          { text: 'Done cards and the archive', link: '/everyday/done-and-archive' },
+        ],
+      },
+      {
+        text: 'Views and boards',
+        items: [
+          { text: 'The Board view', link: '/views/board' },
+          { text: 'The Timeline view', link: '/views/timeline' },
+          { text: 'The Outline view', link: '/views/outline' },
+          { text: 'Board settings, stats and export', link: '/views/board-settings' },
+        ],
+      },
+      {
+        text: 'Working with others',
+        items: [
+          { text: 'Share a board', link: '/people/sharing' },
+          { text: 'Workspaces', link: '/people/workspaces' },
+          { text: 'Notifications', link: '/people/notifications' },
+        ],
+      },
+      {
+        text: 'Working with AI',
+        items: [
+          { text: 'Connect your assistant', link: '/ai/connect' },
+          { text: 'What to ask', link: '/ai/what-to-ask' },
+          { text: 'Let an agent work through a list', link: '/ai/agent-queue' },
+        ],
+      },
+      {
+        text: 'Time and planning',
+        items: [
+          { text: 'Log time', link: '/time/log-time' },
+          { text: 'My week', link: '/time/my-week' },
+          { text: 'Planning people', link: '/time/planning' },
+        ],
+      },
+      {
+        text: 'Calendar and account',
+        items: [
+          { text: 'Cards in your calendar', link: '/more/calendar' },
+          { text: 'Your account', link: '/more/account' },
+        ],
+      },
+    ],
+  },
+})

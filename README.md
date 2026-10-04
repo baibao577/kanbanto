@@ -12,6 +12,7 @@
 
 <p align="center">
   <a href="#run-it-on-your-computer">Get started</a> ·
+  <a href="guides/">Guides</a> ·
   <a href="docs/self-hosting.md">Host it for a team</a> ·
   <a href="docs/troubleshooting.md">Troubleshooting</a> ·
   <a href="#license">License</a>

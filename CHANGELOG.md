@@ -96,5 +96,8 @@ then `git pull` (or download the new release) and `docker compose up -d --build`
   and deleting stay in the app.
 - **Email** through any SMTP server or Resend, with limits to stay within a free plan. **File storage** on the server's
   disk or in an S3-compatible bucket (Cloudflare R2, Amazon S3, MinIO); people can bring their own.
+- **Guides** for the people using it, in [`guides/`](guides/): a page for each thing you'd want to do (your first
+  board, cards, sharing, workspaces, assistants, time and planning, calendars), with pictures taken from the app by a
+  script, built into a small website with VitePress.
 - **Self-hosting:** one Docker Compose file, an optional HTTPS add-on, backups and restores, a Platform console for
   settings, and server commands for the rest. The encryption key for saved keys is made automatically.

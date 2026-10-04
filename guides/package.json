@@ -1,0 +1,17 @@
+{
+  "name": "kanbanto-guides",
+  "private": true,
+  "type": "module",
+  "description": "Kanbanto's guides for people using it: Markdown pages, built into a small website.",
+  "scripts": {
+    "dev": "vitepress dev . --port 5997",
+    "build": "vitepress build .",
+    "preview": "vitepress preview . --port 5997",
+    "shots": "node shots/shots.mjs"
+  },
+  "devDependencies": {
+    "playwright-core": "^1.50.0",
+    "sharp": "^0.35.5",
+    "vitepress": "^1.6.3"
+  }
+}

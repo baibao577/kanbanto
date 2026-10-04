@@ -4,3 +4,6 @@ pnpm-lock.yaml
 apps/server/drizzle
 docs/images
 *.md
+guides/.vitepress/dist
+guides/.vitepress/cache
+guides/pnpm-lock.yaml

@@ -1,0 +1,62 @@
+/* Kanbanto's own blue, and pictures that read as screens. */
+:root {
+  --vp-c-brand-1: #4055d6;
+  --vp-c-brand-2: #5468e0;
+  --vp-c-brand-3: #4055d6;
+  --vp-c-brand-soft: rgb(64 85 214 / 0.12);
+  --vp-font-family-base: 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+}
+.vp-doc img {
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.08);
+}
+.vp-doc img {
+  cursor: zoom-in;
+}
+.zoomed {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgb(15 17 26 / 0.82);
+  cursor: zoom-out;
+}
+.zoomed img {
+  max-width: 100%;
+  max-height: 100%;
+  border-radius: 10px;
+  box-shadow: 0 20px 60px rgb(0 0 0 / 0.5);
+}
+.vp-doc img.small {
+  max-width: 420px;
+}
+.vp-doc img.medium {
+  max-width: 560px;
+}
+/* Keys: N, /, Esc. */
+.vp-doc kbd {
+  padding: 1px 6px;
+  border: 1px solid var(--vp-c-divider);
+  border-bottom-width: 2px;
+  border-radius: 5px;
+  background: var(--vp-c-bg-soft);
+  font-family: inherit;
+  font-size: 0.85em;
+}
+/* What you'd say to an assistant. */
+.vp-doc blockquote.ask,
+.vp-doc .ask blockquote {
+  margin: 10px 0;
+  padding: 10px 14px;
+  border: 0;
+  border-radius: 12px 12px 3px 12px;
+  background: var(--vp-c-brand-soft);
+  color: var(--vp-c-text-1);
+}
+.vp-doc .ask blockquote p {
+  margin: 0;
+  font-size: 15px;
+}
