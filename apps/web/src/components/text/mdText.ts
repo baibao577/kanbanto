@@ -73,3 +73,35 @@ export function headingsOf(text: string): { id: string; depth: number; text: str
     .filter((t: Token): t is Token & { type: 'heading'; depth: number; text: string } => t.type === 'heading')
     .map((t, i) => ({ id: `h-${i}`, depth: t.depth, text: plain(t.text) }))
 }
+
+/**
+ * Whether pasted plain text is Markdown to format (a heading, a list, a checklist, a quote, a table, a code fence,
+ * **bold**, a [link](…)), rather than words to put in as they are.
+ */
+export function looksLikeMarkdown(text: string): boolean {
+  return (
+    /^ {0,3}#{1,6} +\S/m.test(text) ||
+    /^\s*(?:[-*+]|\d+[.)]) +\S/m.test(text) ||
+    /^ {0,3}> ?\S/m.test(text) ||
+    /^ {0,3}(```|~~~)/m.test(text) ||
+    /^ {0,3}\|.+\|\s*\n {0,3}\|?[\s:|-]*-{3,}[\s:|-]*$/m.test(text) ||
+    /^ {0,3}(?:-{3,}|\*{3,}|_{3,})\s*$/m.test(text) ||
+    /\*\*[^*\n]+\*\*|__[^_\n]+__/.test(text) ||
+    /\[[^\]\n]+\]\((?:https?:|mailto:|\/)[^)\s]*\)/.test(text)
+  )
+}
+
+/**
+ * How many words a text has, whatever the language (Thai and Japanese have no spaces between words: the browser knows
+ * where they end). Markdown's own marks, and a link's address, aren't words.
+ */
+export function countWords(md: string): number {
+  const text = md
+    .replace(/\]\([^)\s]*\)/g, ']')
+    .replace(/^\s*(?:[-*+]|\d+[.)])\s+\[[ xX]\]/gm, '')
+    .replace(/^\s*\|?[\s:|-]*-{3,}[\s:|-]*$/gm, '')
+  if (typeof Intl.Segmenter !== 'function') return text.split(/\s+/).filter((w) => /[\p{L}\p{N}]/u.test(w)).length
+  let n = 0
+  for (const s of new Intl.Segmenter(undefined, { granularity: 'word' }).segment(text)) if (s.isWordLike) n++
+  return n
+}

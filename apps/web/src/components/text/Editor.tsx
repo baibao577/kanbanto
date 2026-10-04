@@ -1,20 +1,78 @@
-import { CheckSquare, Code, File, LinkSimple, ListBullets, TextB, TextHTwo, TextItalic } from '@phosphor-icons/react'
+import {
+  ArrowsOut,
+  CheckSquare,
+  Code,
+  CodeBlock,
+  ColumnsPlusRight,
+  File,
+  LinkSimple,
+  ListBullets,
+  ListNumbers,
+  Minus,
+  Quotes,
+  RowsPlusBottom,
+  Table,
+  TextB,
+  TextHOne,
+  TextHThree,
+  TextHTwo,
+  TextItalic,
+  Trash,
+} from '@phosphor-icons/react'
 import { TaskItem, TaskList } from '@tiptap/extension-list'
 import { TableKit } from '@tiptap/extension-table'
 import { Placeholder } from '@tiptap/extensions'
 import { Markdown } from '@tiptap/markdown'
 import { EditorContent, useEditor, useEditorState, type Editor as TiptapEditor } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
-import { useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type Ref } from 'react'
 import type { AttachmentView } from '@kanbanto/model/api'
 import { Avatar } from '@/components/common/bits'
 import { FILE_MARK } from '@/components/task/RichText'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { cn } from '@/lib/utils'
-import { forEditor, tidyMarkdown } from './mdText'
+import { counted, posAt, type Place } from './caret'
+import { forEditor, looksLikeMarkdown, tidyMarkdown } from './mdText'
 
 type Member = { id: string; name: string }
-type Suggestion = { kind: '@'; member: Member } | { kind: '#'; file: AttachmentView }
+type Chain = ReturnType<TiptapEditor['chain']>
+/** Something the "/" menu puts in (or, inside a table, does to it). */
+interface Insert {
+  id: string
+  label: string
+  /** What typing it looks like, shown beside it. */
+  hint?: string
+  /** Other words that find it. */
+  words?: string
+  icon: ReactNode
+  table?: boolean
+  run: (c: Chain) => Chain
+}
+type Suggestion = { kind: '@'; member: Member } | { kind: '#'; file: AttachmentView } | { kind: '/'; insert: Insert }
+
+const INSERTS: Insert[] = [
+  { id: 'h1', label: 'Big heading', hint: '#', words: 'title h1', icon: <TextHOne />, run: (c) => c.setHeading({ level: 1 }) },
+  { id: 'h2', label: 'Heading', hint: '##', words: 'h2', icon: <TextHTwo />, run: (c) => c.setHeading({ level: 2 }) },
+  { id: 'h3', label: 'Small heading', hint: '###', words: 'h3', icon: <TextHThree />, run: (c) => c.setHeading({ level: 3 }) },
+  { id: 'list', label: 'List', hint: '-', words: 'bullets', icon: <ListBullets />, run: (c) => c.toggleBulletList() },
+  { id: 'numbers', label: 'Numbered list', hint: '1.', words: 'ordered steps', icon: <ListNumbers />, run: (c) => c.toggleOrderedList() },
+  { id: 'checklist', label: 'Checklist', hint: '[ ]', words: 'todo tasks tick', icon: <CheckSquare />, run: (c) => c.toggleTaskList() },
+  { id: 'quote', label: 'Quote', hint: '>', icon: <Quotes />, run: (c) => c.toggleBlockquote() },
+  { id: 'code', label: 'Code block', hint: '```', icon: <CodeBlock />, run: (c) => c.toggleCodeBlock() },
+  { id: 'table', label: 'Table', words: 'grid rows columns', icon: <Table />, run: (c) => c.insertTable({ rows: 3, cols: 3, withHeaderRow: true }) },
+  { id: 'divider', label: 'Divider', hint: '---', words: 'line rule', icon: <Minus />, run: (c) => c.setHorizontalRule() },
+  { id: 'row', label: 'Add a row below', table: true, icon: <RowsPlusBottom />, run: (c) => c.addRowAfter() },
+  { id: 'column', label: 'Add a column to the right', table: true, icon: <ColumnsPlusRight />, run: (c) => c.addColumnAfter() },
+  { id: 'row-', label: 'Delete this row', table: true, words: 'remove', icon: <Trash />, run: (c) => c.deleteRow() },
+  { id: 'column-', label: 'Delete this column', table: true, words: 'remove', icon: <Trash />, run: (c) => c.deleteColumn() },
+  { id: 'table-', label: 'Delete the table', table: true, words: 'remove', icon: <Trash />, run: (c) => c.deleteTable() },
+]
+
+/** What a page holding the editor can ask of it. */
+export interface EditorHandle {
+  /** Goes to the nth heading (top-level ones, in order): the cursor is put there and it's scrolled into view. */
+  toHeading: (n: number) => void
+}
 
 export interface EditorProps {
   /** Markdown. Read once when the editor opens (it then keeps its own copy). */
@@ -37,14 +95,31 @@ export interface EditorProps {
   onFiles?: (files: File[]) => Promise<AttachmentView[] | void> | void
   placeholder?: string
   autoFocus?: boolean
+  /** Where the cursor starts (with autoFocus): a place in the text (see caret.ts). Left out: at the end. */
+  caret?: Place
+  /** ⌘/Ctrl+S: save, and keep writing. */
+  onSave?: () => void
+  /** "/" opens a menu of things to put in: headings, lists, a table, a divider. */
+  inserts?: boolean
+  /** Shown at the right of the toolbar (whether it's saved, say). */
+  status?: ReactNode
+  /** Adds "Write full page" to the toolbar: called with where the cursor is (see `caret`). */
+  onExpand?: (caret: Place) => void
+  /** box: a bordered field (the default). page: no box, the text as it will read, the toolbar stuck to the top. */
+  look?: 'box' | 'page'
+  /** Classes for the part the text is in (a height to scroll within, say). */
+  scrollClassName?: string
+  handle?: Ref<EditorHandle>
   'aria-label'?: string
   className?: string
 }
 
 /**
- * A light editor for descriptions and comments: headings, bold, italics, lists, checklists, links and code, typed with
- * Markdown shortcuts ("## ", "- ", "[ ] ", ⌘B) or the small toolbar. It reads and writes Markdown, and keeps what the
- * plain text box did: "@" suggests people, "#" the card's files, and files pasted or dropped in are attached.
+ * A light editor for descriptions and comments: headings, bold, italics, lists, checklists, quotes, links and code,
+ * typed with Markdown shortcuts ("## ", "- ", "[ ] ", ⌘B) or the small toolbar, which stays in view. It reads and
+ * writes Markdown, and keeps what the plain text box did: "@" suggests people, "#" the card's files, and files pasted
+ * or dropped in are attached. Markdown pasted as plain text goes in formatted. Where asked for (`inserts`), "/" opens
+ * a menu of things to put in (and, inside a table, its rows and columns).
  */
 export default function Editor({
   value,
@@ -58,16 +133,29 @@ export default function Editor({
   onFiles,
   placeholder,
   autoFocus,
+  caret,
+  onSave,
+  inserts,
+  status,
+  onExpand,
+  look = 'box',
+  scrollClassName,
+  handle,
   className,
   ...rest
 }: EditorProps) {
-  const [query, setQuery] = useState<{ from: number; kind: '@' | '#'; q: string; top: number; left: number } | null>(null)
+  const [query, setQuery] = useState<{ from: number; kind: '@' | '#' | '/'; q: string; top: number; left: number; table?: boolean } | null>(null)
   const [active, setActive] = useState(0)
   const wrap = useRef<HTMLDivElement>(null)
 
   const suggestions = useMemo<Suggestion[]>(() => {
     if (!query) return []
     const q = query.q.toLowerCase()
+    if (query.kind === '/')
+      return INSERTS.filter((c) => !!c.table === !!query.table && `${c.label} ${c.words ?? ''}`.toLowerCase().includes(q)).map((insert) => ({
+        kind: '/',
+        insert,
+      }))
     return query.kind === '@'
       ? members
           .filter((m) => m.name.toLowerCase().includes(q))
@@ -80,9 +168,9 @@ export default function Editor({
   }, [query, members, files])
 
   // The latest props and state, for ProseMirror's handlers (set up once).
-  const live = useRef({ suggestions, active, query, onSubmit, onEscape, onFiles, onMention, onChange, onBlur, members, files })
+  const live = useRef({ suggestions, active, query, onSubmit, onEscape, onSave, onFiles, onMention, onChange, onBlur, members, files, inserts })
   useLayoutEffect(() => {
-    live.current = { suggestions, active, query, onSubmit, onEscape, onFiles, onMention, onChange, onBlur, members, files }
+    live.current = { suggestions, active, query, onSubmit, onEscape, onSave, onFiles, onMention, onChange, onBlur, members, files, inserts }
   })
 
   const editor = useEditor({
@@ -101,11 +189,16 @@ export default function Editor({
     ],
     content: forEditor(value),
     contentType: 'markdown',
-    autofocus: autoFocus ? 'end' : false,
+    autofocus: autoFocus && caret === undefined ? 'end' : false,
+    onCreate: ({ editor }) => {
+      if (!autoFocus || caret === undefined) return
+      // (Once it's on the page: the place is found in the text, then scrolled to.)
+      requestAnimationFrame(() => !editor.isDestroyed && editor.commands.focus(posAt(editor.state.doc, caret) ?? 'end'))
+    },
     editorProps: {
       attributes: { class: cn('md', className), 'aria-label': rest['aria-label'] ?? '', role: 'textbox', 'aria-multiline': 'true' },
       handleKeyDown: (_view, e) => {
-        const { suggestions, active, onSubmit, onEscape } = live.current
+        const { suggestions, active, onSubmit, onSave } = live.current
         if (suggestions.length) {
           if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
             setActive((a) => (a + (e.key === 'ArrowDown' ? 1 : suggestions.length - 1)) % suggestions.length)
@@ -115,27 +208,32 @@ export default function Editor({
             pick(suggestions[active])
             return true
           }
-          if (e.key === 'Escape') {
-            e.stopPropagation()
-            setQuery(null)
-            return true
-          }
         }
         if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && onSubmit) {
           onSubmit()
           return true
         }
-        if (e.key === 'Escape' && onEscape) {
+        if (e.key.toLowerCase() === 's' && (e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && onSave) {
           e.preventDefault()
-          onEscape()
+          onSave()
           return true
         }
         return false
       },
       handlePaste: (_view, e) => {
         const pasted = [...(e.clipboardData?.files ?? [])]
-        if (!live.current.onFiles || !pasted.length) return false
-        void addFiles(pasted)
+        if (live.current.onFiles && pasted.length) {
+          void addFiles(pasted)
+          return true
+        }
+        // Markdown pasted as plain text (from an assistant, a file, a code editor) goes in formatted. Text copied
+        // from a page comes with its own formatting, and what's pasted into code stays as typed.
+        const data = e.clipboardData
+        const text = data?.getData('text/plain') ?? ''
+        const plain = !data?.getData('text/html') || data.types.includes('vscode-editor-data')
+        const ed = editorRef.current
+        if (!ed || !text || !plain || ed.isActive('codeBlock') || ed.isActive('code') || !looksLikeMarkdown(text)) return false
+        ed.chain().focus().insertContent(forEditor(text), { contentType: 'markdown' }).run()
         return true
       },
       handleDrop: (view, e) => {
@@ -164,19 +262,60 @@ export default function Editor({
     editorRef.current = editor
   }, [editor])
 
-  /** An "@word" or "#word" being typed right before the cursor. */
+  // Esc while the cursor is in here is the editor's: it closes an open list of suggestions, else leaves the editor
+  // (`onEscape`). It's caught before anything around it (a dialog would close on it), so one Esc never does two things.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const ed = editorRef.current
+      if (e.key !== 'Escape' || !ed?.isFocused) return
+      e.stopPropagation()
+      // (While composing a character, Esc only cancels that.)
+      if (e.isComposing) return
+      e.preventDefault()
+      if (live.current.suggestions.length) setQuery(null)
+      else if (live.current.onEscape) live.current.onEscape()
+      else ed.commands.blur()
+    }
+    window.addEventListener('keydown', onKey, true)
+    return () => window.removeEventListener('keydown', onKey, true)
+  }, [])
+
+  useImperativeHandle(
+    handle,
+    () => ({
+      toHeading: (n) => {
+        const ed = editorRef.current
+        const el = ed && [...ed.view.dom.children].filter((x) => /^H[1-6]$/.test(x.tagName))[n]
+        if (!ed || !el) return
+        ed.commands.focus(ed.view.posAtDOM(el, 0), { scrollIntoView: false })
+        el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      },
+    }),
+    [],
+  )
+
+  /** An "@word" or "#word" being typed right before the cursor, or a "/" asking for the menu of things to put in. */
   function track(ed: TiptapEditor) {
     const { $from, empty } = ed.state.selection
     const before = empty ? $from.parent.textBetween(Math.max(0, $from.parentOffset - 60), $from.parentOffset, undefined, '￼') : ''
+    const place = (from: number) => {
+      const at = ed.view.coordsAtPos(from)
+      const box = wrap.current!.getBoundingClientRect()
+      return { top: at.bottom - box.top + 4, left: Math.min(at.left - box.left, box.width - 256) }
+    }
+    const slash = live.current.inserts && wrap.current && !ed.isActive('codeBlock') ? before.match(/(^|\s)\/([a-z0-9]{0,20})$/i) : null
+    if (slash) {
+      const from = $from.pos - slash[2].length - 1
+      setQuery({ from, kind: '/', q: slash[2], table: ed.isActive('table'), ...place(from) })
+      return setActive(0)
+    }
     const m = before.match(/(^|\s)([@#])([^\s@#]{0,40})$/)
     const kind = m?.[2] as '@' | '#' | undefined
     const { members, files } = live.current
     const usable = kind === '@' ? members.length > 0 : kind === '#' ? files.length > 0 : false
     if (!m || !usable || !wrap.current) return setQuery(null)
     const from = $from.pos - m[3].length - 1
-    const at = ed.view.coordsAtPos(from)
-    const box = wrap.current.getBoundingClientRect()
-    setQuery({ from, kind: kind!, q: m[3], top: at.bottom - box.top + 4, left: Math.min(at.left - box.left, box.width - 256) })
+    setQuery({ from, kind: kind!, q: m[3], ...place(from) })
     setActive(0)
   }
 
@@ -184,6 +323,11 @@ export default function Editor({
     const ed = editorRef.current
     const q = live.current.query
     if (!ed || !q) return
+    if (s.kind === '/') {
+      // The "/" and what was typed after it go; the thing asked for comes in their place.
+      s.insert.run(ed.chain().focus().deleteRange({ from: q.from, to: ed.state.selection.from })).run()
+      return setQuery(null)
+    }
     const text = s.kind === '@' ? `@${s.member.name} ` : `${FILE_MARK}${s.file.name} `
     ed.chain().focus().insertContentAt({ from: q.from, to: ed.state.selection.from }, text).run()
     if (s.kind === '@') live.current.onMention?.(s.member.id)
@@ -200,18 +344,25 @@ export default function Editor({
       .run()
   }
 
+  const page = look === 'page'
   return (
-    <div ref={wrap} className="relative rounded-lg border bg-background focus-within:ring-2 focus-within:ring-ring/30">
-      {editor && <Toolbar editor={editor} />}
-      <EditorContent editor={editor} className="px-3 py-2" />
+    <div ref={wrap} className={cn('relative', !page && 'rounded-lg border bg-background focus-within:ring-2 focus-within:ring-ring/30')}>
+      {editor && <Toolbar editor={editor} page={page} status={status} onExpand={onExpand && (() => onExpand(placeOf(editor)))} />}
+      <EditorContent editor={editor} className={cn(!page && 'px-3 py-2', scrollClassName)} />
       {query && suggestions.length > 0 && (
         <ul
           role="listbox"
-          className="absolute z-50 w-64 overflow-hidden rounded-md border bg-popover p-1 shadow-md"
+          aria-label={query.kind === '/' ? 'Put in' : undefined}
+          className="absolute z-50 max-h-[21.5rem] w-64 overflow-y-auto rounded-md border bg-popover p-1 shadow-md"
           style={{ top: query.top, left: Math.max(0, query.left) }}
         >
           {suggestions.map((s, i) => (
-            <li key={s.kind === '@' ? s.member.id : s.file.id} role="option" aria-selected={i === active}>
+            <li
+              key={s.kind === '@' ? s.member.id : s.kind === '#' ? s.file.id : s.insert.id}
+              role="option"
+              aria-selected={i === active}
+              ref={i === active ? (el) => el?.scrollIntoView({ block: 'nearest' }) : undefined}
+            >
               <button
                 type="button"
                 onMouseDown={(e) => e.preventDefault()}
@@ -222,10 +373,16 @@ export default function Editor({
                   <>
                     <Avatar name={s.member.name} className="size-5 text-[9px]" /> {s.member.name}
                   </>
-                ) : (
+                ) : s.kind === '#' ? (
                   <>
                     <File className="size-4 shrink-0 text-muted-foreground" />
                     <span className="truncate">{s.file.name}</span>
+                  </>
+                ) : (
+                  <>
+                    <span className="grid size-4 shrink-0 place-items-center text-muted-foreground [&>svg]:size-4">{s.insert.icon}</span>
+                    <span className="min-w-0 flex-1 truncate">{s.insert.label}</span>
+                    {s.insert.hint && <span className="font-mono text-xs text-muted-foreground">{s.insert.hint}</span>}
                   </>
                 )}
               </button>
@@ -237,8 +394,18 @@ export default function Editor({
   )
 }
 
-/** Bold, italics, a heading, lists, a link and code: the basics, one click each (the Markdown shortcuts work too). */
-function Toolbar({ editor }: { editor: TiptapEditor }) {
+/** Where the cursor is, as a place in the text (see caret.ts). */
+function placeOf(editor: TiptapEditor): Place {
+  const { doc, selection } = editor.state
+  return { after: counted(doc.textBetween(0, selection.head, '', '')), lineStart: selection.$head.parentOffset === 0 }
+}
+
+/**
+ * Bold, italics, a heading, lists, a quote, a link and code: the basics, one click each (the Markdown shortcuts work
+ * too). It stays in view while the text scrolls under it. On the right: what the page holding it has to say (saved or
+ * not), and the way to full page.
+ */
+function Toolbar({ editor, page, status, onExpand }: { editor: TiptapEditor; page: boolean; status?: ReactNode; onExpand?: () => void }) {
   const on = useEditorState({
     editor,
     selector: ({ editor: e }) => ({
@@ -246,14 +413,16 @@ function Toolbar({ editor }: { editor: TiptapEditor }) {
       italic: e.isActive('italic'),
       heading: e.isActive('heading', { level: 2 }),
       bullets: e.isActive('bulletList'),
+      numbers: e.isActive('orderedList'),
       tasks: e.isActive('taskList'),
+      quote: e.isActive('blockquote'),
       link: e.isActive('link'),
       code: e.isActive('code') || e.isActive('codeBlock'),
     }),
   })
   const run = (f: (c: ReturnType<TiptapEditor['chain']>) => ReturnType<TiptapEditor['chain']>) => () => f(editor.chain().focus()).run()
-  return (
-    <div className="flex items-center gap-0.5 border-b px-1.5 py-1" onMouseDown={(e) => e.target !== e.currentTarget && e.preventDefault()}>
+  const tools = (
+    <>
       <Tool label="Bold (⌘B)" on={on.bold} onClick={run((c) => c.toggleBold())}>
         <TextB weight="bold" />
       </Tool>
@@ -263,20 +432,47 @@ function Toolbar({ editor }: { editor: TiptapEditor }) {
       <Tool label="Heading (## )" on={on.heading} onClick={run((c) => c.toggleHeading({ level: 2 }))}>
         <TextHTwo />
       </Tool>
-      <span className="mx-1 h-4 w-px bg-border" />
+      <span className="mx-1 h-4 w-px shrink-0 bg-border" />
       <Tool label="List (- )" on={on.bullets} onClick={run((c) => c.toggleBulletList())}>
         <ListBullets />
+      </Tool>
+      <Tool label="Numbered list (1. )" on={on.numbers} onClick={run((c) => c.toggleOrderedList())}>
+        <ListNumbers />
       </Tool>
       <Tool label="Checklist ([ ] )" on={on.tasks} onClick={run((c) => c.toggleTaskList())}>
         <CheckSquare />
       </Tool>
-      <span className="mx-1 h-4 w-px bg-border" />
+      <Tool label="Quote (> )" on={on.quote} onClick={run((c) => c.toggleBlockquote())}>
+        <Quotes />
+      </Tool>
+      <span className="mx-1 h-4 w-px shrink-0 bg-border" />
       <LinkTool editor={editor} on={on.link} />
       <Tool label="Code (`)" on={on.code} onClick={run((c) => (editor.state.selection.empty ? c.toggleCodeBlock() : c.toggleCode()))}>
         <Code />
       </Tool>
+    </>
+  )
+  const bar = (
+    <div
+      className={cn('flex items-center bg-background px-1.5 py-1', page ? 'rounded-lg border shadow-xs' : 'sticky top-0 z-10 rounded-t-lg border-b')}
+      onMouseDown={(e) => e.target !== e.currentTarget && e.preventDefault()}
+    >
+      {/* (On a very narrow screen the tools slide sideways; what's on the right stays put.) */}
+      <div className="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto [scrollbar-width:none]">{tools}</div>
+      {(status || onExpand) && (
+        <div className="flex shrink-0 items-center gap-1 pl-2">
+          {status}
+          {onExpand && (
+            <Tool label="Write full page" onClick={onExpand}>
+              <ArrowsOut />
+            </Tool>
+          )}
+        </div>
+      )}
     </div>
   )
+  // Full page: it sticks to the top on a strip of the page's own background, so the text slides under it cleanly.
+  return page ? <div className="sticky top-0 z-10 mb-3 bg-popover pt-2 pb-2">{bar}</div> : bar
 }
 
 function Tool({ label, on, onClick, children }: { label: string; on?: boolean; onClick?: () => void; children: React.ReactNode }) {
@@ -289,7 +485,7 @@ function Tool({ label, on, onClick, children }: { label: string; on?: boolean; o
       onMouseDown={(e) => e.preventDefault()}
       onClick={onClick}
       className={cn(
-        'grid size-7 place-items-center rounded text-muted-foreground hover:bg-accent hover:text-foreground [&>svg]:size-4',
+        'grid size-7 shrink-0 place-items-center rounded text-muted-foreground hover:bg-accent hover:text-foreground [&>svg]:size-4',
         on && 'bg-accent text-foreground',
       )}
     >

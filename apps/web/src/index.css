@@ -337,6 +337,34 @@ html.dragging * {
   .md.ProseMirror {
     @apply min-h-16 outline-none;
   }
+  /* Its headings are h1 to h3 where the shown text has h2 to h4 (a card's title is the h1): the same sizes. */
+  .md.ProseMirror h1 {
+    @apply mt-4 text-base font-semibold tracking-tight first:mt-0;
+  }
+  .md.ProseMirror h2 {
+    @apply text-[0.95rem];
+  }
+  .md.ProseMirror h3 {
+    @apply text-sm;
+  }
+  .md.md-reader.ProseMirror :is(h1, h2, h3) {
+    @apply mt-8 scroll-mt-16;
+  }
+  .md.md-reader.ProseMirror h1 {
+    @apply text-xl;
+  }
+  .md.md-reader.ProseMirror h2 {
+    @apply text-lg;
+  }
+  .md.md-reader.ProseMirror h3 {
+    @apply text-base;
+  }
+  .md.ProseMirror :is(h1, h2, h3):first-child {
+    @apply mt-0;
+  }
+  .md.ProseMirror .selectedCell {
+    @apply bg-primary/10;
+  }
   .md.ProseMirror p.is-editor-empty:first-child::before {
     @apply pointer-events-none float-left h-0 text-muted-foreground content-[attr(data-placeholder)];
   }

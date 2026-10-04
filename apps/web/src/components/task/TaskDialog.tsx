@@ -82,7 +82,8 @@ export function TaskDialog({
           if (title) title.select()
           else box.focus()
         }}
-        // Esc while typing leaves the field; a second Esc closes the dialog.
+        // Esc while typing leaves the field; a second Esc closes the dialog. (The description and comment editors
+        // see to their own Esc, before it gets here: see text/Editor.)
         onEscapeKeyDown={(e) => {
           const el = document.activeElement as HTMLElement | null
           if (el && /^(INPUT|TEXTAREA)$/.test(el.tagName)) {
@@ -201,6 +202,7 @@ function TaskDetail({ id, onClose }: { id: string; onClose: () => void }) {
             value={t.description ?? ''}
             readOnly={readOnly}
             cardFiles={cardFiles}
+            draftId={`${data.board.id}:${id}`}
             onSave={(description) => patch({ description })}
           />
 

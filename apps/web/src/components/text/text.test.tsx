@@ -7,8 +7,10 @@ import { Markdown as MarkdownExt } from '@tiptap/markdown'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import type { AttachmentView } from '@kanbanto/model/api'
+import { clearDraft, pruneDrafts, readDraft, writeDraft } from '@/data/drafts'
+import { counted, posAt } from './caret'
 import { Markdown } from './Markdown'
-import { forEditor, headingsOf, tidyMarkdown, toggleTask } from './mdText'
+import { countWords, forEditor, headingsOf, looksLikeMarkdown, tidyMarkdown, toggleTask } from './mdText'
 
 const roundTrip = (md: string) => {
   const ed = new Editor({
@@ -75,5 +77,98 @@ describe('showing Markdown', () => {
       { id: 'h-0', depth: 1, text: 'One' },
       { id: 'h-1', depth: 2, text: 'Two b' },
     ])
+  })
+})
+
+describe('writing', () => {
+  const editor = (md: string) =>
+    new Editor({
+      extensions: [StarterKit, TaskList, TaskItem.configure({ nested: true }), TableKit, MarkdownExt],
+      content: md,
+      contentType: 'markdown',
+    })
+
+  it('tells pasted Markdown from plain words', () => {
+    for (const md of [
+      '## Plan',
+      'Steps:\n- one\n- two',
+      '1. first',
+      '- [ ] todo',
+      '> quoted',
+      '```\ncode\n```',
+      '| a | b |\n|---|---|\n| 1 | 2 |',
+      'some **bold** words',
+      'see [the doc](https://example.com)',
+      'above\n\n---\n\nbelow',
+    ])
+      expect([md, looksLikeMarkdown(md)]).toEqual([md, true])
+    for (const text of ['Just a sentence.', 'Two lines\nof plain words', 'a - b, 3 * 4 and #5', 'email me: ann@example.com', 'C:\\path|other'])
+      expect([text, looksLikeMarkdown(text)]).toEqual([text, false])
+  })
+
+  it('pasted Markdown goes in formatted, where the cursor is', () => {
+    const ed = editor('Before\n\nAfter')
+    ed.commands.focus('end')
+    ed.commands.insertContent(forEditor('### Pasted\n\n- [ ] item\n- [x] done\n\n| a | b |\n|---|---|\n| 1 | 2 |'), { contentType: 'markdown' })
+    const out = tidyMarkdown(ed.getMarkdown())
+    ed.destroy()
+    expect(out).toContain('### Pasted')
+    expect(out).toContain('- [ ] item\n- [x] done')
+    expect(out).toMatch(/\| a +\| b +\|/)
+    expect(out.startsWith('Before')).toBe(true)
+  })
+
+  it('counts words in any language, not Markdown’s marks or a link’s address', () => {
+    expect(countWords('')).toBe(0)
+    expect(countWords('## The plan\n\n- [ ] write **three** words\n- [x] done')).toBe(6)
+    expect(countWords('See [the doc](https://example.com/a-long-address) now')).toBe(4)
+    expect(countWords('| a | b |\n|---|---|\n| one | two |')).toBe(4)
+    // Thai has no spaces between words: the browser knows where they end.
+    expect(countWords('ฉันกินข้าว')).toBeGreaterThan(1)
+  })
+
+  it('a place in the shown text is the same place in the editor', () => {
+    const md = '## Plan\n\nfirst words here\n\n- one\n- see 📎plan v2.pdf today\n\n> quoted'
+    const ed = editor(md)
+    const doc = ed.state.doc
+    const all = doc.textBetween(0, doc.content.size, '', '')
+    expect(counted('a b\n📎c')).toBe(3)
+    // After n counted characters: the text before the cursor has exactly n of them.
+    for (const n of [0, 1, 4, 5, 12, counted(all) - 1, counted(all)]) {
+      const pos = posAt(doc, { after: n })
+      expect(pos).not.toBeNull()
+      expect(counted(doc.textBetween(0, pos!, '', ''))).toBe(n)
+    }
+    // Clicking the "h" of "here" (shown text: "Plan", "first", "words", then "h").
+    const before = counted('Plan' + 'first' + 'words')
+    expect(doc.textBetween(posAt(doc, { after: before })!, posAt(doc, { after: before })! + 5, '', '')).toMatch(/^ ?here/)
+    // The start of a line is before its first word, not after the last word of the line above.
+    const plan = counted('Plan')
+    const end = posAt(doc, { after: plan })!
+    const startOfNext = posAt(doc, { after: plan, lineStart: true })!
+    expect(doc.resolve(end).parent.textContent).toBe('Plan')
+    expect(doc.resolve(startOfNext).parent.textContent).toBe('first words here')
+    expect(doc.resolve(startOfNext).parentOffset).toBe(0)
+    expect(posAt(doc, { after: counted(all) + 1 })).toBeNull()
+    expect(posAt(doc, { after: counted(all), lineStart: true })).toBeNull()
+    ed.destroy()
+  })
+})
+
+describe('drafts', () => {
+  it('are kept per card, cleared when saved, and dropped when nobody comes back', () => {
+    const now = Date.now()
+    writeDraft('b1:t1', 'half a thought', now)
+    writeDraft('b1:t2', 'another', now - 40 * 86_400_000)
+    expect(readDraft('b1:t1')).toEqual({ text: 'half a thought', at: now })
+    expect(readDraft('b1:nope')).toBeNull()
+    pruneDrafts(now)
+    expect(readDraft('b1:t2')).toBeNull()
+    expect(readDraft('b1:t1')).not.toBeNull()
+    clearDraft('b1:t1')
+    expect(readDraft('b1:t1')).toBeNull()
+    // Something else under the same name isn't a draft.
+    localStorage.setItem('kankan:draft:b1:t3', '{"oops":1}')
+    expect(readDraft('b1:t3')).toBeNull()
   })
 })

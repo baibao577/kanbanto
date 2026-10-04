@@ -37,6 +37,14 @@ then `git pull` (or download the new release) and `docker compose up -d --build`
   and links, written in a light editor (Markdown shortcuts or a small toolbar) and saved as Markdown. Long text folds
   with "Show more", and a description can be read full page with its headings to jump to. Files and mentions work as
   before.
+- **Writing a description, without losing your place or your words:** what you type is kept as a draft in the
+  browser and offered back after a reload or a closed tab, with a "Saved" / "Not saved yet" sign; it's saved when
+  you finish (clicking away, Esc, ⌘Enter) or with ⌘S. Esc leaves the editor instead of closing the card. Click a word
+  to edit and the cursor is on that word. The toolbar stays in view, with numbered lists and quotes; "/" opens a menu
+  of headings, lists, a table, a divider and a code block (inside a table: its rows and columns); pasted Markdown
+  comes in formatted. In the card the editor stops at half the window and scrolls. **Expand** is now a place to
+  write: it opens ready to type from an empty description or straight from the card's editor (same text, same
+  cursor), looks like the page you'll read, keeps Contents beside you as headings appear, and counts your words.
 - **Reminders** on cards: at a time you type in plain words ("tmr 10:00", "fri 2pm") or pick, or before the due date
   (following it). They go to whoever is assigned, under the bell and by email (which can be turned off), and to
   webhooks as `reminder.due`. Assistants can set and list them.
