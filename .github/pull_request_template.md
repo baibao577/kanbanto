@@ -1,4 +1,6 @@
-<!-- Thanks for contributing! A few things help it go in quickly. -->
+<!-- Pull requests are by invitation (see CONTRIBUTING.md): link the issue this was agreed in. A few things help it go in quickly. -->
+
+**Issue:** #
 
 **What this changes, and why**
 

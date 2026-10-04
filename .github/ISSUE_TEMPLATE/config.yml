@@ -6,6 +6,9 @@ contact_links:
   - name: Ask a question or share an idea
     url: https://github.com/baibao577/kanbanto/discussions
     about: Setup help, questions and ideas go in Discussions.
+  - name: Want to contribute code?
+    url: https://github.com/baibao577/kanbanto/blob/main/CONTRIBUTING.md
+    about: Pull requests are by invitation. Open an issue about what you'd like to work on first.
   - name: Troubleshooting guide
     url: https://github.com/baibao577/kanbanto/blob/main/docs/troubleshooting.md
     about: Most setup problems are answered here.

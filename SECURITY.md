@@ -40,6 +40,8 @@ Fixes go into the latest version. If you run Kanbanto yourself, keep it up to da
   records put back by undo must be ones a command could have made. Imported files pass the same checks, whatever
   their format.
 - **Cross-site requests** are refused: changes must come from a page on the same site.
+- **Browsers are told what the app may do**: it loads scripts only from its own site, can't be put in a frame by
+  another site, and over HTTPS browsers are told to keep using HTTPS.
 - **Who's on a board** (names, never email addresses) is visible to its people, and to visitors when an owner turns
   on "Anyone with the link can view": that's the owner's choice. Only owners see email addresses. Visitors with the
   link never see logged time.

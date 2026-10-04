@@ -30,7 +30,7 @@ export function EmailSettings() {
     <div className="space-y-6">
       <PageTitle
         title="Email"
-        description="Used for confirming new accounts, password resets, board invites and the daily mention summary. Until it’s set up, people share boards with links and codes, and password resets go through you."
+        description="Used for confirming new accounts, password resets, board invites, reminders and the morning summary. Until it’s set up, people share boards with links and codes, and password resets go through you."
       />
       {info.printedOnly && (
         <div role="alert" className="flex gap-3 rounded-xl border border-warning/40 bg-warning/10 px-4 py-3 text-sm">

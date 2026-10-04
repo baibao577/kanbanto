@@ -143,14 +143,15 @@ The app uses hash routing, so any static host or proxy works without rewrite rul
 - **Invites:** a share link and an access code (`ABCD-EFGH`), each with a role, each can be turned off or replaced.
   Email invites add existing, confirmed accounts at once; anyone else gets a one-time invite bound to their address.
   Signing up through an emailed invite confirms the address, unless the inviter was shown the link (the email
-  couldn't be sent), since then the inviter could have used it.
+  couldn't be sent) or it went out through the inviter's own email service, since then the inviter could have used it.
 - **Who's on a board** (the Share dialog) is for its people: owners see email addresses, others see names. Everyone
   in the workspace can be assigned and @mentioned on its boards shared with it.
 
 ## Integrations
 
 - **API tokens** (`kbt_…`, only their SHA-256 stored) act as their person. They reach `TOKEN_ROUTES` only (boards,
-  workspaces, notifications, files, MCP), never account settings or the Platform console; read-only tokens only `GET`.
+  the card search, logged time, workspaces, notifications, files, joining, MCP, and reading who they are), never
+  account settings, the Platform console or a board's live connection; read-only tokens only `GET`.
   Platform admins turn them on (`site_settings.api_tokens`).
 - **Webhooks** hang off the board engine: after each command that changed something, `BoardEngine.onChanged` queues a
   `board.changed` delivery for the board's webhooks (and posting a comment queues `comment.added`). A worker sends them,
@@ -174,7 +175,7 @@ The app uses hash routing, so any static host or proxy works without rewrite rul
   server from `SMTP_URL`. Both sit behind one `Transport` interface (`src/mail/transport.ts`); `src/mail/senders.ts`
   loads the site's and people's senders and decrypts their secret only to send.
 - Every email goes through an **outbox** table and is counted against optional daily and monthly **limits** for the
-  site. Invites may use only 80% of them, so sign-up and password emails keep working.
+  site. Invites, reminders and morning summaries may use only 80% of them, so sign-up and password emails keep working.
 - **Whose account sends:** sign-up and password emails use the site's. Invites use the inviter's own Resend key if
   they added one, else their monthly allowance on the site's, else the app shows the link to send by hand. People's
   own keys are Resend only: letting anyone enter an SMTP server would let them make the server connect anywhere.
@@ -182,7 +183,8 @@ The app uses hash routing, so any static host or proxy works without rewrite rul
   an untrusted certificate) flags the sender with the reason, for its owner to see.
 - **Confirming email** is required once the site can send email, for accounts that haven't confirmed yet (platform
   admins are exempt). New sign-ups get the same answer whether or not the address has an account; the link in the
-  confirmation email signs them in. A platform admin can vouch for an address. Accounts aren't confirmed
+  confirmation email confirms the address in the browser signed in to the account, or with the account's password
+  (and then signs in). A platform admin can vouch for an address. Accounts aren't confirmed
   automatically, because email invites go to the account with that address.
 - Sent emails keep only what the limits need: their contents (with any sign-in link) are removed once sent.
 - **Templates** are React components rendered with `@react-email/render`: `src/mail/templates.tsx` has one shared
@@ -192,8 +194,8 @@ The app uses hash routing, so any static host or proxy works without rewrite rul
 
 - Every card has a live comment thread. Everyone on the board can comment, viewers included (not visitors with the
   public link).
-- **@mentions** (of board members) show under the bell. By email, people get at most one summary a day, covering
-  mentions unseen in the app for an hour.
+- **@mentions** (of board members) show under the bell. By email, people get one morning summary a day
+  (about 8:00 their time): what's due, today's reminders and mentions they haven't seen.
 - `#` in a comment or description links to one of the card's files.
 
 ## Files

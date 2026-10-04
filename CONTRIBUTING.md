@@ -1,12 +1,20 @@
 # Contributing
 
-Thanks for helping with Kanbanto! Bug reports, ideas and pull requests are welcome at
+Thanks for helping with Kanbanto! Bug reports and ideas are welcome at
 [github.com/baibao577/kanbanto](https://github.com/baibao577/kanbanto/issues).
 
 - **Found a bug?** Open an issue with what you did, what happened, and the server logs if relevant
   (see [Troubleshooting](docs/troubleshooting.md#still-stuck)).
 - **A security problem?** Please report it privately — see [SECURITY.md](SECURITY.md).
-- **A bigger change?** Open an issue first to talk it through, so your work fits where the project is going.
+- **An idea, or a question?** Open an issue or a discussion.
+
+**Pull requests are by invitation.** Kanbanto is developed by its maintainer and a few invited contributors, so the
+repository only accepts pull requests from people who've been added to it. If you'd like to work on something, open an
+issue saying what and why. If it fits where the project is going, you'll be invited for it. Please don't send code in
+an issue or by email in the meantime: it can't be merged that way.
+
+The rest of this page is for invited contributors (and for anyone running Kanbanto from source to try a change of
+their own).
 
 ## Development setup
 

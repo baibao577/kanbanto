@@ -9,7 +9,7 @@ A platform admin turns these on in **Platform console → Integrations**: API to
 
 ## API tokens
 
-Make one in **Account settings → API tokens**. It's shown once. Send it with every request:
+Make one in **Account settings → API & apps**. It's shown once. Send it with every request:
 
 ```bash
 curl https://kanbanto.example.com/api/boards -H "Authorization: Bearer kbt_…"
@@ -17,8 +17,9 @@ curl https://kanbanto.example.com/api/boards -H "Authorization: Bearer kbt_…"
 
 - A token **acts as you**, with your access to boards: it can't open anything you can't.
 - **Read only** tokens can only use `GET`. **Read and make changes** tokens can also change boards.
-- Tokens reach boards (tasks, comments, files, webhooks), workspaces and your notifications. Never your account
-  settings, other tokens, or the Platform console.
+- Tokens reach boards (tasks, comments, files, logged time, webhooks), the search across boards, workspaces, your
+  notifications, and who you are (`GET /api/auth/me`, read only). Never your account settings, other tokens or the
+  Platform console, and not a board's live connection: ask again instead.
 - They can expire (30, 90 or 365 days) or not. Deleting one, or an admin turning tokens off, stops it at once.
 - Only a hash of each token is stored. Account settings shows when each was last used.
 
@@ -41,7 +42,8 @@ curl -X POST https://kanbanto.example.com/api/boards/<board id>/mutations \
   comments and files), and come back with `task.restore`. `task.delete` on an archived task deletes it for good.
   `tasks.archiveDone` tidies a done list in one go: `{"type":"tasks.archiveDone","status":"<list id>","before":"2026-09-01T00:00:00Z"}`
   archives its top-level tasks that got done before that moment, each with its subtasks (a finished task under
-  unfinished work stays). A whole board is archived (read-only) with `POST /api/boards/<id>/archive`.
+  unfinished work stays). A whole board is archived (read-only) with `POST /api/boards/<id>/archive` and
+  `{"archived": true}` (`false` restores it).
 - **Archived tasks aren't sent with the board** (a board can have far more of them than tasks on it). Ask for them:
   - `GET /api/boards/<id>/archived?from=2026-01-01&to=2026-04-01` gives the ones archived in that stretch of time,
     as the board keeps them, newest first, 200 at a time (`limit` up to 1000; pass `nextOffset` back as `offset`).
@@ -97,11 +99,15 @@ comment (`comment.added`) is POSTed to the address as JSON:
 }
 ```
 
-(`before` and `after` are whole records; shortened here.)
+(`before` and `after` are whole records; shortened here. A change with more than 200 records is cut there, with
+`"truncated": true`.) The other events: `comment.added` has `board`, `actor`, `task` (`id`, `title`) and `comment`
+(`id`, `body`, `mentions`); `reminder.due` has `board`, `task` (`id`, `title`, `due`, `list`), `reminder` (`id`, `at`)
+and `for` (who it's for); `ping` has `board` only.
 
 **Say you want them.** When a webhook is added (or its address changed), Kanbanto first sends the address
-`{ "event": "verify", "challenge": "<a one-time code>" }` with the header `X-Kanbanto-Event: verify`. Answer `200` with
-the code somewhere in the reply (the same JSON back is fine) and the webhook is saved; otherwise it's refused. This is
+`{ "event": "verify", "challenge": "<a one-time code>" }` with the header `X-Kanbanto-Event: verify`. Answer with any 2xx
+within 10 seconds, with the code somewhere in the reply (the same JSON back is fine), and the webhook is saved;
+otherwise it's refused. The check isn't signed (there's no secret yet): answer it before checking signatures. This is
 so nobody can point a webhook at a server that isn't theirs. (A site whose admin allows webhooks to any address
 doesn't ask.)
 
@@ -139,7 +145,7 @@ are kept for a week.
 ## AI assistants (MCP)
 
 Kanbanto speaks the [Model Context Protocol](https://modelcontextprotocol.io) at **`/api/mcp`**, so assistants can find,
-add and update tasks for you, with a token's access. Account settings → API tokens shows the exact setup for your site:
+add and update tasks for you, with a token's access. Account settings → API & apps shows the exact setup for your site:
 
 ```bash
 # Claude Code
@@ -207,7 +213,7 @@ work for `/api/mcp`.
 The admin setting:
 
 - **Off** (the default).
-- **Known AI apps only**: apps that send people back to claude.ai, claude.com, chatgpt.com or chat.openai.com, or to
+- **Known AI apps only**: apps that send people back to claude.ai, claude.com, chatgpt.com, chat.openai.com or vscode.dev, or to
   an app on their own computer (Claude Code, Cursor, VS Code). The safe choice.
 - **Any app**: any app that registers. People still approve each one and see where it sends them back to, but an app
   could pretend to be one they know.

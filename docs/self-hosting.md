@@ -108,7 +108,7 @@ another machine: then leave `BIND_ADDRESS` out). Point the proxy at `http://127.
 - pass the original **Host** header (Kanbanto refuses changes from other sites by comparing the browser's Origin to it);
 - set **X-Forwarded-Proto** (so Kanbanto knows the request was HTTPS) and **X-Forwarded-For** to the visitor's address;
 - allow **WebSocket upgrades** on `/api/boards/…/live` (for live updates);
-- allow request bodies at least as large as your largest-file setting (default 10 MB).
+- allow request bodies of at least 20 MB (board imports), or your largest-file setting if that's bigger.
 
 For nginx:
 
@@ -163,10 +163,17 @@ Other server commands (all run as `docker compose exec app node dist/cli.js …`
 The platform admin manages accounts (turn them off, give password reset links), email and storage, but **can't open
 people's boards** unless someone shares a board with them.
 
+Turning an account off keeps the person out: it's signed out everywhere, and its API tokens, connected apps and
+calendar link are removed, along with the share links, access codes and waiting invites of the boards it owns and the
+workspaces it runs (see [SECURITY.md](../SECURITY.md)).
+
+**What to send your team:** the [guides](../guides/) explain Kanbanto to the people using it. **Guides** in the account
+menu opens them (`GUIDES_URL` points it at your own copy, or takes it out).
+
 ## Email
 
-Optional, but it enables confirming new accounts' addresses, **forgot password**, **invites by email**, and a **daily
-summary of @mentions**. Kanbanto sends through your organisation's mail server or any email service (SMTP), or through
+Optional, but it enables confirming new accounts' addresses, **forgot password**, **invites by email**, **reminders by email**, and a **morning
+summary** of what's due and who mentioned you. Kanbanto sends through your organisation's mail server or any email service (SMTP), or through
 Resend: see **[Email](email.md)** for the settings of Microsoft 365, Google Workspace, Amazon SES and others.
 
 ## Calendars
@@ -323,7 +330,8 @@ Run it under a process manager (systemd, pm2) and put a reverse proxy with HTTPS
 - [ ] HTTPS in front of Kanbanto (Option A or B), and nothing else can reach port 3000 (`BIND_ADDRESS=127.0.0.1`).
 - [ ] `APP_URL` is your real `https://` address, and `TRUST_PROXY` matches your setup: set with a proxy in front, not
       set without one.
-- [ ] Your own `POSTGRES_PASSWORD` (not the default), set before the first start.
+- [ ] Your own `POSTGRES_PASSWORD` (not the default), set before the first start. (Kanbanto says so in its log at
+      start if it's still the default.)
 - [ ] Open sign-up turned off, if it's for an internal team.
 - [ ] Backups running and copied off the server, including the encryption key. Store the key and `.env` like passwords.
 - [ ] The database port stays private (by default it listens only on `127.0.0.1:5433`).

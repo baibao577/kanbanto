@@ -76,7 +76,7 @@ terms, an imprint. Put them in a folder named `pages` beside `docker-compose.yml
 - Pages are plain files: HTML, CSS, scripts, pictures, PDFs. Other kinds of files and hidden files aren't served.
 - The main address (`/`) stays the app's, so a page can't be named `index.html`; neither can it sit under `/api`,
   `/oauth` or `/assets`.
-- Pages are found when Kanbanto starts: restart after adding one.
+- Pages are found when Kanbanto starts: restart after adding one (with Docker: rebuild, as above).
 - They are part of the same site as the app, so only put pages there that you wrote or trust.
 
 ### `SMTP_URL`
@@ -100,7 +100,7 @@ Open it from the menu under your initials (platform admins only). Each section h
 |---|---|---|
 | **Overview** `#/admin` | Totals (accounts, boards, tasks) and a status card for sign-up, email and storage | — |
 | **Accounts** `#/admin/accounts` | **Anyone can create an account** — off: people join only through a share link, access code or email invite | On |
-| | Per account: **password reset link** (one-time, 24 hours, for you to pass on; the person is told by email), **confirm email** (you vouch for their address), **turn account off / on** | — |
+| | Per account: **password reset link** (one-time, 24 hours, for you to pass on; the person is told by email), **confirm email** (you vouch for their address), **turn account off / on** (off: signed out everywhere, and its API tokens, connected apps, calendar link and the invite links of its boards and workspaces are removed) | — |
 | **Email** `#/admin/email` | **Sending:** an **SMTP server** (server, port, encryption, username, password) or a **Resend** API key, and the sender address. Secrets are write-only and encrypted. See [Email](email.md). | Not set up |
 | | **Limits:** emails per day and per month the site sends; invite emails per person per month (people with their own key aren't limited). Empty: no limit. | 90 / 2,800 / 20; none with SMTP |
 | | **How emails look:** product name, button colour, footer | Kanbanto, blue, empty |
@@ -113,8 +113,8 @@ Open it from the menu under your initials (platform admins only). Each section h
 | | **People can make calendar links** (a private address calendar apps subscribe to; turning it off stops every link). See [Calendar](calendar.md). | Off |
 | | **Google Calendar:** the client ID and secret of a Google app you make once, so people can connect their Google Calendar. The secret is write-only and encrypted. See [Calendar](calendar.md). | Not set up |
 
-Things each person sets for themselves in **Account settings** (`#/account`): name, password, whether they get the
-daily mention email, their calendar (Google Calendar, a calendar link, and which boards are in it), their own Resend
+Things each person sets for themselves in **Account settings** (`#/account`): name, password, their
+notifications (the morning summary email, reminder emails, desktop notifications, their time zone), their calendar (Google Calendar, a calendar link, and which boards are in it), their own Resend
 key for invites, their own storage bucket (at a public `https://` address), and their API tokens. Board owners add
 webhooks in Board settings. See [API, webhooks and AI](api.md).
 
@@ -137,11 +137,12 @@ Run in the Kanbanto folder as `docker compose exec app node dist/cli.js <command
 | | |
 |---|---|
 | Sessions | Last 30 days, extended while in use. Changing your password signs out your other devices (live connections included). |
-| Signing up | Once the site sends email, new accounts confirm their address before signing in: the link in the email signs them in. |
+| Signing up | Once the site sends email, new accounts confirm their address before signing in: the link in the email asks for their password, then confirms the address and signs them in. |
 | Wrong passwords | 10 sign-in attempts a minute from one address, and 10 wrong passwords for one account in 15 minutes (then it waits). |
 | Invites | 30 invitations an hour per person; 10 invite emails an hour; brand-new accounts send 5 invite emails on their first day. Joining with a code: 20 tries a minute. |
 | Email links | Confirm email: 24 hours. Reset password: 1 hour, once. A reset link from an admin: 24 hours, once. Invites by email: until used or cancelled. Share links and access codes: until turned off or replaced. |
-| Mention emails | At most one summary per person per day, only for mentions unseen in the app for an hour. |
+| Morning summary | At most one per person per day, around 8:00 in their time zone (UTC if they haven't set one), only when there's something in it: cards due today or overdue, reminders later today, mentions they haven't seen. |
+| Integrations | 20 API tokens per person; 10 webhooks per board; apps registering for sign-in: 20 an hour per address; a calendar link: 120 requests a minute. |
 | Sent emails | Kept for 60 days (for the limits), without their contents: those are removed once sent. |
-| Files | Deleted files stay in a trash for 30 days (restorable). Files waiting in unposted comments: 10 per person, up to 3 times the largest file size, removed after a day. |
+| Files | Deleted files stay in a trash for 30 days (restorable, if there's room in the owner's space). Files waiting in unposted comments: 10 per person, up to 3 times the largest file size, removed after a day. |
 | Request size | 1 MB, except board imports (20 MB), changes to a board (10 MB) and file uploads (the largest file size). |

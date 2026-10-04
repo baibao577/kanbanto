@@ -14,7 +14,7 @@ Prefer the MCP tools. If they aren't available, ask the user to connect them:
 
 - **Claude on the web or Claude Desktop:** Settings → Connectors → add a custom connector with
   `https://<their-kanbanto>/api/mcp`, then sign in to Kanbanto when asked.
-- **Claude Code:** with an API token from Account settings → API tokens on their Kanbanto site:
+- **Claude Code:** with an API token from Account settings → API & apps on their Kanbanto site:
 
 ```bash
 claude mcp add --transport http kanbanto https://<their-kanbanto>/api/mcp --header "Authorization: Bearer <token>"

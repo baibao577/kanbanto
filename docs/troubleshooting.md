@@ -93,7 +93,8 @@ sees all visitors as the proxy: set `TRUST_PROXY=1` in `.env`.
 
 ### I created an account but can't sign in
 Once the site sends email, a new account confirms its address first: click the link in the "Confirm your email
-address" email (it signs you in). No email? Check spam, then use **Send the link again** on the "Check your inbox"
+address" email (it asks for your password, the one you chose when signing up, then signs you in; didn't sign up
+yourself? Use **Forgot password** to make the account yours). No email? Check spam, then use **Send the link again** on the "Check your inbox"
 page. An admin can also confirm it: Platform console → Accounts → ⋯ → Confirm email.
 
 ### "Requests must come from this site"
@@ -235,6 +236,27 @@ The file may be damaged, or its storage was removed. If you use a bucket, check 
 Files in a **bucket used earlier** still open with the key saved for it back then. If that key was changed or revoked,
 give Kanbanto the new one with **Update keys** (Platform console → Storage, or Account settings → File storage for
 someone's own bucket), or bring the bucket's files over with **Move here**. A deleted bucket's files are gone.
+
+### "There's no room to bring it back"
+
+Restoring a file from the trash takes its space again. Delete some files (or raise the quota in Platform console →
+Storage) and restore it again.
+
+## Webhooks
+
+### "That address didn't answer" / "didn't confirm it wants these"
+
+Before a webhook is saved, Kanbanto sends its address a one-time code, and the address has to answer with it. See
+[API → Webhooks](api.md#webhooks) for the three lines a receiver needs. (Sites that allow webhooks to any address
+don't ask.)
+
+## Pages and frames
+
+### Kanbanto doesn't show inside a frame on another site, or a script added by a proxy doesn't run
+
+That's on purpose: Kanbanto tells browsers not to show it in other sites' frames, and its page loads scripts only
+from Kanbanto itself. A proxy or CDN that adds its own script to the page (analytics, "rocket loaders") will find it
+blocked: turn that feature off for Kanbanto's address.
 
 ## Database
 

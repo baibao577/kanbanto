@@ -7,6 +7,7 @@
 <p align="center">
   Plan projects as tasks inside tasks, and see them as a <b>Board</b>, a <b>Timeline</b> or an <b>Outline</b>.<br />
   Share boards with your team, comment, attach files, and see every change live.<br />
+  Connect the AI assistant you already use, so it can read your boards and work on them.<br />
   Run it on your own computer or server — your data stays with you.
 </p>
 
@@ -36,16 +37,27 @@
 - **Log time:** type a card's name and the time it took ("1:30 review"); the cards you worked on that day come first.
   My week shows your time on every board, a card per row and a day per column. On a board linked to a plan, logged
   time shows next to each person's planned man-days.
+- **Write things down properly:** a card's description is formatted text (headings, checklists, tables, code) with
+  a "/" menu, a full-page view for long ones, and a draft kept in your browser until it's saved.
 - **Comments and files:** discuss each card, @mention people, attach files and screenshots, and point to a file with `#`.
+- **Dates and reminders:** type "fri 2pm" for a due date, set reminders at a time or before it's due, and get them
+  in the app, by email and as desktop notifications, with a morning summary of what's due.
+- **Find and tidy:** search and filters on every view, presets a board's people share, a search across all your
+  boards, and an archive for finished cards (one at a time, or a done list's older cards in one go).
 - **In your calendar:** due dates and reminders show up in Google Calendar (connected once, updated within seconds),
   or in Apple Calendar, Outlook and others through a private calendar link.
-- **Connect it:** an API with personal tokens, webhooks for each board, and an MCP endpoint so AI assistants like
-  Claude can find, plan and update tasks for you.
+- **Work with your AI assistant:** connect Claude, ChatGPT or your own agent by signing in once (or with a token),
+  choose whether it may only read or also make changes, and ask it what needs your attention, to turn notes into
+  tasks, or to work through a list while you approve what's finished. It acts as you, on the boards you can open.
+- **Connect other things:** an API with personal tokens and webhooks for each board.
 - **Your own server, your own data.** Files stay on your server, or in your own Cloudflare R2 / Amazon S3 bucket.
 
 | Timeline | Outline | A card |
 |---|---|---|
 | ![Timeline](docs/images/timeline.png) | ![Outline](docs/images/outline.png) | ![A card](docs/images/card.png) |
+
+**New to it?** The [guides](guides/) explain each of these for the people using Kanbanto, with pictures: your first
+board, sharing, workspaces, assistants, time and planning.
 
 ## Run it on your computer
 
@@ -139,13 +151,16 @@ shows it. Bringing a copy back: see [Restore](docs/self-hosting.md#restore).
 
 Kanbanto works without them. Set them up any time in **Platform console**:
 
-- **Email** — for password resets, email invites and a daily summary of @mentions. Use your organisation's mail
+- **Email** — for password resets, email invites, reminders, and a morning summary of what's due and who
+  mentioned you. Use your organisation's mail
   server or any email service that offers SMTP, or a free [Resend](https://resend.com) account with a domain name.
   [How to set up email](docs/email.md)
 - **File storage** — files are kept on your computer by default. You can use Cloudflare R2 or Amazon S3 instead.
   [How to set up storage](docs/self-hosting.md#file-storage)
 - **Calendars** — let people see their cards' due dates and reminders in Google Calendar or any calendar app.
   [How to set up calendars](docs/calendar.md)
+- **AI assistants and other apps** — connecting an assistant, API tokens and webhooks are off until you turn them
+  on, under Integrations. [How they work](docs/api.md)
 
 Something not working? See [Troubleshooting](docs/troubleshooting.md).
 
@@ -156,15 +171,16 @@ covered step by step in the **[Self-hosting guide](docs/self-hosting.md)**.
 
 | Guide | What's in it |
 |---|---|
+| [Guides](guides/) | How to use Kanbanto, for the people using it: a page for each thing you'd want to do, with pictures |
 | [Self-hosting](docs/self-hosting.md) | Servers, HTTPS, first admin, file storage, backups, upgrades, security checklist |
 | [Email](docs/email.md) | Sending email through your mail server (SMTP) or Resend |
 | [Calendar](docs/calendar.md) | Cards in Google Calendar (making the Google app) and in other calendar apps (calendar links) |
 | [Configuration](docs/configuration.md) | Every setting: `.env` variables, the Platform console, server commands |
-| [API, webhooks and AI](docs/api.md) | API tokens, commands, webhooks and checking their signatures, connecting AI assistants (MCP) |
+| [API, webhooks and AI](docs/api.md) | API tokens, commands, webhooks (answering the address check, checking signatures), connecting AI assistants (MCP) |
 | [Troubleshooting](docs/troubleshooting.md) | Problems and fixes, by symptom |
 | [Architecture](docs/architecture.md) | How Kanbanto works inside (for developers and curious admins) |
-| [Contributing](CONTRIBUTING.md) | Running it for development, tests, conventions |
-| [Security](SECURITY.md) | How to report a vulnerability, and how Kanbanto protects data |
+| [Contributing](CONTRIBUTING.md) | Issues are welcome; pull requests are by invitation. Running it for development, tests, conventions |
+| [Security](SECURITY.md) | How to report a vulnerability, and how Kanbanto protects data (reviewed before the first public release) |
 
 ## License
 

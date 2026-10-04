@@ -138,7 +138,7 @@ export const EMAIL_KIND_LABELS = {
   verify: 'Confirm your email',
   reset: 'Reset password',
   invite: 'Board invite',
-  digest: 'Daily mentions',
+  digest: 'Morning summary',
   test: 'Test email',
   notice: 'Account notice',
 } as const

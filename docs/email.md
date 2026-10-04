@@ -4,8 +4,8 @@ Setting up email for Kanbanto: through your organisation's mail server or any em
 [Resend](https://resend.com). This is part of [Self-hosting](self-hosting.md); every setting is also listed in
 [Configuration](configuration.md).
 
-Optional, but it enables: confirming new accounts' email addresses, **forgot password**, **invites by email**, and a
-**daily summary of @mentions**. Without it, people share boards with links and codes, and an admin hands out
+Optional, but it enables: confirming new accounts' email addresses, **forgot password**, **invites by email**, **reminders by email**, and
+a **morning summary** of what's due and who mentioned you. Without it, people share boards with links and codes, and an admin hands out
 password reset links.
 
 Kanbanto sends email in one of two ways (**Platform console → Email → Sending**):
@@ -74,8 +74,8 @@ their domain and don't count against the site's limits.
 - **How emails look:** product name, button colour and footer (a postal address in the footer helps with spam
   filters). **Preview** shows each email and can send it to you.
 - **A DMARC record** in your DNS is recommended, e.g. `_dmarc` TXT `v=DMARC1; p=none; rua=mailto:you@example.com`.
-- **New accounts confirm their address:** after signing up, people get a link by email, which confirms it and signs
-  them in. Signing up with an address that already has an account gets the same answer, and the address's owner
+- **New accounts confirm their address:** after signing up, people get a link by email; it asks for the
+  password they chose, then confirms the address and signs them in. Signing up with an address that already has an account gets the same answer, and the address's owner
   gets a note instead, so sign-up can't be used to find out who has an account.
 - **Accounts created before email was set up** are asked to confirm their address the next time they open Kanbanto.
   The console shows how many there are. If you know someone's address can't receive email, confirm it for them in
