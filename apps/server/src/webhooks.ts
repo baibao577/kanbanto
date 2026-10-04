@@ -67,6 +67,43 @@ export class Webhooks {
   private log: FastifyBaseLogger | null = null
 
   private readonly db: Db
+  /** How the address check is sent (replaced in tests). */
+  ask: (url: string, body: string) => Promise<{ status: number; text: string }> = async (url, body) => {
+    const res = await fetch(url, {
+      method: 'POST',
+      body,
+      headers: { 'content-type': 'application/json', 'user-agent': 'Kanbanto-Webhooks', 'x-kanbanto-event': 'verify' },
+      redirect: 'manual',
+      dispatcher: publicOnly,
+      signal: AbortSignal.timeout(TIMEOUT_MS),
+    })
+    return { status: res.status, text: (await readStart(res)) ?? '' }
+  }
+
+  /**
+   * Checks that an address means to receive this board's events, before it's saved: it's sent a one-time code
+   * (`{ "event": "verify", "challenge": "…" }`) and must answer 2xx with the code in its reply. So a webhook can't
+   * be pointed at somebody else's server. Where a platform admin allows any address (internal tools, board owners
+   * they trust), it isn't asked.
+   */
+  async confirmAddress(url: string, mode: WebhookMode) {
+    if (mode !== 'public') return
+    const challenge = randomBytes(18).toString('base64url')
+    let answer: { status: number; text: string }
+    try {
+      answer = await this.ask(url, JSON.stringify({ event: 'verify', challenge }))
+    } catch {
+      throw new HttpError(
+        400,
+        'That address didn’t answer. It has to be reachable, and reply to the check Kanbanto sends (see the API docs, “Webhooks”).',
+      )
+    }
+    if (answer.status < 200 || answer.status >= 300 || !answer.text.includes(challenge))
+      throw new HttpError(
+        400,
+        'That address didn’t confirm it wants these: it has to answer the check with the code it was sent (see the API docs, “Webhooks”).',
+      )
+  }
 
   constructor(db: Db) {
     this.db = db
@@ -126,11 +163,23 @@ export class Webhooks {
         .innerJoin(webhooks, eq(webhooks.id, webhookDeliveries.webhookId))
         .where(and(eq(webhookDeliveries.status, 'pending'), lte(webhookDeliveries.nextAttemptAt, new Date())))
         .orderBy(asc(webhookDeliveries.createdAt))
-        .limit(20)
+        .limit(200)
       if (!due.length) return 0
       const mode = (await loadSettings(this.db)).webhooks
-      for (const { d, h } of due) await this.deliver(d, h, mode)
-      return due.length
+      // A few per webhook each round, sent side by side: one board's slow or silent address holds back only its
+      // own deliveries, never everyone's.
+      const perHook = new Map<string, typeof due>()
+      for (const row of due) {
+        const mine = perHook.get(row.h.id) ?? []
+        if (mine.length < 3 && perHook.size <= 20) perHook.set(row.h.id, [...mine, row])
+      }
+      // (One webhook's own deliveries still go in order.)
+      await Promise.all(
+        [...perHook.values()].map(async (rows) => {
+          for (const { d, h } of rows) await this.deliver(d, h, mode)
+        }),
+      )
+      return [...perHook.values()].reduce((n, rows) => n + rows.length, 0)
     } catch (e) {
       this.log?.error({ err: e instanceof Error ? e.message : e }, 'webhook deliveries')
       return 0
@@ -222,10 +271,23 @@ export class Webhooks {
 
 /** The start of a reply (up to 2 KB of text), for the delivery log. */
 async function readStart(res: Response): Promise<string | null> {
+  // Only that much is read: the rest of a long (or endless) reply is dropped, not held in memory.
+  const reader = res.body?.getReader()
+  if (!reader) return null
+  const parts: Uint8Array[] = []
+  let size = 0
   try {
-    const text = await res.text()
-    return text ? text.slice(0, 2048) : null
+    while (size < 4096) {
+      const { done, value } = await reader.read()
+      if (done) break
+      parts.push(value)
+      size += value.byteLength
+    }
   } catch {
-    return null
+    // A reply cut short still shows what arrived.
+  } finally {
+    await reader.cancel().catch(() => {})
   }
+  const text = new TextDecoder().decode(Buffer.concat(parts).subarray(0, 4096))
+  return text ? text.slice(0, 2048) : null
 }

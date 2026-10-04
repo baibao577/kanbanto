@@ -172,7 +172,30 @@ export function repairTasks(tasks: TaskMap, columns: StatusColumn[], members: Me
 /** Board data from a loaded or imported source, with references repaired and lists in order. */
 export function repairData(data: BoardData): BoardData {
   const columns = [...data.columns].sort((a, b) => comparePositions(a.position, b.position))
-  return { ...data, columns, tasks: repairTasks(data.tasks, columns, data.members, data.labels) }
+  const tasks = unloop(repairTasks(data.tasks, columns, data.members, data.labels))
+  return data.archived ? { ...data, columns, tasks, archived: unloop(data.archived, tasks) } : { ...data, columns, tasks }
+}
+
+/**
+ * Parent links that go round in a loop (a damaged or hand-made file) are cut: the task that closes the loop goes
+ * to the top level. `others` are tasks the links may also lead to (the live ones, for archived tasks).
+ */
+function unloop(tasks: TaskMap, others: TaskMap = {}): TaskMap {
+  let out = tasks
+  const parentOf = (id: string) => (out[id] ?? others[id])?.parentId ?? null
+  for (const t of Object.values(tasks)) {
+    const seen = new Set([t.id])
+    for (let at = out[t.id].parentId; at; at = parentOf(at)) {
+      if (!seen.has(at)) {
+        seen.add(at)
+        continue
+      }
+      if (out === tasks) out = { ...tasks }
+      out[t.id] = { ...out[t.id], parentId: null }
+      break
+    }
+  }
+  return out
 }
 
 /**

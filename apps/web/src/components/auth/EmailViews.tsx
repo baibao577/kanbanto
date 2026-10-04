@@ -107,26 +107,79 @@ export function SentLinkView({ email }: { email: string }) {
   )
 }
 
-/** The link from the "confirm your email" message: confirms the address and signs you in. */
+/**
+ * The link from the "confirm your email" message: confirms the address. In the browser that's signed in to the
+ * account that's all; anywhere else it asks for the account's password first, and then signs in here too.
+ */
 export function VerifyView({ token }: { token: string }) {
   const { user, setUser } = useAuth()
-  const [state, setState] = useState<'working' | 'done' | string>('working')
+  const [state, setState] = useState<'working' | 'password' | 'done' | string>('working')
+  const [password, setPassword] = useState('')
+  const [wrong, setWrong] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
   const once = useRef(false)
+
+  const confirm = (pw?: string) =>
+    api<{ user: PublicUser | null; needsPassword?: boolean }>('POST', '/auth/verify', { token, ...(pw !== undefined && { password: pw }) })
 
   useEffect(() => {
     // Links are single-use: make sure a re-render (or StrictMode) doesn't spend it twice.
     if (once.current) return
     once.current = true
-    api<{ user: PublicUser | null }>('POST', '/auth/verify', { token }).then(
+    confirm().then(
       (r) => {
+        if (r.needsPassword) return setState('password')
         if (r.user) setUser(r.user)
         setState('done')
       },
       (e) => setState(errorMessage(e)),
     )
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token, setUser])
 
   if (state === 'working') return null
+  if (state === 'password')
+    return (
+      <AuthLayout title="Confirm your email" subtitle="Enter the password you chose when you signed up, to confirm it’s your account.">
+        <form
+          className="space-y-3"
+          onSubmit={(e) => {
+            e.preventDefault()
+            setBusy(true)
+            setWrong(null)
+            confirm(password)
+              .then((r) => {
+                if (r.user) setUser(r.user)
+                setState('done')
+              })
+              .catch((err) => setWrong(errorMessage(err)))
+              .finally(() => setBusy(false))
+          }}
+        >
+          <div className="space-y-1.5">
+            <Label htmlFor="verify-password">Password</Label>
+            <Input
+              id="verify-password"
+              type="password"
+              autoComplete="current-password"
+              autoFocus
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+            />
+          </div>
+          {wrong && <p className="text-sm text-destructive">{wrong}</p>}
+          <Button type="submit" className="w-full" disabled={busy || !password}>
+            Confirm
+          </Button>
+        </form>
+        <p className="mt-4 text-center text-sm text-muted-foreground">
+          Didn’t sign up yourself?{' '}
+          <a href={hrefFor({ page: 'forgot' })} className="font-medium text-primary hover:underline">
+            Choose your own password
+          </a>
+        </p>
+      </AuthLayout>
+    )
   if (state === 'done')
     return (
       <AuthLayout title="Email confirmed" subtitle="Thanks! Your account is ready.">

@@ -271,7 +271,17 @@ export async function storagePlaces(db: Db | Tx, owner: string | null): Promise<
 /** The files in one of `storagePlaces`: 'disk' (the site's), 'site' (a person's files in the site's storage), or a bucket's id. */
 export function placeFiles(owner: string | null, placeId: string) {
   if (placeId === 'disk') return and(eq(attachments.backend, 'disk'), eq(attachments.ownStorage, false))
-  if (placeId === 'site') return and(eq(attachments.ownerId, owner ?? ''), isNull(attachments.workspaceId), eq(attachments.ownStorage, false))
+  // (Someone's files on the site's storage: those of boards they still own. Uploaded while they owned a board they
+  // have since left, a file stays with the board.)
+  if (placeId === 'site')
+    return and(
+      eq(attachments.ownerId, owner ?? ''),
+      isNull(attachments.workspaceId),
+      eq(attachments.ownStorage, false),
+      owner
+        ? sql`exists (select 1 from ${boardMembers} m where m.board_id = ${attachments.boardId} and m.user_id = ${owner} and m.role = 'owner')`
+        : undefined,
+    )
   return and(eq(attachments.backend, 's3'), eq(attachments.backendId, placeId), eq(attachments.ownStorage, owner !== null))
 }
 

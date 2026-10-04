@@ -1,7 +1,7 @@
 import type { BoardBackground } from '@kanbanto/model/colors'
 import { newId } from '@kanbanto/model/ids'
 import { emptyBoard, exampleData } from '@kanbanto/model/sample'
-import type { BoardData, Meta } from '@kanbanto/model/types'
+import type { BoardData, Meta, Task } from '@kanbanto/model/types'
 import type { Db, Tx } from '../db'
 import { boardMembers, boards, type Visibility } from '../db/schema'
 import { creations } from './records'
@@ -74,12 +74,19 @@ export async function createBoard(
  */
 export async function importBoard(db: Db, ownerId: string, data: BoardData): Promise<string> {
   const id = newId()
-  const tasks = Object.fromEntries(
-    Object.values(data.tasks).map((t) => {
-      const { assigneeId, ...rest } = t
-      return [t.id, assigneeId === ownerId ? t : rest]
-    }),
+  // (The same goes for who set a reminder, which is who it goes to on an unassigned card: the importer now.)
+  const mine = (t: Task): Task => {
+    const { assigneeId, ...rest } = t
+    const kept = assigneeId === ownerId ? t : rest
+    return kept.reminders?.some((r) => r.by && r.by !== ownerId)
+      ? { ...kept, reminders: kept.reminders.map((r) => (r.by ? { ...r, by: ownerId } : r)) }
+      : kept
+  }
+  const all = (tasks: Record<string, Task>) => Object.fromEntries(Object.values(tasks).map((t) => [t.id, mine(t)]))
+  const tasks = all(data.tasks)
+  const archived = data.archived && all(data.archived)
+  await db.transaction((tx) =>
+    insertBoard(tx, { ...data, board: { ...data.board, id }, members: [], tasks, ...(archived ? { archived } : {}) }, ownerId),
   )
-  await db.transaction((tx) => insertBoard(tx, { ...data, board: { ...data.board, id }, members: [], tasks }, ownerId))
   return id
 }

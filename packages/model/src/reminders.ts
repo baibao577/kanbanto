@@ -6,10 +6,12 @@ export const DUE_DAY_HOUR = 9
 
 /** The moment a reminder fires (null: it can't yet, e.g. "before it's due" on a task with no due date). */
 export function fireTime(r: Reminder, task: Pick<Task, 'due'>): Date | null {
-  if (r.at) return new Date(r.at)
+  // (A stored time that isn't one, from an old file, never fires: null, not an Invalid Date.)
+  const real = (d: Date) => (Number.isNaN(d.getTime()) ? null : d)
+  if (r.at) return real(new Date(r.at))
   if (r.beforeDue === undefined || !task.due) return null
   const due = hasTime(task.due) ? new Date(task.due) : zoned(task.due, DUE_DAY_HOUR, r.tz)
-  return new Date(due.getTime() - r.beforeDue * 60_000)
+  return real(new Date(due.getTime() - r.beforeDue * 60_000))
 }
 
 /** A task's reminders that still have a moment, soonest first. */

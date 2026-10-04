@@ -8,6 +8,9 @@ import { exampleData } from './sample'
 describe('when reminders fire', () => {
   it('at a moment, or counted back from the due date (a whole day counts from 9:00 in the setter’s zone)', () => {
     expect(fireTime({ id: 'r', at: '2026-10-05T06:00:00Z' }, {})?.toISOString()).toBe('2026-10-05T06:00:00.000Z')
+    // A stored time or due date that isn't one (an old file) never fires, instead of being an Invalid Date.
+    expect(fireTime({ id: 'r', at: 'soon' }, {})).toBeNull()
+    expect(fireTime({ id: 'r', beforeDue: 0 }, { due: 'not-a-date' })).toBeNull()
     expect(fireTime({ id: 'r', beforeDue: 60 }, { due: '2026-10-05T10:00:00Z' })?.toISOString()).toBe('2026-10-05T09:00:00.000Z')
     // 9:00 in Bangkok (UTC+7) is 02:00 UTC; a day before is the 4th.
     expect(fireTime({ id: 'r', beforeDue: 24 * 60, tz: 'Asia/Bangkok' }, { due: '2026-10-05' })?.toISOString()).toBe('2026-10-04T02:00:00.000Z')

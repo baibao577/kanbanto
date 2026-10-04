@@ -25,17 +25,26 @@ Fixes go into the latest version. If you run Kanbanto yourself, keep it up to da
 - **Email links** (confirm email, reset password) are single-use, expire, and only their hash is stored. Links in emails
   are built from the configured `APP_URL`, never from request headers.
 - **Signing up doesn't reveal who has an account** once the site sends email: the answer is the same either way, and
-  the address's owner is told by email. (Without email, sign-up says when an address is taken.)
+  the address's owner is told by email, and an invite the address can't use is refused before that is looked at.
+  (Without email, sign-up says when an address is taken.)
 - **An address counts as confirmed** only when proved by email: a confirmation link, a password reset link, or an
-  invite emailed to it (not one whose link the inviter was shown). Email invites go straight to an account only if its
-  address is confirmed.
+  invite emailed to it (not one whose link the inviter was shown, or that went out through the inviter's own email
+  service). Email invites go straight to an account only if its address is confirmed.
+- **A confirmation link works with the account's password**, or in the browser already signed in to it: reading the
+  inbox isn't enough, so nobody can make an account for your address and have you confirm it for them. If someone
+  did, "Forgot password" makes the account yours: your password, everyone else signed out.
 
 **Boards**
 
 - **Every change to a board** is checked on the server against the person's role, with the same rules as the app, and
-  records put back by undo must be ones a command could have made.
+  records put back by undo must be ones a command could have made. Imported files pass the same checks, whatever
+  their format.
 - **Cross-site requests** are refused: changes must come from a page on the same site.
-- **Who's on a board** is visible to its people only; only owners see their email addresses.
+- **Who's on a board** (names, never email addresses) is visible to its people, and to visitors when an owner turns
+  on "Anyone with the link can view": that's the owner's choice. Only owners see email addresses. Visitors with the
+  link never see logged time.
+- **Losing access takes effect everywhere**: live connections close, and notifications show nothing from a board you
+  can no longer open.
 - **Workspaces** only add people to boards shared with the workspace. Their admins manage who's in it, but can't
   open its other boards (private ones stay private) until someone leaves and they take over that person's boards.
   Taking a board out of a workspace needs the workspace's admin, so nobody walks off with a team's board.
@@ -49,7 +58,8 @@ Fixes go into the latest version. If you run Kanbanto yourself, keep it up to da
   public development key.
 - **Only platform admins can point the server at other systems.** People's own email settings are Resend keys only,
   and their own storage must be at a public internet address: every connection is checked after the name is looked
-  up, and redirects aren't followed, so nobody can make the server reach its private network. The site's own mail
+  up, and redirects aren't followed, so nobody can make the server reach its private network. The same goes for the
+  address a browser gives for desktop notifications. The site's own mail
   server and bucket, set by platform admins, may be anywhere (a company relay, a MinIO on your network) — so keep
   platform admin rights to the people who run the server.
 - **Sent emails** are kept (for the sending limits) without their contents, and failed database queries are logged
@@ -66,7 +76,10 @@ Fixes go into the latest version. If you run Kanbanto yourself, keep it up to da
 
 - **API tokens** are off until a platform admin turns them on. Only their SHA-256 is stored; each acts as its person,
   with their access, and can't reach account settings, other tokens or the Platform console. Read-only tokens can't
-  change anything. Deleting a token, or turning tokens off, stops it at once.
+  change anything. Deleting a token, or turning tokens off, stops it at once. Tokens can't open a board's live
+  connection.
+- **A webhook's address has to agree**: before one is saved it's sent a one-time code and must answer with it, so a
+  webhook can't be pointed at somebody else's server.
 - **Webhooks** are off until a platform admin allows them. By default they may only go to public `https://` addresses,
   checked after every name lookup, with redirects not followed, so board owners can't make the server reach its
   private network. Admins can allow any address for internal tools; only do so if you trust every board owner.

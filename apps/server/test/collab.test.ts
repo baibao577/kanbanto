@@ -190,12 +190,27 @@ describe('attachments', () => {
     expect(second.status).toBe(413)
     expect(second.body.error).toMatch(/owner is out of file space/)
     expect((await upload(ann, id, 'A3', 'b.bin', Buffer.alloc(600 * 1024))).body.error).toMatch(/your 1 MB of file space.*connect your own storage/)
-    // The trash doesn't count, and a trashed file can be restored.
+    // The trash doesn't count, and a trashed file can be restored: when there's room for it again.
     await bob.ok('DELETE', `/api/boards/${id}/attachments/${first.body.attachment.id}`)
     expect((await ann.ok('GET', '/api/account/storage')).used).toBe(0)
-    expect((await upload(bob, id, 'A3', 'b.bin', Buffer.alloc(600 * 1024))).status).toBe(200)
+    const other = await upload(bob, id, 'A3', 'b.bin', Buffer.alloc(600 * 1024))
+    expect(other.status).toBe(200)
+    const back = await bob.request('POST', `/api/boards/${id}/attachments/${first.body.attachment.id}/restore`)
+    expect(back).toMatchObject({ status: 413, body: { error: expect.stringMatching(/no room to bring it back/) } })
+    await bob.ok('DELETE', `/api/boards/${id}/attachments/${other.body.attachment.id}`)
     await bob.ok('POST', `/api/boards/${id}/attachments/${first.body.attachment.id}/restore`)
-    expect((await bob.ok('GET', `/api/boards/${id}/tasks/A3/attachments`)).attachments).toHaveLength(2)
+    expect((await bob.ok('GET', `/api/boards/${id}/tasks/A3/attachments`)).attachments).toHaveLength(1)
+    // A name that is only dots is stored as a file, not as a step in the path.
+    const dots = await upload(bob, id, 'A3', '..', Buffer.from('x'))
+    expect(dots.status === 200 || dots.status === 413).toBe(true)
+    // The storage settings take JSON only: bytes are refused before they're read, signed in or not.
+    const raw = await t.app.inject({
+      method: 'PUT',
+      url: '/api/account/storage/bucket',
+      headers: { 'content-type': 'application/octet-stream' },
+      payload: Buffer.alloc(10),
+    })
+    expect(raw.statusCode).toBe(415)
   })
 
   it('a board owner’s own bucket: files go there with no limit, and open through a signed link', async () => {

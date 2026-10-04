@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import type { PublicUser } from '@kanbanto/model/api'
 import { api, errorMessage } from '@/api/client'
+import { currentSubscription } from '@/lib/push'
 import type { AccountSection } from '@/app/router'
 import { useAuth } from '@/app/use-auth'
 import { PageTitle, SettingsCard } from '@/components/settings/SettingsCard'
@@ -97,7 +98,9 @@ function Password() {
           onSubmit={async (e) => {
             e.preventDefault()
             try {
-              await api('POST', '/auth/password', { current, next })
+              // (This browser keeps its desktop notifications; the others are signed out and lose theirs.)
+              const push = await currentSubscription().catch(() => null)
+              await api('POST', '/auth/password', { current, next, ...(push && { pushEndpoint: push.endpoint }) })
               setCurrent('')
               setNext('')
               toast('Password changed. You’ve been signed out on your other devices.')

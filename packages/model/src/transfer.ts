@@ -26,7 +26,11 @@ export function readBoardFile(raw: unknown, boardId: string): BoardData {
   const legacy = Array.isArray(raw) ? { tasks: raw } : raw
   const up = upgradeSave(legacy, { now: new Date().toISOString(), newId })
   if (!up) throw new Error('That file isn’t a board export.')
-  return { ...up.data, board: { ...up.data.board, id: boardId } }
+  // (Converted or not, what's stored passes the same checks: sizes, dates, ids.)
+  const checked = BoardDataSchema.safeParse(up.data)
+  if (!checked.success) throw new Error('The file looks damaged: some of its data is missing or malformed.')
+  const data = repairData(checked.data as BoardData)
+  return { ...data, board: { ...data.board, id: boardId } }
 }
 
 /** Same as `readBoardFile`, from the file's text. */

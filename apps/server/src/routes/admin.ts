@@ -5,7 +5,8 @@ import { z } from 'zod'
 import { createEmailToken } from '../auth/email-tokens'
 import { endAllSessions } from '../auth/sessions'
 import { decrypt, encrypt, encryptionReady } from '../crypto'
-import { boardMembers, calendarConnections, siteSettings, users } from '../db/schema'
+import { apiTokens, boardMembers, calendarConnections, calendarFeeds, oauthCodes, oauthGrants, siteSettings, users } from '../db/schema'
+import { endEmailTokens } from '../auth/email-tokens'
 import { HttpError, parse, siteUrl } from '../http'
 import { emails } from '../mail/templates'
 import { getSettings, requireUser } from './auth'
@@ -79,6 +80,14 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     if (!updated.length) throw new HttpError(404, 'That account doesn’t exist.')
     if (body.disabled) {
       await endAllSessions(app.db, id)
+      await app.push.forget(id, {})
+      // Everything else that acts as them goes too: links, API tokens, connected apps, the calendar link. Turned
+      // back on, the account starts without them.
+      await endEmailTokens(app.db, id)
+      await app.db.delete(apiTokens).where(eq(apiTokens.userId, id))
+      await app.db.delete(oauthGrants).where(eq(oauthGrants.userId, id))
+      await app.db.delete(oauthCodes).where(eq(oauthCodes.userId, id))
+      await app.db.delete(calendarFeeds).where(eq(calendarFeeds.userId, id))
       app.hub.signOut(id)
     }
     return { ok: true }

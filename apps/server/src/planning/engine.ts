@@ -3,6 +3,7 @@ import { executePlan, type PlanChange, type PlanCommand } from '@kanbanto/model/
 import { and, eq, inArray } from 'drizzle-orm'
 import type { Db } from '../db'
 import { boards, planningState, workspaceMembers } from '../db/schema'
+import { accessOf } from '../boards/access'
 import { HttpError } from '../http'
 import { loadPlan, writePlanChanges } from './store'
 
@@ -59,10 +60,12 @@ export class PlanningEngine {
         ]
         if (linked.length) {
           const found = await tx
-            .select({ id: boards.id })
+            .select()
             .from(boards)
             .where(and(inArray(boards.id, linked), eq(boards.workspaceId, workspaceId)))
           if (found.length !== linked.length) throw new HttpError(422, 'That board isn’t in this workspace.')
+          // Linking shows the board's logged time in the plan, so it takes someone who can open the board.
+          for (const b of found) if (!(await accessOf(tx, b, userId))) throw new HttpError(422, 'That board isn’t in this workspace.')
         }
         await writePlanChanges(tx, workspaceId, r.changes, userId)
         const seq = row.seq + 1

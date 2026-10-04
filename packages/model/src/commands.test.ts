@@ -235,3 +235,44 @@ describe('schema', () => {
     expect(BoardDataSchema.safeParse(broken).success).toBe(false)
   })
 })
+
+describe('records that were never made by a command (a hand-made undo or file)', () => {
+  const task = (id: string, extra: object) => ({
+    ...Object.values(board().tasks)[0],
+    id,
+    title: id,
+    parentId: null,
+    blockedBy: [],
+    labels: [],
+    ...extra,
+  })
+
+  it('undo refuses an archived task whose parent links loop, and a loop already stored can’t hang a command', () => {
+    const start = board()
+    const self = task('loop', { parentId: 'loop', archivedAt: NOW })
+    expect(refusal(start, { type: 'records.restore', changes: [{ entity: 'task', id: 'loop', before: null, after: self }] })).toMatch(/own subtasks/)
+    const pair = [task('a1', { parentId: 'a2', archivedAt: NOW }), task('a2', { parentId: 'a1', archivedAt: NOW })]
+    expect(
+      refusal(start, { type: 'records.restore', changes: pair.map((after) => ({ entity: 'task' as const, id: after.id, before: null, after })) }),
+    ).toMatch(/own subtasks/)
+    // Already in the data (from before the check): restoring or deleting it ends, with an answer.
+    const stored: BoardData = { ...start, archived: { loop: self, a1: pair[0], a2: pair[1] } }
+    for (const id of ['loop', 'a1']) {
+      expect(execute(stored, { type: 'task.delete', id }, ctx(stored))).toBeTruthy()
+      expect(execute(stored, { type: 'task.restore', id }, ctx(stored))).toBeTruthy()
+    }
+  })
+
+  it('a reminder’s time must be a moment, and one that isn’t never fires', () => {
+    const bad = { type: 'task.update', id: 'x', fields: { reminders: [{ id: 'r', at: 'soon' }] } }
+    expect(CommandSchema.safeParse(bad).success).toBe(false)
+    expect(CommandSchema.safeParse({ ...bad, fields: { reminders: [{ id: 'r', at: '2026-10-31T14:30:00Z' }] } }).success).toBe(true)
+  })
+
+  it('undo drops “set by” on a reminder when that person isn’t on the board', () => {
+    const start = board()
+    const t = task('rem', { reminders: [{ id: 'r', at: NOW, by: 'someone-else' }] })
+    const { data } = exec(start, { type: 'records.restore', changes: [{ entity: 'task', id: 'rem', before: null, after: t }] })
+    expect(data.tasks.rem.reminders).toEqual([{ id: 'r', at: NOW }])
+  })
+})

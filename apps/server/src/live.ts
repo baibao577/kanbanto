@@ -8,6 +8,8 @@ interface Listener {
   userId: string | null
   /** The session it was opened with, so ending sessions can close it. */
   session: string | null
+  /** On the board, not only looking through its public link. */
+  member: boolean
 }
 
 /**
@@ -17,10 +19,11 @@ interface Listener {
 export class LiveHub {
   private boards = new Map<string, Set<Listener>>()
 
-  join(boardId: string, socket: WebSocket, userId: string | null, session: string | null = null) {
+  /** `member`: on the board (or in its workspace), not only looking through its public link. */
+  join(boardId: string, socket: WebSocket, userId: string | null, session: string | null = null, member = !!userId) {
     const set = this.boards.get(boardId) ?? new Set()
     this.boards.set(boardId, set)
-    const listener = { socket, userId, session: userId ? session : null }
+    const listener = { socket, userId, session: userId ? session : null, member }
     set.add(listener)
     return () => {
       set.delete(listener)
@@ -32,15 +35,26 @@ export class LiveHub {
     if (socket.readyState === socket.OPEN) socket.send(JSON.stringify(message))
   }
 
-  broadcast(boardId: string, message: LiveMessage) {
-    for (const l of this.boards.get(boardId) ?? []) this.send(l.socket, message)
+  /** `membersOnly`: what a visitor with the public link isn't shown (logged time). */
+  broadcast(boardId: string, message: LiveMessage, membersOnly = false) {
+    const listeners = this.boards.get(boardId)
+    if (!listeners?.size) return
+    // (Written out once, however many are listening.)
+    const text = JSON.stringify(message)
+    for (const l of listeners) if ((!membersOnly || l.member) && l.socket.readyState === l.socket.OPEN) l.socket.send(text)
   }
 
-  /** After sharing changes: disconnect people who lost access, tell everyone else to reload. */
-  async recheck(boardId: string, canView: (userId: string | null) => Promise<boolean>) {
+  /**
+   * After sharing changes: disconnect people who lost access, tell everyone else to reload. `how` says how each
+   * listener can see the board now: someone taken off a board with a public link stays, as a visitor.
+   */
+  async recheck(boardId: string, how: (userId: string | null) => Promise<'member' | 'public' | null>) {
     for (const l of [...(this.boards.get(boardId) ?? [])]) {
-      if (await canView(l.userId)) this.send(l.socket, { type: 'reload' })
-      else {
+      const now = await how(l.userId)
+      if (now) {
+        l.member = now === 'member'
+        this.send(l.socket, { type: 'reload' })
+      } else {
         this.send(l.socket, { type: 'access-lost' })
         l.socket.close(4403, 'No access')
       }

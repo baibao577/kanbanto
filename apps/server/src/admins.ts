@@ -2,7 +2,7 @@ import { eq } from 'drizzle-orm'
 import { hashPassword, temporaryPassword } from './auth/password'
 import { endAllSessions } from './auth/sessions'
 import type { Db } from './db'
-import { users } from './db/schema'
+import { pushDevices, users } from './db/schema'
 
 /** Makes an account a platform admin (or not). Returns false if there's no account with that email. */
 export async function setPlatformAdmin(db: Db, email: string, isAdmin: boolean): Promise<boolean> {
@@ -28,5 +28,7 @@ export async function resetPassword(db: Db, email: string): Promise<string | nul
     .returning({ id: users.id })
   if (!u) return null
   await endAllSessions(db, u.id)
+  // (Browsers that were getting its desktop notifications stop too.)
+  await db.delete(pushDevices).where(eq(pushDevices.userId, u.id))
   return password
 }

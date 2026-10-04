@@ -1,9 +1,11 @@
 import { newId } from '@kanbanto/model/ids'
-import { eq } from 'drizzle-orm'
+import { Agent } from 'node:https'
+import { and, eq, ne } from 'drizzle-orm'
 import webpush from 'web-push'
 import { decrypt, encrypt } from './crypto'
 import type { Db } from './db'
 import { pushDevices, siteSettings, users } from './db/schema'
+import { assertPublicEndpoint, publicLookup } from './storage/egress'
 
 export interface PushMessage {
   title: string
@@ -21,8 +23,14 @@ export type PushTransport = (
   opts: { ttl: number; vapid: { subject: string; publicKey: string; privateKey: string } },
 ) => Promise<void>
 
+/**
+ * The address comes from the person's browser, so it's treated like any address someone gives the server: public
+ * internet only (checked again when its name is looked up), and not waited on for long.
+ */
+const publicAgent = new Agent({ lookup: publicLookup as never })
 const webPushTransport: PushTransport = async (sub, payload, { ttl, vapid }) => {
-  await webpush.sendNotification(sub, payload, { TTL: ttl, vapidDetails: vapid })
+  assertPublicEndpoint(sub.endpoint)
+  await webpush.sendNotification(sub, payload, { TTL: ttl, vapidDetails: vapid, agent: publicAgent, timeout: 10_000 })
 }
 
 /**
@@ -65,6 +73,9 @@ export class Push {
   async toUser(userId: string, message: PushMessage, ttl = 3600): Promise<number> {
     const devices = await this.db.select().from(pushDevices).where(eq(pushDevices.userId, userId))
     if (!devices.length) return 0
+    // An account that's been turned off gets nothing.
+    const [u] = await this.db.select({ off: users.disabledAt }).from(users).where(eq(users.id, userId))
+    if (!u || u.off) return 0
     const { publicKey, privateKey } = await this.pair()
     const site = this.site()
     const subject = site?.startsWith('https://') ? site : 'mailto:noreply@kanbanto.invalid'
@@ -93,6 +104,16 @@ export class Push {
       .insert(pushDevices)
       .values({ id: newId(), userId, endpoint: sub.endpoint, p256dh: sub.keys.p256dh, auth: sub.keys.auth, label })
       .onConflictDoUpdate({ target: pushDevices.endpoint, set: { userId, p256dh: sub.keys.p256dh, auth: sub.keys.auth, label } })
+  }
+
+  /**
+   * Forgets someone's browsers: the one signing out (`only`), or all of them when the account's sessions are ended
+   * (a new password, the account turned off), except the browser that stays signed in (`keep`).
+   */
+  async forget(userId: string, which: { only: string } | { keep?: string }) {
+    const mine = eq(pushDevices.userId, userId)
+    if ('only' in which) await this.db.delete(pushDevices).where(and(mine, eq(pushDevices.endpoint, which.only)))
+    else await this.db.delete(pushDevices).where(which.keep ? and(mine, ne(pushDevices.endpoint, which.keep)) : mine)
   }
 
   /** Whether someone wants pushes of a kind. */

@@ -378,8 +378,12 @@ function restore(data: BoardData, changes: Change[], now: string): Change[] {
   for (const [i, c] of out.entries()) {
     if (c.entity !== 'task' || !c.after) continue
     const t = c.after
-    // An archived task is inert: nothing to check until it's restored (task.restore tidies it then).
-    if (t.archivedAt) continue
+    // An archived task is inert: nothing to check until it's restored (task.restore tidies it then), except that
+    // its parent links, which are followed while it's archived, can't go round in a loop.
+    if (t.archivedAt) {
+      if (loops({ ...next.archived, ...next.tasks }, t.id)) reject('A task can’t go inside one of its own subtasks.')
+      continue
+    }
     if (t.parentId && !next.tasks[t.parentId]) reject('Its parent task no longer exists.')
     if (t.parentId && wouldCycle(next.tasks, t.id, t.parentId)) reject('A task can’t go inside one of its own subtasks.')
     if (!columns.has(t.status)) reject('Its list no longer exists.')
@@ -391,14 +395,25 @@ function restore(data: BoardData, changes: Change[], now: string): Change[] {
       blockedBy: t.blockedBy.filter((b) => next.tasks[b]),
     }
     if (!tidy.assigneeId) delete tidy.assigneeId
+    // A reminder goes to whoever set it when nobody is assigned: that can only be someone on the board.
+    if (t.reminders?.some((r) => r.by && !members.has(r.by)))
+      tidy.reminders = t.reminders.map((r) => {
+        if (!r.by || members.has(r.by)) return r
+        const { by: _gone, ...rest } = r
+        return rest
+      })
     out[i] = { ...c, after: tidy }
   }
+  // (Looked up once, not once per record taken away.)
+  let used: { parents: Set<string>; lists: Set<string> } | null = null
   for (const c of out) {
     if (c.after) continue
-    if (c.entity === 'task' && Object.values(next.tasks).some((t) => t.parentId === c.id))
-      reject('Its subtasks have changed since, so it can’t be undone.')
-    if (c.entity === 'column' && Object.values(next.tasks).some((t) => t.status === c.id))
-      reject('That list has cards in it now, so it can’t be undone.')
+    used ??= {
+      parents: new Set(Object.values(next.tasks).flatMap((t) => (t.parentId ? [t.parentId] : []))),
+      lists: new Set(Object.values(next.tasks).map((t) => t.status)),
+    }
+    if (c.entity === 'task' && used.parents.has(c.id)) reject('Its subtasks have changed since, so it can’t be undone.')
+    if (c.entity === 'column' && used.lists.has(c.id)) reject('That list has cards in it now, so it can’t be undone.')
   }
   return out
 }
@@ -470,14 +485,34 @@ export function doneBefore(idx: TaskIndex, status: string, before: number): stri
     .sort((a, b) => idx.doneAt.get(a)! - idx.doneAt.get(b)!)
 }
 
+/** Do the parent links from `id` come back round to it? */
+function loops(tasks: Record<string, Task | undefined>, id: string): boolean {
+  const seen = new Set<string>()
+  for (let at = tasks[id]?.parentId; at; at = tasks[at]?.parentId) {
+    if (at === id) return true
+    if (seen.has(at)) return false
+    seen.add(at)
+  }
+  return false
+}
+
 /** Everything under `id` in a set of tasks (by parent links; for archived tasks, which aren't indexed). */
 function subtree(tasks: Record<string, Task>, id: string): string[] {
   const kids = new Map<string, string[]>()
-  for (const t of Object.values(tasks)) if (t.parentId) kids.set(t.parentId, [...(kids.get(t.parentId) ?? []), t.id])
+  for (const t of Object.values(tasks)) {
+    if (!t.parentId) continue
+    const of = kids.get(t.parentId)
+    if (of) of.push(t.id)
+    else kids.set(t.parentId, [t.id])
+  }
   const out: string[] = []
+  // (Stored parent links are followed as they are, so a loop among them must not keep this going for ever.)
+  const seen = new Set([id])
   const stack = [...(kids.get(id) ?? [])]
   while (stack.length) {
     const c = stack.pop()!
+    if (seen.has(c)) continue
+    seen.add(c)
     out.push(c)
     stack.push(...(kids.get(c) ?? []))
   }

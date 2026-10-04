@@ -215,9 +215,13 @@ describe('confirming your email', () => {
     await new Person(t.app).ok('POST', '/api/auth/verify/resend', { email: 'bob@example.com' })
     await flushMail(t.app)
     expect(t.mail.sent.filter((e) => e.to === 'bob@example.com')).toHaveLength(1)
-    // The link confirms the address and signs in, once.
+    // The link confirms the address and signs in, once: with the account's password, since this browser isn't signed
+    // in to it (whoever clicks the link reads the inbox, but may not be who made the account).
     const token = linkToken(email?.text, 'verify')!
-    const r = await bob.ok('POST', '/api/auth/verify', { token })
+    expect(await bob.ok('POST', '/api/auth/verify', { token })).toMatchObject({ needsPassword: true, user: null })
+    expect((await bob.request('POST', '/api/auth/verify', { token, password: 'not it at all' })).status).toBe(400)
+    expect((await bob.request('GET', '/api/boards')).status).toBe(401)
+    const r = await bob.ok('POST', '/api/auth/verify', { token, password: 'correct horse' })
     expect(r.user).toMatchObject({ email: 'bob@example.com', emailVerified: true })
     expect((await new Person(t.app).request('POST', '/api/auth/verify', { token })).status).toBe(400)
     expect((await bob.request('GET', '/api/boards')).status).toBe(200)

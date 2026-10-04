@@ -159,7 +159,8 @@ async function announce(app: FastifyInstance, boardId: string, taskId: string) {
     .select({ n: sql<number>`coalesce(sum(${timeEntries.minutes}), 0)::int` })
     .from(timeEntries)
     .where(and(eq(timeEntries.boardId, boardId), eq(timeEntries.taskId, taskId)))
-  app.hub.broadcast(boardId, { type: 'time', taskId, total: r?.n ?? 0 })
+  // (Logged time isn't shown to visitors with the public link.)
+  app.hub.broadcast(boardId, { type: 'time', taskId, total: r?.n ?? 0 }, true)
 }
 
 /** An entry on a board you can see, and whether you may change it. */

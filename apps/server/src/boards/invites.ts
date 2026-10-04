@@ -100,6 +100,18 @@ export async function findAnyInvite(tx: Db | Tx, tokenOrCode: string): Promise<A
 export const provesEmail = (found: AnyInvite | null, email: string) =>
   !!found && found.invite.kind === 'email' && found.invite.email === email && !found.invite.linkShown
 
+/**
+ * Refuses an invite that `email` couldn't use, with the answer joining would give. Checked before anything that
+ * depends on whether the address has an account, so the answer doesn't tell.
+ */
+export function checkInviteFor(found: AnyInvite | null, email: string) {
+  if (!found) throw new HttpError(404, 'That invite doesn’t work any more. Ask for a new link or code.')
+  if (found.kind === 'board' && found.board.visibility === 'private')
+    throw new HttpError(403, 'This board is private right now, so it can’t be joined.')
+  if (found.invite.kind === 'email' && found.invite.email !== email)
+    throw new HttpError(403, `This invite was sent to ${found.invite.email}. Sign in with that email address to accept it.`)
+}
+
 /** Joins the board or workspace an invite is for. */
 export async function acceptInvite(tx: Tx, user: { id: string; email: string }, tokenOrCode: string): Promise<JoinResult> {
   const found = await findAnyInvite(tx, tokenOrCode)

@@ -2,10 +2,10 @@ import { newId } from '@kanbanto/model/ids'
 import { and, eq, gte, sql } from 'drizzle-orm'
 import type { FastifyInstance, FastifyPluginAsync, FastifyReply, FastifyRequest } from 'fastify'
 import { z } from 'zod'
-import { createEmailToken, lastEmailToken, useEmailToken } from '../auth/email-tokens'
+import { createEmailToken, endEmailTokens, lastEmailToken, peekEmailToken, useEmailToken } from '../auth/email-tokens'
 import { hashPassword, verifyPassword } from '../auth/password'
 import { createSession, endAllSessions, endSession, SESSION_COOKIE, type SessionUser } from '../auth/sessions'
-import { acceptInvite, findAnyInvite, provesEmail } from '../boards/invites'
+import { acceptInvite, checkInviteFor, findAnyInvite, provesEmail } from '../boards/invites'
 import { createBoard } from '../boards/service'
 import { requireAccess } from '../boards/access'
 import { emailOutbox, users } from '../db/schema'
@@ -33,7 +33,7 @@ const token = z.string().min(10).max(200)
 
 const SignUp = z.object({ name, email, password, invite: z.string().max(200).optional() })
 const SignIn = z.object({ email, password: z.string().min(1, 'Enter your password.').max(200) })
-const ChangePassword = z.object({ current: z.string().max(200), next: password })
+const ChangePassword = z.object({ current: z.string().max(200), next: password, pushEndpoint: z.string().max(2000).optional() })
 
 /** A time zone name the server can use (IANA, e.g. Asia/Bangkok). */
 const validZone = (tz: string | null) => {
@@ -152,6 +152,8 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
       // Signing up never makes anyone a platform admin: that's granted on the server (see src/cli.ts).
       const invite = body.invite ? await findAnyInvite(tx, body.invite) : null
       if (!(await getSettings(tx)).openSignup && !invite) throw new HttpError(403, 'Sign-up is closed. Ask a board owner for an invite link.')
+      // An invite that this address can't use is refused here, whether or not the address has an account.
+      if (body.invite) checkInviteFor(invite, body.email)
       const [taken] = await tx.select().from(users).where(eq(users.email, body.email))
       if (taken) {
         if (!app.mail.platformReady) throw new HttpError(409, 'There’s already an account with that email. Sign in instead.')
@@ -203,22 +205,27 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
   app.post('/signin', LIMIT, async (req, reply) => {
     const body = parse(SignIn, req.body)
     if (tooManyFailures(body.email)) throw new HttpError(429, 'Too many wrong passwords for this email. Wait 15 minutes, or reset your password.')
+    // Counted before the password is checked (and forgotten if it's right), so tries made all at once count too.
+    recordFailure(body.email)
     const [u] = await app.db.select().from(users).where(eq(users.email, body.email))
     // Same answer for an unknown email and a wrong password, so accounts can't be discovered.
     const ok = u ? await verifyPassword(body.password, u.passwordHash) : await verifyPassword(body.password, DUMMY_HASH)
-    if (!u || !ok) {
-      recordFailure(body.email)
-      throw new HttpError(401, 'Wrong email or password.')
-    }
+    if (!u || !ok) throw new HttpError(401, 'Wrong email or password.')
     failures.delete(body.email)
     if (u.disabledAt) throw new HttpError(403, 'This account has been turned off. Ask your admin.')
+    // (Checking a password takes a moment: if it was changed meanwhile, this sign-in is with the old one.)
+    const [still] = await app.db.select({ hash: users.passwordHash }).from(users).where(eq(users.id, u.id))
+    if (still?.hash !== u.passwordHash) throw new HttpError(401, 'Wrong email or password.')
     const session = await createSession(app.db, u.id)
     setCookie(reply, session.token, session.expiresAt)
     return { user: publicUser({ ...u, emailVerified: !!u.emailVerifiedAt }) }
   })
 
+  /** Signing out also stops this browser's desktop notifications (it says which browser it is). */
   app.post('/signout', async (req, reply) => {
     if (req.sessionToken) {
+      const { pushEndpoint } = parse(z.object({ pushEndpoint: z.string().max(2000).optional() }), req.body ?? {})
+      if (req.user && pushEndpoint) await app.push.forget(req.user.id, { only: pushEndpoint })
       await endSession(app.db, req.sessionToken)
       app.hub.endSession(req.sessionToken)
     }
@@ -261,8 +268,10 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
       .update(users)
       .set({ passwordHash: await hashPassword(body.next), updatedAt: new Date() })
       .where(eq(users.id, user.id))
-    // Other devices are signed out; this one stays signed in.
+    // Other devices are signed out (and stop getting desktop notifications); this one stays signed in.
     await endAllSessions(app.db, user.id, req.sessionToken ?? undefined)
+    await app.push.forget(user.id, { keep: body.pushEndpoint })
+    await endEmailTokens(app.db, user.id)
     app.hub.signOut(user.id, req.sessionToken ?? undefined)
     return { ok: true }
   })
@@ -293,13 +302,26 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
   })
 
   /**
-   * The link in the email. Confirms the address it was sent to (in case the email changed since) and signs its owner
-   * in on this device: the link reached their inbox, which is how a password reset proves who you are too.
+   * The link in the email. Confirms the address it was sent to (in case the email changed since).
+   *
+   * The link shows the address is read by whoever clicked it, not that they made the account: someone else could
+   * have signed up with this address and their own password, hoping its owner confirms it. So it only counts from
+   * a browser signed in to the account, or with the account's password (then it signs in here too). An owner who
+   * never made the account can't confirm it, and takes it over with "Forgot password" instead, which sets their own
+   * password and signs everyone else out.
    */
   app.post('/verify', LIMIT, async (req, reply) => {
-    const body = parse(z.object({ token }), req.body)
+    const body = parse(z.object({ token, password: z.string().max(200).optional() }), req.body)
+    const gone = 'This link has expired or was already used. Sign in to get a new one.'
+    const seen = await peekEmailToken(app.db, body.token, 'verify')
+    if (!seen) throw new HttpError(400, gone)
+    if (req.user?.id !== seen.userId) {
+      if (body.password === undefined) return { ok: false, needsPassword: true, user: null }
+      const [owner] = await app.db.select({ hash: users.passwordHash }).from(users).where(eq(users.id, seen.userId))
+      if (!owner || !(await verifyPassword(body.password, owner.hash))) throw new HttpError(400, 'That isn’t this account’s password.')
+    }
     const t = await useEmailToken(app.db, body.token, 'verify')
-    if (!t) throw new HttpError(400, 'This link has expired or was already used. Sign in to get a new one.')
+    if (!t) throw new HttpError(400, gone)
     const [u] = await app.db
       .update(users)
       .set({ emailVerifiedAt: sql`coalesce(${users.emailVerifiedAt}, now())` })
@@ -352,6 +374,8 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
       .returning()
     if (!u || u.disabledAt) throw new HttpError(403, 'This account has been turned off. Ask your admin.')
     await endAllSessions(app.db, u.id)
+    await app.push.forget(u.id, {})
+    await endEmailTokens(app.db, u.id)
     app.hub.signOut(u.id)
     failures.delete(u.email)
     const session = await createSession(app.db, u.id)

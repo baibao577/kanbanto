@@ -3,7 +3,7 @@ import { newId } from '@kanbanto/model/ids'
 import { and, desc, eq, ilike, inArray, isNull, or, sql } from 'drizzle-orm'
 import type { FastifyInstance, FastifyPluginAsync } from 'fastify'
 import { z } from 'zod'
-import { requireAccess, type BoardRow } from '../boards/access'
+import { openBoards, requireAccess, type BoardRow } from '../boards/access'
 import { boardPeople } from '../boards/store'
 import type { Db, Tx } from '../db'
 import { attachments, boards, comments, notifications, tasks, users, workspaces } from '../db/schema'
@@ -277,8 +277,18 @@ export const commentRoutes: FastifyPluginAsync = async (app) => {
       .select({ unread: sql<number>`count(*)::int` })
       .from(notifications)
       .where(and(eq(notifications.userId, me.id), isNull(notifications.readAt)))
+    // What a notification shows is read now, not when it was made: only from boards they can still open. One
+    // from a board they've left (or a card since moved to one they aren't on) says so, and nothing more.
+    const open = new Set((await openBoards(app.db, me.id)).map((b) => b.id))
+    const CLOSED = { id: '', name: 'A board you can no longer open' }
     const items: NotificationView[] = rows.map((r) => {
       const common = { id: r.n.id, actor: r.actor ?? 'Someone', createdAt: r.n.createdAt.toISOString(), read: !!r.n.readAt }
+      const can = !!r.n.boardId && open.has(r.n.boardId)
+      if (r.n.boardId && r.boardName !== null && !can) {
+        if (r.n.kind === 'added') return { ...common, kind: 'added', board: null, workspace: null }
+        if (r.n.kind === 'reminder') return { ...common, kind: 'reminder', actor: r.actor, board: CLOSED, task: { id: '', title: 'A task' } }
+        return { ...common, kind: 'mention', board: CLOSED, task: { id: '', title: 'A task' }, excerpt: '' }
+      }
       const board = r.n.boardId && r.boardName !== null ? { id: r.n.boardId, name: r.boardName } : null
       if (r.n.kind === 'added') {
         const workspace = r.n.workspaceId && r.workspaceName !== null ? { id: r.n.workspaceId, name: r.workspaceName } : null

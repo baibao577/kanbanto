@@ -312,11 +312,16 @@ export const boardRoutes: FastifyPluginAsync = async (app) => {
     const [board] = await app.db.select().from(boards).where(eq(boards.id, id))
     // Someone who must confirm their email first sees boards only as a signed-out visitor would.
     const user = req.user?.mustVerify ? null : req.user
-    if (!board || !(await accessOf(app.db, board, user?.id))) {
+    // A live connection belongs to a browser session (or a visitor with the public link). An API token asks each
+    // time instead: a connection can't be taken back when its token is deleted or runs out.
+    const access = board && !req.apiToken ? await accessOf(app.db, board, user?.id) : null
+    if (!access) {
       socket.close(4403, 'No access')
       return
     }
-    const leave = app.hub.join(id, socket, user?.id ?? null, req.sessionToken)
+    // (It may have closed while that was being looked up: then there's nothing to join.)
+    if (socket.readyState !== socket.OPEN) return
+    const leave = app.hub.join(id, socket, user?.id ?? null, req.sessionToken, access.via !== 'public')
     // Keeps the connection open through proxies that close idle ones.
     const ping = setInterval(() => socket.ping(), 25_000)
     socket.on('close', () => {

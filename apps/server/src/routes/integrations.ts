@@ -159,6 +159,7 @@ export const integrationRoutes: FastifyPluginAsync = async (app) => {
       .from(webhooks)
       .where(eq(webhooks.boardId, id))
     if (n >= MAX_WEBHOOKS) throw new HttpError(400, `A board can have up to ${MAX_WEBHOOKS} webhooks.`)
+    await app.webhooks.confirmAddress(url, mode)
     const secret = newWebhookSecret()
     const hookId = newId()
     await app.db
@@ -177,7 +178,11 @@ export const integrationRoutes: FastifyPluginAsync = async (app) => {
         .strict(),
       req.body,
     )
-    if (body.url !== undefined) checkWebhookUrl(body.url, await modeFor())
+    if (body.url !== undefined) {
+      const mode = await modeFor()
+      checkWebhookUrl(body.url, mode)
+      if (body.url !== hook.url) await app.webhooks.confirmAddress(body.url, mode)
+    }
     const { events, ...rest } = body
     const set = { ...rest, ...(events && { events: eventsToStore(events) }) }
     if (Object.keys(set).length) await app.db.update(webhooks).set(set).where(eq(webhooks.id, hook.id))

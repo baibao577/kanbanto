@@ -3,6 +3,7 @@ import type { FastifyPluginAsync } from 'fastify'
 import { z } from 'zod'
 import { pushDevices } from '../db/schema'
 import { HttpError, parse } from '../http'
+import { assertPublicEndpoint } from '../storage/egress'
 import { requireUser } from './auth'
 
 const Subscription = z.object({
@@ -37,6 +38,11 @@ export const pushRoutes: FastifyPluginAsync = async (app) => {
     const sub = parse(Subscription, req.body)
     // Push services live on the internet; anything else isn't a real subscription.
     if (!sub.endpoint.startsWith('https://')) throw new HttpError(400, 'That isn’t a push subscription.')
+    try {
+      assertPublicEndpoint(sub.endpoint)
+    } catch {
+      throw new HttpError(400, 'That isn’t a push subscription.')
+    }
     await app.push.register(me.id, sub, sub.label || 'A browser')
     return { ok: true }
   })

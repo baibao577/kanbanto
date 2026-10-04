@@ -131,8 +131,8 @@ function buildServer(app: FastifyInstance, me: SessionUser, token: TokenAccess) 
       }
     }
 
-  const open = async (boardId: string, needed: 'viewer' | 'editor') => {
-    const { board, access } = await requireAccess(app.db, me, boardId, needed)
+  const open = async (boardId: string, needed: 'viewer' | 'editor', opts: { write?: boolean } = {}) => {
+    const { board, access } = await requireAccess(app.db, me, boardId, needed, opts)
     const { data } = await app.engine.snapshot(boardId)
     return { board, access, data, idx: indexFor(data) }
   }
@@ -832,11 +832,13 @@ function buildServer(app: FastifyInstance, me: SessionUser, token: TokenAccess) 
       if (!(await workspaceRole(app.db, w.id, me.id))) throw new HttpError(404, 'There’s no such workspace, or you aren’t in it.')
       const { plan } = await loadPlan(app.db, w.id)
       const now = toDay(today())
+      // (Logged time from the linked boards they can open, as on the website.)
+      const openIds = new Set((await boardsFor(app.db, me.id)).map((b) => b.id))
       const actuals = planActuals(
         plan,
         await loggedOn(
           app.db,
-          plan.projects.flatMap((p) => (p.boardId ? [p.boardId] : [])),
+          plan.projects.flatMap((p) => (p.boardId && openIds.has(p.boardId) ? [p.boardId] : [])),
         ),
       )
       const role = (id: string | null) => plan.roles.find((r) => r.id === id)?.name ?? null
@@ -1432,7 +1434,8 @@ function buildServer(app: FastifyInstance, me: SessionUser, token: TokenAccess) 
         annotations: { destructiveHint: false, openWorldHint: false },
       },
       tool(async (a: { board_id: string; task_id: string; text: string }) => {
-        const { board, access, data } = await open(a.board_id, 'viewer')
+        // (A comment is a change: not on an archived board, as on the website.)
+        const { board, access, data } = await open(a.board_id, 'viewer', { write: true })
         if (access.via === 'public') throw new HttpError(403, 'Join this board to comment on it.')
         const lower = a.text.toLowerCase()
         const mentions = data.members.filter((m) => lower.includes(`@${m.name.toLowerCase()}`)).map((m) => m.id)

@@ -100,3 +100,22 @@ describe('import', () => {
     expect(data.members.map((m) => m.name)).toEqual(['Mai'])
   })
 })
+
+describe('files that didn’t come from an export', () => {
+  it('an old-format file passes the same checks as a new one, and parent loops are cut', async () => {
+    const { readBoardFile } = await import('./transfer')
+    expect(() => readBoardFile({ boardName: 'x', tasks: [{ id: 'a', title: 't', due: 'not-a-date' }] }, 'b')).toThrow(/damaged/)
+    expect(() => readBoardFile({ boardName: 'x', tasks: [{ id: 'a', title: 'T'.repeat(600) }] }, 'b')).toThrow(/damaged/)
+    const ok = readBoardFile(
+      {
+        boardName: 'x',
+        tasks: [
+          { id: 'a', title: 'A', parentId: 'b' },
+          { id: 'b', title: 'B', parentId: 'a' },
+        ],
+      },
+      'b',
+    )
+    expect(Object.values(ok.tasks).filter((t) => t.parentId).length).toBe(1)
+  })
+})

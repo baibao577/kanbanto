@@ -33,6 +33,23 @@ export async function useEmailToken(db: Db | Tx, token: string, purpose: Purpose
   return row ?? null
 }
 
+/** Ends someone's unused links (their password changed, or their account was turned off): an old one can't be used later. */
+export async function endEmailTokens(db: Db | Tx, userId: string) {
+  await db
+    .update(emailTokens)
+    .set({ usedAt: new Date() })
+    .where(and(eq(emailTokens.userId, userId), isNull(emailTokens.usedAt)))
+}
+
+/** Looks at a token without using it up: the same checks as `useEmailToken`. */
+export async function peekEmailToken(db: Db | Tx, token: string, purpose: Purpose) {
+  const [row] = await db
+    .select()
+    .from(emailTokens)
+    .where(and(eq(emailTokens.id, hash(token)), eq(emailTokens.purpose, purpose), isNull(emailTokens.usedAt), gt(emailTokens.expiresAt, new Date())))
+  return row ?? null
+}
+
 /** When the last token of this kind was made for this person (to limit how often emails are sent). */
 export async function lastEmailToken(db: Db | Tx, userId: string, purpose: Purpose) {
   const [row] = await db

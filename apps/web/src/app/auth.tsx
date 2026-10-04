@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import type { Me, PublicUser } from '@kanbanto/model/api'
 import { api, errorMessage, VERIFY_EVENT } from '@/api/client'
+import { currentSubscription } from '@/lib/push'
 import { AuthContext, type AuthValue } from './use-auth'
 
 /** Who's signed in. Renders nothing until that's known (one quick request). */
@@ -62,7 +63,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           return { boardId: r.boardId }
         },
         signOut: async () => {
-          await api('POST', '/auth/signout')
+          // This browser stops getting the account's desktop notifications.
+          const push = await currentSubscription().catch(() => null)
+          await api('POST', '/auth/signout', push ? { pushEndpoint: push.endpoint } : undefined)
+          await push?.unsubscribe().catch(() => {})
           setMe({ ...me, user: null })
         },
         setUser: (user) => setMe({ ...me, user }),

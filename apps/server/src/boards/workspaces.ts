@@ -84,6 +84,7 @@ export async function joinWorkspace(
  * are unassigned. The last admin can't leave while others are in it. Returns the boards whose people changed.
  */
 export async function leaveWorkspace(tx: Tx, workspaceId: string, userId: string, heir: string | null): Promise<string[]> {
+  await tx.select({ id: workspaces.id }).from(workspaces).where(eq(workspaces.id, workspaceId)).for('update')
   const role = await workspaceRole(tx, workspaceId, userId)
   if (!role) throw new HttpError(404, 'That person isn’t in this workspace.')
   if (role === 'admin' && (await adminCount(tx, workspaceId)) < 2) {

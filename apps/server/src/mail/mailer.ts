@@ -1,5 +1,6 @@
 import { newId } from '@kanbanto/model/ids'
 import { and, eq, gte, inArray, isNull, lte, sql } from 'drizzle-orm'
+import { serial } from '../serial'
 import type { FastifyBaseLogger } from 'fastify'
 import type { Db, Tx } from '../db'
 import { emailOutbox, emailSenders, users, type EmailKind } from '../db/schema'
@@ -163,7 +164,17 @@ export class Mailer {
    * requester's own key if they have a working one, else the platform's key within their allowance.
    * Returns whether it was queued, or why not (so the app can offer another way, like the share link).
    */
-  async queue(opts: { kind: EmailKind; to: string; requestedBy: string | null; content: (brand: Brand) => EmailContent }): Promise<QueueResult> {
+  queue(opts: { kind: EmailKind; to: string; requestedBy: string | null; content: (brand: Brand) => EmailContent }): Promise<QueueResult> {
+    // One at a time: each email is counted before the next is checked against the limits.
+    return serial('mail-queue', () => this.queueNow(opts))
+  }
+
+  private async queueNow(opts: {
+    kind: EmailKind
+    to: string
+    requestedBy: string | null
+    content: (brand: Brand) => EmailContent
+  }): Promise<QueueResult> {
     const priority = PRIORITY[opts.kind]
     // Null means no limit (e.g. the site's own mail server).
     const settings = await loadSettings(this.db)

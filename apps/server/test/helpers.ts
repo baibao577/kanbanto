@@ -98,7 +98,7 @@ export class Person {
     await flushMail(this.app)
     const token = linkToken(mail.last(email)?.text, 'verify')
     if (!token) throw new Error(`No confirmation email for ${email}`)
-    const r = await this.ok('POST', '/api/auth/verify', { token })
+    const r = await this.ok('POST', '/api/auth/verify', { token, password: 'correct horse' })
     this.user = r.user
     return this
   }

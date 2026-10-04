@@ -110,7 +110,17 @@ describe('webhooks', () => {
     expect((await ann.request('POST', `/api/boards/${id}/webhooks`, { url: 'http://example.com/hook' })).status).toBe(400)
     expect((await ann.request('POST', `/api/boards/${id}/webhooks`, { url: 'https://127.0.0.1/hook' })).status).toBe(400)
     expect((await ann.request('POST', `/api/boards/${id}/webhooks`, { url: 'https://localhost/hook' })).status).toBe(400)
+    // A public address has to say it wants them: it's sent a code, and must answer with it.
+    const asked: string[] = []
+    t.app.webhooks.ask = async (url) => {
+      asked.push(url)
+      return { status: 200, text: 'ok' }
+    }
+    const refused = await ann.request('POST', `/api/boards/${id}/webhooks`, { url: 'https://example.com/hook' })
+    expect(refused).toMatchObject({ status: 400, body: { error: expect.stringMatching(/didn’t confirm/) } })
+    t.app.webhooks.ask = async (_url, body) => ({ status: 200, text: JSON.stringify({ challenge: JSON.parse(body).challenge }) })
     expect((await ann.request('POST', `/api/boards/${id}/webhooks`, { url: 'https://example.com/hook' })).status).toBe(200)
+    expect(asked).toEqual(['https://example.com/hook'])
   })
 
   it('send each change, signed with the secret; only owners manage them', async () => {

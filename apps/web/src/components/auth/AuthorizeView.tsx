@@ -21,7 +21,8 @@ export function AuthorizeView({ query }: { query: string }) {
   const params = Object.fromEntries(new URLSearchParams(query))
 
   useEffect(() => {
-    api<OAuthRequestView>('GET', `/oauth/request?${query}`).then(
+    // (Asked about with the very values that Allow will send: what's shown is what's approved.)
+    api<OAuthRequestView>('GET', `/oauth/request?${new URLSearchParams(Object.fromEntries(new URLSearchParams(query)))}`).then(
       (r) => {
         setRequest(r)
         setChoice(r.maxScope)

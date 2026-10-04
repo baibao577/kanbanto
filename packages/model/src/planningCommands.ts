@@ -481,6 +481,8 @@ function restore(
     if (c.entity === 'person') {
       // Who an account is can't change by undo, and an account is in the plan once.
       if (c.before && c.after.userId !== c.before.userId) refuse('That can’t be undone.')
+      // Someone put back with an account has to be in the workspace: undo can't tie the plan to an outsider.
+      if (!c.before && c.after.userId && !ctx.members.has(c.after.userId)) refuse('They’re no longer in the workspace, so that can’t be undone.')
       if (c.after.userId && next.people.some((p) => p.id !== c.id && p.userId === c.after!.userId)) refuse('They’re already in the plan.')
       if (!has(next.roles, c.after.roleId)) out[i] = { ...c, after: { ...c.after, roleId: null } }
     }

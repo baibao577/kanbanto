@@ -1,5 +1,5 @@
 import { fireTime } from '@kanbanto/model/reminders'
-import { and, desc, eq, inArray, isNotNull, isNull, ne, or } from 'drizzle-orm'
+import { and, desc, eq, inArray, isNotNull, isNull, ne, or, sql } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import { boards, comments, lists, notifications, tasks, users } from '../db/schema'
 import { excerpt } from '../routes/comments'
@@ -96,7 +96,16 @@ export async function sendDigests(app: FastifyInstance, now = new Date()) {
       .leftJoin(users, eq(users.id, notifications.actorId))
       .leftJoin(tasks, and(eq(tasks.boardId, notifications.boardId), eq(tasks.id, notifications.taskId)))
       .leftJoin(comments, eq(comments.id, notifications.commentId))
-      .where(and(eq(notifications.userId, u.id), eq(notifications.kind, 'mention'), isNull(notifications.readAt), isNull(notifications.emailedAt)))
+      .where(
+        and(
+          eq(notifications.userId, u.id),
+          eq(notifications.kind, 'mention'),
+          isNull(notifications.readAt),
+          isNull(notifications.emailedAt),
+          // (Only from boards they can still open: what's quoted is read now, not when they were mentioned.)
+          boardIds.length ? inArray(notifications.boardId, boardIds) : sql`false`,
+        ),
+      )
       .orderBy(desc(notifications.createdAt))
     if (!due.length && !overdue.length && !later.length && !mentions.length) continue
 

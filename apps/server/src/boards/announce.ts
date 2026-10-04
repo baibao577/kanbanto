@@ -14,9 +14,10 @@ export async function announceSharingChange(app: FastifyInstance, boardId: strin
   await app.hub.recheck(boardId, async (userId) => {
     if (userId) {
       const [u] = await app.db.select({ disabledAt: users.disabledAt }).from(users).where(eq(users.id, userId))
-      if (!u || u.disabledAt) return false
+      if (!u || u.disabledAt) return null
     }
-    return !!(await accessOf(app.db, board, userId ?? undefined))
+    const access = await accessOf(app.db, board, userId ?? undefined)
+    return access && (access.via === 'public' ? 'public' : 'member')
   })
 }
 

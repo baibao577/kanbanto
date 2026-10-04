@@ -3,6 +3,8 @@ import fastifyRateLimit from '@fastify/rate-limit'
 import fastifyStatic from '@fastify/static'
 import fastifyWebsocket from '@fastify/websocket'
 import Fastify, { LogController, type FastifyInstance, type FastifyServerOptions } from 'fastify'
+import { createHash } from 'node:crypto'
+import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import pretty from 'pino-pretty'
 import { TOKEN_ROUTES, userForApiToken, type TokenAccess } from './auth/apiTokens'
@@ -194,6 +196,9 @@ export async function buildApp(
       if (!TOKEN_ROUTES.test(path)) throw new HttpError(403, 'API tokens can’t be used for this. Sign in on the website instead.')
       if (token.scope === 'read' && req.method !== 'GET' && req.method !== 'HEAD' && path !== '/api/mcp')
         throw new HttpError(403, 'This API token can only read. Make one that can also make changes.')
+      // "Who am I" is for reading: the account's own settings are changed on the website.
+      if (path === '/api/auth/me' && req.method !== 'GET' && req.method !== 'HEAD')
+        throw new HttpError(403, 'API tokens can’t be used for this. Sign in on the website instead.')
       req.user = user
       req.apiToken = token
       req.user.mustVerify = !req.user.emailVerified && mail.platformReady && !req.user.isAdmin
@@ -268,8 +273,27 @@ export async function buildApp(
   await app.register(fileRoutes, { prefix: '/api' })
   app.get('/api/health', async () => ({ ok: true }))
 
+  // Every answer: no guessing a file's type, no address leaking to other sites, no other site putting the app in a
+  // frame, and (over HTTPS) browsers told to keep using HTTPS. A route that set its own (a file, a preview) keeps it.
+  app.addHook('onSend', async (req, reply) => {
+    const set = (name: string, value: string) => !reply.hasHeader(name) && reply.header(name, value)
+    set('x-content-type-options', 'nosniff')
+    set('referrer-policy', 'same-origin')
+    set('x-frame-options', 'SAMEORIGIN')
+    if (req.protocol === 'https') set('strict-transport-security', 'max-age=15552000')
+  })
+
   if (env.webDist) {
-    await app.register(fastifyStatic, { root: path.resolve(env.webDist), wildcard: false })
+    const root = path.resolve(env.webDist)
+    const policy = shellPolicy(path.join(root, 'index.html'))
+    await app.register(fastifyStatic, {
+      root,
+      wildcard: false,
+      // The app's page says what it may load: its own files and nothing else.
+      setHeaders: (res, file) => {
+        if (policy && path.basename(file) === 'index.html') res.header('content-security-policy', policy)
+      },
+    })
     // The web app's pages (it routes with #/… addresses). Only for reading: anything else is a 404.
     app.setNotFoundHandler((req, reply) =>
       req.url.startsWith('/api/') || (req.method !== 'GET' && req.method !== 'HEAD')
@@ -279,4 +303,36 @@ export async function buildApp(
   }
   if (pagesDir) servePages(app, pagesDir)
   return app
+}
+
+/**
+ * The content-security policy for the web app's page: scripts from this site only (plus the one small script written
+ * into the page, by its hash), pictures from anywhere over HTTPS (attached files may live in a bucket), and no
+ * framing by other sites. Null when the page can't be read (then no policy is sent).
+ */
+export function shellPolicy(indexFile: string): string | null {
+  let html: string
+  try {
+    html = readFileSync(indexFile, 'utf8')
+  } catch {
+    return null
+  }
+  const inline = [...html.matchAll(/<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/g)].map(
+    (m) => `'sha256-${createHash('sha256').update(m[1]).digest('base64')}'`,
+  )
+  return [
+    "default-src 'self'",
+    `script-src 'self' ${inline.join(' ')}`.trim(),
+    "style-src 'self' 'unsafe-inline'",
+    "img-src 'self' data: blob: https:",
+    "font-src 'self' data:",
+    "connect-src 'self' ws: wss:",
+    "frame-src 'self'",
+    "worker-src 'self'",
+    "manifest-src 'self'",
+    "object-src 'none'",
+    "base-uri 'self'",
+    "form-action 'self'",
+    "frame-ancestors 'self'",
+  ].join('; ')
 }

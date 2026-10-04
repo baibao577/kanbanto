@@ -8,6 +8,7 @@ import { requireAccess } from '../boards/access'
 import { encryptionReady } from '../crypto'
 import type { Db, Tx } from '../db'
 import { attachments, siteSettings, storageBackends, users } from '../db/schema'
+import { serial } from '../serial'
 import { HttpError, parse } from '../http'
 import {
   activeBackend,
@@ -228,6 +229,14 @@ export async function trashCommentFiles(db: Db | Tx, commentId: string) {
 export const fileRoutes: FastifyPluginAsync = async (app) => {
   // Uploads arrive as raw bytes (not JSON), within this plugin only.
   app.addContentTypeParser('*', { parseAs: 'buffer', bodyLimit: HARD_MAX }, (_req, body, done) => done(null, body))
+  // Only the upload route takes raw bytes (after its own checks of who's asking and how big): on the other routes
+  // here a body that isn't JSON is refused before any of it is read, signed in or not.
+  app.addHook('onRequest', async (req) => {
+    const type = req.headers['content-type']
+    if (!type || /^application\/json\b/i.test(type) || req.method === 'GET' || req.method === 'HEAD') return
+    if (req.method === 'POST' && req.routeOptions.url === '/api/boards/:id/tasks/:taskId/attachments') return
+    throw new HttpError(415, 'This expects JSON.')
+  })
 
   // ── Attachments ─────────────────────────────────────────────────────────
 
@@ -288,76 +297,86 @@ export const fileRoutes: FastifyPluginAsync = async (app) => {
         }
       },
     },
-    async (req) => {
-      const { id, taskId, me, forComment, board } = await uploader(req)
-      const body = req.body
-      if (!Buffer.isBuffer(body) || !body.length) throw new HttpError(400, 'Choose a file to upload.')
-      const { maxFileMb, quotaMb } = await storageSettings(app.db)
-      if (body.length > maxFileMb * MB) throw new HttpError(413, `Files can be up to ${maxFileMb} MB.`)
-      const name = cleanName(decodeURIComponent(String(req.headers['x-file-name'] ?? 'file')))
-      if (BLOCKED.test(name)) throw new HttpError(400, 'Programs and scripts can’t be attached. Zip it if you need to share it.')
-      const { data } = await app.engine.snapshot(id)
-      if (!data.tasks[taskId]) throw new HttpError(404, 'That task no longer exists.')
-
-      const workspaceId = board.workspaceId
-      const owner = workspaceId ? null : await boardOwner(app.db, id)
-      const own = owner ? await activeBackend(app.db, owner) : null
-      if (workspaceId) {
-        const used = await quotaUsed(app.db, { workspaceId })
-        if (used + body.length > quotaMb * MB)
-          throw new HttpError(
-            413,
-            `This would go over the workspace’s ${quotaMb} MB of file space (${formatMb(used)} used). Delete some files first.`,
-          )
-      } else if (!own && owner) {
-        const used = await quotaUsed(app.db, { ownerId: owner })
-        if (used + body.length > quotaMb * MB) {
-          const mine = owner === me.id
-          throw new HttpError(
-            413,
-            mine
-              ? `This would go over your ${quotaMb} MB of file space (${formatMb(used)} used). Delete some files, or connect your own storage in Account settings.`
-              : `The board’s owner is out of file space (${quotaMb} MB). Ask them to free some up or connect their own storage.`,
-          )
+    // (One upload to a board at a time: each is counted before the next is checked against the space left.)
+    (req) =>
+      serial(`files:${(req.params as { id: string }).id}`, async () => {
+        const { id, taskId, me, forComment, board } = await uploader(req)
+        const body = req.body
+        if (!Buffer.isBuffer(body) || !body.length) throw new HttpError(400, 'Choose a file to upload.')
+        const { maxFileMb, quotaMb } = await storageSettings(app.db)
+        if (body.length > maxFileMb * MB) throw new HttpError(413, `Files can be up to ${maxFileMb} MB.`)
+        let given: string
+        try {
+          given = decodeURIComponent(String(req.headers['x-file-name'] ?? 'file'))
+        } catch {
+          throw new HttpError(400, 'That file name can’t be read.')
         }
-      }
-      const platform = own ? null : await activeBackend(app.db, null)
-      const backendRow = own ?? platform
-      const attId = newId()
-      const storageKey = `boards/${id}/${attId}/${name.replace(/[^\w.-]+/g, '_').slice(0, 80) || 'file'}`
-      const mime = mimeOf(req.headers['x-file-type'] as string | undefined)
-      try {
-        await (backendRow ? s3For(backendRow) : disk).put(storageKey, body, mime)
-      } catch (e) {
-        if (backendRow)
-          await app.db
-            .update(storageBackends)
-            .set({ lastError: e instanceof Error ? e.message : 'Upload failed' })
-            .where(eq(storageBackends.id, backendRow.id))
-        req.log.warn({ err: e instanceof Error ? e.message : e }, 'upload failed')
-        throw new HttpError(502, `The file couldn’t be saved${e instanceof StorageError ? `: ${e.message}` : '.'}`)
-      }
-      await app.db.insert(attachments).values({
-        id: attId,
-        boardId: id,
-        taskId,
-        uploaderId: me.id,
-        ownerId: owner,
-        workspaceId,
-        backend: backendRow ? 's3' : 'disk',
-        backendId: backendRow?.id ?? null,
-        ownStorage: !!own,
-        storageKey,
-        name,
-        size: body.length,
-        mime,
-        draft: forComment,
-      })
-      const [attachment] = await views(app.db, and(eq(attachments.id, attId)))
-      // A comment's files are announced with the comment.
-      if (!forComment) app.hub.broadcast(id, { type: 'attachment', taskId, action: 'added', attachmentId: attId, attachment })
-      return { attachment }
-    },
+        const name = cleanName(given)
+        if (BLOCKED.test(name)) throw new HttpError(400, 'Programs and scripts can’t be attached. Zip it if you need to share it.')
+        const { data } = await app.engine.snapshot(id)
+        if (!data.tasks[taskId]) throw new HttpError(404, 'That task no longer exists.')
+
+        const workspaceId = board.workspaceId
+        const owner = workspaceId ? null : await boardOwner(app.db, id)
+        const own = owner ? await activeBackend(app.db, owner) : null
+        if (workspaceId) {
+          const used = await quotaUsed(app.db, { workspaceId })
+          if (used + body.length > quotaMb * MB)
+            throw new HttpError(
+              413,
+              `This would go over the workspace’s ${quotaMb} MB of file space (${formatMb(used)} used). Delete some files first.`,
+            )
+        } else if (!own && owner) {
+          const used = await quotaUsed(app.db, { ownerId: owner })
+          if (used + body.length > quotaMb * MB) {
+            const mine = owner === me.id
+            throw new HttpError(
+              413,
+              mine
+                ? `This would go over your ${quotaMb} MB of file space (${formatMb(used)} used). Delete some files, or connect your own storage in Account settings.`
+                : `The board’s owner is out of file space (${quotaMb} MB). Ask them to free some up or connect their own storage.`,
+            )
+          }
+        }
+        const platform = own ? null : await activeBackend(app.db, null)
+        const backendRow = own ?? platform
+        const attId = newId()
+        // (A name made only of dots would be a path step, not a file.)
+        const leaf = name.replace(/[^\w.-]+/g, '_').slice(0, 80)
+        const storageKey = `boards/${id}/${attId}/${/^\.*$/.test(leaf) ? 'file' : leaf}`
+        const mime = mimeOf(req.headers['x-file-type'] as string | undefined)
+        try {
+          await (backendRow ? s3For(backendRow) : disk).put(storageKey, body, mime)
+        } catch (e) {
+          if (backendRow)
+            await app.db
+              .update(storageBackends)
+              .set({ lastError: e instanceof Error ? e.message : 'Upload failed' })
+              .where(eq(storageBackends.id, backendRow.id))
+          req.log.warn({ err: e instanceof Error ? e.message : e }, 'upload failed')
+          throw new HttpError(502, `The file couldn’t be saved${e instanceof StorageError ? `: ${e.message}` : '.'}`)
+        }
+        await app.db.insert(attachments).values({
+          id: attId,
+          boardId: id,
+          taskId,
+          uploaderId: me.id,
+          ownerId: owner,
+          workspaceId,
+          backend: backendRow ? 's3' : 'disk',
+          backendId: backendRow?.id ?? null,
+          ownStorage: !!own,
+          storageKey,
+          name,
+          size: body.length,
+          mime,
+          draft: forComment,
+        })
+        const [attachment] = await views(app.db, and(eq(attachments.id, attId)))
+        // A comment's files are announced with the comment.
+        if (!forComment) app.hub.broadcast(id, { type: 'attachment', taskId, action: 'added', attachmentId: attId, attachment })
+        return { attachment }
+      }),
   )
 
   /** Opens (pictures) or downloads (everything else) a file, for anyone who can view its board. */
@@ -401,19 +420,35 @@ export const fileRoutes: FastifyPluginAsync = async (app) => {
   })
 
   /** Takes a file back out of the trash (undo). */
-  app.post('/boards/:id/attachments/:attId/restore', async (req) => {
-    const { id, attId } = parse(AttParams, req.params)
-    await requireAccess(app.db, requireUser(req.user), id, 'editor')
-    const [a] = await app.db
-      .update(attachments)
-      .set({ deletedAt: null, orphaned: false })
-      .where(and(eq(attachments.id, attId), eq(attachments.boardId, id), isNotNull(attachments.deletedAt)))
-      .returning()
-    if (!a) throw new HttpError(404, 'That file can’t be restored any more.')
-    const [attachment] = await views(app.db, and(eq(attachments.id, attId)))
-    app.hub.broadcast(id, { type: 'attachment', taskId: a.taskId, action: 'added', attachmentId: attId, attachment })
-    return { attachment }
-  })
+  app.post('/boards/:id/attachments/:attId/restore', (req) =>
+    serial(`files:${(req.params as { id: string }).id}`, async () => {
+      const { id, attId } = parse(AttParams, req.params)
+      await requireAccess(app.db, requireUser(req.user), id, 'editor')
+      // A file coming back takes its space again, so there has to be room for it (as for a new upload).
+      const [was] = await app.db
+        .select()
+        .from(attachments)
+        .where(and(eq(attachments.id, attId), eq(attachments.boardId, id), isNotNull(attachments.deletedAt)))
+      if (was && !was.ownStorage && !was.draft && (was.workspaceId || was.ownerId)) {
+        const { quotaMb } = await storageSettings(app.db)
+        const used = await quotaUsed(app.db, was.workspaceId ? { workspaceId: was.workspaceId } : { ownerId: was.ownerId! })
+        if (used + was.size > quotaMb * MB)
+          throw new HttpError(
+            413,
+            `There’s no room to bring it back: ${formatMb(used)} of ${quotaMb} MB of file space is used. Delete some files first.`,
+          )
+      }
+      const [a] = await app.db
+        .update(attachments)
+        .set({ deletedAt: null, orphaned: false })
+        .where(and(eq(attachments.id, attId), eq(attachments.boardId, id), isNotNull(attachments.deletedAt)))
+        .returning()
+      if (!a) throw new HttpError(404, 'That file can’t be restored any more.')
+      const [attachment] = await views(app.db, and(eq(attachments.id, attId)))
+      app.hub.broadcast(id, { type: 'attachment', taskId: a.taskId, action: 'added', attachmentId: attId, attachment })
+      return { attachment }
+    }),
+  )
 
   // ── Storage settings ────────────────────────────────────────────────────
 

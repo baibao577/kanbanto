@@ -35,14 +35,15 @@ export async function sendReminders(app: FastifyInstance, now = new Date()): Pro
       const at = fireTime(r, { due: t.due ?? undefined })
       if (!at || at > now || now.getTime() - at.getTime() > LATE_MS) continue
       const to = t.assigneeId ?? r.by ?? null
-      // Claim it first, so two servers (or a slow run) never send it twice.
-      const [claimed] = await app.db
-        .insert(reminderSends)
-        .values({ boardId: t.boardId, taskId: t.id, reminderId: r.id, fireAt: at, userId: to })
-        .onConflictDoNothing()
-        .returning()
-      if (!claimed) continue
+      // (One card's reminder going wrong never stops the others: this run is for every board.)
       try {
+        // Claim it first, so two servers (or a slow run) never send it twice.
+        const [claimed] = await app.db
+          .insert(reminderSends)
+          .values({ boardId: t.boardId, taskId: t.id, reminderId: r.id, fireAt: at, userId: to })
+          .onConflictDoNothing()
+          .returning()
+        if (!claimed) continue
         if (to && (await deliver(app, t, r, to))) sent++
       } catch (e) {
         app.log.error({ err: e instanceof Error ? e.message : e }, 'sending a reminder')
@@ -76,7 +77,9 @@ async function deliver(
     await app.mail.queue({
       kind: 'reminder',
       to: u.email,
-      requestedBy: null,
+      // A reminder for someone else counts against whoever set it, like the other emails one person causes
+      // another to get; your own reminders to yourself don't.
+      requestedBy: r.by && r.by !== u.id ? r.by : null,
       content: (brand) =>
         emails.reminder(brand, {
           name: u.name,

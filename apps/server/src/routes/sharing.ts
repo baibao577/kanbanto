@@ -205,6 +205,9 @@ export const sharingRoutes: FastifyPluginAsync = async (app) => {
       await tx.insert(boardInvites).values({ id: newId(), boardId: id, kind: 'email', token, email: body.email, role, createdBy: me.id })
     })
     const sent = await inviteEmail(`${base}/#/join/${token}`, u ? 'accept' : 'signup')
+    // Sent with the inviter's own email service, the email (and its link) is theirs to read there: like a link
+    // they were shown, it doesn't prove the address belongs to whoever uses it.
+    if (sent.queued && sent.via === 'own-key') await app.db.update(boardInvites).set({ linkShown: true }).where(eq(boardInvites.token, token))
     if (sent.queued) return { outcome: 'invited', emailed: true, why: null }
     // The inviter gets the link to pass on, so it no longer proves the address belongs to whoever uses it.
     await app.db.update(boardInvites).set({ linkShown: true }).where(eq(boardInvites.token, token))
@@ -227,6 +230,8 @@ export const sharingRoutes: FastifyPluginAsync = async (app) => {
     await requireAccess(app.db, requireUser(req.user), id, 'owner')
     const { role } = parse(z.object({ role: z.enum(ROLES) }), req.body)
     await app.db.transaction(async (tx) => {
+      // (One change to a board's people at a time, so two at once can't each see the other owner still there.)
+      await tx.select({ id: boards.id }).from(boards).where(eq(boards.id, id)).for('update')
       const current = await memberRole(tx, id, userId)
       if (!current) throw new HttpError(404, 'That person isn’t on this board.')
       if (current === 'owner' && role !== 'owner' && (await ownerCount(tx, id)) < 2)
@@ -246,6 +251,7 @@ export const sharingRoutes: FastifyPluginAsync = async (app) => {
     const me = requireUser(req.user)
     if (userId !== me.id) await requireAccess(app.db, me, id, 'owner')
     await app.db.transaction(async (tx) => {
+      await tx.select({ id: boards.id }).from(boards).where(eq(boards.id, id)).for('update')
       const current = await memberRole(tx, id, userId)
       if (!current) throw new HttpError(404, 'That person isn’t on this board.')
       if (current === 'owner' && (await ownerCount(tx, id)) < 2)

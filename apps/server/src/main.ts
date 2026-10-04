@@ -22,6 +22,8 @@ const reason = (e: unknown) => (e instanceof Error ? e.message : String(e))
 
 if (env.production && !env.appUrl)
   fail('APP_URL isn’t set. Set it to the address people use to open Kanbanto, like https://kanbanto.example.com (see docs/configuration.md).')
+if (env.production && /\/\/kankan:kankan@/.test(env.databaseUrl))
+  console.warn('The database still has the default password (kankan). Set POSTGRES_PASSWORD (see docs/self-hosting.md).')
 let keySource: ReturnType<typeof loadMasterKey>
 try {
   keySource = loadMasterKey()

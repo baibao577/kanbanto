@@ -208,6 +208,8 @@ export const workspaceRoutes: FastifyPluginAsync = async (app) => {
       await tx.insert(workspaceInvites).values({ id: newId(), workspaceId: id, kind: 'email', token, email, createdBy: me.id })
     })
     const sent = await inviteEmail(`${base}/#/join/${token}`, u ? 'accept' : 'signup')
+    // (Sent with the inviter's own email service, the link is theirs to read there: it proves nothing either.)
+    if (sent.queued && sent.via === 'own-key') await app.db.update(workspaceInvites).set({ linkShown: true }).where(eq(workspaceInvites.token, token))
     if (sent.queued) return { outcome: 'invited', emailed: true, why: null }
     await app.db.update(workspaceInvites).set({ linkShown: true }).where(eq(workspaceInvites.token, token))
     return { outcome: 'invited', emailed: false, why: WHY_NOT_SENT[sent.reason], token }
@@ -237,6 +239,8 @@ export const workspaceRoutes: FastifyPluginAsync = async (app) => {
       req.body,
     )
     await app.db.transaction(async (tx) => {
+      // (One change to a workspace's people at a time, so two at once can't each see the other admin still there.)
+      await tx.select({ id: workspaces.id }).from(workspaces).where(eq(workspaces.id, id)).for('update')
       const [m] = await tx
         .select()
         .from(workspaceMembers)

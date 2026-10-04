@@ -43,10 +43,12 @@ export const planningRoutes: FastifyPluginAsync = async (app) => {
     const boards = (await boardsFor(app.db, me.id))
       .filter((b) => b.workspaceId === id && !b.archivedAt)
       .map((b) => ({ id: b.id, name: b.name, background: b.background ?? null }))
-    // Time logged on linked boards (everyone in the workspace sees it, like the plan).
+    // Time logged on linked boards, from the ones this person can open (a board kept to fewer people keeps its
+    // logged time to them too, whenever it was linked).
+    const open = new Set(boards.map((b) => b.id))
     const actuals = await loggedOn(
       app.db,
-      plan.projects.flatMap((p) => (p.boardId ? [p.boardId] : [])),
+      plan.projects.flatMap((p) => (p.boardId && open.has(p.boardId) ? [p.boardId] : [])),
     )
     return { plan, seq, canEdit, memberIds: members.map((m) => m.userId), activity, boards, actuals }
   })

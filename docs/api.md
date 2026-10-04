@@ -99,6 +99,16 @@ comment (`comment.added`) is POSTed to the address as JSON:
 
 (`before` and `after` are whole records; shortened here.)
 
+**Say you want them.** When a webhook is added (or its address changed), Kanbanto first sends the address
+`{ "event": "verify", "challenge": "<a one-time code>" }` with the header `X-Kanbanto-Event: verify`. Answer `200` with
+the code somewhere in the reply (the same JSON back is fine) and the webhook is saved; otherwise it's refused. This is
+so nobody can point a webhook at a server that isn't theirs. (A site whose admin allows webhooks to any address
+doesn't ask.)
+
+```js
+if (req.headers['x-kanbanto-event'] === 'verify') return res.json({ challenge: req.body.challenge })
+```
+
 **Check it came from Kanbanto.** Each delivery has `X-Kanbanto-Signature: t=<unix seconds>,v1=<hex>`, the HMAC-SHA256 of
 `<t>.<raw body>` with the webhook's secret (shown when you add it, and again from its menu):
 

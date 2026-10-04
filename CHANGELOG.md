@@ -96,6 +96,27 @@ then `git pull` (or download the new release) and `docker compose up -d --build`
   and deleting stay in the app.
 - **Email** through any SMTP server or Resend, with limits to stay within a free plan. **File storage** on the server's
   disk or in an S3-compatible bucket (Cloudflare R2, Amazon S3, MinIO); people can bring their own.
+- **Security review** before the first public release, with fixes: undo and imported files can no longer store a card
+  whose parent links go round in a loop, or a reminder whose time isn't one (either could stall the server or stop
+  reminders for every board), and old-format files pass the same checks as exports; desktop-notification addresses
+  must be public ones, and a browser stops getting notifications when it signs out, when the password changes or
+  the account is turned off; the bell and the morning email show nothing from a board you can no longer open; API
+  tokens can't change your profile or open live connections; logged time isn't sent to visitors with the public
+  link; assistants can't comment on an archived board; an invite sent with the inviter's own email service no
+  longer counts as proof of the address; a file restored from the trash needs room in the quota; reminder emails
+  for someone else count against whoever set them; the storage settings refuse non-JSON bodies before reading them;
+  a confirmation link asks for the account's password outside the browser that signed up; sign-up with an invite the
+  address can't use answers the same whether or not it has an account; someone removed from a board can no longer
+  move its files to their own storage; a plan project can only be linked to a board its planner can open, and plan
+  undo can't add an outsider's account; the app-connection page approves exactly what it shows; a sign-in under way
+  doesn't survive a password change; webhook replies are read only as far as they're kept, and one webhook's slow
+  address no longer holds back the others; searching archived cards, undo and live updates stay quick on very large
+  boards. A second pass added: a new webhook address must answer a one-time code before it's saved; the app sends a
+  content-security policy and no-framing, no-sniff, referrer and HSTS headers; unused reset and confirmation links
+  end when the password changes; turning an account off also removes its API tokens, connected apps and calendar
+  link; simultaneous requests can't get past the wrong-password limit, the email limits, the file quota or the
+  last-owner rule; a board made private stops showing its logged time in the workspace's plan; CI actions are pinned
+  to exact commits; a warning at startup when the database still has the default password.
 - **Guides** for the people using it, in [`guides/`](guides/): a page for each thing you'd want to do (your first
   board, cards, sharing, workspaces, assistants, time and planning, calendars), with pictures taken from the app by a
   script, built into a small website with VitePress. **Guides** in the account menu opens them (at kanbanto.com by

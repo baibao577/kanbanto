@@ -94,7 +94,7 @@ export async function searchCards(app: FastifyInstance, me: SessionUser, q: Card
       const bodies = found.get(`${b.id}:${t.id}`) ?? []
       const kind = put ? (t.archivedDone ? 'done' : null) : idx.category.get(t.id)!
       const done = kind === 'done'
-      const kids = put ? (under.get(t.id) ?? []) : []
+      const kids = (put && under.get(t.id)) || NONE
       const facts: CardFacts = {
         text: bodies.length ? `${own} ${bodies.join(' ').toLowerCase()}` : own,
         assigneeId: t.assigneeId,
@@ -104,7 +104,7 @@ export async function searchCards(app: FastifyInstance, me: SessionUser, q: Card
         kind,
         done,
         archived: put,
-        leaf: put ? !kids.length : isLeaf(idx, t.id),
+        leaf: put ? !kids.n : isLeaf(idx, t.id),
         createdAt: Date.parse(t.createdAt),
         // Its own last change or comment (not its subtasks': each of them is a row of its own).
         activeAt: Math.max(Date.parse(t.activeAt ?? t.updatedAt), lastComment[t.id] ? Date.parse(lastComment[t.id]) : 0),
@@ -135,8 +135,8 @@ export async function searchCards(app: FastifyInstance, me: SessionUser, q: Card
           priority: t.priority ?? null,
           due: t.due ?? null,
           labels: t.labels.flatMap((l) => (labelById.has(l) ? [{ name: labelById.get(l)!.name, color: labelById.get(l)!.color }] : [])),
-          subtasks: put ? kids.length : idx.subTotal.get(t.id)!,
-          subtasksDone: put ? kids.filter((k) => archived[k].archivedDone).length : idx.subDone.get(t.id)!,
+          subtasks: put ? kids.n : idx.subTotal.get(t.id)!,
+          subtasksDone: put ? kids.done : idx.subDone.get(t.id)!,
           createdAt: t.createdAt,
           activeAt: new Date(facts.activeAt).toISOString(),
           doneAt: facts.doneAt === null ? null : new Date(facts.doneAt).toISOString(),
@@ -189,18 +189,44 @@ function pathOf(data: BoardData, t: Task): string[] {
   return out
 }
 
-/** For each archived task, every archived task under it (at any depth). */
-function archivedUnder(archived: Record<string, Task>): Map<string, string[]> {
-  const out = new Map<string, string[]>()
+const NONE = { n: 0, done: 0 }
+
+/**
+ * For each archived task with archived tasks under it (at any depth): how many, and how many of those were done.
+ * One pass down each tree, so a long chain of nested tasks costs no more than the same number side by side.
+ */
+function archivedUnder(archived: Record<string, Task>): Map<string, { n: number; done: number }> {
+  const kids = new Map<string, string[]>()
+  const tops: string[] = []
   for (const t of Object.values(archived)) {
-    const seen = new Set([t.id])
-    let p = t.parentId
-    while (p && archived[p] && !seen.has(p)) {
-      if (!out.has(p)) out.set(p, [])
-      out.get(p)!.push(t.id)
-      seen.add(p)
-      p = archived[p].parentId
+    if (t.parentId && archived[t.parentId] && t.parentId !== t.id) {
+      const of = kids.get(t.parentId)
+      if (of) of.push(t.id)
+      else kids.set(t.parentId, [t.id])
+    } else tops.push(t.id)
+  }
+  const out = new Map<string, { n: number; done: number }>()
+  const seen = new Set<string>()
+  // Parents before their children, then counted from the bottom up. (Tasks in a loop have no top: they're left out.)
+  const order: string[] = []
+  const stack = [...tops]
+  while (stack.length) {
+    const id = stack.pop()!
+    if (seen.has(id)) continue
+    seen.add(id)
+    order.push(id)
+    stack.push(...(kids.get(id) ?? []))
+  }
+  for (let i = order.length - 1; i >= 0; i--) {
+    const mine = kids.get(order[i])
+    if (!mine) continue
+    const sum = { n: 0, done: 0 }
+    for (const k of mine) {
+      const below = out.get(k) ?? NONE
+      sum.n += 1 + below.n
+      sum.done += (archived[k].archivedDone ? 1 : 0) + below.done
     }
+    out.set(order[i], sum)
   }
   return out
 }

@@ -41,7 +41,11 @@ const priority = z.enum(PRIORITIES)
 const reminder = z
   .object({
     id: recordId,
-    at: z.string().max(40).optional(),
+    at: z
+      .string()
+      .max(40)
+      .refine((s) => !Number.isNaN(Date.parse(s)), 'A reminder’s time is a moment, like 2026-10-31T14:30:00Z.')
+      .optional(),
     beforeDue: z
       .number()
       .int()

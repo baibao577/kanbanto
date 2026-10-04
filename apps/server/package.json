@@ -22,7 +22,7 @@
     "@kanbanto/model": "workspace:*",
     "@modelcontextprotocol/sdk": "^1.31.0",
     "@react-email/render": "^2.1.0",
-    "@scalar/fastify-api-reference": "^1.72.2",
+    "@scalar/fastify-api-reference": "^1.72.4",
     "aws4fetch": "^1.0.20",
     "drizzle-orm": "^0.45.3",
     "fastify": "^5.12.5",
