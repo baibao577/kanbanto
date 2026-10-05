@@ -7,7 +7,7 @@ import { indexFor } from '@kanbanto/model/indexer'
 import type { Change } from '@kanbanto/model/records'
 import type { BoardData } from '@kanbanto/model/types'
 import { and, eq, lt, sql } from 'drizzle-orm'
-import type { Db } from '../db'
+import type { Db, Tx } from '../db'
 import { attachments, boardActivity, boards, comments, notifications, taskFollowers, timeEntries } from '../db/schema'
 import { HttpError } from '../http'
 import type { LiveHub } from '../live'
@@ -25,7 +25,7 @@ const CACHE_RECORDS = 200_000
 const REMEMBERED_MUTATIONS = 500
 
 const sizeOf = (d: BoardData) =>
-  Object.keys(d.tasks).length + Object.keys(d.archived ?? {}).length + d.columns.length + d.labels.length + d.members.length + 1
+  Object.keys(d.tasks).length + Object.keys(d.archived ?? {}).length + d.columns.length + d.labels.length + d.members.length + d.fields.length + 1
 
 /**
  * Runs commands against boards: the same `execute` the app runs, but here it's the one that counts.
@@ -93,9 +93,14 @@ export class BoardEngine {
       }
       if ('error' in r) throw new HttpError(422, r.error)
       if (!r.changes.length) return { seq: row.seq, changes: [], data }
-      await writeChanges(tx, boardId, r.changes)
+      await writeChanges(
+        tx,
+        boardId,
+        r.changes,
+        data.fields.map((f) => f.id),
+      )
       // The activity log: what this change did, in words (reordering alone isn't logged).
-      const items = describeChanges(data, r.changes)
+      const items = describeChanges(data, r.changes, command)
       if (items.length)
         await tx.insert(boardActivity).values({ id: newId(), boardId, actorId: userId, command: command.type, items, via: via ?? null })
       const seq = row.seq + 1
@@ -144,8 +149,9 @@ export class BoardEngine {
       const target = await load(toId)
       const plan = planMove(source, target, taskId, to, { now: new Date().toISOString(), newId })
       if ('error' in plan) throw new HttpError(422, plan.error)
-      await writeChanges(tx, fromId, plan.source)
-      await writeChanges(tx, toId, plan.target)
+      const ids = (d: BoardData) => d.fields.map((f) => f.id)
+      await writeChanges(tx, fromId, plan.source, ids(source))
+      await writeChanges(tx, toId, plan.target, ids(target))
 
       // Its comments, files, mentions, followers and logged time follow it (files stay where they're stored, and count where they did).
       for (const [oldId, id] of plan.ids) {
@@ -195,6 +201,30 @@ export class BoardEngine {
     // The other board's comment and file counts changed too.
     this.hub.broadcast(toId, { type: 'reload' })
     return { id: plan.ids.get(taskId)!, summary: plan.summary, board: { id: toId, name: dest.data.board.name } }
+  }
+
+  /**
+   * Something about these boards is changing outside commands, in `tx` (their fields, a field's definition, values
+   * taken out of their cards). Their rows are locked, one by one and always in the same order (like `transfer`), and
+   * their `seq` goes up with the change itself: a command that was running finishes first, and the next one loads
+   * the board afresh. Once it's committed, `reloaded` tells everyone who has them open.
+   */
+  async bump(tx: Tx, boardIds: string[]) {
+    for (const id of [...new Set(boardIds)].sort()) {
+      await tx.select({ seq: boards.seq }).from(boards).where(eq(boards.id, id)).for('update')
+      await tx
+        .update(boards)
+        .set({ seq: sql`${boards.seq} + 1` })
+        .where(eq(boards.id, id))
+    }
+  }
+
+  /** After `bump` is committed: the cached copies go, and every open copy fetches the board again. */
+  reloaded(boardIds: string[]) {
+    for (const id of new Set(boardIds)) {
+      this.drop(id)
+      this.hub.broadcast(id, { type: 'reload' })
+    }
   }
 
   /** Something changed outside commands (people, a new board): bump `seq` so every cached copy is refreshed. */

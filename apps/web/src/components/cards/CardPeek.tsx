@@ -46,6 +46,7 @@ export function CardPeek({ boardId, taskId, viewOnly, onClose }: { boardId: stri
     idx,
     run,
     undo: () => void store.undo(),
+    reload: store.reload,
     access,
     readOnly: !!viewOnly || access.role === 'viewer' || !!access.archivedAt,
     openShare: () => toBoard({}),

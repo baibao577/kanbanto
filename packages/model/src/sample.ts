@@ -69,6 +69,7 @@ function sampleBoard(boardId: string): BoardData {
     members: SAMPLE_MEMBERS,
     columns: EXAMPLE_COLUMNS,
     labels: SAMPLE_LABELS,
+    fields: [],
     tasks: { ...sampleTasks(), ...Object.fromEntries(extra.map((x) => [x.id, x])) },
   }
 }
@@ -81,6 +82,7 @@ export function emptyBoard(id: string, name: string, now: string): BoardData {
     members: [],
     columns: EXAMPLE_COLUMNS.map((c, i) => ({ ...c, position: keys[i], createdAt: now, updatedAt: now })),
     labels: [],
+    fields: [],
     tasks: {},
   }
 }

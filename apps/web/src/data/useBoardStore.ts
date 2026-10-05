@@ -140,6 +140,8 @@ export function useBoardStore(boardId: string, prefsStore: PrefsStore, onEvent: 
     prefs,
     setPrefs,
     run,
+    /** Fetches the board again (after changing something that isn't a command: its fields). */
+    reload: useCallback(() => void sync?.resync(), [sync]),
     undo: useCallback(() => step('undo'), [step]),
     redo: useCallback(() => step('redo'), [step]),
     canUndo: depth.undo > 0,

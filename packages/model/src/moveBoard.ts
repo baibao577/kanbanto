@@ -1,4 +1,5 @@
 import { execute } from './commands'
+import { carryCustom, matchFields } from './fields'
 import { descendantsOf, indexFor } from './indexer'
 import { positionBetween } from './position'
 import type { Change } from './records'
@@ -29,6 +30,8 @@ export interface MovePlan {
     newLabels: string[]
     /** "Waiting on" links to tasks that stay behind (dropped). */
     droppedLinks: number
+    /** Fields whose values can't come along: the other board doesn't use them (or not that option). */
+    droppedFields: string[]
   }
 }
 
@@ -92,11 +95,17 @@ export function planMove(
   const onTarget = new Set(target.members.map((m) => m.id))
   const unassigned = new Set<string>()
   let droppedLinks = 0
+  // Values go along where the other board uses the same field, or one with the same name and type.
+  const { map: fieldMap } = matchFields(source.fields, target.fields)
+  const droppedFields = new Set<string>()
   const parent = to.parentId ?? null
   const lastSibling = (parent ? tIdx.childrenOf.get(parent) : tIdx.roots)?.at(-1)
   for (const id of moving) {
     const t = source.tasks[id]
-    const { rank: _rank, assigneeId, doneAt, ...rest } = t
+    const { rank: _rank, assigneeId, doneAt, custom: held, ...rest } = t
+    const custom = carryCustom(held, fieldMap)
+    for (const f of source.fields)
+      if (held?.[f.id] !== undefined && (!fieldMap.has(f.id) || custom?.[fieldMap.get(f.id)!.id] === undefined)) droppedFields.add(f.name)
     const status = listFor(t)
     const done = target.columns.some((c) => c.id === status && c.category === 'done')
     const keep = assigneeId && onTarget.has(assigneeId)
@@ -114,6 +123,7 @@ export function planMove(
       labels: t.labels.flatMap((l) => (labelIds.has(l) ? [labelIds.get(l)!] : [])),
       blockedBy: t.blockedBy.filter((b) => inMove.has(b)).map((b) => ids.get(b)!),
       ...(keep && { assigneeId }),
+      ...(custom && { custom }),
       // Reminders go too; who set one is kept only if they're on the other board.
       ...(t.reminders && {
         reminders: t.reminders.map(({ by, ...r }) => ({ ...r, ...(by && onTarget.has(by) && { by }) })),
@@ -128,6 +138,13 @@ export function planMove(
     source: removed.changes,
     target: target_,
     ids,
-    summary: { title: root.title, subtasks: moving.length - 1, unassigned: [...unassigned], newLabels, droppedLinks },
+    summary: {
+      title: root.title,
+      subtasks: moving.length - 1,
+      unassigned: [...unassigned],
+      newLabels,
+      droppedLinks,
+      droppedFields: [...droppedFields],
+    },
   }
 }

@@ -1,3 +1,5 @@
+import type { Command } from './commands'
+import { sameValue, valueText } from './fields'
 import type { Change } from './records'
 import type { BoardData, Task } from './types'
 
@@ -13,13 +15,21 @@ export interface ActivityItem {
 const MAX_ITEMS = 20
 
 const q = (s: string) => `“${s}”`
+/** A value, cut short: the log says what changed, it doesn't keep the whole text. */
+const short = (s: string) => (s.length > 60 ? `${s.slice(0, 59).trimEnd()}…` : s)
 
 /**
  * What a change did, in words, for the activity log: "added “Logo”", "moved “Deploy” to Done", "assigned “Deploy” to
  * Ann". `before` is the board before the change (for list, parent and people names). Reordering alone isn't worth a
  * line, so a change that only moves things around its list says nothing.
  */
-export function describeChanges(before: BoardData, changes: Change[]): ActivityItem[] {
+export function describeChanges(before: BoardData, changes: Change[], command?: Command): ActivityItem[] {
+  // Clearing a field on every card is one thing that happened, not one per card.
+  if (command?.type === 'tasks.clearField') {
+    const n = changes.filter((c) => c.entity === 'task').length
+    const name = before.fields.find((f) => f.id === command.fieldId)?.name ?? 'a field'
+    return n ? [{ text: `cleared ${name} on ${n} ${n === 1 ? 'card' : 'cards'}` }] : []
+  }
   const list = (id: string) => before.columns.find((c) => c.id === id)?.name ?? 'another list'
   const person = (id: string | undefined) => (id ? (before.members.find((m) => m.id === id)?.name ?? 'someone') : null)
   // A parent may be created in the same change (e.g. undo), so look in the change too.
@@ -68,6 +78,14 @@ export function describeChanges(before: BoardData, changes: Change[]): ActivityI
           items.push({ taskId: b.id, text: b.priority ? `set the priority of ${t} to ${b.priority}` : `cleared the priority of ${t}` })
         if (a.labels.join() !== b.labels.join()) items.push({ taskId: b.id, text: `changed the labels of ${t}` })
         if (a.blockedBy.join() !== b.blockedBy.join()) items.push({ taskId: b.id, text: `changed what ${t} waits on` })
+        for (const f of before.fields) {
+          const value = b.custom?.[f.id]
+          if (sameValue(a.custom?.[f.id], value)) continue
+          items.push({
+            taskId: b.id,
+            text: value === undefined ? `cleared ${f.name} of ${t}` : `set ${f.name} of ${t} to ${short(valueText(f, value))}`,
+          })
+        }
       }
     } else if (c.entity === 'column') {
       const a = c.before as { name: string } | null

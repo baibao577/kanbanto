@@ -30,6 +30,7 @@ import { serverSender, type Sender } from './mail/senders'
 import { providerTransport, type Transport } from './mail/transport'
 import { adminRoutes } from './routes/admin'
 import { authRoutes } from './routes/auth'
+import { fieldRoutes } from './routes/fields'
 import { boardRoutes } from './routes/boards'
 import { cardRoutes } from './cards'
 import { commentRoutes } from './routes/comments'
@@ -246,7 +247,7 @@ export async function buildApp(
     if (err instanceof HttpError) {
       // A refusal caused by something unexpected (e.g. a command that tripped over bad data): worth a look.
       if (err.cause) req.log.warn({ err: loggable(err.cause) }, err.message)
-      return reply.status(err.status).send({ error: err.message, ...(err.code ? { code: err.code } : {}) })
+      return reply.status(err.status).send({ ...err.details, error: err.message, ...(err.code ? { code: err.code } : {}) })
     }
     const { statusCode: status, message } = err as { statusCode?: number; message?: string }
     if (status && status < 500) return reply.status(status).send({ error: message })
@@ -261,6 +262,7 @@ export async function buildApp(
   await app.register(cardRoutes, { prefix: '/api' })
   await app.register(pushRoutes, { prefix: '/api' })
   await app.register(presetRoutes, { prefix: '/api' })
+  await app.register(fieldRoutes, { prefix: '/api' })
   await app.register(sharingRoutes, { prefix: '/api' })
   await app.register(workspaceRoutes, { prefix: '/api' })
   await app.register(planningRoutes, { prefix: '/api' })

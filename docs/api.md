@@ -18,7 +18,7 @@ curl https://kanbanto.example.com/api/boards -H "Authorization: Bearer kbt_…"
 - A token **acts as you**, with your access to boards: it can't open anything you can't.
 - **Read only** tokens can only use `GET`. **Read and make changes** tokens can also change boards.
 - Tokens reach boards (tasks, comments, files, logged time, webhooks), the search across boards, workspaces, your
-  notifications, and who you are (`GET /api/auth/me`, read only). Never your account settings, other tokens or the
+  own fields, your notifications, and who you are (`GET /api/auth/me`, read only). Never your account settings, other tokens or the
   Platform console, and not a board's live connection: ask again instead.
 - They can expire (30, 90 or 365 days) or not. Deleting one, or an admin turning tokens off, stops it at once.
 - Only a hash of each token is stored. Account settings shows when each was last used.
@@ -38,6 +38,14 @@ curl -X POST https://kanbanto.example.com/api/boards/<board id>/mutations \
 - A refused command answers 422 with the reason (for example, moving a task inside its own subtask).
 - `/api/docs` lists every command and its fields: `task.create`, `task.update`, `task.move`, `tasks.moveToList`,
   `task.archive`, `tasks.archiveDone`, `task.restore`, `task.delete`, and the ones for lists, labels and the board.
+- **Custom fields.** A board's own fields are in `data.fields` (id, name, type, and for a choice its options); a
+  task's values are in `custom`, by field id. Set them with `task.update`:
+  `{"type":"task.update","id":"<task id>","fields":{"custom":{"<field id>":"Acme","<another>":null}}}` sets the
+  ones named (`null` clears one) and leaves the others. A value is text, a number, a day or moment (like `due`),
+  `true` for a ticked checkbox, or `["<option id>"]` for a choice. `tasks.clearField` clears one field on every
+  card of the board. The fields themselves are managed elsewhere: a library per workspace
+  (`/api/workspaces/<id>/fields`, its admins) and your own for Personal boards (`/api/fields`); a board's owners
+  choose which ones it uses with `PUT /api/boards/<id>/fields`. See **Fields** in `/api/docs`.
 - **Archiving** (`task.archive`) puts a task and its subtasks away: they're out of the board and its counts, kept (with
   comments and files), and come back with `task.restore`. `task.delete` on an archived task deletes it for good.
   `tasks.archiveDone` tidies a done list in one go: `{"type":"tasks.archiveDone","status":"<list id>","before":"2026-09-01T00:00:00Z"}`
@@ -160,7 +168,7 @@ claude mcp add --transport http kanbanto https://kanbanto.example.com/api/mcp --
 | Tool | What it does |
 |---|---|
 | `list_boards` | Who you act as (name, time zone, today's date there) and the boards you can open: where each lives (a workspace, "Personal" or "Shared with you"), what it's for, and which is your Inbox |
-| `get_board` | A board's lists, labels, people and its open tasks: the top levels (subtasks under their task), the part under one task, or one list's cards (`tasks: false` for just the lists, labels and people). Top-level tasks come list by list, each list in the order made by hand (`order: outline` for the outline's order) |
+| `get_board` | A board's lists, labels, people and its open tasks: the top levels (subtasks under their task), the part under one task, or one list's cards (`tasks: false` for just the lists, labels and people), and its own fields with their types and options. Top-level tasks come list by list, each list in the order made by hand (`order: outline` for the outline's order) |
 | `find_tasks` | Search one board, one workspace or everything: text, list, kind of list (`counts_as: doing`: in progress on every board, whatever the list is called), label, assignee (`me`, `nobody`), priority, blocked, due, created, last worked on, done or archived between two times; sorted and paged. Without a `sort`, results come list by list, each list in the order its cards were put in by hand, so one list reads top to bottom as on the board. Asking by when tasks got done also finds the ones archived since. `worked_after` / `worked_before`: what was worked on in a stretch of time (made or changed then), each result saying what happened |
 | `team_overview` | How a board or workspace is doing: tasks per list, each person's open, overdue and blocked work, what needs attention, and the time each person logged on it this week |
 | `reminders` | Your reminders coming up in the next days, and the ones that went off in the last 24 hours |
@@ -169,8 +177,8 @@ claude mcp add --transport http kanbanto https://kanbanto.example.com/api/mcp --
 | `get_task` | A task with its parents, subtasks, what it waits on, latest comments, and the time logged on it |
 | `my_week` | Your logged time for a week across your boards: each day against your hours a day (empty days stand out), each task's time per day, and tasks you worked on without logging time |
 | `plan_overview` | A workspace's resource plan, read only: each project's planned, scheduled and logged man-days, who's booked at what share; each person's load, when they go over 100% and when they're free |
-| `create_tasks` | Add tasks, each with its own `subtasks` if you like, or break one down into subtasks (`parent_id`); without a board they go to your Inbox. A wrong list, label or person adds nothing |
-| `update_task` | Title, description, dates, assignee, priority, labels, what it waits on (`waiting_on`), list, and its place in the list (`position: top` / `bottom`, `before_task_id` / `after_task_id`). Put in another list, it goes to the end unless placed |
+| `create_tasks` | Add tasks, each with its own `subtasks` if you like, or break one down into subtasks (`parent_id`); without a board they go to your Inbox. A wrong list, label or person adds nothing. Each can come with `fields` (the board's own, by name) |
+| `update_task` | Title, description, dates, assignee, priority, labels, what it waits on (`waiting_on`), list, and its place in the list (`position: top` / `bottom`, `before_task_id` / `after_task_id`). Put in another list, it goes to the end unless placed. `fields: {"Stage": "Won", "Value": 12000}` sets the board's own fields by name (`null` clears one) |
 | `move_task` | Change a task's parent or its place among siblings in the outline |
 | `set_reminder` | Add a reminder (at a time, or some minutes before it's due: before a whole due day, from 9:00 in your time zone) or remove one; it goes to the task's assignee |
 | `archive_task` | Archive a task with its subtasks, or restore it (`restore: true`); nothing is lost |

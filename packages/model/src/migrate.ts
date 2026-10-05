@@ -1,4 +1,5 @@
 import { LABEL_COLOR_CYCLE, type ColorName } from './colors'
+import { tidyCustom } from './fields'
 import { comparePositions, positionsBetween } from './position'
 import type { ViewPrefs } from './prefs'
 import { DEFAULT_DISPLAY } from './prefs'
@@ -172,8 +173,17 @@ export function repairTasks(tasks: TaskMap, columns: StatusColumn[], members: Me
 /** Board data from a loaded or imported source, with references repaired and lists in order. */
 export function repairData(data: BoardData): BoardData {
   const columns = [...data.columns].sort((a, b) => comparePositions(a.position, b.position))
-  const tasks = unloop(repairTasks(data.tasks, columns, data.members, data.labels))
-  return data.archived ? { ...data, columns, tasks, archived: unloop(data.archived, tasks) } : { ...data, columns, tasks }
+  // (A card only holds values for the board's fields, and only ones that fit them.)
+  const values = (all: TaskMap): TaskMap =>
+    Object.fromEntries(
+      Object.values(all).map((t) => {
+        const { custom: _held, ...rest } = t
+        const custom = tidyCustom(t.custom, data.fields)
+        return [t.id, custom ? { ...rest, custom } : rest]
+      }),
+    )
+  const tasks = values(unloop(repairTasks(data.tasks, columns, data.members, data.labels)))
+  return data.archived ? { ...data, columns, tasks, archived: values(unloop(data.archived, tasks)) } : { ...data, columns, tasks }
 }
 
 /**
@@ -225,7 +235,7 @@ export function upgradeSave(raw: unknown, u: Upgrade): { data: BoardData; prefs:
     ...(s.background ? { background: s.background } : {}),
     ...meta(u.now),
   }
-  const data: BoardData = { board, members, columns, labels, tasks }
+  const data: BoardData = { board, members, columns, labels, fields: [], tasks }
   return { data, prefs: upgradePrefs(s, members) }
 }
 

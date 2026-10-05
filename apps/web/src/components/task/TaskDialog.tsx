@@ -46,6 +46,7 @@ import { ArchivedBanner } from './ArchivedTask'
 import { AttachmentsSection } from './Attachments'
 import { TimeField, TimeSection } from './CardTime'
 import { CommentsSection } from './Comments'
+import { CustomFields } from './CustomFields'
 import { Description } from './Description'
 import { useCardFiles } from '@/data/cardFiles'
 import { LabelPicker } from './LabelPicker'
@@ -390,6 +391,8 @@ function TaskDetail({ id, onClose }: { id: string; onClose: () => void }) {
                 <TimeField taskId={id} />
               </SideField>
             </div>
+            {/* The board's own fields, before the ones every card has but few use. */}
+            <CustomFields task={t} onChange={(custom) => patch({ custom })} />
             <div>
               <SideField label="Labels">
                 <div className="flex flex-wrap items-center gap-1 px-1">

@@ -1,12 +1,13 @@
 import { comparePositions } from '@kanbanto/model/position'
 import type { Change } from '@kanbanto/model/records'
+import type { BoardField } from '@kanbanto/model/fields'
 import type { BoardData, Member } from '@kanbanto/model/types'
-import { and, eq, getTableColumns, inArray, sql } from 'drizzle-orm'
+import { and, asc, eq, getTableColumns, inArray, isNull, sql } from 'drizzle-orm'
 import type { PgTable } from 'drizzle-orm/pg-core'
 import type { Db, Tx } from '../db'
-import { boardMembers, boards, labels, lists, tasks, users, workspaceMembers, type Role } from '../db/schema'
+import { boardFieldRows, boardMembers, boards, labels, libraryFields, lists, tasks, users, workspaceMembers, type Role } from '../db/schema'
 import { higherRole, type BoardRow } from './access'
-import { boardFields, boardFromRow, labelFromRow, labelToRow, listFromRow, listToRow, taskFromRow, taskToRow } from './records'
+import { boardFields, boardFromRow, fieldFromRow, labelFromRow, labelToRow, listFromRow, listToRow, taskFromRow, taskToRow } from './records'
 
 export interface Person {
   userId: string
@@ -57,6 +58,17 @@ export async function loadMembers(tx: Db | Tx, board: BoardRow): Promise<Member[
   }))
 }
 
+/** The fields a board uses, in its order (not the ones taken off it, or archived in their library). */
+export async function boardFieldsOf(tx: Db | Tx, boardId: string): Promise<BoardField[]> {
+  const rows = await tx
+    .select({ f: libraryFields, front: boardFieldRows.front })
+    .from(boardFieldRows)
+    .innerJoin(libraryFields, eq(libraryFields.id, boardFieldRows.fieldId))
+    .where(and(eq(boardFieldRows.boardId, boardId), isNull(boardFieldRows.removedAt), isNull(libraryFields.archivedAt)))
+    .orderBy(asc(boardFieldRows.position))
+  return rows.map((r) => fieldFromRow(r.f, r.front))
+}
+
 /** The whole board as the model sees it, plus its change counter. Null if there's no such board. */
 export async function loadBoard(tx: Tx, boardId: string): Promise<{ data: BoardData; seq: number } | null> {
   const [b] = await tx.select().from(boards).where(eq(boards.id, boardId))
@@ -65,6 +77,8 @@ export async function loadBoard(tx: Tx, boardId: string): Promise<{ data: BoardD
   const labelRows = await tx.select().from(labels).where(eq(labels.boardId, boardId))
   const taskRows = await tx.select().from(tasks).where(eq(tasks.boardId, boardId))
   const members = await loadMembers(tx, b)
+  const fields = await boardFieldsOf(tx, boardId)
+  const uses = new Set(fields.map((f) => f.id))
   return {
     seq: b.seq,
     data: {
@@ -72,8 +86,9 @@ export async function loadBoard(tx: Tx, boardId: string): Promise<{ data: BoardD
       members,
       columns: listRows.map(listFromRow).sort((x, y) => comparePositions(x.position, y.position)),
       labels: labelRows.map(labelFromRow),
-      tasks: Object.fromEntries(taskRows.flatMap((r) => (r.archivedAt ? [] : [[r.id, taskFromRow(r)]]))),
-      archived: Object.fromEntries(taskRows.flatMap((r) => (r.archivedAt ? [[r.id, taskFromRow(r)]] : []))),
+      fields,
+      tasks: Object.fromEntries(taskRows.flatMap((r) => (r.archivedAt ? [] : [[r.id, taskFromRow(r, uses)]]))),
+      archived: Object.fromEntries(taskRows.flatMap((r) => (r.archivedAt ? [[r.id, taskFromRow(r, uses)]] : []))),
     },
   }
 }
@@ -88,8 +103,14 @@ function excludedSet(table: PgTable, keys: string[]) {
 const CHUNK = 500
 const chunks = <T>(xs: T[]) => Array.from({ length: Math.ceil(xs.length / CHUNK) }, (_, i) => xs.slice(i * CHUNK, (i + 1) * CHUNK))
 
-/** Saves the changes a command made. Upserts for created/edited records, deletes for removed ones. */
-export async function writeChanges(tx: Tx, boardId: string, changes: Change[]) {
+/**
+ * Saves the changes a command made. Upserts for created/edited records, deletes for removed ones.
+ *
+ * `fieldIds`: the fields the board uses. A card in memory holds values for those only, so a card that's saved has
+ * them replaced and keeps whatever else its row holds (values for a field the board stopped using, which come back
+ * with the field). Null: the cards are written as they are (a new board).
+ */
+export async function writeChanges(tx: Tx, boardId: string, changes: Change[], fieldIds: string[] | null) {
   // One write per record: if a record appears twice, its last state wins.
   const last = new Map<string, Change>()
   for (const c of changes) last.set(`${c.entity}:${c.id}`, c)
@@ -101,7 +122,16 @@ export async function writeChanges(tx: Tx, boardId: string, changes: Change[]) {
     } else if (c.entity !== 'member') by[c.entity].push(c)
   }
 
-  const save = async <T>(table: typeof lists | typeof labels | typeof tasks, cs: Change[], toRow: (r: T) => object) => {
+  const shown = fieldIds?.length
+    ? sql`array[${sql.join(
+        fieldIds.map((id) => sql`${id}`),
+        sql`, `,
+      )}]::text[]`
+    : sql`'{}'::text[]`
+  const custom = fieldIds
+    ? sql`nullif((coalesce(${tasks.custom}, '{}'::jsonb) - ${shown}) || coalesce(excluded."custom", '{}'::jsonb), '{}'::jsonb)`
+    : sql.raw('excluded."custom"')
+  const save = async <T>(table: typeof lists | typeof labels | typeof tasks, cs: Change[], toRow: (r: T) => object, extra: object = {}) => {
     const gone = cs.filter((c) => !c.after).map((c) => c.id)
     for (const ids of chunks(gone)) await tx.delete(table).where(and(eq(table.boardId, boardId), inArray(table.id, ids)))
     const rows = cs.filter((c) => c.after).map((c) => toRow(c.after as T))
@@ -109,9 +139,9 @@ export async function writeChanges(tx: Tx, boardId: string, changes: Change[]) {
       await tx
         .insert(table)
         .values(part as never)
-        .onConflictDoUpdate({ target: [table.boardId, table.id], set: excludedSet(table, ['boardId', 'id']) })
+        .onConflictDoUpdate({ target: [table.boardId, table.id], set: { ...excludedSet(table, ['boardId', 'id']), ...extra } })
   }
   await save(lists, by.column, (c: Parameters<typeof listToRow>[1]) => listToRow(boardId, c))
   await save(labels, by.label, (l: Parameters<typeof labelToRow>[1]) => labelToRow(boardId, l))
-  await save(tasks, by.task, (t: Parameters<typeof taskToRow>[1]) => taskToRow(boardId, t))
+  await save(tasks, by.task, (t: Parameters<typeof taskToRow>[1]) => taskToRow(boardId, t), { custom })
 }

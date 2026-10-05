@@ -65,6 +65,7 @@ const UNDOABLE_TOAST: Partial<Record<Command['type'], string>> = {
   'task.archive': 'Card archived',
   'column.delete': 'List deleted',
   'label.delete': 'Label deleted',
+  'tasks.clearField': 'Field cleared on every card',
 }
 
 /** Across an archived board: it's read-only, and owners can bring it back. */
@@ -375,6 +376,7 @@ function Workspace({ store }: { store: Store }) {
     idx,
     run,
     undo: () => say(undo()),
+    reload: store.reload,
     access,
     readOnly,
     openTask,

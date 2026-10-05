@@ -73,5 +73,9 @@ describe('router', () => {
     expect(parseRoute('#/w/w-1/people')).toEqual({ page: 'workspace', id: 'w-1' })
     expect(parseRoute('#/w/w-1/zzz?by=person')).toEqual({ page: 'workspace', id: 'w-1' })
     expect(parseRoute('#/w/w-1/planning?by=team&zoom=hours')).toEqual({ page: 'workspace', id: 'w-1', section: 'planning' })
+    // Its fields, and your own.
+    expect(parseRoute('#/w/w-1/fields')).toEqual({ page: 'workspace', id: 'w-1', section: 'fields' })
+    expect(hrefFor({ page: 'workspace', id: 'w-1', section: 'fields' })).toBe('#/w/w-1/fields')
+    expect(parseRoute('#/account/fields')).toEqual({ page: 'account', section: 'fields' })
   })
 })

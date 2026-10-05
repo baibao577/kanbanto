@@ -18,6 +18,12 @@ then `git pull` (or download the new release) and `docker compose up -d --build`
   can view. Changes appear for everyone live.
 - **Comments** with @mentions, a notification bell and a daily email summary; **attachments** on cards and in comments.
   A description can @mention people too: they're told once, when their name is first written there.
+- **Custom fields:** add your own fields to cards: text (or a link, an email, a phone number), a number with a unit,
+  a date, a choice from a list of options, or a checkbox. A field is defined once in a library, a workspace's
+  (its admins) or your own for Personal boards, and each board's owners pick the ones it uses, their order, and up to
+  three that show on the card front. Taking a field off a board, or archiving it, keeps its values; deleting an
+  archived field for good removes them. Values go along when a card or a board moves, where the other side has a
+  field for them, and with an exported board. Assistants read and set them by name.
 - **Following cards:** you're told about new comments and what happens to the cards you're part of (moved to another
   list, assigned, due date, description, archived or deleted): the ones you made, are assigned, commented on or were
   mentioned on, which includes being told when a card is given to you. Follow or unfollow any card from its side

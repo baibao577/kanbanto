@@ -208,6 +208,28 @@ The app uses hash routing, so any static host or proxy works without rewrite rul
   mentions and followed-card news they haven't seen.
 - `#` in a comment or description links to one of the card's files.
 
+## Custom fields
+
+- A **field** (`fields` table; the rules are in `model/fields.ts`) is defined once, in a **library**: a workspace's,
+  managed by its admins, or a person's own, for their Personal boards. Its type (text, number, date, choice,
+  checkbox) is chosen once. `model/fields.ts` is the one place that knows the types: how to check a value, show it,
+  compare it, and carry it over to another field.
+- A **board picks** the fields it uses (`board_fields`: order, and up to three on the card front), its owners'
+  choice. The picked definitions are put into the board when it's loaded (`BoardData.fields`), the way its people
+  are: commands only read them. A card's values are `Task.custom`, by field id, set through `task.update`, so undo,
+  the activity log, live updates and webhooks treat them like any other change.
+- Library changes and a board's picks aren't board commands. They go through their own routes (`routes/fields.ts`,
+  `boards/fields.ts`), raise the change counter of every board that shows the field in the same transaction, and
+  then have the open copies fetch the board again.
+- **Hidden values stay on the server.** A card in memory holds values only for the fields its board uses. Taking a
+  field off a board (its row is kept, marked removed) or archiving it leaves the values in `tasks.custom`, and saving
+  a card merges with what the row holds, so they're back when the field is. They are never sent to browsers,
+  assistants, webhooks or exports. Deleting an archived field for good removes them from every card, then the field.
+- **Fields travel by name and type.** A card moved to another board keeps a value where that board uses the same
+  field, or one with the same name and type; the rest are dropped, and the move says which. A board moved to another
+  space, or imported from a file, has its fields matched in the library it arrives in; the rest are added there if
+  the person manages it (always for an import: it goes to their own), otherwise lost, and a move asks first.
+
 ## Files
 
 - Files go to the **server's disk** (`UPLOADS_DIR`) by default, or to an **S3-compatible bucket** set in the

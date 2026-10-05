@@ -36,6 +36,7 @@ export default defineConfig({
           { text: 'Tasks inside tasks', link: '/everyday/subtasks' },
           { text: 'Due dates and reminders', link: '/everyday/dates-and-reminders' },
           { text: 'Comments and files', link: '/everyday/comments-and-files' },
+          { text: 'Your own fields', link: '/everyday/fields' },
           { text: 'Search and filters', link: '/everyday/search-and-filters' },
           { text: 'Done cards and the archive', link: '/everyday/done-and-archive' },
         ],

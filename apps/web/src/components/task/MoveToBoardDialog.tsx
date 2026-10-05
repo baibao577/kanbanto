@@ -1,4 +1,4 @@
-import { ArrowRight, Check, Info, Tag, UserMinus, LinkBreak, ChatCircle } from '@phosphor-icons/react'
+import { ArrowRight, Check, Eraser, Info, Tag, UserMinus, LinkBreak, ChatCircle } from '@phosphor-icons/react'
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { toast } from 'sonner'
 import { api, errorMessage } from '@/api/client'
@@ -169,6 +169,12 @@ export function MoveToBoardDialog({ taskId, onClose, onMoved }: { taskId: string
             {plan.newLabels.length > 0 && (
               <Note icon={<Tag />}>
                 Adds {plan.newLabels.length === 1 ? 'the label' : 'the labels'} {joinWords(plan.newLabels.map((l) => `“${l}”`))} to “{to.name}”.
+              </Note>
+            )}
+            {plan.droppedFields.length > 0 && (
+              <Note icon={<Eraser />} warn>
+                “{to.name}” doesn’t use {joinWords(plan.droppedFields.map((f) => `“${f}”`))}:{' '}
+                {plan.droppedFields.length === 1 ? 'that value' : 'those values'} won’t come along.
               </Note>
             )}
             {plan.droppedLinks > 0 && (

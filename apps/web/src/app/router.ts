@@ -9,6 +9,7 @@ import { CATEGORIES, LAYOUTS, PRIORITIES, type Category, type Layout, type Prior
  *                            Back/Forward and links bring it back. A bare #/b/<id> means "as I left it".
  *   #/join/<token>           a share link (or an email invite), to a board or a workspace
  *   #/w/<id>                 a workspace's people and settings
+ *   #/w/<id>/fields          its fields: what its boards can add to cards (see model/fields.ts)
  *   #/w/<id>/planning?by=person&zoom=days   its plan: who works on which project (by project, in weeks, unless said)
  *   #/cards?q=<words>&assignee=me&when=done&range=this-week…   search cards across boards. The address holds the
  *                            whole search (see CardsRoute), so it can be kept and shared. state=archived: the archived ones.
@@ -17,7 +18,8 @@ import { CATEGORIES, LAYOUTS, PRIORITIES, type Category, type Layout, type Prior
  *   #/signin, #/signup       (?next=<where to go after>)
  *   #/forgot                 ask for a password reset email
  *   #/verify/<token>, #/reset/<token>   links from emails
- *   #/account/<section>      your account settings (profile, password, notifications, calendar, email, storage, api);
+ *   #/account/<section>      your account settings (profile, password, notifications, calendar, fields, email, storage,
+ *                            api);
  *                            ?problem=<what> says why connecting Google Calendar didn't work (see Calendar.tsx)
  *   #/admin/<section>        the Platform console (overview, accounts, email, storage, integrations)
  * Hash addresses work on any static host, with no server rewrite rules.
@@ -73,9 +75,9 @@ export type Route =
 
 export const ADMIN_SECTIONS = ['overview', 'accounts', 'email', 'storage', 'integrations'] as const
 export type AdminSection = (typeof ADMIN_SECTIONS)[number]
-export const WORKSPACE_SECTIONS = ['people', 'planning'] as const
+export const WORKSPACE_SECTIONS = ['people', 'planning', 'fields'] as const
 export type WorkspaceSection = Exclude<(typeof WORKSPACE_SECTIONS)[number], 'people'>
-export const ACCOUNT_SECTIONS = ['profile', 'password', 'notifications', 'calendar', 'email', 'storage', 'api'] as const
+export const ACCOUNT_SECTIONS = ['profile', 'password', 'notifications', 'calendar', 'fields', 'email', 'storage', 'api'] as const
 export type AccountSection = (typeof ACCOUNT_SECTIONS)[number]
 
 export function parseRoute(hash: string): Route {
@@ -128,6 +130,7 @@ export function parseRoute(hash: string): Route {
       page: 'workspace',
       id: decodeURIComponent(ws[1]),
       ...(planning && { section: 'planning' as const }),
+      ...(ws[2] === 'fields' && { section: 'fields' as const }),
       ...(planning && q.get('by') === 'person' && { by: 'person' as const }),
       ...(planning && (q.get('zoom') === 'days' || q.get('zoom') === 'months') && { zoom: q.get('zoom') as 'days' | 'months' }),
     }
@@ -168,6 +171,7 @@ export function hrefFor(r: Route) {
   if (r.page === 'admin') return r.section && r.section !== 'overview' ? `#/admin/${r.section}` : '#/admin'
   if (r.page === 'forgot') return '#/forgot'
   if (r.page === 'workspace') {
+    if (r.section === 'fields') return `#/w/${encodeURIComponent(r.id)}/fields`
     if (r.section !== 'planning') return `#/w/${encodeURIComponent(r.id)}`
     const q = new URLSearchParams()
     if (r.by) q.set('by', r.by)

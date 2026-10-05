@@ -1,3 +1,4 @@
+import { FIELD_TYPES, type CustomValues, type FieldSettings } from '@kanbanto/model/fields'
 import { PRIORITIES, type Reminder } from '@kanbanto/model/types'
 import { SETTING_DEFAULTS } from './defaults'
 import { sql } from 'drizzle-orm'
@@ -499,6 +500,56 @@ export const labels = pgTable(
   (t) => [primaryKey({ columns: [t.boardId, t.id] })],
 )
 
+/**
+ * Custom fields (see model/fields.ts). A field is defined once, in the library of a workspace or of a person (for
+ * their Personal boards): exactly one of the two. Its type never changes; `settings` holds what the type lets you
+ * set. Archived: hidden on every board, its values kept. Names are unique in a library, whatever the case.
+ */
+export const libraryFields = pgTable(
+  'fields',
+  {
+    id: uuid('id').primaryKey(),
+    workspaceId: uuid('workspace_id').references(() => workspaces.id, { onDelete: 'cascade' }),
+    ownerId: uuid('owner_id').references(() => users.id, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    type: text('type', { enum: FIELD_TYPES }).notNull(),
+    settings: jsonb('settings').$type<FieldSettings>().notNull().default({}),
+    archivedAt: at('archived_at'),
+    createdAt: at('created_at').notNull().defaultNow(),
+    updatedAt: at('updated_at').notNull().defaultNow(),
+  },
+  (t) => [
+    check('fields_space_check', sql`(${t.workspaceId} is null) <> (${t.ownerId} is null)`),
+    uniqueIndex('fields_workspace_name_idx')
+      .on(t.workspaceId, sql`lower(${t.name})`)
+      .where(sql`${t.workspaceId} is not null`),
+    uniqueIndex('fields_owner_name_idx')
+      .on(t.ownerId, sql`lower(${t.name})`)
+      .where(sql`${t.ownerId} is not null`),
+  ],
+)
+
+/**
+ * The fields a board uses, in its order; `front`: shown on the card front too. A field taken off the board keeps
+ * its row (`removedAt`): its values stay on the cards, unseen, and are back if it's added again. That row is also
+ * how deleting the field for good finds them.
+ */
+export const boardFieldRows = pgTable(
+  'board_fields',
+  {
+    boardId: text('board_id')
+      .notNull()
+      .references(() => boards.id, { onDelete: 'cascade' }),
+    fieldId: uuid('field_id')
+      .notNull()
+      .references(() => libraryFields.id, { onDelete: 'cascade' }),
+    position: integer('position').notNull(),
+    front: boolean('front').notNull().default(false),
+    removedAt: at('removed_at'),
+  },
+  (t) => [primaryKey({ columns: [t.boardId, t.fieldId] }), index('board_fields_field_idx').on(t.fieldId)],
+)
+
 export const tasks = pgTable(
   'tasks',
   {
@@ -535,6 +586,11 @@ export const tasks = pgTable(
     labels: text('labels').array().notNull().default([]),
     blockedBy: text('blocked_by').array().notNull().default([]),
     color: text('color'),
+    /**
+     * Its values for custom fields, by field id (null: none). This can hold more than the board shows: values for a
+     * field the board stopped using stay here, and are never loaded or sent (see `writeChanges`).
+     */
+    custom: jsonb('custom').$type<CustomValues>(),
     ...meta,
   },
   (t) => [primaryKey({ columns: [t.boardId, t.id] }), index('tasks_assignee_idx').on(t.assigneeId)],

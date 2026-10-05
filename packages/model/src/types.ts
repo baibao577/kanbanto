@@ -1,4 +1,5 @@
 import type { BoardBackground, ColorName } from './colors'
+import type { BoardField, CustomValues } from './fields'
 
 /**
  * What a status column means. Roll-up, progress and "up next" read this, never the column name.
@@ -142,6 +143,8 @@ export interface Task extends Meta {
   doneAt?: string
   /** Timeline bar color; unset = its status color. */
   color?: ColorName
+  /** Its values for the board's own fields, by field id (see fields.ts). Only fields the board uses; none: unset. */
+  custom?: CustomValues
   /**
    * Position key within a board list, set when you drag cards around (Trello-style).
    * Separate from `order`, so reordering the board never reshuffles the outline.
@@ -227,6 +230,12 @@ export interface BoardData {
   /** Kept sorted by `position`. */
   columns: StatusColumn[]
   labels: LabelDef[]
+  /**
+   * The fields this board uses, in its order, as their library defines them. Like `members`, they come from outside
+   * the board (its workspace's or its owner's library) and no command changes them: commands only check values
+   * against them.
+   */
+  fields: BoardField[]
   tasks: TaskMap
   /**
    * Archived tasks, kept apart so views, counts and rules only ever see `tasks`. They come back with task.restore,

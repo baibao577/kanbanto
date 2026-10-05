@@ -225,6 +225,13 @@
       "when": 1791180945771,
       "tag": "0031_follow_cards",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1791192938705,
+      "tag": "0032_custom_fields",
+      "breakpoints": true
     }
   ]
 }

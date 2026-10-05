@@ -6,6 +6,7 @@ import { z } from 'zod'
 import { requireAccess } from '../boards/access'
 import { newLinkToken } from '../boards/invites'
 import { announceSharingChange, announceWorkspaceChange } from '../boards/announce'
+import { moveBoardFields } from '../boards/fields'
 import { addToWorkspace, adminCount, leaveWorkspace, moveBoard, requireWorkspace } from '../boards/workspaces'
 import { boards, users, WORKSPACE_ROLES, workspaceInvites, workspaceMembers, workspaces } from '../db/schema'
 import { env } from '../env'
@@ -266,14 +267,24 @@ export const workspaceRoutes: FastifyPluginAsync = async (app) => {
     return { ok: true }
   })
 
-  /** Moves a board to a workspace, or (`workspaceId: null`) to its owner's Personal space. See moveBoard. */
+  /**
+   * Moves a board to a workspace, or (`workspaceId: null`) to its owner's Personal space. See moveBoard. If its fields
+   * would change (added to the other library, or lost), the answer is a 409 listing them: send `confirm: true` to go on.
+   */
   app.put('/boards/:id/workspace', async (req) => {
     const { id } = parse(z.object({ id: z.string().min(1).max(100) }), req.params)
     const me = requireUser(req.user)
     const { board } = await requireAccess(app.db, me, id, 'owner')
-    const { workspaceId } = parse(z.object({ workspaceId: z.uuid().nullable() }), req.body)
-    const visibility = await app.db.transaction((tx) => moveBoard(tx, board, me.id, workspaceId))
+    const { workspaceId, confirm } = parse(z.object({ workspaceId: z.uuid().nullable(), confirm: z.boolean().optional() }), req.body)
+    // Its fields belong to the space it leaves: what moving them would add or lose is asked first (see moveBoardFields).
+    let touched: string[] = []
+    const visibility = await app.db.transaction(async (tx) => {
+      const shown = await moveBoard(tx, board, me.id, workspaceId)
+      if (board.workspaceId !== workspaceId) touched = await moveBoardFields(app, tx, board, me.id, workspaceId, !!confirm)
+      return shown
+    })
     await announceSharingChange(app, id)
+    app.engine.reloaded(touched)
     return { workspaceId, visibility }
   })
 }

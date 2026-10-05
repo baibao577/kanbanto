@@ -249,6 +249,39 @@ describe('MCP', () => {
     expect((await tool('find_tasks', { following: true, text: 'logo' })).tasks.map((x: { title: string }) => x.title)).toEqual(['Logo'])
     await tool('follow_task', { board_id: id, task_id: logo, follow: false })
     expect((await tool('find_tasks', { following: true, text: 'logo' })).tasks).toEqual([])
+    // The board's own fields: listed with the board, read and set by name (a choice by its option's name).
+    const { id: stage } = await ann.ok('POST', '/api/fields', {
+      name: 'Stage',
+      type: 'choice',
+      options: [
+        { name: 'Lead', color: 'gray' },
+        { name: 'Won', color: 'green' },
+      ],
+    })
+    const { id: value } = await ann.ok('POST', '/api/fields', { name: 'Value', type: 'number', unit: '฿' })
+    await ann.ok('PUT', `/api/boards/${id}/fields`, { fields: [{ id: stage }, { id: value }] })
+    expect((await tool('get_board', { board_id: id, tasks: false })).fields).toEqual([
+      { id: stage, name: 'Stage', type: 'choice', options: ['Lead', 'Won'] },
+      { id: value, name: 'Value', type: 'number', unit: '฿' },
+    ])
+    expect((await tool('update_task', { board_id: id, task_id: logo, fields: { stage: 'won', Value: '12,000' } })).fields).toEqual({
+      Stage: 'Won',
+      Value: 12000,
+    })
+    expect((await tool('get_task', { board_id: id, task_id: logo })).fields).toEqual({ Stage: 'Won', Value: 12000 })
+    expect((await tool('update_task', { board_id: id, task_id: logo, fields: { Value: null } })).fields).toEqual({ Stage: 'Won' })
+    // A wrong name or value changes nothing, and says what there is.
+    expect((await tool('update_task', { board_id: id, task_id: logo, fields: { Stage: 'Lost' } })).error).toMatch(
+      /no option “Lost”. The options are: Lead, Won/,
+    )
+    expect((await tool('update_task', { board_id: id, task_id: logo, fields: { Budget: 1 } })).error).toMatch(
+      /no field “Budget”. The fields are: Stage, Value/,
+    )
+    const refused = await tool('create_tasks', { board_id: id, tasks: [{ title: 'Fine' }, { title: 'Not fine', fields: { Value: 'lots' } }] })
+    expect(refused.error).toMatch(/Value: That isn’t a number/)
+    expect((await tool('find_tasks', { board_id: id, text: 'fine' })).tasks).toEqual([])
+    const deal = await tool('create_tasks', { board_id: id, tasks: [{ title: 'New deal', fields: { Stage: 'Lead' } }] })
+    expect((await tool('get_task', { board_id: id, task_id: deal.created[0].id })).fields).toEqual({ Stage: 'Lead' })
 
     const found = toolResult(await rpc(mcp, 'tools/call', { name: 'find_tasks', arguments: { text: 'logo' } }))
     expect(found.tasks.map((x: { title: string }) => x.title)).toEqual(['Logo'])
@@ -734,6 +767,9 @@ describe('MCP', () => {
     ])
     const r = await rpc(mcp, 'tools/call', { name: 'create_tasks', arguments: { board_id: id, tasks: [{ title: 'x' }] } })
     expect(r.body.result?.isError ?? !!r.body.error).toBe(true)
+    // The same over the plain API: your own fields can be read with such a token, not changed.
+    expect((await mcp('GET', '/api/fields')).status).toBe(200)
+    expect((await mcp('POST', '/api/fields', { name: 'Stage', type: 'text' })).status).toBe(403)
   })
 
   it('worked on in a stretch of time: find_tasks finds what was made or changed then, and says what happened', async () => {
@@ -886,7 +922,7 @@ describe('API reference', () => {
   it('describes the API (with every command) and shows it at /api/docs', async () => {
     const spec = await new Person(t.app).ok('GET', '/api/openapi.json')
     expect(spec.openapi).toBe('3.1.0')
-    expect(spec.components.schemas.Command.oneOf).toHaveLength(17)
+    expect(spec.components.schemas.Command.oneOf).toHaveLength(18)
     expect(spec.components.schemas.PlanCommand.oneOf).toHaveLength(22)
     expect(Object.keys(spec.paths)).toEqual(
       expect.arrayContaining([

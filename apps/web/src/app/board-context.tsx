@@ -18,6 +18,8 @@ export interface BoardContextValue {
   run: (cmd: Command) => boolean
   /** Takes back your last change to the board, and says what it was. */
   undo: () => void
+  /** Fetches the board again, after changing something about it that isn't a command (which fields it uses). */
+  reload: () => void
   /** Your role on this board, and why you have it. */
   access: BoardAccess
   /** You can view but not change this board: editing controls are hidden. */

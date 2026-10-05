@@ -27,6 +27,7 @@ import { backgroundOf, gradientCss } from '@kanbanto/model/colors'
 import { newId } from '@kanbanto/model/ids'
 import { parseBoard } from '@kanbanto/model/transfer'
 import { api, errorMessage } from '@/api/client'
+import { moveBoardTo } from '@/data/moveBoard'
 import { hrefFor, navigate } from '@/app/router'
 import { useAuth } from '@/app/use-auth'
 import { ConfirmDialog, type ConfirmRequest } from '@/components/common/ConfirmDialog'
@@ -83,8 +84,11 @@ export function HomeView() {
     try {
       // Read and check it here first, for a clear message; the server checks it again.
       const data = parseBoard(await f.text(), newId())
-      const { id } = await api<{ id: string }>('POST', '/boards/import', { file: JSON.parse(await f.text()) })
-      toast(`Imported “${data.board.name}”`)
+      const { id, lost = [] } = await api<{ id: string; lost?: string[] }>('POST', '/boards/import', { file: JSON.parse(await f.text()) })
+      // (Its fields became yours; ones there was no room for are named.)
+      toast(`Imported “${data.board.name}”`, {
+        description: lost.length ? `Without ${lost.map((n) => `“${n}”`).join(', ')}: you have as many fields as there can be.` : undefined,
+      })
       navigate({ page: 'board', id })
     } catch (e) {
       toast.error('Couldn’t import that file.', { description: errorMessage(e) })
@@ -122,7 +126,7 @@ export function HomeView() {
 
   const moveTo = async (b: BoardSummary, to: WorkspaceSummary | null) => {
     try {
-      const { visibility } = await api<{ visibility: string }>('PUT', `/boards/${b.id}/workspace`, { workspaceId: to?.id ?? null })
+      const { visibility } = await moveBoardTo(b.id, to, setConfirm)
       toast(`Moved “${b.name}” to ${to ? to.name : 'Personal'}`, {
         description:
           to && visibility !== 'workspace'

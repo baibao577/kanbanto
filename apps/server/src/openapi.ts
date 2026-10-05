@@ -41,11 +41,35 @@ const schemas = {
       archivedAt: { ...str, format: 'date-time', description: 'When it was archived. Only on archived tasks.' },
       archivedList: { ...str, description: 'The list it was archived from, by name.' },
       archivedDone: { type: 'boolean', description: 'It was archived from a done list: archived as completed.' },
+      custom: {
+        type: 'object',
+        additionalProperties: {},
+        description:
+          'Its values for the board’s own fields (see Fields), by field id: text, a number, a day or moment, `true` for a ticked checkbox, or a list with the id of a choice’s option. No value: no key. Set with `task.update`, `fields: { custom: { "<field id>": value } }` (null clears one).',
+      },
       createdAt: { ...str, format: 'date-time' },
       updatedAt: { ...str, format: 'date-time' },
       version: { type: 'integer' },
     },
     ['id', 'title', 'parentId', 'status', 'order', 'labels', 'blockedBy'],
+  ),
+  Field: obj(
+    {
+      id: str,
+      name: str,
+      type: { enum: ['text', 'number', 'date', 'choice', 'checkbox'], description: 'Chosen once: it can’t be changed.' },
+      format: { enum: ['plain', 'link', 'email', 'phone'], description: 'Text: how it’s shown.' },
+      unit: { ...str, description: 'Number: ฿, h, %…' },
+      decimals: { type: 'integer', description: 'Number: how many are shown.' },
+      sum: { type: 'boolean', description: 'Number: one that makes sense added up.' },
+      options: {
+        type: 'array',
+        description: 'Choice: what can be picked, in order. An archived option stays on the cards that have it.',
+        items: obj({ id: str, name: str, color: str, archived: { type: 'boolean' } }, ['id', 'name', 'color']),
+      },
+      front: { type: 'boolean', description: 'On a board: shown on the card front too.' },
+    },
+    ['id', 'name', 'type'],
   ),
   List: obj({ id: str, name: str, category: { enum: ['backlog', 'todo', 'doing', 'done'] }, position: str, color: str }, ['id', 'name', 'category']),
   Label: obj({ id: str, name: str, color: str }),
@@ -62,6 +86,7 @@ const schemas = {
     ),
     columns: { type: 'array', items: ref('List'), description: 'The lists, in order.' },
     labels: { type: 'array', items: ref('Label') },
+    fields: { type: 'array', items: ref('Field'), description: 'The fields this board uses, in its order.' },
     members: { type: 'array', items: ref('Person'), description: 'The people who can be assigned.' },
     tasks: { type: 'object', additionalProperties: ref('Task'), description: 'By id.' },
   }),
@@ -160,6 +185,11 @@ The answer lists the records that changed.
     tags: [
       { name: 'Boards' },
       { name: 'Comments' },
+      {
+        name: 'Fields',
+        description:
+          'Custom fields. A field is defined once, in a library: a workspace’s (its admins manage it) or your own (for your Personal boards). A board’s owners pick which of them it uses; a card then holds a value per field, in `custom`. Taking a field off a board, or archiving it, hides its values and keeps them; deleting an archived field for good removes them.',
+      },
       {
         name: 'Webhook settings',
         description: 'A board’s webhooks, for its owners (when a platform admin allows webhooks). What they send is under Webhooks.',
@@ -445,6 +475,131 @@ The answer lists the records that changed.
           responses: { 200: json(obj({ comment: ref('Comment') })) },
         },
       },
+      '/api/boards/{id}/fields': {
+        get: {
+          tags: ['Fields'],
+          summary: 'A board’s fields',
+          description: 'The fields it uses, in order. Its owners also get `available`: the fields of its library that could be added.',
+          parameters: [id('id')],
+          responses: {
+            200: json(
+              obj({
+                fields: { type: 'array', items: ref('Field') },
+                available: { type: 'array', items: ref('Field') },
+                canPick: { type: 'boolean' },
+                canManage: { type: 'boolean', description: 'You may change the library itself.' },
+                workspace: nullable(obj({ id: str, name: str })),
+              }),
+            ),
+          },
+        },
+        put: {
+          tags: ['Fields'],
+          summary: 'Choose a board’s fields (its owners)',
+          description:
+            'The whole list, in order: up to 20, up to 3 with `front`. From the board’s library: its workspace’s, or for a Personal board your own. A field left out is taken off the board: its values are kept, unseen, and are back if it’s added again.',
+          parameters: [id('id')],
+          requestBody: {
+            content: {
+              'application/json': {
+                schema: obj({ fields: { type: 'array', items: obj({ id: str, front: { type: 'boolean' } }, ['id']) } }, ['fields']),
+              },
+            },
+          },
+          responses: { 200: json(obj({ fields: { type: 'array', items: ref('Field') } })) },
+        },
+      },
+      ...Object.fromEntries(
+        (
+          [
+            ['/api/workspaces/{id}/fields', 'a workspace’s fields (everyone in it reads them; its admins change them)', [id('id')]],
+            ['/api/fields', 'your own fields, for your Personal boards', []],
+          ] as const
+        ).flatMap(([path, whose, params]) => {
+          const library = json(
+            obj({
+              fields: {
+                type: 'array',
+                items: {
+                  allOf: [
+                    ref('Field'),
+                    obj({
+                      archivedAt: nullable({ ...str, format: 'date-time' }),
+                      boards: { type: 'integer', description: 'How many boards use it.' },
+                    }),
+                  ],
+                },
+              },
+              canManage: { type: 'boolean' },
+            }),
+          )
+          const settings = {
+            format: { enum: ['plain', 'link', 'email', 'phone'] },
+            unit: str,
+            decimals: nullable({ type: 'integer' }),
+            sum: { type: 'boolean' },
+            options: {
+              type: 'array',
+              description:
+                'The whole list, in order. Leave `id` out for a new option. An option left out is deleted for good (cleared from the cards that have it), which is only for archived ones.',
+              items: obj({ id: str, name: str, color: str, archived: { type: 'boolean' } }, ['name', 'color']),
+            },
+          }
+          return [
+            [
+              path,
+              {
+                get: { tags: ['Fields'], summary: `A library: ${whose}`, parameters: [...params], responses: { 200: library } },
+                post: {
+                  tags: ['Fields'],
+                  summary: 'Add a field',
+                  description: 'Up to 50 in a library. A name is used once (whatever the case) and can’t be something every card has, like Due.',
+                  parameters: [...params],
+                  requestBody: {
+                    content: {
+                      'application/json': {
+                        schema: obj({ name: str, type: { enum: ['text', 'number', 'date', 'choice', 'checkbox'] }, ...settings }, ['name', 'type']),
+                      },
+                    },
+                  },
+                  responses: { 200: library },
+                },
+              },
+            ],
+            [
+              `${path}/{fieldId}`,
+              {
+                patch: {
+                  tags: ['Fields'],
+                  summary: 'Change, archive or restore a field',
+                  description: 'Every board that uses it gets the change. `archived: true` hides it on every board and keeps its values.',
+                  parameters: [...params, id('fieldId')],
+                  requestBody: { content: { 'application/json': { schema: obj({ name: str, archived: { type: 'boolean' }, ...settings }) } } },
+                  responses: { 200: library },
+                },
+                delete: {
+                  tags: ['Fields'],
+                  summary: 'Delete an archived field for good',
+                  description: 'Its values are removed from every card on every board. This can’t be undone.',
+                  parameters: [...params, id('fieldId')],
+                  responses: { 200: library },
+                },
+              },
+            ],
+            [
+              `${path}/{fieldId}/usage`,
+              {
+                get: {
+                  tags: ['Fields'],
+                  summary: 'What deleting a field would take away',
+                  parameters: [...params, id('fieldId')],
+                  responses: { 200: json(obj({ boards: { type: 'integer' }, cards: { type: 'integer' } })) },
+                },
+              },
+            ],
+          ]
+        }),
+      ),
       '/api/boards/{id}/tasks/{taskId}/follow': {
         get: {
           tags: ['Comments'],

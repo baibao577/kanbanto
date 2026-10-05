@@ -105,6 +105,7 @@ function Board({ search }: { search: string }) {
     return buildView(idx, config, { focusId: prefs.focusId, search, keep, now, showOlder })
   }, [idx, config, prefs.focusId, search, filter, counts.lastComment, now, showOlder])
   const labelById = useMemo(() => new Map(data.labels.map((l) => [l.id, l])), [data.labels])
+  const frontFields = useMemo(() => data.fields.filter((f) => f.front), [data.fields])
 
   const [rowLimit, setRowLimit] = useState(ROWS_STEP)
   const [colLimit, setColLimit] = useState(COLS_STEP)
@@ -296,6 +297,7 @@ function Board({ search }: { search: string }) {
         idx={idx}
         config={cardConfig}
         labelById={labelById}
+        frontFields={frontFields}
         onOpen={openTask}
         onFocus={focus}
         onJumpToRow={nestedRows && rowIndex.has(id) ? jumpToRow : undefined}

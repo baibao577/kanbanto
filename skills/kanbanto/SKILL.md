@@ -66,6 +66,11 @@ Without MCP, use the REST API (see "REST fallback" below).
   assigned, commented on or were mentioned on. `follow_task` follows any other task for the user (`follow: false`
   stops), `get_task` says whether they follow it, and `find_tasks` with `following: true` lists what they follow.
   `@Name` in a description notifies that person once, like in a comment.
+- **A board's own fields:** a board can have extra fields on its cards (a client, an amount, a stage). `get_board`
+  lists them with their types and a choice's options; tasks show their values under `fields`, by name. Set them with
+  `create_tasks` or `update_task`: `fields: {"Stage": "Won", "Value": 12000, "Signed": true}` (a choice takes an
+  option's name, a date looks like `due`, `null` clears one; fields left out stay as they are). Use only fields the
+  board has: adding or changing the fields themselves is done by people in the app.
 - **Comments:** `add_comment`; write `@Name` to notify someone on the board. Use comments to explain changes you made
   on the user's behalf when that helps their team.
 - **Setting up a board:** `create_board` (with `about`, in Personal or a workspace), then `manage_lists` for its

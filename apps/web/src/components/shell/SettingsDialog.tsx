@@ -1,4 +1,4 @@
-import { Archive, Desktop, Info, Moon, PaintBrush, Sun, Trash, Tray, User, UsersThree, type Icon } from '@phosphor-icons/react'
+import { Archive, Desktop, Info, Moon, PaintBrush, Sun, Tag, Trash, Tray, User, UsersThree, type Icon } from '@phosphor-icons/react'
 import { toast } from 'sonner'
 import { useState, type ReactNode } from 'react'
 import { api, errorMessage } from '@/api/client'
@@ -7,6 +7,7 @@ import { navigate } from '@/app/router'
 import { useAuth } from '@/app/use-auth'
 import { useTheme } from '@/app/use-theme'
 import { WebhookDetail, WebhookList } from '@/components/board/Webhooks'
+import { BoardFields } from '@/components/fields/BoardFields'
 import { Avatar, BackgroundSwatches } from '@/components/common/bits'
 import {
   AlertDialog,
@@ -32,10 +33,10 @@ import { formatDuration } from '@kanbanto/model/time'
 import { backgroundOf, gradientCss } from '@kanbanto/model/colors'
 import type { StatusMode } from '@kanbanto/model/types'
 
-type Tab = 'general' | 'look' | 'people' | 'you' | 'delete'
+type Tab = 'general' | 'fields' | 'look' | 'people' | 'you' | 'delete'
 
 /**
- * Board settings, in sections: the board itself (for everyone on it), how it looks, who's on it and what's connected,
+ * Board settings, in sections: the board itself (for everyone on it), its own fields, how it looks, who's on it and what's connected,
  * your own settings (only you), and deleting it (owners). A sidebar on wide screens, tabs on narrow ones.
  */
 export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boolean) => void }) {
@@ -44,6 +45,7 @@ export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCh
   const owner = access.role === 'owner'
   const tabs: { id: Tab; label: string; icon: Icon; danger?: boolean }[] = [
     { id: 'general', label: 'General', icon: Info },
+    { id: 'fields', label: 'Fields', icon: Tag },
     { id: 'look', label: 'Background', icon: PaintBrush },
     { id: 'people', label: 'People & apps', icon: UsersThree },
     { id: 'you', label: 'Just for you', icon: User },
@@ -84,6 +86,7 @@ export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCh
         </nav>
         <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5 sm:px-7 sm:py-6">
           {tab === 'general' && <General />}
+          {tab === 'fields' && <BoardFields onLeave={() => onOpenChange(false)} />}
           {tab === 'look' && <Look />}
           {tab === 'people' && <People onClose={() => onOpenChange(false)} />}
           {tab === 'you' && <JustForYou />}

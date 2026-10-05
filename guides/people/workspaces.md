@@ -20,8 +20,8 @@ You become its admin, and its **People** page opens so you can invite your team.
 
 ## Find your way around a workspace
 
-A workspace has two pages of its own, **People** and **Planning**, shown as tabs at the top (they are in the picture
-further down). **← Boards** beside them takes you back to the boards page, where the workspace's boards are.
+A workspace has three pages of its own, **People**, **Planning** and **Fields**, shown as tabs at the top (they are
+in the picture further down). Fields is where the workspace's admins add [fields](/everyday/fields) for its boards. **← Boards** beside them takes you back to the boards page, where the workspace's boards are.
 
 To come back later: on the boards page, beside the workspace's name, click **2 people** (it shows the number) for the
 People page, or **Planning** for the plan.

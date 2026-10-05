@@ -42,6 +42,8 @@
 - **Comments and files:** discuss each card, @mention people (in comments and descriptions), attach files and
   screenshots, and point to a file with `#`.
 - **Follow cards:** hear about comments and changes on the cards you're part of, and stop whenever you like.
+- **Your own fields:** add a client, an amount, a stage or a link to cards. Fields are defined once for a workspace
+  (or for your own boards), and each board picks the ones it uses.
 - **Dates and reminders:** type "fri 2pm" for a due date, set reminders at a time or before it's due, and get them
   in the app, by email and as desktop notifications, with a morning summary of what's due.
 - **Find and tidy:** search and filters on every view, presets a board's people share, a search across all your

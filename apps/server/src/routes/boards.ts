@@ -147,7 +147,7 @@ export const boardRoutes: FastifyPluginAsync = async (app) => {
     } catch (e) {
       throw new HttpError(400, e instanceof Error ? e.message : 'That file isn’t a board export.')
     }
-    return { id: await importBoard(app.db, user.id, data) }
+    return importBoard(app, user.id, data)
   })
 
   /**

@@ -62,6 +62,7 @@ The assistant searches before it adds, so it does not create a card you already 
 - "Move 'Hero picture' to Done."
 - "Assign the pricing section to Ben and make it due Friday."
 - "Mark the sign-up bug as urgent."
+- "Set the stage of Website redesign to Won, and its amount to 12,000."
 - "Comment on the announcement that the quotes are in, and mention Ann."
 :::
 

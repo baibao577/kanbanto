@@ -2,6 +2,7 @@ import { normalizeTaskDate } from './dates'
 import { z } from 'zod'
 import { COLORS, isBackground, type BoardBackground, type ColorName } from './colors'
 import type { Command } from './commands'
+import { FIELD_LIMITS, FIELD_TYPES, TEXT_FORMATS } from './fields'
 import { isPosition } from './position'
 import { CATEGORIES, LAYOUTS, LIST_ORDERS, PRIORITIES } from './types'
 
@@ -61,6 +62,13 @@ const reminder = z
   })
   .refine((r) => !!r.at !== (r.beforeDue !== undefined), 'A reminder is either at a time or before the due date.')
 const reminders = z.array(reminder).max(20)
+/**
+ * A card's values for the board's fields. Only their shape and size are checked here: whether a value fits its
+ * field needs the board (see `patchCustom` and `tidyCustom` in fields.ts).
+ */
+const fieldValue = z.union([plain(FIELD_LIMITS.link), z.number(), z.boolean(), z.array(recordId).max(20)])
+const tooMany = 'That’s more values than one card can hold.'
+const custom = z.record(recordId, fieldValue).refine((v) => Object.keys(v).length <= FIELD_LIMITS.values, tooMany)
 const meta = {
   createdAt: z.string().max(40),
   updatedAt: z.string().max(40),
@@ -88,7 +96,27 @@ export const TaskSchema = z.object({
   reminders: reminders.optional(),
   color: color.optional(),
   rank: position.optional(),
+  custom: custom.optional(),
   ...meta,
+})
+
+/** What a field's type lets you set (see FieldSettings). */
+export const FieldSettingsSchema = z.object({
+  format: z.enum(TEXT_FORMATS).optional(),
+  unit: plain(FIELD_LIMITS.unit).optional(),
+  decimals: z.number().int().min(0).max(6).optional(),
+  sum: z.boolean().optional(),
+  options: z
+    .array(z.object({ id: recordId, name: plain(FIELD_LIMITS.name), color, archived: z.boolean().optional() }))
+    .max(FIELD_LIMITS.options * 2)
+    .optional(),
+})
+/** A field as a board uses it (see BoardField). */
+export const BoardFieldSchema = FieldSettingsSchema.extend({
+  id: recordId,
+  name: plain(FIELD_LIMITS.name),
+  type: z.enum(FIELD_TYPES),
+  front: z.boolean().optional(),
 })
 
 export const BoardSchema = z.object({
@@ -115,6 +143,12 @@ export const BoardDataSchema = z.object({
   members: z.array(MemberSchema),
   columns: z.array(ColumnSchema).min(1),
   labels: z.array(LabelSchema),
+  // A file from before fields has none; a field of a type this version doesn't know is left out, not refused.
+  fields: z
+    .array(z.unknown())
+    .max(200)
+    .default([])
+    .transform((all) => all.flatMap((f) => (BoardFieldSchema.safeParse(f).success ? [BoardFieldSchema.parse(f)] : []))),
   tasks: z.record(z.string(), TaskSchema),
   archived: z.record(z.string(), TaskSchema).optional(),
 })
@@ -137,6 +171,8 @@ const taskFields = z
     priority: priority.nullable(),
     reminders,
     color: color.nullable(),
+    // Sets the fields it names (null clears one) and leaves the others.
+    custom: z.record(id, fieldValue.nullable()).refine((v) => Object.keys(v).length <= FIELD_LIMITS.values, tooMany),
   })
   .partial()
 const place = z.union([z.object({ before: id }), z.object({ after: id }), z.object({ end: z.literal(true) })])
@@ -174,6 +210,7 @@ export const CommandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('task.archive'), id, complete: z.boolean().optional() }),
   z.object({ type: z.literal('tasks.archiveDone'), status: id, before: z.string().max(40) }),
   z.object({ type: z.literal('task.restore'), id }),
+  z.object({ type: z.literal('tasks.clearField'), fieldId: id }),
   z.object({ type: z.literal('column.create'), id: id.optional(), name: text(200), category }),
   z.object({
     type: z.literal('column.update'),

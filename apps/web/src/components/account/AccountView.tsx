@@ -1,4 +1,4 @@
-import { Bell, CalendarDots, Code, EnvelopeSimple, HardDrives, Key, UserCircle } from '@phosphor-icons/react'
+import { Bell, CalendarDots, Code, EnvelopeSimple, HardDrives, Key, Tag, UserCircle } from '@phosphor-icons/react'
 import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import type { PublicUser } from '@kanbanto/model/api'
@@ -6,6 +6,7 @@ import { api, errorMessage } from '@/api/client'
 import { currentSubscription } from '@/lib/push'
 import type { AccountSection } from '@/app/router'
 import { useAuth } from '@/app/use-auth'
+import { FieldLibrary } from '@/components/fields/FieldLibrary'
 import { PageTitle, SettingsCard } from '@/components/settings/SettingsCard'
 import { SettingsLayout, type SettingsNavItem } from '@/components/settings/SettingsLayout'
 import { Button } from '@/components/ui/button'
@@ -23,6 +24,7 @@ const SECTIONS: (SettingsNavItem & { id: AccountSection })[] = [
   { id: 'password', label: 'Password', icon: Key, href: { page: 'account', section: 'password' } },
   { id: 'notifications', label: 'Notifications', icon: Bell, href: { page: 'account', section: 'notifications' } },
   { id: 'calendar', label: 'Calendar', icon: CalendarDots, href: { page: 'account', section: 'calendar' } },
+  { id: 'fields', label: 'Fields', icon: Tag, href: { page: 'account', section: 'fields' } },
   { id: 'email', label: 'Email sending', icon: EnvelopeSimple, href: { page: 'account', section: 'email' } },
   { id: 'storage', label: 'File storage', icon: HardDrives, href: { page: 'account', section: 'storage' } },
   { id: 'api', label: 'API & apps', icon: Code, href: { page: 'account', section: 'api' } },
@@ -40,6 +42,15 @@ export function AccountView({ section = 'profile', problem }: { section?: Accoun
       {current.id === 'password' && <Password />}
       {current.id === 'notifications' && <Notifications />}
       {current.id === 'calendar' && <CalendarSection problem={problem} />}
+      {current.id === 'fields' && (
+        <div>
+          <PageTitle
+            title="Fields"
+            description="Extra things to fill in on cards, for your Personal boards. A workspace has its own, on the workspace’s page."
+          />
+          <FieldLibrary base="/fields" description="Add a field once here, then choose which boards use it, in each board’s settings under Fields." />
+        </div>
+      )}
       {current.id === 'email' && <AccountEmailSection />}
       {current.id === 'storage' && <AccountStorageSection />}
       {current.id === 'api' && <ApiTokensSection />}

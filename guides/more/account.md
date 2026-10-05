@@ -15,6 +15,7 @@ dark, or following your device), and signing out. People who run the site also s
 | **Password** | Change your password. |
 | **Notifications** | The morning summary, reminder emails, desktop notifications, and your time zone. See [notifications](/people/notifications). |
 | **Calendar** | Google Calendar and the calendar link. See [calendar](/more/calendar). |
+| **Fields** | Extra fields for the cards on your own boards. See [your own fields](/everyday/fields). |
 | **Email sending** | Use your own email service for the invites you send. Optional. |
 | **File storage** | Keep the files you attach in your own storage. Optional. |
 | **API & apps** | Connect an AI assistant or another app. See [connect your assistant](/ai/connect). |

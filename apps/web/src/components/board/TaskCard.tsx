@@ -1,3 +1,5 @@
+import type { BoardField } from '@kanbanto/model/fields'
+import { FieldChip } from '@/components/fields/FieldValue'
 import {
   Alarm,
   Archive,
@@ -39,12 +41,15 @@ import type { LabelDef, ViewConfig } from '@kanbanto/model/types'
 import type { Lane } from '@kanbanto/model/view'
 
 const CHECKLIST_MAX = 5
+const NO_FIELDS: BoardField[] = []
 
 interface Props {
   id: string
   idx: TaskIndex
   config: ViewConfig
   labelById: Map<string, LabelDef>
+  /** The board's fields that show on card fronts (up to three): a card shows the ones it has a value for. */
+  frontFields?: BoardField[]
   onOpen: (id: string) => void
   onFocus: (id: string) => void
   /** Set when this task also has its own row on the board. */
@@ -76,6 +81,7 @@ export const TaskCard = memo(function TaskCard({
   idx,
   config,
   labelById,
+  frontFields = NO_FIELDS,
   onOpen,
   onFocus,
   onJumpToRow,
@@ -103,7 +109,8 @@ export const TaskCard = memo(function TaskCard({
   const activeAt = lastActivity(idx, id, lastComment ? { [id]: lastComment } : undefined)
   const idle = idleDays(activeAt)
   const age = d.includes('age') && col.category !== 'done' && idle >= AGE_SHOWN ? idle : null
-  const chips = config.columns === 'parent' || !!t.priority || blocked || !!t.due || age !== null
+  const fields = frontFields.filter((f) => t.custom?.[f.id] !== undefined)
+  const chips = config.columns === 'parent' || !!t.priority || blocked || !!t.due || age !== null || fields.length > 0
   const meta = !!next || (!!kids && !d.includes('progress')) || comments > 0 || files > 0 || time > 0
   const assignee = t.assigneeId && <Avatar name={idx.members.get(t.assigneeId)?.name ?? '?'} className="ml-auto size-5 text-[9px]" />
 
@@ -162,6 +169,9 @@ export const TaskCard = memo(function TaskCard({
               )}
               {t.due && <DueChip due={t.due} done={col.category === 'done'} />}
               {age !== null && <AgeChip days={age} since={activeAt} />}
+              {fields.map((f) => (
+                <FieldChip key={f.id} field={f} value={t.custom![f.id]} />
+              ))}
               {!meta && assignee}
             </div>
           )}

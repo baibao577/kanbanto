@@ -1,7 +1,8 @@
+import type { BoardField, CustomValues } from '@kanbanto/model/fields'
 import type { Change } from '@kanbanto/model/records'
 import type { Board, LabelDef, Meta, StatusColumn, Task } from '@kanbanto/model/types'
 import type { BoardBackground, ColorName } from '@kanbanto/model/colors'
-import { boards, labels, lists, tasks } from '../db/schema'
+import { boards, labels, libraryFields, lists, tasks } from '../db/schema'
 
 // Converting between database rows and the model's records. Optional fields are NULL in the database
 // and left out in the model (never `undefined` values), so records compare and serialize the same everywhere.
@@ -61,7 +62,20 @@ export const labelToRow = (boardId: string, l: LabelDef): Row<typeof labels> => 
   ...fromMeta(l),
 })
 
-export function taskFromRow(r: Row<typeof tasks>): Task {
+/** A field as a board uses it: its definition, with what its type lets you set spread in. */
+export const fieldFromRow = (r: Row<typeof libraryFields>, front = false): BoardField => ({
+  id: r.id,
+  name: r.name,
+  type: r.type,
+  ...r.settings,
+  ...(front && { front }),
+})
+
+/**
+ * A card as the model sees it. `uses`: the ids of the fields its board uses. Only their values are loaded (in a fixed
+ * order, so the same values always read the same); whatever else the row holds stays in the database.
+ */
+export function taskFromRow(r: Row<typeof tasks>, uses: ReadonlySet<string>): Task {
   const t: Task = {
     id: r.id,
     title: r.title,
@@ -85,6 +99,11 @@ export function taskFromRow(r: Row<typeof tasks>): Task {
   if (r.due) t.due = r.due
   if (r.assigneeId) t.assigneeId = r.assigneeId
   if (r.color) t.color = r.color as ColorName
+  if (r.custom) {
+    const custom: CustomValues = {}
+    for (const id of Object.keys(r.custom).sort()) if (uses.has(id)) custom[id] = r.custom[id]
+    if (Object.keys(custom).length) t.custom = custom
+  }
   return t
 }
 export const taskToRow = (boardId: string, t: Task): Row<typeof tasks> => ({
@@ -109,6 +128,7 @@ export const taskToRow = (boardId: string, t: Task): Row<typeof tasks> => ({
   labels: t.labels,
   blockedBy: t.blockedBy,
   color: t.color ?? null,
+  custom: t.custom && Object.keys(t.custom).length ? t.custom : null,
   ...fromMeta(t),
 })
 

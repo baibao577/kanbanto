@@ -1,3 +1,4 @@
+import type { BoardField, FieldDef } from './fields'
 import type { PresetSettings } from './prefs'
 import type { Change } from './records'
 import type { CardDate, CardMomentKind, CardSort, CardState } from './search'
@@ -523,6 +524,43 @@ export interface BoardPreset {
   /** Who saved it last (null: they've left). */
   by: string | null
   updatedAt: string
+}
+
+// ── Custom fields (see fields.ts) ──────────────────────────────────────────────
+
+/** A field in a library, as the screen that manages it shows it. */
+export interface FieldView extends FieldDef {
+  /** Archived: hidden on every board, its values kept; it can be restored. */
+  archivedAt: string | null
+  /** How many boards use it now. */
+  boards: number
+}
+
+/** A library of fields: a workspace's (GET /api/workspaces/:id/fields) or your own (GET /api/fields). */
+export interface FieldLibraryView {
+  fields: FieldView[]
+  /** You may add, change, archive and delete them (a workspace's admins; always, for your own). */
+  canManage: boolean
+}
+
+/** What deleting a field for good would take away (GET …/fields/:fieldId/usage). */
+export interface FieldUsage {
+  boards: number
+  cards: number
+}
+
+/** A board's fields (GET /api/boards/:id/fields). */
+export interface BoardFieldsView {
+  /** The ones it uses, in order. */
+  fields: BoardField[]
+  /** For its owners: the fields of its library that could be added. */
+  available: FieldDef[]
+  /** You may choose this board's fields (its owners). */
+  canPick: boolean
+  /** Where its fields come from: a workspace's library, or (null) the Personal library of whoever is picking. */
+  workspace: { id: string; name: string } | null
+  /** You may add to that library and change it. */
+  canManage: boolean
 }
 
 /** GET /api/boards/:id/sharing */

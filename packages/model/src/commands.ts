@@ -1,5 +1,6 @@
 import { normalizeTaskDate } from './dates'
 import { applyChanges, current } from './changes'
+import { patchCustom, tidyCustom, type FieldDef, type FieldValue } from './fields'
 import { buildIndex, descendantsOf, isLeaf, statusCol, wouldCycle, type TaskIndex } from './indexer'
 import { comparePositions, positionBetween, positionsBetween } from './position'
 import { stamp, type Change } from './records'
@@ -48,6 +49,8 @@ export type Command =
   | { type: 'tasks.archiveDone'; status: string; before: string }
   /** Brings an archived task (and its subtasks) back, where it was if it still can be. */
   | { type: 'task.restore'; id: string }
+  /** Clears one of the board's fields on every card on the board (archived cards keep theirs). */
+  | { type: 'tasks.clearField'; fieldId: string }
   | { type: 'column.create'; id?: string; name: string; category: Category }
   | { type: 'column.update'; id: string; fields: { name?: string; category?: Category; color?: ColorName | null } }
   | { type: 'column.move'; id: string; beforeId?: string }
@@ -70,6 +73,8 @@ export type TaskFields = Partial<
     /** Replaces the task's reminders ([] removes them all). */
     reminders: Reminder[]
     color: ColorName | null
+    /** Its values for the board's fields, by field id: sets the ones named (null clears one), leaves the others. */
+    custom: Record<string, FieldValue | null>
   }
 >
 
@@ -246,7 +251,7 @@ function run(data: BoardData, cmd: Command, ctx: Context): Change[] {
           blockedBy: a.blockedBy.filter((b) => data.tasks[b] || back.has(b)),
         }
         if (next.assigneeId && !data.members.some((m) => m.id === next.assigneeId)) delete next.assigneeId
-        putTask(archived[id], next)
+        putTask(archived[id], withFields(next, data.fields))
       }
       break
     }
@@ -335,6 +340,18 @@ function run(data: BoardData, cmd: Command, ctx: Context): Change[] {
       break
     }
 
+    case 'tasks.clearField': {
+      const field = data.fields.find((f) => f.id === cmd.fieldId) ?? reject('That field is no longer on this board.')
+      for (const t of Object.values(data.tasks)) {
+        if (t.custom?.[field.id] === undefined) continue
+        const { [field.id]: _gone, ...left } = t.custom
+        const { custom: _held, ...rest } = t
+        // (Not through putTask: clearing a field everywhere isn't work on each card, so their age stays as it was.)
+        out.push({ entity: 'task', id: t.id, before: t, after: stamp(t, Object.keys(left).length ? { ...rest, custom: left } : rest, now) })
+      }
+      break
+    }
+
     case 'board.update': {
       const b = data.board
       const next: Board = { ...b }
@@ -382,6 +399,7 @@ function restore(data: BoardData, changes: Change[], now: string): Change[] {
     // its parent links, which are followed while it's archived, can't go round in a loop.
     if (t.archivedAt) {
       if (loops({ ...next.archived, ...next.tasks }, t.id)) reject('A task can’t go inside one of its own subtasks.')
+      out[i] = { ...c, after: withFields(t, next.fields) }
       continue
     }
     if (t.parentId && !next.tasks[t.parentId]) reject('Its parent task no longer exists.')
@@ -389,7 +407,7 @@ function restore(data: BoardData, changes: Change[], now: string): Change[] {
     if (!columns.has(t.status)) reject('Its list no longer exists.')
     // Links that no longer lead anywhere are dropped rather than refusing the whole undo.
     const tidy: Task = {
-      ...t,
+      ...withFields(t, next.fields),
       assigneeId: t.assigneeId && members.has(t.assigneeId) ? t.assigneeId : undefined,
       labels: t.labels.filter((l) => labels.has(l)),
       blockedBy: t.blockedBy.filter((b) => next.tasks[b]),
@@ -454,7 +472,18 @@ function cleanFields(data: BoardData, id: string, f: TaskFields): Partial<Task> 
     out.reminders = clean.length ? clean : undefined
   }
   if (f.color !== undefined) out.color = f.color ?? undefined
+  if (f.custom) {
+    const r = patchCustom(data.fields, data.tasks[id]?.custom, f.custom)
+    out.custom = 'error' in r ? reject(r.error) : r.custom
+  }
   return out
+}
+
+/** A task that comes back from somewhere (undo, the archive), holding only values that fit the board's fields now. */
+function withFields(t: Task, fields: FieldDef[]): Task {
+  const { custom: _held, ...rest } = t
+  const custom = tidyCustom(t.custom, fields)
+  return custom ? { ...rest, custom } : rest
 }
 
 function memberOrUndefined(data: BoardData, id: string | null): string | undefined {
@@ -577,6 +606,7 @@ const ACTIVE_FIELDS = [
   'blockedBy',
   'reminders',
   'archivedAt',
+  'custom',
 ] as const
 
 /** When a card last saw real work: now, if this change is some; otherwise as it was (reordering doesn't count). */

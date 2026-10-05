@@ -1010,6 +1010,101 @@ await shot('first-8-open', async () => {
   await page.waitForTimeout(600)
 })
 
+// ── Your own fields: on a board of their own, made last, so no other picture changes ────────────────────
+
+let deals = null
+/** A small board of client work with four fields of Ann's, made the first time a picture needs it. */
+async function clientWork() {
+  if (deals) return deals
+  const field = async (body) => (await api(ann, 'POST', '/fields', body)).id
+  const stage = await field({
+    name: 'Stage',
+    type: 'choice',
+    options: [
+      { name: 'Lead', color: 'gray' },
+      { name: 'Proposal sent', color: 'blue' },
+      { name: 'Won', color: 'green' },
+    ],
+  })
+  const client = await field({ name: 'Client', type: 'text' })
+  const amount = await field({ name: 'Amount', type: 'number', unit: '$', decimals: 0, sum: true })
+  const website = await field({ name: 'Website', type: 'text', format: 'link' })
+  const signed = await field({ name: 'Contract signed', type: 'checkbox' })
+  const [lead, sent, won] = (await api(ann, 'GET', '/fields')).fields.find((f) => f.id === stage).options.map((o) => o.id)
+  const { id } = await api(ann, 'POST', '/boards', { name: 'Client work', background: 'teal' })
+  await api(ann, 'PUT', `/boards/${id}/fields`, {
+    fields: [{ id: stage, front: true }, { id: client }, { id: amount, front: true }, { id: website }, { id: signed }],
+  })
+  const card = (cardId, title, status, custom) =>
+    api(ann, 'POST', `/boards/${id}/mutations`, {
+      mutationId: `g${stamp}-f-${n++}`,
+      command: { type: 'task.create', id: cardId, parentId: null, fields: { title, status, assigneeId: me.id, custom } },
+    })
+  await card('redesign', 'Website redesign', 'todo', { [stage]: sent, [client]: 'Northwind', [amount]: 12000, [website]: 'northwind.example.com' })
+  await card('report', 'Annual report', 'todo', { [stage]: lead, [client]: 'Globex' })
+  await card('brand', 'Brand refresh', 'doing', { [stage]: won, [client]: 'Acme', [amount]: 4500, [website]: 'acme.example.com', [signed]: true })
+  await card('shop', 'Online shop', 'doing', { [stage]: won, [client]: 'Hooli', [amount]: 18000, [signed]: true })
+  return (deals = { id })
+}
+await shot('fields-1-new', async () => {
+  await clientWork()
+  await page.goto(`${SITE}/#/account/fields`)
+  await page.reload()
+  await page.getByRole('button', { name: 'New field' }).click()
+  await page.getByLabel('Name', { exact: true }).fill('Source')
+  await page.getByRole('radio', { name: /Choice/ }).click()
+  for (const name of ['Referral', 'Website', 'Event']) {
+    await page.getByRole('button', { name: 'Add an option' }).click()
+    await page.getByLabel('Option name').last().fill(name)
+  }
+  await page.getByLabel('Name', { exact: true }).focus()
+  await page.waitForTimeout(400)
+  return page.getByRole('dialog')
+})
+await shot('fields-library', async () => {
+  await clientWork()
+  await page.goto(`${SITE}/#/account/fields`)
+  await page.reload()
+  await page.getByText('Contract signed', { exact: true }).waitFor()
+  await page.waitForTimeout(500)
+  return { clip: { x: 0, y: 0, width: 1360, height: 600 } }
+})
+await shot('fields-2-board', async () => {
+  const { id } = await clientWork()
+  await page.goto(`${SITE}/#/b/${id}/board`)
+  await page.reload()
+  await page.getByText('Website redesign', { exact: true }).first().waitFor()
+  await page.getByRole('button', { name: 'More', exact: true }).click()
+  await page.getByRole('menuitem', { name: 'Board settings' }).click()
+  await page.getByRole('button', { name: 'Fields', exact: true }).click()
+  await page.getByRole('switch', { name: 'Show Stage on cards' }).waitFor()
+  await page.waitForTimeout(500)
+  return page.getByRole('dialog')
+})
+await shot('fields-3-card', async () => {
+  const { id } = await clientWork()
+  await page.goto(`${SITE}/#/b/${id}/board?task=brand`)
+  await page.reload()
+  const card = page.getByRole('dialog').first()
+  await card.getByLabel('Client').waitFor()
+  // (The whole group in view: the side column scrolls on its own.)
+  await card.getByText('Amount', { exact: true }).evaluate((el) => el.scrollIntoView({ block: 'center' }))
+  await page.waitForTimeout(500)
+  const { clip } = await around([card.getByText('Stage', { exact: true }), card.getByRole('switch', { name: 'Contract signed' })], 22)
+  return { clip: { ...clip, x: clip.x - 6, width: clip.width + 12 } }
+})
+await shot('fields-4-front', async () => {
+  const { id } = await clientWork()
+  await page.goto(`${SITE}/#/b/${id}/board`)
+  await page.reload()
+  await page.getByText('Website redesign', { exact: true }).first().waitFor()
+  await page.waitForTimeout(600)
+  return around(
+    [page.getByText('To Do', { exact: true }), page.getByText('Online shop', { exact: true }), page.getByText('Annual report', { exact: true })],
+    36,
+  )
+})
+
 await browser.close()
 console.log(`made ${made.length}: ${made.join(', ')}`)
 if (failed.length) console.log(`\nnot made (${failed.length}):\n  ${failed.join('\n  ')}`)

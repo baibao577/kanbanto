@@ -1,4 +1,4 @@
-import { ArrowLeft, ArrowsClockwise, ChartBarHorizontal, Copy, EnvelopeSimple, SignOut, Trash, UsersThree, X } from '@phosphor-icons/react'
+import { ArrowLeft, ArrowsClockwise, ChartBarHorizontal, Copy, EnvelopeSimple, SignOut, Tag, Trash, UsersThree, X } from '@phosphor-icons/react'
 import { lazy, Suspense, useCallback, useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import type { InvitationResult, WorkspaceDetail, WorkspaceRole } from '@kanbanto/model/api'
@@ -8,6 +8,7 @@ import { useAuth } from '@/app/use-auth'
 import { Avatar } from '@/components/common/bits'
 import { ConfirmDialog, type ConfirmRequest } from '@/components/common/ConfirmDialog'
 import { LogoMark } from '@/components/common/Logo'
+import { FieldLibrary } from '@/components/fields/FieldLibrary'
 import { PageTitle, SettingsCard } from '@/components/settings/SettingsCard'
 import { AccountMenu } from '@/components/shell/AccountMenu'
 import { NotificationBell } from '@/components/shell/NotificationBell'
@@ -138,6 +139,7 @@ export function WorkspaceView({ route }: { route: WorkspaceRoute }) {
             [
               { section: undefined, label: 'People', icon: UsersThree },
               { section: 'planning' as const, label: 'Planning', icon: ChartBarHorizontal },
+              { section: 'fields' as const, label: 'Fields', icon: Tag },
             ] as const
           ).map(({ section, label, icon: Icon }) => {
             const on = (route.section ?? undefined) === section
@@ -153,7 +155,8 @@ export function WorkspaceView({ route }: { route: WorkspaceRoute }) {
                 )}
               >
                 <Icon weight={on ? 'fill' : 'regular'} className="size-4" />
-                {label}
+                {/* (On a phone there's room for one name: the tab you're on.) */}
+                <span className={cn(!on && 'max-sm:sr-only')}>{label}</span>
               </a>
             )
           })}
@@ -179,6 +182,18 @@ export function WorkspaceView({ route }: { route: WorkspaceRoute }) {
                   </a>
                 </div>
               )
+            ) : route.section === 'fields' ? (
+              <>
+                <PageTitle title="Fields" description={`Extra things to fill in on cards, shared by every board in ${ws.name}.`} />
+                <FieldLibrary
+                  base={`${base}/fields`}
+                  description={
+                    admin
+                      ? 'Add a field once here; each board’s owners then choose which ones their board uses, in Board settings → Fields.'
+                      : 'The workspace’s admins add fields. A board’s owners choose which ones their board uses, in Board settings → Fields.'
+                  }
+                />
+              </>
             ) : (
               <>
                 <PageTitle

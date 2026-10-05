@@ -3,10 +3,13 @@ export class ApiError extends Error {
   readonly status: number
   /** A stable name for errors the app acts on, like 'verify-email'. */
   readonly code?: string
-  constructor(status: number, message: string, code?: string) {
+  /** Whatever else the server sent with it (what a 'fields' refusal would add and lose, say). */
+  readonly details?: Record<string, unknown>
+  constructor(status: number, message: string, code?: string, details?: Record<string, unknown>) {
     super(message)
     this.status = status
     this.code = code
+    this.details = details
   }
 }
 
@@ -36,7 +39,7 @@ export async function api<T>(method: Method, path: string, body?: unknown): Prom
   const json = await res.json().catch(() => null)
   if (!res.ok) {
     if (json?.code === 'verify-email') window.dispatchEvent(new Event(VERIFY_EVENT))
-    throw new ApiError(res.status, json?.error ?? `Something went wrong (${res.status}).`, json?.code)
+    throw new ApiError(res.status, json?.error ?? `Something went wrong (${res.status}).`, json?.code, json ?? undefined)
   }
   return json as T
 }

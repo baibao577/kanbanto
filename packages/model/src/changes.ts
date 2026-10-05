@@ -6,6 +6,7 @@ import type { BoardData, TaskMap } from './types'
 export function applyChanges(data: BoardData, changes: Change[]): BoardData {
   if (!changes.length) return data
   let { board, members, columns, labels, tasks } = data
+  const { fields } = data
   let archived = data.archived ?? {}
   let tasksCopied = false
   let archivedCopied = false
@@ -49,7 +50,7 @@ export function applyChanges(data: BoardData, changes: Change[]): BoardData {
   if (lists.member) members = [...(lists.member.values() as Iterable<Records['member']>)]
   if (lists.label) labels = [...(lists.label.values() as Iterable<Records['label']>)]
   if (lists.column) columns = [...(lists.column.values() as Iterable<Records['column']>)].sort((a, b) => comparePositions(a.position, b.position))
-  return { board, members, columns, labels, tasks, ...(Object.keys(archived).length || data.archived ? { archived } : {}) }
+  return { board, members, columns, labels, fields, tasks, ...(Object.keys(archived).length || data.archived ? { archived } : {}) }
 }
 
 /** The record a change is about, as it is now in `data` (null if it doesn't exist). */

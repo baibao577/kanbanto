@@ -11,6 +11,7 @@ const board = (members: string[], tasks: Task[], mode: 'manual' | 'derived' = 'm
   members: members.map(person),
   columns: EXAMPLE_COLUMNS,
   labels: [],
+  fields: [],
   tasks: Object.fromEntries(tasks.map((t) => [t.id, t])),
 })
 const keys = (data: BoardData, who: string, opts?: { maxAlerts?: number }) => calendarItems(data, who, opts).map((i) => `${i.taskId}:${i.key}`)
