@@ -251,7 +251,10 @@ function run(data: BoardData, cmd: Command, ctx: Context): Change[] {
           blockedBy: a.blockedBy.filter((b) => data.tasks[b] || back.has(b)),
         }
         if (next.assigneeId && !data.members.some((m) => m.id === next.assigneeId)) delete next.assigneeId
-        putTask(archived[id], withFields(next, data.fields))
+        putTask(
+          archived[id],
+          withFields(next, data.fields, (u) => data.members.some((m) => m.id === u)),
+        )
       }
       break
     }
@@ -399,7 +402,7 @@ function restore(data: BoardData, changes: Change[], now: string): Change[] {
     // its parent links, which are followed while it's archived, can't go round in a loop.
     if (t.archivedAt) {
       if (loops({ ...next.archived, ...next.tasks }, t.id)) reject('A task can’t go inside one of its own subtasks.')
-      out[i] = { ...c, after: withFields(t, next.fields) }
+      out[i] = { ...c, after: withFields(t, next.fields, (u) => members.has(u)) }
       continue
     }
     if (t.parentId && !next.tasks[t.parentId]) reject('Its parent task no longer exists.')
@@ -407,7 +410,7 @@ function restore(data: BoardData, changes: Change[], now: string): Change[] {
     if (!columns.has(t.status)) reject('Its list no longer exists.')
     // Links that no longer lead anywhere are dropped rather than refusing the whole undo.
     const tidy: Task = {
-      ...withFields(t, next.fields),
+      ...withFields(t, next.fields, (u) => members.has(u)),
       assigneeId: t.assigneeId && members.has(t.assigneeId) ? t.assigneeId : undefined,
       labels: t.labels.filter((l) => labels.has(l)),
       blockedBy: t.blockedBy.filter((b) => next.tasks[b]),
@@ -473,21 +476,25 @@ function cleanFields(data: BoardData, id: string, f: TaskFields): Partial<Task> 
   }
   if (f.color !== undefined) out.color = f.color ?? undefined
   if (f.custom) {
-    // (A card link is checked with what this board knows: see `checkValue`.)
+    // (A card link is checked with what this board knows, a person against its people: see `checkValue`.)
     const r = patchCustom(data.fields, data.tasks[id]?.custom, f.custom, {
       boardId: data.board.id,
       taskId: id,
       exists: (other) => other in data.tasks || !!data.archived?.[other],
+      isMember: (u) => data.members.some((m) => m.id === u),
     })
     out.custom = 'error' in r ? reject(r.error) : r.custom
   }
   return out
 }
 
-/** A task that comes back from somewhere (undo, the archive), holding only values that fit the board's fields now. */
-function withFields(t: Task, fields: FieldDef[]): Task {
+/**
+ * A task that comes back from somewhere (undo, the archive), holding only values that fit the board's fields now,
+ * and in its person fields only people who are on the board (like its assignee).
+ */
+function withFields(t: Task, fields: FieldDef[], isMember: (userId: string) => boolean): Task {
   const { custom: _held, ...rest } = t
-  const custom = tidyCustom(t.custom, fields)
+  const custom = tidyCustom(t.custom, fields, isMember)
   return custom ? { ...rest, custom } : rest
 }
 

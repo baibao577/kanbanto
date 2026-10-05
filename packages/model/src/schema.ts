@@ -67,7 +67,8 @@ const reminders = z.array(reminder).max(20)
  * A card's values for the board's fields. Only their shape and size are checked here: whether a value fits its
  * field needs the board (see `patchCustom` and `tidyCustom` in fields.ts).
  */
-// (A list holds a choice's option ids, or a card link's links: a board's id, a colon and a card's, so longer than an id.)
+// (A list holds a choice's option ids, a person field's people, or a card link's links: a board's id, a colon and a
+// card's, so longer than an id.)
 const listed = z
   .string()
   .min(1)

@@ -212,7 +212,7 @@ The app uses hash routing, so any static host or proxy works without rewrite rul
 
 - A **field** (`fields` table; the rules are in `model/fields.ts`) is defined once, in a **library**: a workspace's,
   managed by its admins, or a person's own, for their Personal boards. Its type (text, number, date, choice,
-  checkbox) is chosen once. `model/fields.ts` is the one place that knows the types: how to check a value, show it,
+  checkbox, card link, person) is chosen once. `model/fields.ts` is the one place that knows the types: how to check a value, show it,
   compare it, and carry it over to another field.
 - A **board picks** the fields it uses (`board_fields`: order, and up to three on the card front), its owners'
   choice. The picked definitions are put into the board when it's loaded (`BoardData.fields`), the way its people
@@ -236,6 +236,29 @@ The app uses hash routing, so any static host or proxy works without rewrite rul
   small store that chips subscribe to one link at a time. When a card moves to another board, or a board is deleted
   or leaves its space, `relink` rewrites or removes the links to it in a transaction of its own, after the change,
   locking the boards in id order. The activity log names a linked card only when it's on the same board.
+- **People** (the `person` type). A value is a list of user ids, checked against the board's people wherever a
+  value is checked: `checkValue` refuses someone new who isn't one of them and quietly drops someone the card held
+  who has left; `tidyCustom` (undo, un-archiving, a file) and `carryCustom` (a card or a board moving, an import)
+  keep only people who are there. Leaving a board or a workspace takes the person out of the person fields of the
+  boards they're gone from, and unassigns them (`boards/people.ts`): inside that transaction the boards are locked
+  and their change counter raised, so a command running at that moment can't write them back. Nobody is notified:
+  that's what Assignee is for. No fall-through ever prints an id: a value reads as names, or "someone who left".
+- **Merging two fields** (`mergeFields` in `boards/fields.ts`; the rules for one card are `mergeCustom` in
+  `model/fields.ts`). One transaction that locks in the order every other change here does: the library, the two
+  fields, then every board with a row for either, in id order. A card that holds both keeps the value its board
+  shows; a choice's options go by name and the rest are added. Board rows and saved filters (`remapPreset`) are
+  rewritten, the old field is deleted, and the boards reload. `setBoardFields` takes a share lock on the fields it's
+  asked for, so it can't add one mid-merge. No webhook fires: nothing a card's people did changed.
+- **An undo can't reach behind a re-keying.** An undo puts whole cards back. One whose card names a field the board
+  has no row for at all (it was merged away, or the board moved to another space and got that space's fields) is
+  refused in `mutate`: put back, the card would lose what it holds for the fields it has now. A field merely taken
+  off the board or archived keeps its row, and such an undo goes through without that value, as before.
+- **Starter boards** (`model/starters.ts`, `createStarter` in `boards/service.ts`). A starter is plain data: lists,
+  example cards, saved filters and fields under ids of its own. `planStarter` fits those fields to the library of
+  where the board is made: one of the same name and kind is used as it is (never changed), one that's archived is
+  left out, the rest are added, which a workspace's admins may do; otherwise nothing is made. The cards' values and
+  the saved filters are then carried to the library's ids. The ids of the starters' choice options are a contract:
+  an added field keeps them, so they're in people's data from then on.
 - **Columns, filters and totals.** The index carries the board's definitions (`TaskIndex.fields`), so sorting and
   filtering need nothing else. A field's column and sort key is `f:<field id>` (`model/table.ts`); a filter by a field
   is a `FieldFilter` in `TableFilter.fields`, with one rule per kind (`fieldMatches`, `tidyFilter` in

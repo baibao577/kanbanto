@@ -1,6 +1,6 @@
-import { fieldIdOf, isFieldKey, tidyFilter } from './fields'
+import { fieldIdOf, fieldKey, isFieldKey, tidyFilter, type FieldFilter, type FieldMap } from './fields'
 import type { OutlineConfig, TableFilter } from './table'
-import type { BoardData, Layout, ViewConfig } from './types'
+import type { BoardData, Layout, StatusMode, ViewConfig } from './types'
 
 /**
  * Per-person view settings: which tab is open and how each tab looks. These stay on this device
@@ -31,6 +31,43 @@ export type PresetSettings = Pick<ViewPrefs, 'filter' | 'display' | 'outline'>
 
 export const presetOf = (p: ViewPrefs): PresetSettings => ({ filter: p.filter, display: p.display, outline: p.outline })
 
+/**
+ * A preset's settings with its fields carried over by `map` (a board made from a starter, two fields merged into
+ * one): the filters by a field, a choice's options inside them, and the Outline's sort and hidden columns.
+ * `others`: what happens to the fields the map doesn't name, kept as they are or dropped. Where two filters land on
+ * one field, the one that was already there stays.
+ */
+export function remapPreset(s: PresetSettings, map: FieldMap, others: 'keep' | 'drop'): PresetSettings {
+  const to = (id: string) => map.get(id) ?? (others === 'keep' ? { id, options: undefined } : undefined)
+  const key = <K extends string>(k: K) => {
+    if (!isFieldKey(k)) return k
+    const t = to(fieldIdOf(k))
+    return t && fieldKey(t.id)
+  }
+  const asked = Object.entries(s.filter.fields ?? {})
+  const fields: Record<string, FieldFilter> = {}
+  for (const [id, f] of [...asked.filter(([x]) => !map.has(x)), ...asked.filter(([x]) => map.has(x))]) {
+    const t = to(id)
+    if (!t || t.id in fields) continue
+    let next = f
+    if (f.in && t.options) {
+      const { in: picked, ...rest } = f
+      const there = [...new Set(picked.flatMap((o) => (o === '' ? [''] : (t.options!.get(o) ?? []))))]
+      next = there.length ? { ...rest, in: there } : rest
+    }
+    if (Object.keys(next).length) fields[t.id] = next
+  }
+  const { fields: _fields, ...filter } = s.filter
+  const { sort, hidden, ...outline } = s.outline
+  const sortKey = sort && key(sort.key)
+  const shownOff = hidden && [...new Set(hidden.flatMap((k) => key(k) ?? []))]
+  return {
+    display: s.display,
+    filter: { ...filter, ...(Object.keys(fields).length && { fields }) },
+    outline: { ...outline, ...(sort && sortKey && { sort: { ...sort, key: sortKey } }), ...(shownOff?.length && { hidden: shownOff }) },
+  }
+}
+
 /** Whether the view still looks the way the preset left it (the Presets button shows a dot when not). */
 export const matchesPreset = (p: ViewPrefs, s: PresetSettings) => stable(presetOf(p)) === stable(s)
 
@@ -49,6 +86,13 @@ function stable(v: unknown): string {
 export const DEFAULT_DISPLAY: ViewPrefs['display'] = {
   board: { columns: 'status', rows: 'none', filter: 'all', parentDisplay: ['label', 'progress'], groupByParent: true },
 }
+
+/**
+ * How a board looks before anyone changes it. Where statuses are set by hand, one card per task: a card that has
+ * subtasks stays a card (they're its steps), instead of becoming a heading over its subtasks' cards.
+ */
+export const defaultDisplay = (mode: StatusMode): ViewConfig =>
+  mode === 'manual' ? { ...DEFAULT_DISPLAY.board, filter: 'main' } : DEFAULT_DISPLAY.board
 
 export function defaultPrefs(): ViewPrefs {
   return {
@@ -140,7 +184,7 @@ export function cleanPrefs(p: ViewPrefs, data: BoardData): ViewPrefs {
   // left the board goes.
   const defs = new Map(data.fields.map((x) => [x.id, x]))
   const wanted = Object.entries(f.fields ?? {}).flatMap(([id, one]) => {
-    const tidy = defs.has(id) ? tidyFilter(defs.get(id)!, one) : undefined
+    const tidy = defs.has(id) ? tidyFilter(defs.get(id)!, one, (u) => people.has(u)) : undefined
     return tidy ? [[id, tidy] as const] : []
   })
   const sameFields = !!f.fields && wanted.length === Object.keys(f.fields).length && wanted.every(([id, one]) => f.fields![id] === one)

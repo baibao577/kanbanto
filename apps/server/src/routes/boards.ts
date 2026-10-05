@@ -2,6 +2,7 @@ import type { ArchivedPage, BoardAccess, BoardSummary, Role } from '@kanbanto/mo
 import { ARCHIVED_DATES, archivedFamily, archivedIn } from '@kanbanto/model/archived'
 import { isBackground, type BoardBackground } from '@kanbanto/model/colors'
 import { CommandSchema } from '@kanbanto/model/schema'
+import { isStarter, STARTERS } from '@kanbanto/model/starters'
 import { readBoardFile } from '@kanbanto/model/transfer'
 import { newId } from '@kanbanto/model/ids'
 import { and, eq, inArray, sql } from 'drizzle-orm'
@@ -10,7 +11,7 @@ import { z } from 'zod'
 import { accessFor, accessOf, requireAccess, type BoardRow } from '../boards/access'
 import { parseMoment, readActivity } from '../boards/activityLog'
 import { canBeLinked, factOf, linksToResolve, resolveLinks, unlinkBoard } from '../boards/links'
-import { createBoard, importBoard } from '../boards/service'
+import { createBoard, createStarter, importBoard } from '../boards/service'
 import { requireWorkspace } from '../boards/workspaces'
 import type { Db } from '../db'
 import { boardFavorites, boards, workspaces } from '../db/schema'
@@ -33,7 +34,8 @@ const CreateBoard = z.object({
     .max(200)
     .refine((n) => !n.includes('\u0000'), 'Board names can’t contain NUL characters.'),
   background: background.optional(),
-  template: z.enum(['empty', 'example']).default('empty'),
+  /** `sales`, `support`: a starter board, with its fields (see createStarter). */
+  template: z.enum(['empty', 'example', ...STARTERS]).default('empty'),
   /** Where it goes: a workspace you're in (shared with everyone in it), or your Personal space. */
   workspaceId: z.uuid().nullable().optional(),
 })
@@ -136,7 +138,8 @@ export const boardRoutes: FastifyPluginAsync = async (app) => {
     const user = requireUser(req.user)
     const body = parse(CreateBoard, req.body)
     if (body.workspaceId) await requireWorkspace(app.db, body.workspaceId, user.id)
-    return { id: await createBoard(app.db, user.id, body) }
+    if (isStarter(body.template)) return createStarter(app, user.id, body.template, body)
+    return { id: await createBoard(app.db, user.id, { ...body, template: body.template }) }
   })
 
   app.post('/boards/import', { bodyLimit: 20 * MB }, async (req) => {

@@ -379,8 +379,8 @@ function MoreMenu({
 }
 
 /**
- * What the picked field has to be: any of a choice's options (or none picked), yes or no for a checkbox, and for the
- * other kinds whether it's filled in.
+ * What the picked field has to be: any of a choice's options (or none picked), yes or no for a checkbox, for a
+ * person field you, someone or no one, and for the other kinds whether it's filled in.
  */
 function FieldTest({ field, value, onChange }: { field: FieldDef; value: FieldFilter; onChange: (next: FieldFilter | undefined) => void }) {
   if (field.type === 'choice') {
@@ -401,6 +401,32 @@ function FieldTest({ field, value, onChange }: { field: FieldDef; value: FieldFi
           <span className="text-muted-foreground">None picked</span>
         </CheckRow>
       </div>
+    )
+  }
+  if (field.type === 'person') {
+    // (The boards searched have different people: "me" is the one person who is the same on all of them.)
+    const now = value.in?.includes('me') ? 'me' : value.has === undefined ? 'any' : value.has ? 'yes' : 'no'
+    return (
+      <ToggleGroup
+        type="single"
+        variant="outline"
+        size="sm"
+        value={now}
+        onValueChange={(v) => v && onChange(v === 'any' ? undefined : v === 'me' ? { in: ['me'] } : { has: v === 'yes' })}
+        className="w-full pt-1"
+        aria-label={field.name}
+      >
+        {[
+          ['any', 'Any'],
+          ['me', 'Me'],
+          ['yes', 'Someone'],
+          ['no', 'No one'],
+        ].map(([key, text]) => (
+          <ToggleGroupItem key={key} value={key} className="flex-1 text-xs">
+            {text}
+          </ToggleGroupItem>
+        ))}
+      </ToggleGroup>
     )
   }
   const yesNo = field.type === 'checkbox'

@@ -197,7 +197,9 @@ describe('carrying links', () => {
     expect(mapLinks(custom, links, () => null)).toEqual({ 'f-text': 'kept', 'f-choice': ['won'] })
     expect(mapLinks({ 'f-any': [acme] }, links, () => null)).toBeUndefined()
     expect(
-      carryCustom({ 'f-any': [acme, globex] }, new Map([['f-any', { id: 'f-new', link: true }]]), (r) => (r === acme ? here('A1') : null)),
+      carryCustom({ 'f-any': [acme, globex] }, new Map([['f-any', { id: 'f-new', link: true }]]), {
+        relink: (r) => (r === acme ? here('A1') : null),
+      }),
     ).toEqual({
       'f-new': [here('A1')],
     })

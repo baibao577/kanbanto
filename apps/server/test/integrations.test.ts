@@ -231,6 +231,7 @@ describe('MCP', () => {
       'update_board',
       'manage_lists',
       'manage_labels',
+      'manage_fields',
       'set_inbox',
       'log_time',
       'follow_task',
@@ -350,6 +351,29 @@ describe('MCP', () => {
     )
     expect((await tool('update_task', { board_id: id, task_id: logo, fields: { 'See also': 'Logo' } })).error).toMatch(/no card called “Logo”/)
     expect((await tool('update_task', { board_id: id, task_id: logo, fields: { Client: null } })).fields.Client).toBeUndefined()
+    // People: listed with the board, read as names, set and found by name or "me".
+    await Person.signUp(t.app, 'Bobby')
+    await ann.ok('POST', `/api/boards/${id}/invitations`, { email: 'bobby@example.com', role: 'editor' })
+    const { id: reviewer } = await ann.ok('POST', '/api/fields', { name: 'Reviewer', type: 'person' })
+    const { id: crew } = await ann.ok('POST', '/api/fields', { name: 'Crew', type: 'person', many: true })
+    await ann.ok('PUT', `/api/boards/${id}/fields`, { fields: [{ id: stage }, { id: value }, { id: reviewer }, { id: crew }] })
+    expect((await tool('get_board', { board_id: id, tasks: false })).fields.slice(2)).toEqual([
+      { id: reviewer, name: 'Reviewer', type: 'person', several: false },
+      { id: crew, name: 'Crew', type: 'person', several: true },
+    ])
+    const staffed = await tool('update_task', { board_id: id, task_id: logo, fields: { reviewer: 'bobby', Crew: ['me', 'Bobby'] } })
+    expect(staffed.fields).toMatchObject({ Reviewer: 'Bobby', Crew: ['Ann', 'Bobby'] })
+    expect(JSON.stringify(staffed)).not.toContain(ann.user.id)
+    expect(titles(await tool('find_tasks', { board_id: id, fields: { Reviewer: 'Bobby' } }))).toEqual(['Logo'])
+    expect(titles(await tool('find_tasks', { board_id: id, fields: { Crew: 'me' } }))).toEqual(['Logo'])
+    expect((await tool('find_tasks', { board_id: id, fields: { Reviewer: 'Zed' } })).error).toMatch(/Reviewer: no one called “Zed” is on that board/)
+    expect((await tool('update_task', { board_id: id, task_id: logo, fields: { Reviewer: 'Zed' } })).error).toMatch(/Zed/)
+    expect((await tool('update_task', { board_id: id, task_id: logo, fields: { Reviewer: ['me', 'Bobby'] } })).error).toMatch(
+      /Reviewer holds one person/,
+    )
+    expect((await tool('update_task', { board_id: id, task_id: logo, fields: { Reviewer: null, Crew: 'me' } })).fields).toMatchObject({
+      Crew: ['Ann'],
+    })
     // (Back to the fields the rest of this test expects.)
     await ann.ok('PUT', `/api/boards/${id}/fields`, { fields: [{ id: stage }, { id: value }] })
     await ann.ok('DELETE', `/api/boards/${firms.id}`)
@@ -510,6 +534,121 @@ describe('MCP', () => {
     expect((await ann.ok('GET', '/api/auth/me')).user.inboxBoardId).toBe(null)
   })
 
+  it('manages fields: a library’s fields, a choice’s options by name, and which of them a board uses', async () => {
+    const { ann } = await site({ apiTokens: true })
+    const bob = await Person.signUp(t.app, 'Bob')
+    const { id: ws } = await ann.ok('POST', '/api/workspaces', { name: 'Acme' })
+    await ann.ok('POST', `/api/workspaces/${ws}/invitations`, { email: 'bob@example.com' })
+    const { id } = await ann.ok('POST', '/api/boards', { name: 'Deals', workspaceId: ws, template: 'example' })
+    const as = async (p: Person) => {
+      const mcp = withToken(await makeToken(p, 'write'))
+      return async (args: object) => toolResult(await rpc(mcp, 'tools/call', { name: 'manage_fields', arguments: args }))
+    }
+    const fields = await as(ann)
+    const mcp = withToken(await makeToken(ann, 'write'))
+    const call = async (name: string, args: object) => toolResult(await rpc(mcp, 'tools/call', { name, arguments: args }))
+
+    // A workspace's library, by its name. Asked for twice, a field is made once.
+    const made = await fields({ action: 'add', workspace: 'acme', name: 'Stage', type: 'choice', options: ['Lead', 'Won', 'Lost'] })
+    expect(made).toMatchObject({ library: 'Acme', field: { name: 'Stage', type: 'choice', options: ['Lead', 'Won', 'Lost'], on_boards: 0 } })
+    expect(await fields({ action: 'add', workspace: 'Acme', name: 'stage', type: 'choice', options: ['Other'] })).toMatchObject({
+      already_there: true,
+      field: { id: made.field.id, options: ['Lead', 'Won', 'Lost'] },
+    })
+    const value = await fields({ action: 'add', board_id: id, name: 'Value', type: 'number', unit: '$', adds_up: true })
+    expect(value).toMatchObject({ library: 'Acme', field: { type: 'number', unit: '$', adds_up: true } })
+    expect((await fields({ action: 'add', name: 'X' })).error).toBe('add needs a type.')
+    expect((await fields({ action: 'add', workspace: 'Acme', name: 'Priority', type: 'text' })).error).toMatch(/Every card already has “Priority”/)
+
+    // On a board: one field at a time, so a field someone else put there in between stays.
+    expect((await fields({ action: 'put_on_board', board_id: id, field: 'Stage', on_card: true })).fields).toEqual([
+      { name: 'Stage', type: 'choice', on_card: true },
+    ])
+    await ann.ok('PUT', `/api/boards/${id}/fields`, { fields: [{ id: made.field.id, front: true }, { id: value.field.id }] })
+    const again = await fields({ action: 'put_on_board', board_id: id, field: 'Value', total_in_lists: true })
+    expect(again.fields).toEqual([
+      { name: 'Stage', type: 'choice', on_card: true },
+      { name: 'Value', type: 'number', total_in_lists: true },
+    ])
+    expect((await fields({ action: 'put_on_board', board_id: id, field: 'Stage', total_in_lists: true })).error).toMatch(
+      /isn’t a number that adds up/,
+    )
+
+    // A choice's options by name: one left out is put away, and the card that has it keeps it.
+    await call('update_task', { board_id: id, task_id: 'A3', fields: { Stage: 'Won', Value: 5 } })
+    const fewer = await fields({ action: 'change', board_id: id, field: 'Stage', options: ['Lead', 'Qualified', 'Lost'] })
+    expect(fewer.field).toMatchObject({ options: ['Lead', 'Qualified', 'Lost'], archived_options: ['Won'], on_boards: 1 })
+    expect((await call('get_task', { board_id: id, task_id: 'A3' })).fields).toMatchObject({ Stage: 'Won', Value: 5 })
+    // Named again, it's back in use; and an option is renamed by its name.
+    const back = await fields({ action: 'change', workspace: 'Acme', field: 'stage', options: ['Lead', 'Qualified', 'Won', 'Lost'] })
+    expect(back.field.archived_options).toBeUndefined()
+    const renamed = await fields({ action: 'rename_option', workspace: 'Acme', field: 'Stage', option: 'qualified', name: 'Contacted' })
+    expect(renamed.field.options).toEqual(['Lead', 'Contacted', 'Won', 'Lost'])
+    expect((await fields({ action: 'rename_option', workspace: 'Acme', field: 'Stage', option: 'Nope', name: 'X' })).error).toBe(
+      'There’s no option “Nope”. The options are: Lead, Contacted, Won, Lost.',
+    )
+    expect((await fields({ action: 'change', workspace: 'Acme', field: 'Stage', options: ['A', 'a'] })).error).toMatch(/two options called/)
+    expect((await fields({ action: 'change', workspace: 'Acme', field: 'Value', options: ['A'] })).error).toBe('Only a choice has options.')
+
+    // Its name and settings; archived and back; the whole library.
+    expect((await fields({ action: 'change', workspace: 'Acme', field: 'Value', name: 'Deal value', unit: '€' })).field).toMatchObject({
+      name: 'Deal value',
+      unit: '€',
+      adds_up: true,
+    })
+    expect((await fields({ action: 'archive', workspace: 'Acme', field: 'Deal value' })).field).toMatchObject({ archived: true })
+    expect((await call('get_board', { board_id: id, tasks: false })).fields.map((f: { name: string }) => f.name)).toEqual(['Stage'])
+    expect((await fields({ action: 'restore', workspace: 'Acme', field: 'Deal value' })).field.archived).toBeUndefined()
+    expect((await call('get_task', { board_id: id, task_id: 'A3' })).fields).toMatchObject({ 'Deal value': 5 })
+    const listed = await fields({ action: 'list', workspace: 'Acme' })
+    expect(listed).toMatchObject({ library: 'Acme', you_can_change_it: true })
+    expect(listed.fields.map((f: { name: string; on_boards: number }) => [f.name, f.on_boards])).toEqual([
+      ['Stage', 1],
+      ['Deal value', 1],
+    ])
+
+    // Off the board: its values stay, hidden.
+    expect((await fields({ action: 'take_off_board', board_id: id, field: 'Stage' })).fields.map((f: { name: string }) => f.name)).toEqual([
+      'Deal value',
+    ])
+    expect((await fields({ action: 'take_off_board', board_id: id, field: 'Stage' })).error).toBe('That field isn’t on this board.')
+    expect((await fields({ action: 'put_on_board', board_id: id, field: 'Nope' })).error).toMatch(
+      /There’s no field “Nope”. The fields are: Deal value, Stage/,
+    )
+
+    // Their own library (the default), and the kinds that point at people and cards.
+    expect(await fields({ action: 'add', name: 'Reviewer', type: 'person', several: true })).toMatchObject({
+      library: 'Personal',
+      field: { type: 'person', several: true },
+    })
+    expect(
+      (await fields({ action: 'add', workspace: 'Acme', name: 'Related', type: 'link', cards_from: 'this board', several: true })).field,
+    ).toMatchObject({
+      cards_from: 'this board',
+      several: true,
+    })
+    expect((await fields({ action: 'add', workspace: 'Acme', name: 'Deal', type: 'link', cards_from: 'deals' })).field.cards_from).toEqual({
+      board_id: id,
+    })
+    expect((await fields({ action: 'add', workspace: 'Acme', name: 'Other', type: 'link', cards_from: 'Nowhere' })).error).toMatch(
+      /no board “Nowhere”/,
+    )
+
+    // Someone who isn't an admin of the workspace reads its library, and that's all; a board's fields are its owners'.
+    const his = await as(bob)
+    expect(await his({ action: 'list', workspace: 'Acme' })).toMatchObject({ you_can_change_it: false })
+    expect((await his({ action: 'add', workspace: 'Acme', name: 'X', type: 'text' })).error).toBe('Only the admins of Acme can change its fields.')
+    expect((await his({ action: 'archive', board_id: id, field: 'Stage' })).error).toBe('Only the admins of Acme can change its fields.')
+    expect((await his({ action: 'put_on_board', board_id: id, field: 'Stage' })).isError).toBe(true)
+    expect((await his({ action: 'list', workspace: 'Elsewhere' })).error).toMatch(/You’re not in a workspace called “Elsewhere”/)
+    expect((await ann.ok('GET', `/api/workspaces/${ws}/fields`)).fields.map((f: { name: string }) => f.name)).toEqual([
+      'Stage',
+      'Deal value',
+      'Related',
+      'Deal',
+    ])
+  })
+
   it('sets up a board: creates it, changes its settings, lists and labels, and makes it the Inbox', async () => {
     const { ann } = await site({ apiTokens: true })
     await ann.ok('POST', '/api/workspaces', { name: 'Acme' })
@@ -525,6 +664,12 @@ describe('MCP', () => {
       about: 'Launching the new site',
     })
     expect((await call('create_board', { name: 'X', workspace: 'Nope' })).error).toContain('Yours: Acme')
+    // From a starter: its own lists and fields, and what it added to the library.
+    const desk = await call('create_board', { name: 'Help desk', starter: 'support', workspace: 'Acme' })
+    expect(desk.lists.map((l: { name: string }) => l.name)).toEqual(['New', 'In progress', 'Waiting on customer', 'Solved'])
+    expect(desk.fields).toEqual(['Severity', 'Customer', 'Customer email', 'Channel', 'Reported on'])
+    expect(desk.fields_added_to_the_library).toEqual(desk.fields)
+    expect((await call('create_board', { name: 'Second desk', starter: 'support', workspace: 'Acme' })).fields_added_to_the_library).toBeUndefined()
 
     const set = await call('update_board', { board_id: id, name: 'Q4 site launch', background: 'teal', parent_status: 'set_by_hand' })
     expect(set.board).toMatchObject({ name: 'Q4 site launch', background: 'teal', parent_status: 'set_by_hand', about: 'Launching the new site' })

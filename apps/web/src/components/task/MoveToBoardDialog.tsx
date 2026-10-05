@@ -181,6 +181,12 @@ export function MoveToBoardDialog({ taskId, onClose, onMoved }: { taskId: string
                 Not on “{to.name}”: {joinWords(plan.unassigned)}. Their tasks will have no one assigned.
               </Note>
             )}
+            {plan.leftBehind.length > 0 && (
+              <Note icon={<UserMinus />} warn>
+                Not on “{to.name}”: {joinWords(plan.leftBehind)}. {plan.leftBehind.length === 1 ? 'They’re' : 'They’re all'} taken out of the card’s
+                people fields.
+              </Note>
+            )}
             {plan.newLabels.length > 0 && (
               <Note icon={<Tag />}>
                 Adds {plan.newLabels.length === 1 ? 'the label' : 'the labels'} {joinWords(plan.newLabels.map((l) => `“${l}”`))} to “{to.name}”.

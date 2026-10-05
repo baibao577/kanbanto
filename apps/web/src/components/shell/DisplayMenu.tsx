@@ -10,7 +10,7 @@ import { Separator } from '@/components/ui/separator'
 import { Switch } from '@/components/ui/switch'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { StatusDot } from '@/components/common/bits'
-import { DEFAULT_DISPLAY } from '@kanbanto/model/prefs'
+import { defaultDisplay } from '@kanbanto/model/prefs'
 import { DONE_DAYS, type DoneLists } from '@kanbanto/model/types'
 import type { Filter, ParentDisplay, RowsBy, ViewConfig } from '@kanbanto/model/types'
 
@@ -34,7 +34,8 @@ export function DisplayMenu() {
   const set = (p: Partial<ViewConfig>) => setPrefs({ type: 'setDisplay', config: { ...cfg, ...p } })
   const has = (p: ParentDisplay) => cfg.parentDisplay.includes(p)
   const toggle = (p: ParentDisplay, on: boolean) => set({ parentDisplay: on ? [...cfg.parentDisplay, p] : cfg.parentDisplay.filter((x) => x !== p) })
-  const changed = !sameConfig(cfg, DEFAULT_DISPLAY.board)
+  const usual = defaultDisplay(data.board.mode)
+  const changed = !sameConfig(cfg, usual)
   const groupedByParent = cfg.rows === 'rootParent' || cfg.rows === 'directParent'
   const hiddenCount = cfg.hiddenColumns?.length ?? 0
 
@@ -220,7 +221,7 @@ export function DisplayMenu() {
                   setPrefs({
                     type: 'setDisplay',
                     config: {
-                      ...DEFAULT_DISPLAY.board,
+                      ...usual,
                       hiddenColumns: cfg.hiddenColumns,
                       collapsedColumns: cfg.collapsedColumns,
                       listOrder: cfg.listOrder,

@@ -5,7 +5,8 @@ import type { LinkStore } from '@/data/links'
 /**
  * Links between cards, for the chips that show them: what each points at, and how to open it. Its own context (and
  * the same value for as long as a board is open), apart from the board's: a chip is told about its own card and
- * nothing else, so a board with thousands of them isn't redrawn when one title arrives.
+ * nothing else, so a board with thousands of them isn't redrawn when one title arrives. The chips of person fields
+ * read the board's people from the same store, the same way (see `usePerson`).
  */
 export interface LinksContextValue {
   store: LinkStore
@@ -18,6 +19,13 @@ export const LinksContext = createContext<LinksContextValue | null>(null)
 export const useLinks = () => useContext(LinksContext)
 
 const never = () => {}
+
+/** The name of one of the board's people, kept up to date (undefined: they aren't on it, or not any more). */
+export function usePerson(userId: string): string | undefined {
+  const store = useContext(LinksContext)?.store
+  const subscribe = useCallback((l: () => void) => store?.subscribePerson(userId, l) ?? never, [store, userId])
+  return useSyncExternalStore(subscribe, () => store?.nameOf(userId))
+}
 
 /** What one link points at, kept up to date (undefined while it isn't known, or outside a board). */
 export function useLinked(ref: string): LinkedCard | undefined {

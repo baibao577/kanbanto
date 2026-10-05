@@ -8,7 +8,7 @@ import type { Change } from '@kanbanto/model/records'
 import type { BoardData } from '@kanbanto/model/types'
 import { and, eq, inArray, lt, sql } from 'drizzle-orm'
 import type { Db, Tx } from '../db'
-import { attachments, boardActivity, boards, comments, notifications, taskFollowers, timeEntries } from '../db/schema'
+import { attachments, boardActivity, boardFieldRows, boards, comments, notifications, taskFollowers, timeEntries } from '../db/schema'
 import { HttpError } from '../http'
 import type { LiveHub } from '../live'
 import { ACTIVITY_DAYS } from './activityLog'
@@ -24,6 +24,8 @@ export interface MutationResult {
 const CACHE_BOARDS = 200
 const CACHE_RECORDS = 200_000
 const REMEMBERED_MUTATIONS = 500
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 const sizeOf = (d: BoardData) =>
   Object.keys(d.tasks).length + Object.keys(d.archived ?? {}).length + d.columns.length + d.labels.length + d.members.length + d.fields.length + 1
@@ -106,6 +108,7 @@ export class BoardEngine {
       if (!row) throw new HttpError(404, 'This board no longer exists.')
       const hit = this.cache.get(boardId)
       const data = hit && hit.seq === row.seq ? hit.data : (await loadBoard(tx, boardId))!.data
+      if (command.type === 'records.restore') await this.fieldsStillThere(tx, boardId, data, command.changes)
       let r: ReturnType<typeof execute>
       try {
         r = execute(data, command, { now: new Date().toISOString(), newId, idx: indexFor(data) })
@@ -155,6 +158,30 @@ export class BoardEngine {
       await this.afterChange?.(boardId, { userId, command: command.type, changes: out.changes, data: result.data })
     }
     return out
+  }
+
+  /**
+   * An undo puts whole cards back as they were. One that holds a value for a field this board has nothing to do with
+   * any more (not shown on it, and not kept hidden either) was made before the board's fields changed under it: the
+   * field was merged into another one, or the board moved to another space and got that space's fields. Put back,
+   * the card would lose what it holds for the fields it has now, so that undo is refused. (A field merely taken off
+   * the board, or archived, keeps its row here: such an undo goes through, as before, without that value.)
+   */
+  private async fieldsStillThere(tx: Tx, boardId: string, data: BoardData, changes: Change[]) {
+    const shown = new Set(data.fields.map((f) => f.id))
+    const named = new Set<string>()
+    for (const c of changes)
+      if (c.entity === 'task' && c.after?.custom) for (const id of Object.keys(c.after.custom)) if (!shown.has(id)) named.add(id)
+    if (!named.size) return
+    // (A field's id is a uuid: anything else was never a field of any board.)
+    const ids = [...named].filter((id) => UUID.test(id)).slice(0, 500)
+    const kept = ids.length
+      ? await tx
+          .select({ id: boardFieldRows.fieldId })
+          .from(boardFieldRows)
+          .where(and(eq(boardFieldRows.boardId, boardId), inArray(boardFieldRows.fieldId, ids)))
+      : []
+    if (kept.length < named.size) throw new HttpError(422, 'This board’s fields changed since, so it can’t be undone.')
   }
 
   /**

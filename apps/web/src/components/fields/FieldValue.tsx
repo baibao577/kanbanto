@@ -9,6 +9,7 @@ import { Switch } from '@/components/ui/switch'
 import { formatDay } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { LinkFront, LinkValueEditor, LinkValueText } from './LinkValue'
+import { PersonFront, PersonValueEditor, PersonValueText } from './PersonValue'
 import { linkOf } from './values'
 
 const CHIP = 'inline-flex h-5 max-w-full items-center gap-1 rounded px-1.5 text-[11px] font-medium'
@@ -16,6 +17,7 @@ const CHIP = 'inline-flex h-5 max-w-full items-center gap-1 rounded px-1.5 text-
 /** A card's value for one of the board's fields, as a small chip on the card front. */
 export function FieldChip({ field, value }: { field: BoardField; value: FieldValue }) {
   if (field.type === 'link') return <LinkFront field={field} value={value} />
+  if (field.type === 'person') return <PersonFront field={field} value={value} />
   if (field.type === 'choice') {
     const [option] = optionsOf(field, value)
     return option ? <LabelChip label={option} className={cn('min-w-0', option.archived && 'opacity-60')} /> : null
@@ -27,6 +29,7 @@ export function FieldChip({ field, value }: { field: BoardField; value: FieldVal
         <span className="truncate">{field.name}</span>
       </span>
     )
+  if (Array.isArray(value)) return null
   const text = field.type === 'number' ? numberText(field, value as number) : field.type === 'date' ? formatDay(String(value)) : String(value)
   return (
     <span className={cn(CHIP, 'bg-muted text-muted-foreground')} title={`${field.name}: ${text}`}>
@@ -59,6 +62,7 @@ export function FieldValueEditor({
   taskId?: string
 }) {
   if (field.type === 'link') return <LinkValueEditor field={field} value={value} onChange={onChange} cell={cell} taskId={taskId} />
+  if (field.type === 'person') return <PersonValueEditor field={field} value={value} onChange={onChange} cell={cell} />
   if (field.type === 'date')
     return (
       <DateField
@@ -105,11 +109,13 @@ export function FieldValueEditor({
 export function FieldValueText({ field, value }: { field: BoardField; value: FieldValue | undefined }) {
   if (value === undefined) return null
   if (field.type === 'link') return <LinkValueText value={value} cell />
+  if (field.type === 'person') return <PersonValueText value={value} cell />
   if (field.type === 'choice') {
     const [option] = optionsOf(field, value)
     return option ? <LabelChip label={option} className={cn('min-w-0', option.archived && 'opacity-60')} /> : null
   }
   if (field.type === 'checkbox') return <CheckSquare weight="fill" className="mx-2 size-4 text-status-done" aria-label="Yes" />
+  if (Array.isArray(value)) return null
   const text = field.type === 'number' ? numberText(field, value as number) : field.type === 'date' ? formatDay(String(value)) : String(value)
   const href = field.type === 'text' ? linkOf(field, text) : null
   return href ? (

@@ -11,6 +11,7 @@ import {
   type FieldFilter,
   type FieldKey,
   linksOf,
+  peopleOf,
   type TitleOf,
 } from './fields'
 import type { TaskIndex } from './indexer'
@@ -96,14 +97,15 @@ export function matchesFilter(idx: TaskIndex, id: string, f: TableFilter, lastCo
     for (const [fieldId, wanted] of Object.entries(f.fields)) {
       // (A filter for a field the board no longer uses says nothing: `cleanPrefs` takes it away.)
       const def = idx.fields.get(fieldId)
-      if (def && !fieldMatches(def, t.custom?.[fieldId], wanted, todayDay())) return false
+      if (def && !fieldMatches(def, t.custom?.[fieldId], wanted, todayDay(), (u) => idx.members.has(u))) return false
     }
   return true
 }
 
 /**
  * A comparator for sorting siblings by a column. Empty values always go last, whichever the direction. A card link
- * goes by its first card's title (`titleOf`), and one whose title isn't known counts as empty.
+ * goes by its first card's title (`titleOf`), and one whose title isn't known counts as empty; a person field by
+ * the name of the first person who is still on the board.
  */
 export function sortComparator(idx: TaskIndex, sort: Sort, labelById: Map<string, LabelDef>, titleOf?: TitleOf) {
   const sign = sort.dir === 'asc' ? 1 : -1
@@ -111,9 +113,11 @@ export function sortComparator(idx: TaskIndex, sort: Sort, labelById: Map<string
     const def = idx.fields.get(fieldIdOf(sort.key))
     // (Sorted by a field the board no longer uses: everything stays where it is.)
     if (!def) return () => 0
-    if (def.type === 'link') {
+    if (def.type === 'link' || def.type === 'person') {
       const title = (id: string) => {
-        const [first] = linksOf(idx.tasks[id].custom?.[def.id])
+        const held = idx.tasks[id].custom?.[def.id]
+        if (def.type === 'person') return peopleOf(held).flatMap((u) => idx.members.get(u)?.name.toLowerCase() ?? [])[0]
+        const [first] = linksOf(held)
         return first === undefined ? undefined : titleOf?.(first)?.toLowerCase()
       }
       return (a: string, b: string) => {
@@ -208,7 +212,9 @@ export function filterChips(
   if (f.idle) chips.push({ key: 'idle', label: 'No activity for', value: `${f.idle}+ ${f.idle === 1 ? 'day' : 'days'}` })
   for (const [fieldId, wanted] of Object.entries(f.fields ?? {})) {
     const def = fields.find((x) => x.id === fieldId)
-    if (def) chips.push({ key: 'fields', field: fieldId, label: `${def.name}:`, value: filterText(def, wanted, titleOf) })
+    if (!def) continue
+    const named = def.type === 'person' ? (id: string) => members.find((m) => m.id === id)?.name : titleOf
+    chips.push({ key: 'fields', field: fieldId, label: `${def.name}:`, value: filterText(def, wanted, named) })
   }
   return chips
 }

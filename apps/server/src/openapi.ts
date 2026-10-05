@@ -1,5 +1,6 @@
 import scalar from '@scalar/fastify-api-reference'
 import { FIELD_TYPES } from '@kanbanto/model/fields'
+import { STARTERS } from '@kanbanto/model/starters'
 import { PlanCommandSchema } from '@kanbanto/model/planningSchema'
 import { CommandSchema } from '@kanbanto/model/schema'
 import type { FastifyPluginAsync } from 'fastify'
@@ -73,7 +74,7 @@ const schemas = {
         description: 'Card link: where its cards come from. One board (`board`), any board of the field’s space, or the board that uses the field.',
       },
       board: { ...str, description: 'Card link, `linkTo: board`: that board’s id.' },
-      many: { type: 'boolean', description: 'Card link: it holds several cards, not one.' },
+      many: { type: 'boolean', description: 'Card link: it holds several cards, not one. Person: several people.' },
       back: { ...str, description: 'Card link: what the linked card calls the list of cards pointing at it.' },
       front: { type: 'boolean', description: 'On a board: shown on the card front too.' },
       total: { type: 'boolean', description: 'On a board: a number that adds up, totalled under each list’s name.' },
@@ -242,7 +243,11 @@ The answer lists the records that changed.
                 schema: obj(
                   {
                     name: str,
-                    template: { enum: ['empty', 'example'] },
+                    template: {
+                      enum: ['empty', 'example', ...STARTERS],
+                      description:
+                        'sales, support: a starter board, with its lists, fields, saved filters and a few example cards. Its fields come from the library of where it’s made: the ones it lacks are added (in a workspace, only by its admins: otherwise the answer is a 403 that names them), and the answer lists what was `added` and what was `leftOut` (fields that library has archived).',
+                    },
                     workspaceId: { ...nullable(str), description: 'Put it in a workspace you’re in.' },
                   },
                   ['name'],
@@ -666,6 +671,51 @@ The answer lists the records that changed.
                   summary: 'What deleting a field would take away',
                   parameters: [...params, id('fieldId')],
                   responses: { 200: json(obj({ boards: { type: 'integer' }, cards: { type: 'integer' } })) },
+                },
+              },
+            ],
+            [
+              `${path}/{fieldId}/merge`,
+              {
+                get: {
+                  tags: ['Fields'],
+                  summary: 'What merging a field into another would do',
+                  description: 'In numbers only. Nothing is changed.',
+                  parameters: [
+                    ...params,
+                    id('fieldId'),
+                    { name: 'into', in: 'query', required: true, schema: str, description: 'The field to keep.' },
+                  ],
+                  responses: {
+                    200: json(
+                      obj({
+                        cards: { type: 'integer', description: 'Cards that hold a value for the field that goes.' },
+                        boards: { type: 'integer', description: 'The boards those cards are on.' },
+                        both: {
+                          type: 'integer',
+                          description: 'Of those cards, the ones that also have a value for the kept field: they keep one of the two.',
+                        },
+                        options: { type: 'array', items: str, description: 'Options the kept field would get (a choice).' },
+                        differs: {
+                          type: 'array',
+                          items: str,
+                          description: 'Settings the two fields differ in (unit, decimals, sum, format, many): the kept field’s stand.',
+                        },
+                        problem: { ...str, description: 'Why it can’t be done, when it can’t.' },
+                      }),
+                    ),
+                  },
+                },
+                post: {
+                  tags: ['Fields'],
+                  summary: 'Merge a field into another of the same kind',
+                  description:
+                    'Every card’s value for this field becomes its value for `into`. A card that has both keeps the one its board shows (the kept field’s, unless the board only shows this one); lists that hold several (cards, people) are joined, and a checkbox is ticked if either was. A choice’s options are matched by name, and the rest are added to `into`. Boards and saved filters that used this field use `into`, and this field is gone. It can’t be undone. Refused for fields of different kinds, an archived field, and two card links whose cards come from different places.',
+                  parameters: [...params, id('fieldId')],
+                  requestBody: {
+                    content: { 'application/json': { schema: obj({ into: { ...str, description: 'The field to keep.' } }, ['into']) } },
+                  },
+                  responses: { 200: library },
                 },
               },
             ],

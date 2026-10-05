@@ -8,6 +8,8 @@ client, an amount, a stage, a link, a yes or no.
 A field is made once, then switched on for the boards that need it. So "Client" means the same thing on every board
 that uses it.
 
+In a hurry? [A starter board](#start-from-a-ready-made-board) comes with its fields already made.
+
 ## Make a field
 
 For your own boards: open **your initials → Account settings → Fields**, and click **New field**.
@@ -17,7 +19,8 @@ admins can do this.
 
 ![Your fields in Account settings](/images/fields-library.webp)
 
-Give it a name and pick its kind:
+Give it a name and pick its kind. If the name is taken, or there is already a field that looks like the same thing
+("Company" when you type "Company name"), it says so under the name before you save:
 
 ![Making a field: a name, a kind, and for a choice its options](/images/fields-1-new.webp){.medium}
 
@@ -29,6 +32,7 @@ Give it a name and pick its kind:
 | **Choice** | One of the options you list, each with a colour | Stage: Lead, Proposal sent, Won |
 | **Checkbox** | Yes or no | Contract signed |
 | **Card link** | One or several other cards | Company, picked from your Companies board |
+| **Person** | One or several people of the board | Reviewer, Account owner |
 
 A field's kind can't be changed afterwards, so pick the one that fits. Its name, and a choice's options, can be
 changed whenever you like.
@@ -84,6 +88,8 @@ Click **Filter**, go down to **Fields**, and pick the field.
 | **Number** | **From** an amount, **to** an amount, or both. Or **No number** |
 | **Date** | In the **past**, in the **next 7 days**, or **No date** |
 | **Text** | **Filled in** or **Empty** |
+| **Card link** | Any of the cards linked on this board, or **None linked** |
+| **Person** | Any of the people you tick, or **No one** |
 
 Filters work in all three views, and a [preset](/everyday/search-and-filters#presets-save-a-combination) remembers
 them, along with the Outline's columns.
@@ -140,6 +146,71 @@ What to expect:
 - In the Outline a link is a column like any other: sort by it, change it in the cell, and **Filter** by the cards
   linked.
 
+## People on a card
+
+Every card has an **Assignee**: the one person whose job it is. A **Person** field is for everyone else who matters
+to it: a reviewer, an account owner, the people in a deal's team.
+
+![A card with a Reviewer and an Account team, and the list of people to pick from](/images/fields-9-person.webp){.medium}
+
+When you make the field, choose **One person** or **Several people**. On a card, click **Add someone** and pick from
+the people on the board.
+
+- **Nobody is told** when they are put in a Person field, and the card does not show up in their week. That is what
+  Assignee is for. A Person field is something to read, sort and filter by.
+- **Filter** by a person, or by **No one**. In the Outline, sort by the column to group cards by person.
+  [Search cards](/everyday/search-and-filters#search-cards-every-board-at-once) can find the cards where it is **Me**.
+- **Someone who leaves the board** is taken out of its Person fields, as they are unassigned from its cards. Where a
+  name can no longer be shown, it reads "Someone who left", and goes the next time that field is changed.
+- **A card moved to another board** keeps the people who are on that board too. The move tells you who is left behind.
+
+## Start from a ready-made board
+
+**Create board** offers two starters under **Start with**. Each is a board for one kind of work, with its lists, its
+fields, a couple of saved filters and five example cards to show how it is meant to be filled in.
+
+![A sales pipeline made from the starter](/images/fields-11-starter.webp)
+
+| Starter | Lists | Fields |
+|---|---|---|
+| **A sales pipeline** | Leads, Contacted, Proposal, Won, Lost | Deal value (totalled under each list), Company, Contact email, Close date, Source |
+| **A support desk** | New, In progress, Waiting on customer, Solved | Severity, Customer, Customer email, Channel, Reported on |
+
+The fields are ordinary fields, in your own fields or the workspace's:
+
+- **It uses what is already there.** A field with the same name and kind is used as it is, and never changed. The
+  starter adds only the ones that are missing, so a second board from the same starter adds nothing.
+- **A field you archived stays off** the new board. The message after creating says which.
+- **In a workspace, only its admins can add fields.** If you are not one and the fields are not there yet, nothing is
+  made, and it says which fields are missing. Ask an admin to make the first board from that starter, or make yours
+  in Personal. After that, anyone in the workspace can make more.
+
+On a starter board a card's list is set by hand (a deal's stage is where you drag it), and a card with subtasks
+stays one card. Delete the example cards when you are ready.
+
+## Merge two fields
+
+Sooner or later a library has two fields for one thing: "Company" and "Company name". Merge one into the other.
+
+On the Fields page, click **Merge** next to the field that should go, and pick the one to keep. Both must be the
+same kind, and in use (restore an archived one first).
+
+![Merging one field into another: what will change, in numbers](/images/fields-10-merge.webp){.medium}
+
+Before anything changes it says how many cards on how many boards get a value moved. Then:
+
+- **Every card's value moves** to the kept field.
+- **A card that has both** keeps the one people can see on its board: the kept field's, unless that board only shows
+  the other one. Fields that hold several cards or several people keep them all; a checkbox stays ticked if either
+  was.
+- **A choice's options** are matched by name. The ones the kept field does not have are added to it.
+- **Boards follow:** a board that used the field that goes now uses the kept one, in the same place. Saved filters
+  that named it name the kept one.
+- **Two Card link fields** merge only when their cards come from the same place.
+
+A merge can't be undone. An **Undo** of something done before the merge may be refused afterwards, with "This
+board's fields changed since": the card it would put back no longer fits.
+
 ## Stop using a field
 
 There are three steps, each stronger than the last. The first two lose nothing.
@@ -171,7 +242,10 @@ any more. Delete an archived option and it is cleared from those cards.
   heading, not a card, so a number written on it isn't in a list's total. The Outline counts it. To count it on the
   Board too, choose **Display → Show → Only projects**: each card then counts with its subtasks.
 - Your assistant can read and fill in fields, and find cards by them: "Set the stage of Website redesign to Won",
-  "Which cards are at the proposal stage?", "Link the Online shop deal to Hooli", "Which deals are Acme's?"
+  "Which cards are at the proposal stage?", "Link the Online shop deal to Hooli", "Which deals are Acme's?",
+  "Which cards am I the reviewer of?"
+- It can set fields up too, where you could: "Add a Stage field with Lead, Won and Lost, and put it on the Deals
+  board", "Make me a sales pipeline board". Deleting a field for good and merging two stay with you, in the app.
 
 ## Next
 

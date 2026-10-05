@@ -15,6 +15,9 @@ const WAIT_MS = 60
  * A card among the board's own active ones is read from the board, live. The rest (cards on other boards, archived
  * and deleted ones) come with the board and are added to as they're asked about: nothing is ever taken out, so a card
  * just picked keeps its title while the board is fetched again.
+ *
+ * The board's people are here too, by id, for the chips of person fields: the same idea (a chip hears about its own
+ * person, and the board's list of people is a new one every time the board is fetched).
  */
 export class LinkStore {
   readonly boardId: string
@@ -23,6 +26,8 @@ export class LinkStore {
   private data: BoardData | null = null
   private listeners = new Map<string, Set<() => void>>()
   private all = new Set<() => void>()
+  private people = new Map<string, string>()
+  private faces = new Map<string, Set<() => void>>()
   private asked = new Set<string>()
   private queue = new Set<string>()
   private timer: ReturnType<typeof setTimeout> | null = null
@@ -44,6 +49,19 @@ export class LinkStore {
 
   getVersion = () => this.version
 
+  /** The name of one of the board's people (undefined: they aren't on it, or not any more). */
+  nameOf = (userId: string): string | undefined => this.people.get(userId)
+
+  subscribePerson = (userId: string, listener: () => void) => {
+    const set = this.faces.get(userId) ?? new Set()
+    set.add(listener)
+    this.faces.set(userId, set)
+    return () => {
+      set.delete(listener)
+      if (!set.size) this.faces.delete(userId)
+    }
+  }
+
   subscribe = (ref: string, listener: () => void) => {
     const set = this.listeners.get(ref) ?? new Set()
     set.add(listener)
@@ -63,10 +81,21 @@ export class LinkStore {
   /** The board as it is now: its own cards are read from it. Tells the chips whose card changed. */
   see(data: BoardData) {
     if (data === this.data) return
+    const members = this.data?.members
     this.data = data
     const stale = [...this.local.keys()]
     this.local.clear()
     let changed = false
+    if (data.members !== members) {
+      const next = new Map(data.members.map((m) => [m.id, m.name]))
+      for (const id of new Set([...next.keys(), ...this.people.keys()])) {
+        if (next.get(id) === this.people.get(id)) continue
+        changed = true
+        if (next.has(id)) this.people.set(id, next.get(id)!)
+        else this.people.delete(id)
+        this.faces.get(id)?.forEach((l) => l())
+      }
+    }
     for (const ref of new Set([...stale, ...this.listeners.keys()])) {
       const before = stale.includes(ref)
       const now = this.here(ref)

@@ -7,7 +7,8 @@ then `git pull` (or download the new release) and `docker compose up -d --build`
 
 - **Boards of tasks inside tasks**, as deep as you like, shown as a **Board** (lists you name), a **Timeline** and an
   **Outline** (a table you can sort, filter and rearrange). Undo and redo, filters, search, zooming into a task.
-  Lists can group subtasks under their parent; drag groups and cards into any order.
+  Lists can group subtasks under their parent; drag groups and cards into any order. A board whose statuses are set
+  by hand opens with one card per task, its subtasks on its card.
   An open card lists what every card has one line each, the most used first, with dates and the rest in groups you
   can fold away.
 - **Dates with or without a time:** start and due are whole days by default; add a time (24-hour) when it matters.
@@ -32,7 +33,12 @@ then `git pull` (or download the new release) and `docker compose up -d --build`
   under each list on the Board for the fields its owners choose. A **Card link** field joins cards, on the same
   board or across the boards of a workspace: a deal points at a company, picked by title, and the company lists the
   deals that point at it, with their total; links follow a card that moves, and you only see the title of a card
-  you can open. Assistants read, set and find by them, by name.
+  you can open. A **Person** field holds one or several people of the board (a reviewer, an account owner), to read,
+  sort and filter by: nobody is told, which is what Assignee is for. Two fields that turned out to mean the same
+  thing can be **merged**: it says first how many cards change, a card that has both keeps the one its board shows,
+  and boards and saved filters follow. **Starter boards** (a sales pipeline, a support desk) come with their lists,
+  fields, saved filters and a few example cards. Assistants read, set and find by fields, by name, and can add and
+  change them (`manage_fields`).
 - **Following cards:** you're told about new comments and what happens to the cards you're part of (moved to another
   list, assigned, due date, description, archived or deleted): the ones you made, are assigned, commented on or were
   mentioned on, which includes being told when a card is given to you. Follow or unfollow any card from its side

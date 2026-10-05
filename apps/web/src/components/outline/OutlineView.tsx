@@ -65,7 +65,7 @@ const COLUMNS: (Column & { key: BuiltInSortKey })[] = [
 ]
 const COLUMN_LABEL = Object.fromEntries(COLUMNS.map((c) => [c.key, c.label])) as Record<BuiltInSortKey, string>
 /** How wide a field's column is, by its kind (in rem): wider for a long name, up to a point, so the heading reads. */
-const FIELD_WIDTH: Record<FieldType, number> = { text: 11, number: 8, date: 8.5, choice: 9.5, checkbox: 6, link: 12 }
+const FIELD_WIDTH: Record<FieldType, number> = { text: 11, number: 8, date: 8.5, choice: 9.5, checkbox: 6, link: 12, person: 10 }
 const fieldWidth = (f: BoardField) => Math.max(FIELD_WIDTH[f.type], Math.min(14, 2.5 + f.name.length * 0.42))
 const INDENT = 20
 /** Width of the drag handle before the indent. */

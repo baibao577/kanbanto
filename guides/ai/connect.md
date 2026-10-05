@@ -54,7 +54,8 @@ to one board only.
 | | Open the files attached to a card, or attach one |
 | Comment, set reminders, log time you tell it about | Change your account or the site's settings |
 | Archive cards (they can be restored) | |
-| Create a board and set up its lists and labels | |
+| Create a board (also from a starter) and set up its lists and labels | |
+| Add and change [fields](/everyday/fields), and put them on a board, where you could | Delete a field for good, or merge two fields |
 
 Sharing and deleting stay with people, in the app, on purpose.
 

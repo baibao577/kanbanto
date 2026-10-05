@@ -173,12 +173,13 @@ export function repairTasks(tasks: TaskMap, columns: StatusColumn[], members: Me
 /** Board data from a loaded or imported source, with references repaired and lists in order. */
 export function repairData(data: BoardData): BoardData {
   const columns = [...data.columns].sort((a, b) => comparePositions(a.position, b.position))
-  // (A card only holds values for the board's fields, and only ones that fit them.)
+  // (A card only holds values for the board's fields, and only ones that fit them: for a person field, its people.)
+  const people = new Set(data.members.map((m) => m.id))
   const values = (all: TaskMap): TaskMap =>
     Object.fromEntries(
       Object.values(all).map((t) => {
         const { custom: _held, ...rest } = t
-        const custom = tidyCustom(t.custom, data.fields)
+        const custom = tidyCustom(t.custom, data.fields, (u) => people.has(u))
         return [t.id, custom ? { ...rest, custom } : rest]
       }),
     )

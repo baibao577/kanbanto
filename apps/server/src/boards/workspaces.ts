@@ -1,19 +1,11 @@
 import { and, asc, eq, inArray, isNull, ne, sql } from 'drizzle-orm'
 import type { Db, Tx } from '../db'
-import {
-  attachments,
-  boardMembers,
-  boards,
-  planningProjects,
-  tasks,
-  workspaceInvites,
-  workspaceMembers,
-  workspaces,
-  type WorkspaceRole,
-} from '../db/schema'
+import { attachments, boardMembers, boards, planningProjects, workspaceInvites, workspaceMembers, workspaces, type WorkspaceRole } from '../db/schema'
 import { HttpError } from '../http'
 import { addPlanPerson, bumpPlan } from '../planning/store'
 import { memberRole, workspaceRole, type BoardRow } from './access'
+import type { BoardEngine } from './engine'
+import { clearPerson } from './people'
 
 /**
  * Workspaces: a group of people, and a place for boards. A board in a workspace can be shared with everyone in it
@@ -80,10 +72,11 @@ export async function joinWorkspace(
 /**
  * Someone leaves a workspace, or an admin removes them. Its boards shared with the workspace close to them, unless
  * they were added to one. Boards they own there stay in the workspace: where they're the only owner, `heir` (an
- * admin) becomes the owner; they stop being an owner of all of them. Their cards on boards they can't open any more
- * are unassigned. The last admin can't leave while others are in it. Returns the boards whose people changed.
+ * admin) becomes the owner; they stop being an owner of all of them. On boards they can't open any more their cards
+ * are unassigned and they're taken out of the person fields (see `clearPerson`). The last admin can't leave while
+ * others are in it. Returns the boards whose people changed.
  */
-export async function leaveWorkspace(tx: Tx, workspaceId: string, userId: string, heir: string | null): Promise<string[]> {
+export async function leaveWorkspace(engine: BoardEngine, tx: Tx, workspaceId: string, userId: string, heir: string | null): Promise<string[]> {
   await tx.select({ id: workspaces.id }).from(workspaces).where(eq(workspaces.id, workspaceId)).for('update')
   const role = await workspaceRole(tx, workspaceId, userId)
   if (!role) throw new HttpError(404, 'That person isn’t in this workspace.')
@@ -137,11 +130,7 @@ export async function leaveWorkspace(tx: Tx, workspaceId: string, userId: string
     ).map((r) => r.boardId),
   )
   const closed = here.filter((b) => !stillOn.has(b.id)).map((b) => b.id)
-  if (closed.length)
-    await tx
-      .update(tasks)
-      .set({ assigneeId: null, updatedAt: now, version: sql`${tasks.version} + 1` })
-      .where(and(inArray(tasks.boardId, closed), eq(tasks.assigneeId, userId)))
+  await clearPerson(engine, tx, closed, userId)
   return here.map((b) => b.id)
 }
 

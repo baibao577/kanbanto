@@ -70,17 +70,29 @@ Without MCP, use the REST API (see "REST fallback" below).
   lists them with their types and a choice's options; tasks show their values under `fields`, by name. Set them with
   `create_tasks` or `update_task`: `fields: {"Stage": "Won", "Value": 12000, "Signed": true}` (a choice takes an
   option's name, a date looks like `due`, `null` clears one; fields left out stay as they are). Use only fields the
-  board has: adding or changing the fields themselves is done by people in the app. `find_tasks` finds by them too:
+  board has (to add or change the fields themselves, see **Setting up fields**). `find_tasks` finds by them too:
   `fields: {"Stage": "Won"}` (`null`: tasks with nothing for the field), across every board that has the field. For a
   range ("deals over 10,000"), find without it and compare the values in the results. A **card link** field holds
   other cards (a deal's Company): it reads as the linked cards' titles, is set by a card's title
   (`fields: {"Company": "Acme"}`, or a list for one that holds several) and found the same way. If two cards share
   the title the tool says so and gives their links: pass the right one instead. A linked card you can't open has no
-  title.
+  title. A **person** field holds people of the board (a Reviewer): it reads as their names, and is set and found by
+  a person's name or `"me"` (a list, for one that holds several). Unlike the assignee, nobody is told.
+- **Setting up fields:** `manage_fields`. A field is defined once in a library, a workspace's (only its admins can
+  change it) or the user's own for their Personal boards, and each board's owners choose which of them it uses.
+  `list` shows a library (`workspace`, or `board_id` for the board's); check it before adding, so one thing isn't
+  two fields. `add` needs a `name` and a `type` (text, number, date, choice, checkbox, link, person: it can't be
+  changed later); `change` renames it or changes its settings. A choice's `options` are the whole list of names, in
+  order: a new name is added, a name left out is archived (cards that have it keep it), so pass the full list.
+  `rename_option` renames one. `archive` hides a field on every board and keeps its values; `restore` brings it
+  back. `put_on_board` / `take_off_board` (with `board_id`) are a board's own choice; `on_card: true` shows it on
+  card fronts. Deleting a field for good, and merging two fields into one, are done by people in the app: say so.
 - **Comments:** `add_comment`; write `@Name` to notify someone on the board. Use comments to explain changes you made
   on the user's behalf when that helps their team.
 - **Setting up a board:** `create_board` (with `about`, in Personal or a workspace), then `manage_lists` for its
-  workflow (e.g. add "Review" before Done, counting as in progress) and `manage_labels`. `update_board` renames it or
+  workflow (e.g. add "Review" before Done, counting as in progress) and `manage_labels`. For a sales pipeline or a
+  support desk, `starter: "sales"` or `"support"` makes one with its lists, fields and saved filters ready (in a
+  workspace its fields can only be added by an admin: if it's refused, say which fields are missing). `update_board` renames it or
   changes what it's for. `set_inbox` picks their Inbox.
 - **Reminders:** `set_reminder` with `at` ("remind me Monday 1pm") or `before_due_minutes` (e.g. 1440 for a day
   before; pass the user's `time_zone`). They go to the task's assignee, or the user if nobody is assigned. `reminders`

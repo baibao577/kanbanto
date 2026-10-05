@@ -1210,6 +1210,73 @@ await shot('fields-8-linked-from', async () => {
   return { clip: { ...clip, y: clip.y + 14, height: clip.height - 14 } }
 })
 
+// ── People on a card, merging two fields, and a starter board (made last, like the rest of the fields' pictures) ──
+await shot('fields-9-person', async () => {
+  const { id } = await clientWork()
+  await api(ann, 'POST', `/boards/${id}/invitations`, { email: `ben.ortiz+${stamp}@example.com`, role: 'editor' })
+  const reviewer = (await api(ann, 'POST', '/fields', { name: 'Reviewer', type: 'person' })).id
+  const team = (await api(ann, 'POST', '/fields', { name: 'Account team', type: 'person', many: true })).id
+  const now = (await api(ann, 'GET', `/boards/${id}/fields`)).fields
+  await api(ann, 'PUT', `/boards/${id}/fields`, {
+    fields: [{ id: reviewer }, { id: team }, ...now.map((f) => ({ id: f.id, ...(f.front && { front: true }), ...(f.total && { total: true }) }))],
+  })
+  await api(ann, 'POST', `/boards/${id}/mutations`, {
+    mutationId: `g${stamp}-p-${n++}`,
+    command: { type: 'task.update', id: 'shop', fields: { custom: { [team]: [me.id, ben.id] } } },
+  })
+  await page.goto(`${SITE}/#/b/${id}/board?task=shop`)
+  await page.reload()
+  const card = page.getByRole('dialog').first()
+  await card.getByRole('button', { name: 'Add someone to Reviewer' }).click()
+  await page.getByRole('listbox', { name: 'People' }).getByRole('option').first().waitFor()
+  await page.waitForTimeout(500)
+  const { clip } = await around(
+    [
+      card.locator('section').filter({ has: page.getByRole('heading', { name: 'Fields', exact: true }) }),
+      page.getByRole('listbox', { name: 'People' }),
+    ],
+    20,
+  )
+  return { clip }
+})
+await shot('fields-10-merge', async () => {
+  const { id } = await clientWork()
+  // A second field for the same thing, with a value or two, as happens.
+  const twin = (await api(ann, 'POST', '/fields', { name: 'Client name', type: 'text' })).id
+  const now = (await api(ann, 'GET', `/boards/${id}/fields`)).fields
+  await api(ann, 'PUT', `/boards/${id}/fields`, {
+    fields: [...now.map((f) => ({ id: f.id, ...(f.front && { front: true }), ...(f.total && { total: true }) })), { id: twin }],
+  })
+  for (const [cardId, value] of [
+    ['report', 'Globex Ltd'],
+    ['shop', 'Hooli'],
+  ])
+    await api(ann, 'POST', `/boards/${id}/mutations`, {
+      mutationId: `g${stamp}-m-${n++}`,
+      command: { type: 'task.update', id: cardId, fields: { custom: { [twin]: value } } },
+    })
+  await page.goto(`${SITE}/#/account/fields`)
+  await page.reload()
+  await page.getByRole('listitem').filter({ hasText: 'Client name' }).getByRole('button', { name: 'Merge' }).click()
+  const dialog = page.getByRole('dialog')
+  await dialog.getByLabel('Keep').click()
+  await page.getByRole('option', { name: /^Client/ }).click()
+  await dialog.getByText('This can’t be undone.').waitFor()
+  await page.waitForTimeout(400)
+  return dialog
+})
+await shot('fields-11-starter', async () => {
+  const { id } = await api(ann, 'POST', '/boards', { name: 'Sales pipeline', template: 'sales', background: 'violet' })
+  // (Five lists: a little wider than the usual window, so the last one is whole.)
+  await page.setViewportSize({ width: 1500, height: 860 })
+  await page.goto(`${SITE}/#/b/${id}/board`)
+  await page.reload()
+  await page.getByText('Leads', { exact: true }).first().waitFor()
+  await page.waitForTimeout(600)
+  return { clip: { x: 0, y: 0, width: 1500, height: 480 } }
+})
+await page.setViewportSize({ width: 1360, height: 860 })
+
 await browser.close()
 console.log(`made ${made.length}: ${made.join(', ')}`)
 if (failed.length) console.log(`\nnot made (${failed.length}):\n  ${failed.join('\n  ')}`)

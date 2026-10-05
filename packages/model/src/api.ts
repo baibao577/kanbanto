@@ -609,6 +609,24 @@ export interface FieldUsage {
   cards: number
 }
 
+/**
+ * What merging a field into another would do (GET …/fields/:fieldId/merge?into=), in numbers only: whoever manages
+ * a library can't necessarily open every board that uses it.
+ */
+export interface FieldMerge {
+  /** Cards that hold a value for the field that goes, and how many boards they're on. */
+  cards: number
+  boards: number
+  /** Of those cards, the ones that also hold a value for the kept field: they keep one of the two (the one their board shows). */
+  both: number
+  /** Options the kept field would get (a choice). */
+  options: string[]
+  /** What the two fields say differently, where the kept field's way will stand: "unit", "sum" (it adds up), "format", "many". */
+  differs: ('unit' | 'decimals' | 'sum' | 'format' | 'many')[]
+  /** Why it can't be done, when it can't. */
+  problem?: string
+}
+
 /** A board's fields (GET /api/boards/:id/fields). */
 export interface BoardFieldsView {
   /** The ones it uses, in order. */

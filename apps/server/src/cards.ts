@@ -42,6 +42,7 @@ const FV_HINT: Record<FieldType, string> = {
   date: '“any” (has a date), “none”, “past” or “week” (in the next 7 days)',
   number: '“any” (has a number), “none”, or a range like “10..200”, “10..” or “..200”',
   link: '“any” (has a link) or “none”',
+  person: '“any” (has someone), “none”, “me”, or people’s ids with commas (“-” for no one)',
 }
 
 /** Boards searched at once (each is read from memory or the database). */
@@ -106,8 +107,11 @@ export async function searchCards(app: FastifyInstance, me: SessionUser, q: Card
     // Asked about a field: each card says what it has for it, and a test of it leaves out the boards without it.
     const asked = q.field ? data.fields.find((f) => f.id === q.field) : undefined
     if (q.field && q.fv && !asked) continue
-    const want = asked && q.fv ? filterFromText(asked, q.fv) : undefined
-    if (asked && q.fv && !want) throw new HttpError(400, `“fv” can’t be read for ${asked.name}: give ${FV_HINT[asked.type]}.`)
+    const read = asked && q.fv ? filterFromText(asked, q.fv) : undefined
+    if (asked && q.fv && !read) throw new HttpError(400, `“fv” can’t be read for ${asked.name}: give ${FV_HINT[asked.type]}.`)
+    // (For a person field, "me" is whoever is asking.)
+    const want = asked?.type === 'person' && read?.in ? { ...read, in: read.in.map((id) => (id === 'me' ? me.id : id)) } : read
+    const onBoard = new Map(data.members.map((m) => [m.id, m.name]))
     // A card link reads as its cards' titles, as far as this person may see them.
     const linked =
       asked?.type === 'link'
@@ -115,8 +119,10 @@ export async function searchCards(app: FastifyInstance, me: SessionUser, q: Card
             ...new Set([...Object.values(data.tasks), ...Object.values(archived)].flatMap((t) => linksOf(t.custom?.[asked.id]))),
           ])
         : undefined
-    const titleOf = (ref: string) => {
-      const card = linked?.[ref]
+    // (One lookup for what a list value's items are called: a linked card's title, a person's name.)
+    const titleOf = (item: string) => {
+      if (asked?.type === 'person') return onBoard.get(item)
+      const card = linked?.[item]
       return card && 'title' in card ? card.title : undefined
     }
     const canEdit = b.role !== 'viewer' && !b.archivedAt
@@ -148,7 +154,7 @@ export async function searchCards(app: FastifyInstance, me: SessionUser, q: Card
       }
       if (!matchesCard(facts, filter)) return
       const held = asked && t.custom?.[asked.id]
-      if (want && !fieldMatches(asked!, held, want, filter.today!)) return
+      if (want && !fieldMatches(asked!, held, want, filter.today!, (u) => onBoard.has(u))) return
       const said = asked && held !== undefined ? valueText(asked, held, titleOf) : ''
       const at = cardMoment(facts, filter)!
       const assignee = t.assigneeId ? (data.members.find((m) => m.id === t.assigneeId)?.name ?? null) : null

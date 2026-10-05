@@ -6,8 +6,9 @@ import { z } from 'zod'
 import { memberRole, requireAccess } from '../boards/access'
 import { announceSharingChange, announceWorkspaceChange } from '../boards/announce'
 import { acceptInvite, activeInvites, findAnyInvite, newCode, newLinkToken, provesEmail, type InviteKind } from '../boards/invites'
+import { clearPerson } from '../boards/people'
 import type { Tx } from '../db'
-import { attachments, boardInvites, boardMembers, boards, ROLES, tasks, users, VISIBILITIES, workspaceMembers, workspaces } from '../db/schema'
+import { attachments, boardInvites, boardMembers, boards, ROLES, users, VISIBILITIES, workspaceMembers, workspaces } from '../db/schema'
 import { env } from '../env'
 import { HttpError, parse, siteUrl } from '../http'
 import { WHY_NOT_SENT } from '../mail/mailer'
@@ -245,7 +246,10 @@ export const sharingRoutes: FastifyPluginAsync = async (app) => {
     return { ok: true }
   })
 
-  /** Removes someone from a board (owners), or leaves it (anyone, for themselves). Their cards are unassigned. */
+  /**
+   * Removes someone from a board (owners), or leaves it (anyone, for themselves). Their cards are unassigned and
+   * they're taken out of its person fields, unless they're still on the board through its workspace.
+   */
   app.delete('/boards/:id/members/:userId', async (req) => {
     const { id, userId } = parse(MemberParams, req.params)
     const me = requireUser(req.user)
@@ -257,10 +261,7 @@ export const sharingRoutes: FastifyPluginAsync = async (app) => {
       if (current === 'owner' && (await ownerCount(tx, id)) < 2)
         throw new HttpError(400, 'A board needs at least one owner. Make someone else an owner first.')
       await tx.delete(boardMembers).where(and(eq(boardMembers.boardId, id), eq(boardMembers.userId, userId)))
-      await tx
-        .update(tasks)
-        .set({ assigneeId: null, updatedAt: new Date(), version: sql`${tasks.version} + 1` })
-        .where(and(eq(tasks.boardId, id), eq(tasks.assigneeId, userId)))
+      await clearPerson(app.engine, tx, [id], userId)
     })
     await sharingChanged(id)
     return { ok: true }

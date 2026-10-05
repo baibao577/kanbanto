@@ -1,12 +1,17 @@
 import type { BoardBackground } from '@kanbanto/model/colors'
 import { newId } from '@kanbanto/model/ids'
 import { emptyBoard, exampleData } from '@kanbanto/model/sample'
-import { carryCustom } from '@kanbanto/model/fields'
+import { carryCustom, FIELD_LIMITS } from '@kanbanto/model/fields'
+import { remapPreset } from '@kanbanto/model/prefs'
+import { starterBoard, type Starter } from '@kanbanto/model/starters'
 import type { BoardData, Meta, Task } from '@kanbanto/model/types'
+import { eq } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import type { Db, Tx } from '../db'
-import { boardMembers, boards, type Visibility } from '../db/schema'
-import { adoptFields, applyAdoption, replaceBoardFields } from './fields'
+import { boardMembers, boardPresets, boards, workspaces, type Visibility } from '../db/schema'
+import { HttpError } from '../http'
+import { workspaceRole } from './access'
+import { adoptFields, applyAdoption, fitStarter, replaceBoardFields, type Library } from './fields'
 import { creations } from './records'
 import { writeChanges } from './store'
 
@@ -72,6 +77,77 @@ export async function createBoard(
   return id
 }
 
+const listed = (names: string[]) => names.map((n) => `“${n}”`).join(', ')
+
+/**
+ * Makes a board from a starter (see model/starters.ts): its lists, a few example cards, saved filters, and its
+ * fields, which come from the library of where it's made (the workspace's, or the person's own). Fields the library
+ * already has, by name and kind, are used as they are; the rest are added to it, which in a workspace only its admins
+ * may do. When a field has to be added and can't be, nothing is made and the answer says why. A field the library
+ * has archived stays off the board (`leftOut`).
+ */
+export async function createStarter(
+  app: FastifyInstance,
+  ownerId: string,
+  kind: Starter,
+  opts: { name?: string; background?: BoardBackground; workspaceId?: string | null; description?: string },
+): Promise<{ id: string; added: string[]; leftOut: string[] }> {
+  const id = newId()
+  const now = new Date()
+  const starter = starterBoard(kind, id)
+  const base = freshMeta(starter.data, now.toISOString())
+  const workspaceId = opts.workspaceId ?? null
+  const lib: Library = workspaceId ? { workspaceId } : { ownerId }
+  const made = await app.db.transaction(async (tx) => {
+    const canAdd = workspaceId ? (await workspaceRole(tx, workspaceId, ownerId)) === 'admin' : true
+    const plan = await fitStarter(tx, lib, starter.data.fields, canAdd)
+    if (plan.cant.length) {
+      if (plan.why === 'room')
+        throw new HttpError(
+          400,
+          `There’s no room for this starter’s fields (${listed(plan.cant)}): a library holds ${FIELD_LIMITS.perSpace}. Archive some that are no longer used first.`,
+        )
+      const [ws] = workspaceId ? await tx.select({ name: workspaces.name }).from(workspaces).where(eq(workspaces.id, workspaceId)) : []
+      throw new HttpError(
+        403,
+        `This starter needs fields that ${ws?.name ?? 'this workspace'} doesn’t have yet: ${listed(plan.cant)}. Only the workspace’s admins can add fields: ask one to make the first board from this starter, or make yours in Personal.`,
+      )
+    }
+    await applyAdoption(app, tx, lib, { add: plan.add, addOptions: new Map() })
+    const tasks = Object.fromEntries(
+      Object.values(base.tasks).map((t) => {
+        const { custom: held, ...rest } = t
+        const custom = carryCustom(held, plan.map)
+        return [t.id, custom ? { ...rest, custom } : rest]
+      }),
+    )
+    const board = {
+      ...base.board,
+      ...(opts.name?.trim() && { name: opts.name.trim() }),
+      ...(opts.background && { background: opts.background }),
+      ...(opts.description?.trim() && { description: opts.description.trim() }),
+    }
+    await insertBoard(tx, { ...base, board, tasks }, ownerId, workspaceId)
+    await replaceBoardFields(
+      tx,
+      id,
+      starter.data.fields.flatMap((f) => (plan.map.has(f.id) ? [{ id: plan.map.get(f.id)!.id, front: f.front, total: f.total }] : [])),
+    )
+    // Its saved filters, about the fields it ended up with. One that has nothing left to say isn't made.
+    const presets = starter.presets.flatMap((p) => {
+      const settings = remapPreset(p.settings, plan.map, 'drop')
+      return Object.keys(settings.filter).length || settings.outline.sort ? [{ name: p.name, settings }] : []
+    })
+    if (presets.length)
+      await tx.insert(boardPresets).values(
+        // (A millisecond apart: they're listed in the order they were made.)
+        presets.map((p, i) => ({ id: newId(), boardId: id, ...p, updatedBy: ownerId, createdAt: new Date(now.getTime() + i) })),
+      )
+    return { added: plan.add.map((f) => f.name), leftOut: plan.leftOut }
+  })
+  return { id, ...made }
+}
+
 /**
  * Saves an imported board as a new board. Its people aren't accounts here, so assignments are dropped
  * (except to the person importing, if the file came from their own export). Its fields become fields of the
@@ -98,7 +174,8 @@ export async function importBoard(app: FastifyInstance, ownerId: string, data: B
       Object.fromEntries(
         Object.values(tasks).map((t) => {
           const { custom: held, ...rest } = mine(t)
-          const custom = carryCustom(held, plan.map)
+          // (People in its person fields aren't accounts here either: only the importer is kept.)
+          const custom = carryCustom(held, plan.map, { isMember: (u) => u === ownerId })
           return [t.id, custom ? { ...rest, custom } : rest]
         }),
       )

@@ -10,6 +10,8 @@ afterAll(async () => t.close())
 
 const load = (p: Person, id: string) => p.ok('GET', `/api/boards/${id}`)
 const mutate = (p: Person, id: string, command: object) => p.ok('POST', `/api/boards/${id}/mutations`, { mutationId: mid(), command })
+/** The same, for a command that may be refused: the answer, whatever it is. */
+const attempt = (p: Person, id: string, command: object) => p.request('POST', `/api/boards/${id}/mutations`, { mutationId: mid(), command })
 const set = (p: Person, id: string, taskId: string, custom: object) => mutate(p, id, { type: 'task.update', id: taskId, fields: { custom } })
 /** What the database holds for a card, which can be more than a board shows. */
 const stored = async (boardId: string, taskId: string) =>
@@ -299,11 +301,33 @@ describe('archiving and deleting a field', () => {
     expect((await ann.ok('DELETE', `/api/fields/${company}`)).fields.map((f: { name: string }) => f.name)).toEqual(['Value', 'Stage'])
     expect([await stored(id, 'A3'), await stored(other, 'A3')]).toEqual([{ [value]: 1 }, { [value]: 1 }])
     expect(await t.db.select().from(boardFieldRows).where(eq(boardFieldRows.fieldId, company))).toEqual([])
-    // An undo that was made while the card still had the value puts the rest back, not the value.
+    // An undo that was made while the card still had the value names a field this board no longer knows: it's
+    // refused, and the card stays as it is.
     const now = (await load(ann, id)).data.tasks.A3
-    await mutate(ann, id, { type: 'records.restore', changes: [{ entity: 'task', id: 'A3', before: now, after: withValue }] })
+    const undo = await attempt(ann, id, { type: 'records.restore', changes: [{ entity: 'task', id: 'A3', before: now, after: withValue }] })
+    expect(undo.status).toBe(422)
+    expect(undo.body.error).toBe('This board’s fields changed since, so it can’t be undone.')
     expect((await load(ann, id)).data.tasks.A3.custom).toEqual({ [value]: 1 })
     expect(await stored(id, 'A3')).toEqual({ [value]: 1 })
+    // One that names nothing of the sort still goes through, and so does one with a made-up field (refused, not a crash).
+    const { custom: _c, ...plain } = withValue
+    expect(
+      (
+        await attempt(ann, id, {
+          type: 'records.restore',
+          changes: [{ entity: 'task', id: 'A3', before: now, after: { ...plain, custom: { [value]: 1 } } }],
+        })
+      ).status,
+    ).toBe(200)
+    const later = (await load(ann, id)).data.tasks.A3
+    expect(
+      (
+        await attempt(ann, id, {
+          type: 'records.restore',
+          changes: [{ entity: 'task', id: 'A3', before: later, after: { ...later, custom: { nonsense: 'x' } } }],
+        })
+      ).status,
+    ).toBe(422)
     // The name is free again.
     await ann.ok('POST', '/api/fields', { name: 'Company', type: 'text' })
   })
@@ -400,6 +424,7 @@ describe('fields when things move', () => {
     })
     const wsLead = lib.find((f: { id: string }) => f.id === wsStage).options[0].id
 
+    const old = (await load(ann, id)).data.tasks.A3
     // Asked first: Value isn't there, and neither is Stage's "Won".
     const asked = await ann.request('PUT', `/api/boards/${id}/workspace`, { workspaceId: ws })
     expect(asked.status).toBe(409)
@@ -418,6 +443,15 @@ describe('fields when things move', () => {
     expect(moved.data.tasks.A1.custom).toEqual({ [wsStage]: [wsLead] })
     // What was hidden on the board didn't move with it.
     expect(Object.keys((await stored(id, 'A3'))!).sort()).toEqual([wsCompany, wsValue.id, wsStage].sort())
+    // An undo from before the move names the fields the board had then: it's refused, and wipes nothing.
+    const undo = await attempt(ann, id, {
+      type: 'records.restore',
+      changes: [
+        { entity: 'task', id: 'A3', before: moved.data.tasks.A3, after: { ...old, title: 'As it was', version: moved.data.tasks.A3.version + 1 } },
+      ],
+    })
+    expect(undo.body.error).toBe('This board’s fields changed since, so it can’t be undone.')
+    expect((await load(ann, id)).data.tasks.A3.custom).toEqual({ [wsCompany]: 'Acme', [wsValue.id]: 5, [wsStage]: [wsWon.id] })
     // Her own fields are no longer used by it.
     expect((await ann.ok('GET', '/api/fields')).fields.map((f: { boards: number }) => f.boards)).toEqual([0, 0, 0, 0])
 

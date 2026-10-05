@@ -1,9 +1,18 @@
 import { Archive, ArrowCounterClockwise, ArrowDown, ArrowUp, Plus, Trash, X } from '@phosphor-icons/react'
-import { useState } from 'react'
+import { useCallback, useState } from 'react'
 import { toast } from 'sonner'
 import type { FieldLibraryView, FieldView } from '@kanbanto/model/api'
 import { LABEL_COLOR_CYCLE, tone, type ColorName } from '@kanbanto/model/colors'
-import { FIELD_LIMITS, FIELD_TYPE_HINT, FIELD_TYPE_LABEL, FIELD_TYPES, type FieldType, type LinkScope, type TextFormat } from '@kanbanto/model/fields'
+import {
+  FIELD_LIMITS,
+  FIELD_TYPE_HINT,
+  FIELD_TYPE_LABEL,
+  FIELD_TYPES,
+  nameKey,
+  type FieldType,
+  type LinkScope,
+  type TextFormat,
+} from '@kanbanto/model/fields'
 import { api, errorMessage } from '@/api/client'
 import { ColorSwatches } from '@/components/common/bits'
 import { Button } from '@/components/ui/button'
@@ -14,10 +23,13 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Switch } from '@/components/ui/switch'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { useBoards } from '@/data/useBoards'
+import { useLoaded } from '@/data/useLoaded'
 import { cn } from '@/lib/utils'
 import { FIELD_ICON, FORMAT_LABEL } from './meta'
 
 type Option = { key: number; id?: string; name: string; color: ColorName; archived?: boolean }
+/** Whether one name is another with a word added before or after. */
+const doubles = (longer: string, shorter: string) => longer.startsWith(`${shorter} `) || longer.endsWith(` ${shorter}`)
 let keys = 0
 
 /**
@@ -39,6 +51,16 @@ export function FieldEditor({
 }) {
   const [name, setName] = useState(field?.name ?? '')
   const [type, setType] = useState<FieldType>(field?.type ?? 'text')
+  // The library's other fields, to say so before saving when the name is taken, or doubles one that's there.
+  const [library] = useLoaded<FieldLibraryView>(useCallback(() => api('GET', base), [base]))
+  const key = nameKey(name)
+  const rest = (library?.fields ?? []).filter((f) => f.id !== field?.id)
+  const taken = key ? rest.find((f) => nameKey(f.name) === key) : undefined
+  // ("Company" and "Company name", "Value" and "Deal value": one name with a word before or after the other.)
+  const twin =
+    !taken && key.length > 2
+      ? rest.find((f) => !f.archivedAt && f.type === type && (doubles(key, nameKey(f.name)) || doubles(nameKey(f.name), key)))
+      : undefined
   const [format, setFormat] = useState<TextFormat>(field?.format ?? 'plain')
   const [unit, setUnit] = useState(field?.unit ?? '')
   const [decimals, setDecimals] = useState(field?.decimals === undefined ? 'any' : String(field.decimals))
@@ -70,7 +92,9 @@ export function FieldEditor({
                 many,
                 back: back.trim(),
               }
-            : {}
+            : type === 'person'
+              ? { many }
+              : {}
   const save = async () => {
     setBusy(true)
     try {
@@ -127,6 +151,19 @@ export function FieldEditor({
               placeholder="Client, Amount, Stage…"
               autoFocus
             />
+            {taken && (
+              <p className="text-xs text-destructive">
+                {taken.archivedAt
+                  ? `There’s an archived field called “${taken.name}”. Restore it, or pick another name.`
+                  : `There’s already a field called “${taken.name}” (${FIELD_TYPE_LABEL[taken.type].toLowerCase()}): boards can use that one.`}
+              </p>
+            )}
+            {twin && (
+              <p className="text-xs text-muted-foreground">
+                There’s already “{twin.name}”, of the same kind. If this is for the same thing, use that one: a field means the same on every board
+                that has it.
+              </p>
+            )}
           </div>
 
           <div className="space-y-1.5">
@@ -290,6 +327,31 @@ export function FieldEditor({
             </>
           )}
 
+          {type === 'person' && (
+            <div className="space-y-1.5">
+              <p className="text-sm font-medium">A card has</p>
+              <ToggleGroup
+                type="single"
+                variant="outline"
+                size="sm"
+                value={many ? 'many' : 'one'}
+                onValueChange={(v) => v && setMany(v === 'many')}
+                className="w-full"
+                aria-label="A card has"
+              >
+                <ToggleGroupItem value="one" className="flex-1 text-xs">
+                  One person
+                </ToggleGroupItem>
+                <ToggleGroupItem value="many" className="flex-1 text-xs">
+                  Several people
+                </ToggleGroupItem>
+              </ToggleGroup>
+              <p className="text-xs text-muted-foreground">
+                Picked from the people on the board: a reviewer, an account owner. Nobody is told when they’re put here: that’s what Assignee is for.
+              </p>
+            </div>
+          )}
+
           {type === 'choice' && (
             <div className="space-y-1.5">
               <p className="text-sm font-medium">Options</p>
@@ -392,7 +454,7 @@ export function FieldEditor({
           <Button type="button" variant="ghost" onClick={onClose}>
             Cancel
           </Button>
-          <Button type="button" disabled={busy || !name.trim()} onClick={() => void save()}>
+          <Button type="button" disabled={busy || !name.trim() || !!taken} onClick={() => void save()}>
             {field ? 'Save' : 'Add field'}
           </Button>
         </DialogFooter>

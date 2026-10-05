@@ -1,5 +1,5 @@
 import { execute } from './commands'
-import { carryCustom, linkRef, matchFields, parseRef } from './fields'
+import { carryCustom, linkRef, matchFields, parseRef, peopleOf } from './fields'
 import { descendantsOf, indexFor } from './indexer'
 import { positionBetween } from './position'
 import type { Change } from './records'
@@ -32,6 +32,8 @@ export interface MovePlan {
     droppedLinks: number
     /** Fields whose values can't come along: the other board doesn't use them (or not that option). */
     droppedFields: string[]
+    /** People named in its person fields who aren't on the other board (they stay behind). */
+    leftBehind: string[]
     /** Links to it from other cards that couldn't follow it (the board it went to is outside their space). Only known once it has moved. */
     linksRemoved?: number
   }
@@ -105,14 +107,21 @@ export function planMove(
     return to && to.boardId === source.board.id && ids.has(to.taskId) ? linkRef(target.board.id, ids.get(to.taskId)!) : ref
   }
   const droppedFields = new Set<string>()
+  const leftBehind = new Set<string>()
+  const personFields = source.fields.filter((f) => fieldMap.get(f.id)?.people)
   const parent = to.parentId ?? null
   const lastSibling = (parent ? tIdx.childrenOf.get(parent) : tIdx.roots)?.at(-1)
   for (const id of moving) {
     const t = source.tasks[id]
     const { rank: _rank, assigneeId, doneAt, custom: held, ...rest } = t
-    const custom = carryCustom(held, fieldMap, relink)
-    for (const f of source.fields)
-      if (held?.[f.id] !== undefined && (!fieldMap.has(f.id) || custom?.[fieldMap.get(f.id)!.id] === undefined)) droppedFields.add(f.name)
+    const custom = carryCustom(held, fieldMap, { relink, isMember: (u) => onTarget.has(u) })
+    for (const f of source.fields) {
+      const went = fieldMap.get(f.id)
+      // (A person field that lost its people isn't a field that can't come along: the people are named instead.)
+      if (held?.[f.id] !== undefined && (!went || (custom?.[went.id] === undefined && !went.people))) droppedFields.add(f.name)
+    }
+    for (const f of personFields)
+      for (const u of peopleOf(held?.[f.id])) if (!onTarget.has(u)) leftBehind.add(source.members.find((m) => m.id === u)?.name ?? 'Someone')
     const status = listFor(t)
     const done = target.columns.some((c) => c.id === status && c.category === 'done')
     const keep = assigneeId && onTarget.has(assigneeId)
@@ -152,6 +161,7 @@ export function planMove(
       newLabels,
       droppedLinks,
       droppedFields: [...droppedFields],
+      leftBehind: [...leftBehind],
     },
   }
 }

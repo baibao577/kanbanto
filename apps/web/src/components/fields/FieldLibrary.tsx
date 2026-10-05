@@ -1,4 +1,4 @@
-import { Archive, ArrowCounterClockwise, PencilSimple, Plus, Trash } from '@phosphor-icons/react'
+import { Archive, ArrowCounterClockwise, ArrowsMerge, PencilSimple, Plus, Trash } from '@phosphor-icons/react'
 import { useCallback, useState, type ReactNode } from 'react'
 import { toast } from 'sonner'
 import type { FieldLibraryView, FieldUsage, FieldView } from '@kanbanto/model/api'
@@ -9,6 +9,7 @@ import { SettingsCard } from '@/components/settings/SettingsCard'
 import { Button } from '@/components/ui/button'
 import { useLoaded } from '@/data/useLoaded'
 import { FieldEditor } from './FieldEditor'
+import { FieldMergeDialog } from './FieldMerge'
 import { FIELD_ICON, fieldSummary } from './meta'
 
 const boardsWord = (f: FieldView) => {
@@ -22,16 +23,19 @@ const boardsWord = (f: FieldView) => {
  * A library of fields and the screen to manage it: your own (`/fields`), or a workspace's
  * (`/workspaces/<id>/fields`). Everyone who can see the library sees the list; only the people who manage it (you,
  * or the workspace's admins) get the controls. A field goes away in two steps: archived (hidden on every board, its
- * values kept), then deleted for good.
+ * values kept), then deleted for good. Or, when it doubles another one, by being merged into it.
  */
 export function FieldLibrary({ base, description }: { base: string; description: ReactNode }) {
   const [view, reload] = useLoaded<FieldLibraryView>(useCallback(() => api('GET', base), [base]))
   const [editing, setEditing] = useState<FieldView | 'new' | null>(null)
   const [confirm, setConfirm] = useState<ConfirmRequest | null>(null)
+  const [merging, setMerging] = useState<FieldView | null>(null)
   if (!view) return null
   const { canManage } = view
   const active = view.fields.filter((f) => !f.archivedAt)
   const archived = view.fields.filter((f) => f.archivedAt)
+  /** The fields one could be merged into: the others of its kind that are in use. */
+  const alike = (f: FieldView) => active.filter((x) => x.id !== f.id && x.type === f.type)
 
   const act = (run: () => Promise<unknown>, done?: string) =>
     run().then(
@@ -105,6 +109,17 @@ export function FieldLibrary({ base, description }: { base: string; description:
                   <Button variant="ghost" size="sm" className="gap-1.5" onClick={() => setEditing(f)}>
                     <PencilSimple /> <span className="max-sm:sr-only">Change</span>
                   </Button>
+                  {alike(f).length > 0 && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="gap-1.5"
+                      title="For two fields that mean the same thing: its values move to the other one"
+                      onClick={() => setMerging(f)}
+                    >
+                      <ArrowsMerge /> <span className="max-lg:sr-only">Merge</span>
+                    </Button>
+                  )}
                   <Button
                     variant="ghost"
                     size="sm"
@@ -162,6 +177,9 @@ export function FieldLibrary({ base, description }: { base: string; description:
 
       {editing && (
         <FieldEditor base={base} field={editing === 'new' ? undefined : editing} onClose={() => setEditing(null)} onSaved={() => void reload()} />
+      )}
+      {merging && (
+        <FieldMergeDialog base={base} field={merging} others={alike(merging)} onClose={() => setMerging(null)} onMerged={() => void reload()} />
       )}
       <ConfirmDialog request={confirm} onClose={() => setConfirm(null)} />
     </div>

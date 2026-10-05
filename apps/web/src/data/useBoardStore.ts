@@ -2,7 +2,7 @@ import { useCallback, useEffect, useReducer, useRef, useState, useSyncExternalSt
 import type { ArchivedPage, BoardSnapshot } from '@kanbanto/model/api'
 import { invertChanges } from '@kanbanto/model/changes'
 import type { Command } from '@kanbanto/model/commands'
-import { cleanPrefs, defaultPrefs, prefsReducer } from '@kanbanto/model/prefs'
+import { cleanPrefs, defaultDisplay, defaultPrefs, prefsReducer } from '@kanbanto/model/prefs'
 import type { Change } from '@kanbanto/model/records'
 import type { BoardData } from '@kanbanto/model/types'
 import { api, ApiError } from '@/api/client'
@@ -24,6 +24,9 @@ const EMPTY = () => () => {}
 export function useBoardStore(boardId: string, prefsStore: PrefsStore, onEvent: (e: SyncEvent) => void) {
   const [sync, setSync] = useState<BoardSync | null>(null)
   const [error, setError] = useState<LoadError | null>(null)
+  // (Whether this device has opened the board before: asked once, before anything is saved.)
+  const firstTime = useRef<boolean | null>(null)
+  if (firstTime.current === null) firstTime.current = prefsStore.load() === null
   const [prefs, setPrefs] = useReducer(prefsReducer, undefined, () => prefsStore.load() ?? defaultPrefs())
   const history = useRef<{ undo: Change[][]; redo: Change[][] }>({ undo: [], redo: [] })
   const [depth, setDepth] = useState({ undo: 0, redo: 0 })
@@ -56,15 +59,24 @@ export function useBoardStore(boardId: string, prefsStore: PrefsStore, onEvent: 
   const state: SyncState | null = useSyncExternalStore(sync?.subscribe ?? EMPTY, () => sync?.getState() ?? null)
   const data = state?.data ?? null
 
+  // (Kept once the board is here: a device that left before it arrived hasn't opened it yet, as far as "the first
+  // time" below goes.)
+  const loaded = !!data
   useEffect(() => {
-    prefsStore.save(prefs)
-  }, [prefs, prefsStore])
+    if (loaded) prefsStore.save(prefs)
+  }, [prefs, prefsStore, loaded])
 
   // Settings that point at deleted lists, labels, people or tasks are dropped.
+  //
+  // A board opened here for the first time starts from how its kind of board usually looks (see `defaultDisplay`).
   useEffect(() => {
     if (!data) return
     const cleaned = cleanPrefs(prefs, data)
-    if (cleaned !== prefs) setPrefs({ type: 'replace', prefs: cleaned })
+    const usual = defaultDisplay(data.board.mode)
+    const byHand = firstTime.current && cleaned.display.board.filter !== usual.filter
+    firstTime.current = false
+    const next = byHand ? { ...cleaned, display: { ...cleaned.display, board: { ...cleaned.display.board, filter: usual.filter } } } : cleaned
+    if (next !== prefs) setPrefs({ type: 'replace', prefs: next })
   }, [data, prefs])
 
   // Closing the tab while changes are still on their way to the server: ask first.

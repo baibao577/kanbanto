@@ -25,10 +25,12 @@ Type a name, such as "My first board". The rest can stay as it is:
 - **Where:** Personal means only you can open it, until you share it. If you are in a team
   [workspace](/people/workspaces) you can pick that instead. Setting up for a team? Personal is fine for trying
   things out; a board can be moved into a workspace later.
-- **Background:** any color or design you like.
 - **Start with:** **An empty board** has lists for To Do, Doing and Done and no cards yet (plus a Backlog list that
   is hidden: a line at the right of the board says so, and shows it when you want it). **The example board** is a
-  small website-launch plan to explore.
+  small website-launch plan to explore. **A sales pipeline** and **A support desk** are
+  [starters](/everyday/fields#start-from-a-ready-made-board): boards for one kind of work, with their own lists and
+  fields.
+- **Background:** any color or design you like.
 
 Then click **Create board**. You can change all of this later.
 

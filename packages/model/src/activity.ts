@@ -87,7 +87,11 @@ export function describeChanges(before: BoardData, changes: Change[], command?: 
           }
           items.push({
             taskId: b.id,
-            text: value === undefined ? `cleared ${f.name} of ${t}` : `set ${f.name} of ${t} to ${short(valueText(f, value))}`,
+            // (People are named as the board knew them before the change: its people aren't changed by commands.)
+            text:
+              value === undefined
+                ? `cleared ${f.name} of ${t}`
+                : `set ${f.name} of ${t} to ${short(valueText(f, value, (id) => before.members.find((m) => m.id === id)?.name))}`,
           })
         }
       }

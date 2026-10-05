@@ -4,7 +4,18 @@ import { FIELD_TYPES, LINK_SCOPES, TEXT_FORMATS } from '@kanbanto/model/fields'
 import type { FastifyPluginAsync, FastifyRequest } from 'fastify'
 import { z } from 'zod'
 import { requireAccess } from '../boards/access'
-import { boardFieldsView, createField, deleteField, fieldUsage, listLibrary, setBoardFields, updateField, type Library } from '../boards/fields'
+import {
+  boardFieldsView,
+  createField,
+  deleteField,
+  fieldUsage,
+  listLibrary,
+  mergeFields,
+  mergePreview,
+  setBoardFields,
+  updateField,
+  type Library,
+} from '../boards/fields'
 import { requireWorkspace } from '../boards/workspaces'
 import { parse } from '../http'
 import { requireUser } from './auth'
@@ -69,6 +80,24 @@ export const fieldRoutes: FastifyPluginAsync = async (app) => {
     app.get(`${base}/:fieldId/usage`, async (req) => {
       const { lib } = await space(req, true)
       return fieldUsage(app.db, lib, parse(FieldParams, req.params).fieldId)
+    })
+
+    /** What merging it into another field of the library (`into`) would do, in numbers: nothing is changed. */
+    app.get(`${base}/:fieldId/merge`, async (req) => {
+      const { lib } = await space(req, true)
+      const { into } = parse(z.object({ into: z.uuid() }), req.query)
+      return mergePreview(app.db, lib, parse(FieldParams, req.params).fieldId, into)
+    })
+
+    /**
+     * Merges it into another field of the same kind (`into`): its values become that field's on every card, boards
+     * that used it use the other one, and it's gone. It can't be undone.
+     */
+    app.post(`${base}/:fieldId/merge`, async (req) => {
+      const { lib } = await space(req, true)
+      const { into } = parse(z.object({ into: z.uuid() }).strict(), req.body)
+      const done = await mergeFields(app, lib, parse(FieldParams, req.params).fieldId, into, requireUser(req.user), req.apiToken?.app)
+      return { ...done, ...(await view(lib, true)) }
     })
 
     /** Deletes an archived field for good, with its values on every card. */

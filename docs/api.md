@@ -42,11 +42,22 @@ curl -X POST https://kanbanto.example.com/api/boards/<board id>/mutations \
   task's values are in `custom`, by field id. Set them with `task.update`:
   `{"type":"task.update","id":"<task id>","fields":{"custom":{"<field id>":"Acme","<another>":null}}}` sets the
   ones named (`null` clears one) and leaves the others. A value is text, a number, a day or moment (like `due`),
-  `true` for a ticked checkbox, `["<option id>"]` for a choice, or for a card link a list of links, each
+  `true` for a ticked checkbox, `["<option id>"]` for a choice, for a card link a list of links, each
   `"<board id>:<task id>"` (always with the board: a task's id is only unique on its board, and changes when it
-  moves to another). `tasks.clearField` clears one field on every card of the board. The fields themselves are managed elsewhere: a library per workspace
+  moves to another), or for a person field a list of user ids, who have to be people of the board (`members`).
+  `tasks.clearField` clears one field on every card of the board. The fields themselves are managed elsewhere: a library per workspace
   (`/api/workspaces/<id>/fields`, its admins) and your own for Personal boards (`/api/fields`); a board's owners
   choose which ones it uses with `PUT /api/boards/<id>/fields`. See **Fields** in `/api/docs`.
+- **Merging two fields.** `POST …/fields/<field id>/merge` with `{"into":"<field id>"}` merges a field into another
+  of the same library and kind: every card's value moves to `into` (a card that has both keeps the one its board
+  shows; lists that hold several are joined), boards and saved filters that used the field use `into`, and the
+  field is gone. It can't be undone. `GET` the same address with `?into=` says first what it would do, in numbers
+  (`cards`, `boards`, `both`, the `options` a choice would gain, and a `problem` when it can't be done).
+- **Starter boards.** `POST /api/boards` with `template: "sales"` or `"support"` makes a board for that kind of work:
+  its lists, saved filters, a few example cards, and its fields, which come from the library of where it's made.
+  Fields that library has (same name and kind) are used as they are; the rest are added, which in a workspace only
+  its admins may do (otherwise a 403 that names them, and nothing is made). The answer lists what was `added` and
+  what was `leftOut` (fields that library has archived).
 - **Links between cards.** A card link field (`type: "link"`) says where its cards come from: `linkTo` is `board`
   (with `board`, a board of the field's own space), `space` (any board there) or `same` (the board that uses it);
   `many` lets it hold several. A link is refused (422) unless its card exists, is in the same workspace (or, for
@@ -193,16 +204,17 @@ claude mcp add --transport http kanbanto https://kanbanto.example.com/api/mcp --
 | `my_week` | Your logged time for a week across your boards: each day against your hours a day (empty days stand out), each task's time per day, and tasks you worked on without logging time |
 | `plan_overview` | A workspace's resource plan, read only: each project's planned, scheduled and logged man-days, who's booked at what share; each person's load, when they go over 100% and when they're free |
 | `create_tasks` | Add tasks, each with its own `subtasks` if you like, or break one down into subtasks (`parent_id`); without a board they go to your Inbox. A wrong list, label or person adds nothing. Each can come with `fields` (the board's own, by name) |
-| `update_task` | Title, description, dates, assignee, priority, labels, what it waits on (`waiting_on`), list, and its place in the list (`position: top` / `bottom`, `before_task_id` / `after_task_id`). Put in another list, it goes to the end unless placed. `fields: {"Stage": "Won", "Value": 12000}` sets the board's own fields by name (`null` clears one) |
+| `update_task` | Title, description, dates, assignee, priority, labels, what it waits on (`waiting_on`), list, and its place in the list (`position: top` / `bottom`, `before_task_id` / `after_task_id`). Put in another list, it goes to the end unless placed. `fields: {"Stage": "Won", "Value": 12000}` sets the board's own fields by name (`null` clears one; a card link takes a card's title, a person field a person's name or `me`) |
 | `move_task` | Change a task's parent or its place among siblings in the outline |
 | `set_reminder` | Add a reminder (at a time, or some minutes before it's due: before a whole due day, from 9:00 in your time zone) or remove one; it goes to the task's assignee |
 | `archive_task` | Archive a task with its subtasks, or restore it (`restore: true`); nothing is lost |
 | `archive_done_tasks` | Tidy a board: archive a done list's top-level tasks that got done more than some days ago, with their subtasks (`dry_run` says what would go) |
 | `move_to_board` | Move a task, with its subtasks, comments and files, to another board (say, from the Inbox) |
-| `create_board` | A new board in Personal or a workspace, with what it's for |
+| `create_board` | A new board in Personal or a workspace, with what it's for; `starter: "sales"` or `"support"` for one that comes with its own lists, fields, saved filters and example cards |
 | `update_board` | Name, what it's for, background, how a parent task's status is set |
 | `manage_lists` | Add, rename, reorder, change the kind of, or remove (empty) lists |
 | `manage_labels` | Add, rename, recolor, or remove (unused) labels |
+| `manage_fields` | A library's fields (a workspace's, for its admins, or your own): list them, add one, change its name or settings, give a choice its options by name (one left out is archived, never deleted), rename an option, archive and restore. And a board's own choice (its owners): put a field on it, or take it off |
 | `set_inbox` | Choose your Inbox board |
 | `log_time` | Log time you spent on a task ("1:30", "2h", "45m"), today, yesterday or another day, with a short note |
 | `add_comment` | Comment as you; `@Name` notifies people, and so are the task's followers |
@@ -212,7 +224,7 @@ Read-only tokens get the reading tools only (`list_boards` to `plan_overview`). 
 through MCP: planners change them in the app's Planning tab. Every change on a board is kept as a line of activity for 180 days ("Ann moved
 “Deploy” to Done", marked with the app it came through), which is what `recent_activity` reads. Sharing (inviting people, links,
 roles) and deleting boards or tasks aren't tools, on purpose: an assistant reads text other people wrote, and those
-can't be undone. People do them in the app.
+can't be undone. People do them in the app. The same goes for deleting a field for good and merging two fields.
 
 **Help assistants help you.** Say what each board is for (Board settings → "What's this board for?"): assistants read it
 to pick the right board. And choose an **Inbox** (Board settings → "Use as my Inbox"): "remind me to buy milk" then

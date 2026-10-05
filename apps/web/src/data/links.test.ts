@@ -51,3 +51,27 @@ describe('what links point at, in the browser', () => {
     expect(store.titleOf(here)).toBeUndefined()
   })
 })
+
+describe('the board’s people, for the chips of person fields', () => {
+  it('names them by id, and tells only the chip of someone who changed or left', () => {
+    const store = new LinkStore(HERE)
+    const data = exampleData(HERE)
+    const mai = vi.fn()
+    const ton = vi.fn()
+    store.subscribePerson('mai', mai)
+    const off = store.subscribePerson('ton', ton)
+    expect(store.nameOf('mai')).toBeUndefined()
+    store.see(data)
+    expect(store.nameOf('mai')).toBe('Mai')
+    expect([mai.mock.calls.length, ton.mock.calls.length]).toEqual([1, 1])
+    // The board fetched again with the same people (a new list of them every time): nobody is told.
+    store.see({ ...data, members: data.members.map((m) => ({ ...m })) })
+    expect([mai.mock.calls.length, ton.mock.calls.length]).toEqual([1, 1])
+    // Mai is renamed, Ton leaves: each chip hears about its own person.
+    off()
+    store.see({ ...data, members: data.members.filter((m) => m.id !== 'ton').map((m) => (m.id === 'mai' ? { ...m, name: 'Mai P.' } : m)) })
+    expect(store.nameOf('mai')).toBe('Mai P.')
+    expect(store.nameOf('ton')).toBeUndefined()
+    expect([mai.mock.calls.length, ton.mock.calls.length]).toEqual([2, 1])
+  })
+})

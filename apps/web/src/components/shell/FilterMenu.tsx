@@ -293,9 +293,27 @@ function LinkFilter({ field, value, onChange }: Parameters<FilterControl>[0]) {
   )
 }
 
+/** A person field: tick from the board's people (and anyone already ticked who has left since), or no one. */
+function PersonFilter({ value, onChange }: Parameters<FilterControl>[0]) {
+  const { data } = useBoard()
+  return (
+    <>
+      {data.members.map((m) => (
+        <CheckRow key={m.id} checked={!!value.in?.includes(m.id)} onChange={() => onChange({ in: toggleIn(value.in, m.id) })}>
+          <Avatar name={m.name} className="size-5 text-[9px]" /> {m.name}
+        </CheckRow>
+      ))}
+      <CheckRow checked={!!value.in?.includes('')} onChange={() => onChange({ in: toggleIn(value.in, '') })}>
+        <span className="text-muted-foreground">No one</span>
+      </CheckRow>
+    </>
+  )
+}
+
 /** What each kind of field can be filtered by (the rules themselves are in model/fields.ts). */
 const FIELD_FILTER: Record<FieldType, FilterControl> = {
   link: (p) => <LinkFilter {...p} />,
+  person: (p) => <PersonFilter {...p} />,
   choice: ({ field, value, onChange }) => (
     <>
       {(field.options ?? [])

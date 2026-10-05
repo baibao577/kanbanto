@@ -263,7 +263,7 @@ export const workspaceRoutes: FastifyPluginAsync = async (app) => {
     const { id, userId } = parse(MemberParams, req.params)
     const me = requireUser(req.user)
     await requireWorkspace(app.db, id, me.id, userId !== me.id)
-    const touched = await app.db.transaction((tx) => leaveWorkspace(tx, id, userId, userId === me.id ? null : me.id))
+    const touched = await app.db.transaction((tx) => leaveWorkspace(app.engine, tx, id, userId, userId === me.id ? null : me.id))
     for (const boardId of touched) await announceSharingChange(app, boardId)
     return { ok: true }
   })
