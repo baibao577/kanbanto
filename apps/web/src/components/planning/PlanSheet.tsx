@@ -246,6 +246,15 @@ export function PlanSheet(props: Props) {
     const t = e.target as HTMLElement
     if (t.closest('[data-split]')) return
     const bar = t.closest('[data-block]') as HTMLElement | null
+    // On the way from a block up to its scissors (they sit above it, often to one side): they stay where they are.
+    const shown = mark.current!
+    if (!shown.hidden && bar?.dataset.block !== shown.dataset.block) {
+      const r = shown.getBoundingClientRect()
+      const from = Number(shown.dataset.x)
+      const onTheWay =
+        e.clientY <= r.top + 1 && e.clientY >= r.top - 24 && e.clientX >= Math.min(from, r.left) - 12 && e.clientX <= Math.max(from, r.left) + 12
+      if (onTheWay) return void (ghost.current!.hidden = true)
+    }
     if (bar) {
       ghost.current!.hidden = true
       const b = block(bar.dataset.block!)
@@ -259,6 +268,7 @@ export function PlanSheet(props: Props) {
       m.style.height = `${bar.offsetHeight}px`
       m.dataset.block = b!.id
       m.dataset.day = String(d)
+      m.dataset.x = String(e.clientX)
       m.querySelector('button')!.title = `Split on ${dayDate(d)}`
       return
     }
@@ -714,13 +724,13 @@ export function PlanSheet(props: Props) {
             +
           </div>
           {/* The scissors */}
-          <div ref={mark} hidden className="absolute z-20 w-0 border-l-2 border-dashed border-foreground/70">
+          <div ref={mark} hidden className="pointer-events-none absolute z-20 w-0 border-l-2 border-dashed border-foreground/70">
             <button
               type="button"
               data-split
               tabIndex={-1}
               aria-label="Split here"
-              className="absolute -top-[19px] -left-[10px] grid size-[18px] place-items-center rounded-full border bg-background text-foreground shadow-sm hover:bg-foreground hover:text-background"
+              className="pointer-events-auto absolute -top-[19px] -left-[10px] grid size-[18px] place-items-center rounded-full border bg-background text-foreground shadow-sm hover:bg-foreground hover:text-background"
             >
               <Scissors className="size-3" />
             </button>
