@@ -291,6 +291,20 @@ Three things about it:
 - **It forgets what it has handled when it restarts.** For something that must never happen twice, keep the
   delivery ids somewhere that lasts.
 
+### Just want to see what arrives?
+
+A request inbox such as [webhook.site](https://webhook.site) gives you an address and shows everything sent to it,
+with nothing to write. As it comes, it answers every request with the same words, so adding its address fails with
+"That address didn't confirm it wants these". Tell it to answer with what it was sent:
+
+1. On webhook.site, click **Edit**, at the top right.
+2. Make the response's content `$request.content$`, and save.
+3. In Kanbanto, add the address again.
+
+Each message then shows up there with its headers, the signature among them. An inbox like this is for looking: it
+doesn't check signatures, and on its free plan anyone who knows the address can read what was sent to it. Point a
+board with real work at it only for a short while, then delete the webhook.
+
 ### With an automation tool instead
 
 Tools like n8n, Make and Zapier can receive a webhook without any code: make a "webhook" trigger there and paste its
@@ -313,7 +327,7 @@ address into Kanbanto. Two things to look at:
 | You see | It usually means |
 |---|---|
 | "That address didn't answer" when adding | Nothing is listening there, or it can't be reached from the internet |
-| "That address didn't confirm it wants these" | It answered, but without the code it was sent |
+| "That address didn't confirm it wants these" | It answered, but without the code it was sent. A request inbox does this until it's told otherwise: see "Just want to see what arrives?" |
 | "No answer within 10 seconds" | The receiver does its work before answering: answer first |
 | "The address answered 401" | The receiver refused the signature: it has an old secret, or it checked a body it had already changed |
 | "this site only sends webhooks to public addresses" | The address is inside a private network, and the site doesn't allow that |
