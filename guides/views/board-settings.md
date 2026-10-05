@@ -27,7 +27,8 @@ under each list. See
 **Background.** One of 12 colors, 12 designs, or your own: pick any hue and a light, medium or deep shade.
 
 **People & apps.** Who can work on this board (a shortcut to Share), and webhooks, which tell other apps when
-something changes here. Webhooks are for whoever sets up integrations.
+something changes here. Webhooks are for whoever sets up integrations: see
+[Webhooks: tell another app when a board changes](/more/webhooks).
 
 **Just for you**
 

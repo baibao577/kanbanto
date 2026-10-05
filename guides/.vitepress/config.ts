@@ -75,9 +75,10 @@ export default defineConfig({
         ],
       },
       {
-        text: 'Calendar and account',
+        text: 'Calendar, other apps and account',
         items: [
           { text: 'Cards in your calendar', link: '/more/calendar' },
+          { text: 'Webhooks: tell another app', link: '/more/webhooks' },
           { text: 'Your account', link: '/more/account' },
         ],
       },

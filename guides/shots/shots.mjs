@@ -1323,6 +1323,69 @@ await shot('ws-3-board-fields', async () => {
   return around([page.getByRole('dialog').first(), page.getByRole('dialog').last()], 20)
 })
 
+// ── Webhooks: a board that tells another app (the site has to allow them: needs GUIDES_SQL, for an admin) ──────────
+let hooked = null
+/** A place for the sample board's webhook to go: a little server here that answers yes, and the site set to allow it. */
+async function listener() {
+  if (hooked) return hooked
+  if (!aged) throw new Error('webhooks have to be turned on by a site admin: set GUIDES_SQL')
+  await api(ann, 'PATCH', '/admin/settings', { webhooks: 'any' })
+  const { createServer } = await import('node:http')
+  const server = createServer((req, res) => {
+    req.resume()
+    req.on('end', () => res.writeHead(200, { 'content-type': 'application/json' }).end('{"ok":true}'))
+  })
+  await new Promise((done) => server.listen(0, '127.0.0.1', done))
+  server.unref()
+  return (hooked = `http://127.0.0.1:${server.address().port}/kanbanto`)
+}
+/** The pictures show an address and a secret that could be anyone's, not this run's. */
+const asInTheGuide = (address) =>
+  page.evaluate(
+    ([from, to]) => {
+      const walk = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT)
+      for (let n = walk.nextNode(); n; n = walk.nextNode()) if (n.nodeValue.includes(from)) n.nodeValue = n.nodeValue.replaceAll(from, to)
+      for (const el of document.querySelectorAll('input')) if (el.value.startsWith('whsec_')) el.value = 'whsec_Xk3v9QmT7LwA2pRZ8cYdN4hJ6sBf0uGe'
+    },
+    [address, 'https://hooks.example.com/kanbanto'],
+  )
+const openWebhooks = async () => {
+  await openBoard()
+  await page.getByRole('button', { name: 'More', exact: true }).click()
+  await page.getByRole('menuitem', { name: 'Board settings' }).click()
+  await page.getByRole('button', { name: 'People & apps', exact: true }).click()
+  await page.getByLabel('Webhook address').waitFor()
+}
+await shot('hooks-1-add', async () => {
+  const address = await listener()
+  await openWebhooks()
+  await page.getByLabel('Webhook address').fill(address)
+  await page.getByRole('button', { name: 'Add', exact: true }).click()
+  await page.getByLabel('Signing secret').waitFor()
+  await page.waitForTimeout(400)
+  await asInTheGuide(address)
+  return page.getByRole('dialog')
+})
+await shot('hooks-2-detail', async () => {
+  const address = await listener()
+  // (Something to have sent: a card finished and a comment on it.)
+  if (!(await api(ann, 'GET', `/boards/${board}/webhooks`)).webhooks.length) await api(ann, 'POST', `/boards/${board}/webhooks`, { url: address })
+  await run({ type: 'task.update', id: 'analytics', fields: { status: 'done' } })
+  await api(ann, 'POST', `/boards/${board}/tasks/analytics/comments`, { body: 'Counting since this morning.' })
+  await page.waitForTimeout(6500)
+  await openWebhooks()
+  await page.getByRole('button', { name: new RegExp(address.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')) }).click()
+  await page.getByRole('button', { name: 'Send a test' }).click()
+  await page.getByText('Delivered (200)').first().waitFor()
+  // (The "Test delivered" message goes away by itself: wait for it, then open the test's own line.)
+  await page.waitForTimeout(5000)
+  await page.getByRole('button', { name: /ping/ }).first().click()
+  await page.getByRole('button', { name: 'Send again' }).waitFor()
+  await page.waitForTimeout(300)
+  await asInTheGuide(address)
+  return page.getByRole('dialog')
+})
+
 await browser.close()
 console.log(`made ${made.length}: ${made.join(', ')}`)
 if (failed.length) console.log(`\nnot made (${failed.length}):\n  ${failed.join('\n  ')}`)

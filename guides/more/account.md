@@ -18,7 +18,7 @@ dark, or following your device), and signing out. People who run the site also s
 | **Fields** | Extra fields for the cards on your own boards. See [your own fields](/everyday/fields). |
 | **Email sending** | Use your own email service for the invites you send. Optional. |
 | **File storage** | Keep the files you attach in your own storage. Optional. |
-| **API & apps** | Connect an AI assistant or another app. See [connect your assistant](/ai/connect). |
+| **API & apps** | Connect an AI assistant or another app. See [connect your assistant](/ai/connect). To have a board tell another app when it changes, see [webhooks](/more/webhooks). |
 
 Most people only ever need the first four.
 

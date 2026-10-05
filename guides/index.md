@@ -30,7 +30,7 @@ features:
   - title: Time and planning
     details: Logging time on cards, your week at a glance, and planning who works on what.
     link: /time/log-time
-  - title: Calendar and account
-    details: Due dates in Google Calendar, Apple Calendar or Outlook, and your own settings.
+  - title: Calendar, other apps and account
+    details: Due dates in Google Calendar, Apple Calendar or Outlook, webhooks that tell another app when a board changes, and your own settings.
     link: /more/calendar
 ---
