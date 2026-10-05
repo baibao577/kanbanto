@@ -146,6 +146,7 @@ describe('apps connecting with sign-in (OAuth, for MCP)', () => {
       'team_overview',
       'recent_activity',
       'reminders',
+      'my_day',
       'get_task',
       'my_week',
       'plan_overview',

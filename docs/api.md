@@ -57,7 +57,7 @@ curl -X POST https://kanbanto.example.com/api/boards/<board id>/mutations \
   filters as the Search cards page: `q` (words in the title, description or a comment), `assignee=me`, `completed`,
   `kind`, `priority`, `label`, `due`, and a time range (`from`, `to`) about one of a card's dates (`when=done`,
   `created`, `changed` or `archived`). What I finished this week: `?state=all&assignee=me&when=done&from=2026-09-28`.
-  A task's `doneAt` is when it entered a done list.
+  Without `state`, only archived cards are searched. A task's `doneAt` is when it entered a done list.
 
 `GET /api/boards/<id>` returns the whole board: its lists, labels, people and the tasks on it (a task's `status` is
 its list's id; `parentId` makes the tree; `priority` is `urgent`, `high`, `medium` or `low`). Its archived tasks come
@@ -159,19 +159,20 @@ claude mcp add --transport http kanbanto https://kanbanto.example.com/api/mcp --
 
 | Tool | What it does |
 |---|---|
-| `list_boards` | The boards you can open: where each lives (a workspace, "Personal" or "Shared with you"), what it's for, and which is your Inbox |
-| `get_board` | A board's lists, labels, people and its open tasks as an outline: the top levels, or the part under one task |
-| `find_tasks` | Search one board, one workspace or everything: text, list, label, assignee (`me`, `nobody`), priority, blocked, due, created, changed, done or archived between two times; sorted and paged. Asking by when tasks got done also finds the ones archived since. `worked_after` / `worked_before`: what was worked on in a stretch of time (made or changed then), each result saying what happened |
+| `list_boards` | Who you act as (name, time zone, today's date there) and the boards you can open: where each lives (a workspace, "Personal" or "Shared with you"), what it's for, and which is your Inbox |
+| `get_board` | A board's lists, labels, people and its open tasks: the top levels (subtasks under their task), the part under one task, or one list's cards (`tasks: false` for just the lists, labels and people). Top-level tasks come list by list, each list in the order made by hand (`order: outline` for the outline's order) |
+| `find_tasks` | Search one board, one workspace or everything: text, list, kind of list (`counts_as: doing`: in progress on every board, whatever the list is called), label, assignee (`me`, `nobody`), priority, blocked, due, created, last worked on, done or archived between two times; sorted and paged. Without a `sort`, results come list by list, each list in the order its cards were put in by hand, so one list reads top to bottom as on the board. Asking by when tasks got done also finds the ones archived since. `worked_after` / `worked_before`: what was worked on in a stretch of time (made or changed then), each result saying what happened |
 | `team_overview` | How a board or workspace is doing: tasks per list, each person's open, overdue and blocked work, what needs attention, and the time each person logged on it this week |
-| `reminders` | Your reminders coming up in the next days, and the ones that went off today |
-| `recent_activity` | What happened in a stretch of time (default: the last day), optionally by one person: changes, who made them and through which app, and comments |
+| `reminders` | Your reminders coming up in the next days, and the ones that went off in the last 24 hours |
+| `my_day` | What needs your attention across your boards, in one answer: your overdue tasks and the ones due today, what you have in progress, your tasks waiting on others, today's reminders, and comments that mention you and you haven't seen |
+| `recent_activity` | What happened in a stretch of time (default: the last day), optionally by one person: changes, who made them and through which app, and comments, each with the board and task ids it's about |
 | `get_task` | A task with its parents, subtasks, what it waits on, latest comments, and the time logged on it |
 | `my_week` | Your logged time for a week across your boards: each day against your hours a day (empty days stand out), each task's time per day, and tasks you worked on without logging time |
 | `plan_overview` | A workspace's resource plan, read only: each project's planned, scheduled and logged man-days, who's booked at what share; each person's load, when they go over 100% and when they're free |
-| `create_tasks` | Add tasks, or break one down into subtasks (`parent_id`); without a board they go to your Inbox |
-| `update_task` | Title, description, dates, assignee, priority, labels, list |
-| `move_task` | Change a task's parent or its place among siblings |
-| `set_reminder` | Add a reminder (at a time, or some minutes before it's due) or remove one; it goes to the task's assignee |
+| `create_tasks` | Add tasks, each with its own `subtasks` if you like, or break one down into subtasks (`parent_id`); without a board they go to your Inbox. A wrong list, label or person adds nothing |
+| `update_task` | Title, description, dates, assignee, priority, labels, what it waits on (`waiting_on`), list, and its place in the list (`position: top` / `bottom`, `before_task_id` / `after_task_id`). Put in another list, it goes to the end unless placed |
+| `move_task` | Change a task's parent or its place among siblings in the outline |
+| `set_reminder` | Add a reminder (at a time, or some minutes before it's due: before a whole due day, from 9:00 in your time zone) or remove one; it goes to the task's assignee |
 | `archive_task` | Archive a task with its subtasks, or restore it (`restore: true`); nothing is lost |
 | `archive_done_tasks` | Tidy a board: archive a done list's top-level tasks that got done more than some days ago, with their subtasks (`dry_run` says what would go) |
 | `move_to_board` | Move a task, with its subtasks, comments and files, to another board (say, from the Inbox) |

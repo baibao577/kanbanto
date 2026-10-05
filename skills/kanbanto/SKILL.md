@@ -24,8 +24,9 @@ Without MCP, use the REST API (see "REST fallback" below).
 
 ## Working with the tools
 
-- **Orient first.** `list_boards`, then `get_board` for the lists, labels and people you'll refer to. Refer to them by
-  name; `"me"` is the token's owner.
+- **Orient first.** `list_boards` (it also says who you act as, their time zone and today's date there), then
+  `get_board` for the lists, labels and people you'll refer to (`tasks: false` when that's all you need). Refer to
+  them by name; `"me"` is the token's owner.
 - **Which board?** Boards live in places: the person's Personal boards, workspaces (a team's), or boards others shared.
   `list_boards` says which, and what each board is for (`about`). "Work" and "personal" usually mean a workspace and
   Personal. If it's still unclear, ask and name the likely boards: don't guess.
@@ -37,12 +38,23 @@ Without MCP, use the REST API (see "REST fallback" below).
   search every board) so you don't add duplicates. Big results come in pages: pass `next_offset` back as `offset`.
 - **Big boards:** `get_board` shows the top two levels of open work; look inside one task with `parent_id`. Don't page
   through everything: `team_overview` and `find_tasks` answer most questions directly.
-- **Breaking work down:** `create_tasks` with `parent_id` adds several subtasks in one call. Keep titles short and
-  actionable; put detail in `description`.
+- **Breaking work down:** `create_tasks` with `parent_id` adds several subtasks in one call, and each new task can
+  carry its own `subtasks` (notes into tasks with their steps, in one call). Keep titles short and actionable; put
+  detail in `description`. If it's refused part-way, the answer says which tasks were already added: don't add them
+  again.
 - **Status:** move a task between lists with `update_task` and `list`. With "follows its subtasks" boards, a parent's
   status comes from its subtasks: change the subtasks instead.
+- **Order in a list:** people drag cards into the order they want, and the top of a list usually comes first.
+  `get_board` and `find_tasks` give tasks in that order, list by list (`list: "To Do"` for one list, top to bottom), so
+  "the next tasks" are the first ones of a list. `update_task` places a card in its list: `position: "top"` or
+  `"bottom"`, or `before_task_id` / `after_task_id`; a card put in another list goes to the end unless placed.
+  (`order: "outline"` / `sort: "outline"` give the outline's order instead.)
+- **Lists differ per board** ("Doing", "In progress", "Review"…): to ask across boards, use `find_tasks` with
+  `counts_as` (`backlog`, `todo`, `doing`, `done`) instead of a list's name.
+- **Waiting on:** `update_task` with `waiting_on` (task ids) says a task is blocked until those are done; `[]` clears
+  it. `get_task`, `my_day` and `team_overview` show what a blocked task waits on.
 - **Structure:** `move_task` changes a task's parent (or makes it top-level with `parent_id: null`) or its place among
-  siblings.
+  siblings in the outline (a different order from the one in a list).
 - **Time:** `log_time` logs time the user says they spent on a task ("2h on the login task yesterday": `time: "2h"`,
   `day: "yesterday"`). Only log what they tell you; never estimate hours for them. Several tasks or days: one call each.
   `get_task` shows a task's logged time; `my_week` their week across boards, with the days still empty and the tasks
@@ -101,11 +113,12 @@ Without MCP, use the REST API (see "REST fallback" below).
   change is kept that long (comments and logged time are kept for good).
 - *"Plan X"* → find or create the parent task, then `create_tasks` with its subtasks; offer to set due dates and
   assignees.
-- *"My day" / "what do I need to do today?"* → `reminders` (coming up today, and what went off), `find_tasks` with
-  `assignee: "me"` and `due_before` today (overdue and due today), and `recent_activity` for mentions; lead with
-  what's urgent or overdue, then today's reminders in time order.
+- *"My day" / "what do I need to do today?" / "what needs my attention?"* → `my_day`: overdue and due today, what's
+  in progress, what's waiting on others, today's reminders and unseen mentions, in one answer. Lead with what's
+  urgent or overdue, then today's reminders in time order.
+- *"What am I working on?"* → `find_tasks` with `assignee: "me"` and `counts_as: "doing"` (every board).
 - *"Catch me up" / "what's new"* → `recent_activity` (since the last day, or `since: "3d"`), per workspace; lead with
-  what mentions them and what's due soon.
+  what mentions them and what's due soon. Each line carries its board and task ids, to open or act on it.
 - *"Log my day" / "I spent 2h on X and 1h on Y"* → find each task (`find_tasks`), then `log_time` for each; say what
   was logged, on which day. *"Fill in my week"* → `my_week`, show the empty days and the tasks they worked on then, and
   ask how long each took: don't guess.

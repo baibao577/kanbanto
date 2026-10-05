@@ -32,13 +32,20 @@ export const cellKey = (row: string, col: string) => `${row}\u0000${col}`
  * outline order.
  */
 export function byHand(idx: TaskIndex, ids: string[]): string[] {
-  const byRank = (a: string, b: string) => {
-    const ra = idx.tasks[a].rank
-    const rb = idx.tasks[b].rank
-    if (ra === undefined || rb === undefined) return ra === rb ? 0 : ra === undefined ? 1 : -1
-    return comparePositions(ra, rb)
-  }
-  return [...ids].sort((a, b) => byRank(a, b) || idx.position.get(a)! - idx.position.get(b)!)
+  return [...ids].sort((a, b) => byRank(idx, a, b) || idx.position.get(a)! - idx.position.get(b)!)
+}
+
+const byRank = (idx: TaskIndex, a: string, b: string) => {
+  const ra = idx.tasks[a].rank
+  const rb = idx.tasks[b].rank
+  if (ra === undefined || rb === undefined) return ra === rb ? 0 : ra === undefined ? 1 : -1
+  return comparePositions(ra, rb)
+}
+
+/** Compares cards the way the board reads: list by list (left to right), each list in the order made by hand. */
+export function byBoard(idx: TaskIndex): (a: string, b: string) => number {
+  const at = new Map(idx.columns.map((c, i) => [c.id, i]))
+  return (a, b) => at.get(idx.status.get(a)!)! - at.get(idx.status.get(b)!)! || byRank(idx, a, b) || idx.position.get(a)! - idx.position.get(b)!
 }
 
 /** Whether subtasks are grouped under parent headers (only for status lists, and not when the cards are the parents). */
