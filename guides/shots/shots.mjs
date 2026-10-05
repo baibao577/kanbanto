@@ -581,13 +581,28 @@ await shot('my-week', async () => {
   await page.waitForTimeout(700)
 })
 await shot('bell', async () => {
+  // Ben changes a card Ann made (so she follows it): the bell has a mention, a comment and changes to show.
+  for (const fields of [{ due: day(5) }, { description: 'Count visits per page, and where people come from.' }])
+    await api(benCtx, 'POST', `/boards/${board}/mutations`, {
+      mutationId: `g${stamp}-ben-${n++}`,
+      command: { type: 'task.update', id: 'analytics', fields },
+    })
   await openBoard()
   await page
     .getByRole('button', { name: /Notifications/ })
     .first()
     .click()
   await page.waitForTimeout(600)
-  return { clip: { x: 800, y: 0, width: 560, height: 480 } }
+  const list = page.getByText('Mark all as read').locator('xpath=ancestor::*[@data-slot="popover-content"][1]')
+  return around([page.getByRole('button', { name: /Notifications/ }), list], 20)
+})
+await shot('follow', async () => {
+  const card = await openCard('newsletter')
+  const unfollow = card.getByRole('button', { name: 'Unfollow', exact: true })
+  await unfollow.evaluate((el) => el.scrollIntoView({ block: 'center' }))
+  await page.waitForTimeout(400)
+  await ring(unfollow)
+  return around([unfollow, card.getByRole('button', { name: 'Delete task' })], 28)
 })
 await shot('notifications', async () => {
   await page.goto(`${SITE}/#/account/notifications`)

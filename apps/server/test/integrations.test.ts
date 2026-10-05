@@ -233,8 +233,22 @@ describe('MCP', () => {
       'manage_labels',
       'set_inbox',
       'log_time',
+      'follow_task',
       'add_comment',
     ])
+    // Following: Logo isn't Ann's until she follows it; then it's among what she follows, until she stops.
+    const tool = async (name: string, args: object) => toolResult(await rpc(mcp, 'tools/call', { name, arguments: args }))
+    const logo = (await tool('find_tasks', { text: 'logo' })).tasks[0].id
+    await ann.ok('POST', `/api/boards/${id}/mutations`, {
+      mutationId: mid(),
+      command: { type: 'task.update', id: logo, fields: { assigneeId: null } },
+    })
+    expect((await tool('get_task', { board_id: id, task_id: logo })).you_follow_it).toBe(false)
+    expect(await tool('follow_task', { board_id: id, task_id: logo })).toMatchObject({ task: 'Logo', you_follow_it: true })
+    expect((await tool('get_task', { board_id: id, task_id: logo })).you_follow_it).toBe(true)
+    expect((await tool('find_tasks', { following: true, text: 'logo' })).tasks.map((x: { title: string }) => x.title)).toEqual(['Logo'])
+    await tool('follow_task', { board_id: id, task_id: logo, follow: false })
+    expect((await tool('find_tasks', { following: true, text: 'logo' })).tasks).toEqual([])
 
     const found = toolResult(await rpc(mcp, 'tools/call', { name: 'find_tasks', arguments: { text: 'logo' } }))
     expect(found.tasks.map((x: { title: string }) => x.title)).toEqual(['Logo'])

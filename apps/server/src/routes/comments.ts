@@ -4,6 +4,7 @@ import { and, desc, eq, ilike, inArray, isNull, or, sql } from 'drizzle-orm'
 import type { FastifyInstance, FastifyPluginAsync } from 'fastify'
 import { z } from 'zod'
 import { openBoards, requireAccess, type BoardRow } from '../boards/access'
+import { follow, followersOf, isFollowing, mentionLine, setFollowing } from '../boards/follows'
 import { boardPeople } from '../boards/store'
 import type { Db, Tx } from '../db'
 import { attachments, boards, comments, notifications, tasks, users, workspaces } from '../db/schema'
@@ -137,8 +138,9 @@ export async function notifyAdded(db: Db | Tx, userId: string, actorId: string, 
 }
 
 /**
- * Adds a comment by `me` (who may comment on the board: check first). Tells the people @mentioned, shows it to everyone
- * with the board open, and sends it to the board's webhooks.
+ * Adds a comment by `me` (who may comment on the board: check first). Tells the people @mentioned and the card's other
+ * followers, shows it to everyone with the board open, and sends it to the board's webhooks. Commenting on a card, or
+ * being mentioned on it, is following it from then on.
  */
 export async function postComment(
   app: FastifyInstance,
@@ -152,28 +154,44 @@ export async function postComment(
   if (!data.tasks[taskId]) throw new HttpError(404, 'That task no longer exists.')
   const mentions = await validMentions(app.db, board, body.mentions, me.id)
   const commentId = newId()
+  const followers: string[] = []
   await app.db.transaction(async (tx) => {
     await tx.insert(comments).values({ id: commentId, boardId: id, taskId, authorId: me.id, body: body.body, mentions })
     await attachDrafts(tx, { boardId: id, taskId, uploaderId: me.id, commentId }, body.attachments ?? [])
     await notify(tx, { boardId: id, taskId, commentId, actorId: me.id }, mentions)
+    // The card's other followers, the ones still on the board (someone mentioned has that instead).
+    const onBoard = new Set(data.members.map((m) => m.id))
+    for (const userId of (await followersOf(tx, id, new Map([[taskId, data.tasks[taskId].assigneeId]]))).get(taskId) ?? [])
+      if (userId !== me.id && onBoard.has(userId) && !mentions.includes(userId)) followers.push(userId)
+    if (followers.length)
+      await tx
+        .insert(notifications)
+        .values(followers.map((userId) => ({ id: newId(), userId, kind: 'comment' as const, boardId: id, taskId, commentId, actorId: me.id })))
+    await follow(
+      tx,
+      id,
+      [me.id, ...mentions].map((userId) => ({ taskId, userId })),
+    )
   })
   const [comment] = await commentViews(app.db, and(eq(comments.id, commentId)))
   app.hub.broadcast(id, { type: 'comment', taskId, action: 'added', commentId, comment })
-  // Desktop notifications for the people mentioned (who want them).
-  for (const userId of mentions)
+  // Desktop notifications for the people mentioned and the card's followers (who want them).
+  const tell = (userId: string, kind: 'mentions' | 'follows') =>
     void (async () => {
-      if (!(await app.push.wants(userId, 'mentions'))) return
+      if (!(await app.push.wants(userId, kind))) return
       await app.push.toUser(
         userId,
         {
-          title: `${me.name} mentioned you`,
-          body: `“${data.tasks[taskId].title}”: ${excerpt(body.body, 120)}`,
+          title: kind === 'mentions' ? `${me.name} mentioned you` : `${me.name} commented on “${data.tasks[taskId].title}”`,
+          body: kind === 'mentions' ? `“${data.tasks[taskId].title}”: ${excerpt(body.body, 120)}` : excerpt(body.body, 120),
           url: `/#/b/${encodeURIComponent(id)}?task=${encodeURIComponent(taskId)}`,
           tag: `mention:${commentId}`,
         },
         24 * 3600,
       )
     })().catch((e) => app.log.error({ err: e instanceof Error ? e.message : e }, 'push'))
+  for (const userId of mentions) tell(userId, 'mentions')
+  for (const userId of followers) tell(userId, 'follows')
   void app.webhooks
     .emit(id, 'comment.added', {
       board: { id, name: board.name },
@@ -228,6 +246,11 @@ export const commentRoutes: FastifyPluginAsync = async (app) => {
         { boardId: id, taskId: c.taskId, commentId, actorId: me.id },
         mentions.filter((m) => !c.mentions.includes(m)),
       )
+      await follow(
+        tx,
+        id,
+        mentions.map((userId) => ({ taskId: c.taskId, userId })),
+      )
     })
     const [comment] = await commentViews(app.db, and(eq(comments.id, commentId)))
     app.hub.broadcast(id, { type: 'comment', taskId: c.taskId, action: 'edited', commentId, comment })
@@ -262,6 +285,7 @@ export const commentRoutes: FastifyPluginAsync = async (app) => {
         boardName: boards.name,
         workspaceName: workspaces.name,
         taskTitle: tasks.title,
+        description: tasks.description,
         body: comments.body,
       })
       .from(notifications)
@@ -287,7 +311,9 @@ export const commentRoutes: FastifyPluginAsync = async (app) => {
       if (r.n.boardId && r.boardName !== null && !can) {
         if (r.n.kind === 'added') return { ...common, kind: 'added', board: null, workspace: null }
         if (r.n.kind === 'reminder') return { ...common, kind: 'reminder', actor: r.actor, board: CLOSED, task: { id: '', title: 'A task' } }
-        return { ...common, kind: 'mention', board: CLOSED, task: { id: '', title: 'A task' }, excerpt: '' }
+        if (r.n.kind === 'change') return { ...common, kind: 'change', board: CLOSED, task: { id: '', title: 'A task' }, changes: [] }
+        if (r.n.kind === 'comment') return { ...common, kind: 'comment', board: CLOSED, task: { id: '', title: 'A task' }, excerpt: '' }
+        return { ...common, kind: 'mention', where: 'comment', board: CLOSED, task: { id: '', title: 'A task' }, excerpt: '' }
       }
       const board = r.n.boardId && r.boardName !== null ? { id: r.n.boardId, name: r.boardName } : null
       if (r.n.kind === 'added') {
@@ -302,15 +328,46 @@ export const commentRoutes: FastifyPluginAsync = async (app) => {
           board: board ?? { id: '', name: 'A deleted board' },
           task: { id: r.n.taskId ?? '', title: r.taskTitle ?? 'A deleted task' },
         }
-      return {
-        ...common,
-        kind: 'mention',
+      const on = {
         board: board ?? { id: '', name: 'A deleted board' },
         task: { id: r.n.taskId ?? '', title: r.taskTitle ?? 'A deleted task' },
-        excerpt: excerpt(r.body ?? ''),
       }
+      if (r.n.kind === 'change') return { ...common, kind: 'change', ...on, changes: r.n.changes ?? [] }
+      if (r.n.kind === 'comment') return { ...common, kind: 'comment', ...on, excerpt: excerpt(r.body ?? '') }
+      // (A mention with no comment is in the card's description: the line it's on, as it reads now.)
+      return r.n.commentId
+        ? { ...common, kind: 'mention', where: 'comment', ...on, excerpt: excerpt(r.body ?? '') }
+        : { ...common, kind: 'mention', where: 'description', ...on, excerpt: excerpt(mentionLine(r.description, me.name)) }
     })
     return { notifications: items, unread }
+  })
+
+  // ── Following a card ────────────────────────────────────────────────────
+
+  /** Whether you follow a card (you're told what happens on it). */
+  app.get('/boards/:id/tasks/:taskId/follow', async (req) => {
+    const { id, taskId } = parse(TaskParams, req.params)
+    const me = requireUser(req.user)
+    await requireAccess(app.db, me, id, 'viewer')
+    const { data } = await app.engine.snapshot(id)
+    const task = data.tasks[taskId]
+    return { following: !!task && (await isFollowing(app.db, id, task, me.id)) }
+  })
+
+  /**
+   * Follows a card, or stops. Everyone on the board can (viewers too); visitors with the public link can't. Stopping
+   * is remembered: commenting there again doesn't start it again, only being assigned the card does.
+   */
+  app.put('/boards/:id/tasks/:taskId/follow', async (req) => {
+    const { id, taskId } = parse(TaskParams, req.params)
+    const me = requireUser(req.user)
+    const { access } = await requireAccess(app.db, me, id, 'viewer', { write: true })
+    if (access.via === 'public') throw new HttpError(403, 'Join this board to follow its cards.')
+    const { following } = parse(z.object({ following: z.boolean() }), req.body)
+    const { data } = await app.engine.snapshot(id)
+    if (!data.tasks[taskId]) throw new HttpError(404, 'That task no longer exists.')
+    await setFollowing(app.db, id, taskId, me.id, following)
+    return { following }
   })
 
   /** Marks notifications read (all of them without `ids`). */

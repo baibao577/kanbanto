@@ -23,6 +23,7 @@ export interface SessionUser {
   /** Desktop notifications for reminders, and for @mentions (where they're turned on). */
   pushReminders: boolean
   pushMentions: boolean
+  pushFollows: boolean
   /** Their Inbox board (see users.inboxBoardId). */
   inboxBoardId: string | null
   /** Has to confirm their email before using the app (set per request: only once the site can send email). */
@@ -68,6 +69,7 @@ export const sessionUser = (u: typeof users.$inferSelect): SessionUser => ({
   timeZone: u.timeZone,
   pushReminders: u.pushReminders,
   pushMentions: u.pushMentions,
+  pushFollows: u.pushFollows,
   inboxBoardId: u.inboxBoardId,
 })
 

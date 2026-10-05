@@ -21,6 +21,7 @@ import { requireAccess } from './boards/access'
 import { ACTIVITY_DAYS, parseMoment, readActivity, workSigns } from './boards/activityLog'
 import { comments, notifications, reminderSends, tasks, users, workspaceMembers, workspaces } from './db/schema'
 import { HttpError } from './http'
+import { followedBy, isFollowing, setFollowing } from './boards/follows'
 import { createBoard } from './boards/service'
 import { boardsFor, withPlaces } from './routes/boards'
 import { lastComments, postComment } from './routes/comments'
@@ -326,6 +327,7 @@ function buildServer(app: FastifyInstance, me: SessionUser, token: TokenAccess) 
           ),
         label: z.string().optional().describe('A label’s name or id.'),
         assignee: z.string().optional().describe('A person’s name or id, "me", or "nobody" for unassigned tasks.'),
+        following: z.boolean().optional().describe('true: only tasks you follow (you’re told about their comments and changes).'),
         priority: z.enum(PRIORITIES).optional().describe('This priority or more important: "high" finds urgent and high.'),
         blocked: z.boolean().optional().describe('true: only tasks waiting on unfinished tasks; false: only ones that aren’t.'),
         due_before: z.string().optional().describe('YYYY-MM-DD: tasks due on or before this day.'),
@@ -394,6 +396,7 @@ function buildServer(app: FastifyInstance, me: SessionUser, token: TokenAccess) 
         counts_as?: Category
         label?: string
         assignee?: string
+        following?: boolean
         priority?: Priority
         blocked?: boolean
         due_before?: string
@@ -466,6 +469,13 @@ function buildServer(app: FastifyInstance, me: SessionUser, token: TokenAccess) 
             ...(t.archivedAt && inSpan(Date.parse(t.archivedAt)) ? ['archived'] : []),
           ]
         }
+        const iFollow = a.following
+          ? await followedBy(
+              app.db,
+              me.id,
+              chosen.map((b) => b.id),
+            )
+          : null
         const aging = !!a.idle_days || a.sort === 'idle'
         const found: { task: Task; row: Record<string, unknown>; active?: number }[] = []
         for (const b of chosen) {
@@ -498,6 +508,7 @@ function buildServer(app: FastifyInstance, me: SessionUser, token: TokenAccess) 
             if (list && idx.status.get(id) !== list) continue
             if (label && !t.labels.includes(label)) continue
             if (who && t.assigneeId !== who) continue
+            if (iFollow && !iFollow(boardId, t)) continue
             if (nobody && t.assigneeId) continue
             if (a.priority && !(t.priority && PRIORITIES.indexOf(t.priority) <= rank)) continue
             if (a.blocked !== undefined && isBlocked(idx, id) !== a.blocked) continue
@@ -851,7 +862,7 @@ function buildServer(app: FastifyInstance, me: SessionUser, token: TokenAccess) 
     {
       title: 'Get a task',
       description:
-        'One task in full: where it sits (its parents), description, dates, subtasks, what it waits on, its latest comments, and the time logged on it (total, by person, latest entries).',
+        'One task in full: where it sits (its parents), description, dates, subtasks, what it waits on, whether you follow it, its latest comments, and the time logged on it (total, by person, latest entries).',
       inputSchema: { board_id: z.string(), task_id: z.string() },
       annotations: readOnly,
     },
@@ -902,6 +913,7 @@ function buildServer(app: FastifyInstance, me: SessionUser, token: TokenAccess) 
         ...(t.blockedBy.length && { waiting_on: t.blockedBy.map((id) => ({ id, title: data.tasks[id]?.title })) }),
         subtasks: (idx.childrenOf.get(task_id) ?? []).map((id) => brief(data, idx, data.tasks[id])),
         ...(t.reminders?.length && { reminders: t.reminders.map((r) => reminderView(r, t)) }),
+        ...(access.via !== 'public' && { you_follow_it: await isFollowing(app.db, board_id, t, me.id) }),
         comments: recent.reverse().map((c) => ({ author: c.author ?? 'Someone', text: c.body, at: c.at.toISOString() })),
         ...(await timeOf(task_id)),
       }
@@ -1090,7 +1102,11 @@ function buildServer(app: FastifyInstance, me: SessionUser, token: TokenAccess) 
 
   if (scope === 'write') {
     const Fields = {
-      description: z.string().max(20_000).optional(),
+      description: z
+        .string()
+        .max(20_000)
+        .optional()
+        .describe('Markdown. @Name mentions someone on the board: they’re told, the first time their name is there.'),
       start: z.string().nullable().optional().describe(WHEN),
       due: z.string().nullable().optional().describe(WHEN),
       assignee: z.string().nullable().optional().describe('A person’s name or id, "me", or null to unassign.'),
@@ -1702,10 +1718,30 @@ function buildServer(app: FastifyInstance, me: SessionUser, token: TokenAccess) 
     )
 
     server.registerTool(
+      'follow_task',
+      {
+        title: 'Follow or unfollow a task',
+        description:
+          'Follows a task for you, or stops (follow: false). Followers are told (bell, morning email, desktop notifications) about its comments and what happens to it: moved to another list, assigned, due date, description, archived or deleted. People already follow the tasks they made, are assigned, commented on or were mentioned on; stopping is remembered until the task is assigned to them again. Only that task, not its subtasks.',
+        inputSchema: { board_id: z.string(), task_id: z.string(), follow: z.boolean().optional().describe('Default true. false: stop following.') },
+        annotations: { destructiveHint: false, idempotentHint: true, openWorldHint: false },
+      },
+      tool(async (a: { board_id: string; task_id: string; follow?: boolean }) => {
+        const { access, data } = await open(a.board_id, 'viewer', { write: true })
+        if (access.via === 'public') throw new HttpError(403, 'Join this board to follow its tasks.')
+        const t = data.tasks[a.task_id]
+        if (!t) throw new HttpError(404, 'There’s no such task on this board.')
+        await setFollowing(app.db, a.board_id, a.task_id, me.id, a.follow ?? true)
+        return { task: t.title, you_follow_it: a.follow ?? true }
+      }),
+    )
+
+    server.registerTool(
       'add_comment',
       {
         title: 'Comment on a task',
-        description: 'Adds a comment to a task, as you. Write @Name to mention someone on the board (they’re told).',
+        description:
+          'Adds a comment to a task, as you. Write @Name to mention someone on the board (they’re told). The task’s followers are told too, and you follow it from then on.',
         inputSchema: { board_id: z.string(), task_id: z.string(), text: z.string().min(1).max(10_000) },
         annotations: { destructiveHint: false, openWorldHint: false },
       },

@@ -28,14 +28,15 @@ pruneDrafts()
  *
  * What's typed is saved when you finish (clicking away, Esc, ⌘Enter) or with ⌘S, and kept as a draft in this browser
  * until then: a reload or a closed tab doesn't lose it, and it's offered back. Checklist items can be ticked without
- * editing. Type # to point to one of the card's files, / for things to put in; files dropped or pasted in are
- * attached and referenced where the cursor is.
+ * editing. Type @ to mention someone on the board (they're told, once), # to point to one of the card's files, / for
+ * things to put in; files dropped or pasted in are attached and referenced where the cursor is.
  */
 export function Description({
   title,
   value,
   readOnly,
   cardFiles,
+  people,
   draftId,
   onSave,
 }: {
@@ -43,6 +44,8 @@ export function Description({
   value: string
   readOnly: boolean
   cardFiles: CardFiles
+  /** The board's people, suggested after "@". */
+  people: { id: string; name: string }[]
   /** What its draft is kept under: the board and the card. */
   draftId: string
   onSave: (text: string) => void
@@ -180,6 +183,7 @@ export function Description({
             onEscape={finish}
             onSubmit={finish}
             onSave={save}
+            members={people}
             files={cardFiles.files}
             onFiles={(fs) => cardFiles.add(fs)}
             inserts
@@ -187,7 +191,7 @@ export function Description({
             onExpand={toPage}
             autoFocus
             aria-label="Description"
-            placeholder={`Add more detail… Type / for headings, lists and tables, # to point to a file (${FILE_MARK}).`}
+            placeholder={`Add more detail… Type / for headings, lists and tables, @ to mention someone, # to point to a file (${FILE_MARK}).`}
             className="min-h-24"
             // It grows with the text up to half the window, then scrolls: the rest of the card stays in reach.
             scrollClassName="max-h-[50vh] overflow-y-auto"
@@ -195,7 +199,7 @@ export function Description({
         </Suspense>
       ) : value ? (
         <Folded onOpen={readOnly ? undefined : (caret) => begin('card', { caret })}>
-          <Markdown text={value} files={cardFiles.files} onToggleTask={tick} />
+          <Markdown text={value} files={cardFiles.files} mentions={people} onToggleTask={tick} />
         </Folded>
       ) : readOnly ? (
         <p className="text-sm text-muted-foreground">No description.</p>
@@ -211,6 +215,7 @@ export function Description({
       {page && (
         <Suspense fallback={null}>
           <Page
+            people={people}
             title={title}
             value={value}
             readOnly={readOnly}

@@ -2,7 +2,8 @@ import { Bell } from '@phosphor-icons/react'
 import { formatDistanceToNow, parseISO } from 'date-fns'
 import { useCallback, useEffect, useState } from 'react'
 import type { NotificationView } from '@kanbanto/model/api'
-import { api } from '@/api/client'
+import { toast } from 'sonner'
+import { api, errorMessage } from '@/api/client'
 import { navigate } from '@/app/router'
 import { useAuth } from '@/app/use-auth'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
@@ -11,8 +12,9 @@ import { cn } from '@/lib/utils'
 const fetchNotifications = () => api<{ notifications: NotificationView[]; unread: number }>('GET', '/notifications')
 
 /**
- * The bell: @mentions of you, and boards or workspaces someone added you to, newest first. Checked every minute and
- * when you come back to the tab.
+ * The bell: @mentions of you, comments and changes on the cards you follow (each with a way to stop following),
+ * reminders, and boards or workspaces someone added you to, newest first. Checked every minute and when you come back
+ * to the tab.
  */
 export function NotificationBell() {
   const { user } = useAuth()
@@ -42,9 +44,21 @@ export function NotificationBell() {
   const openOne = (n: NotificationView) => {
     setOpen(false)
     if (!n.read) void api('POST', '/notifications/read', { ids: [n.id] }).then(refresh)
-    if (n.kind === 'mention' || n.kind === 'reminder') navigate({ page: 'board', id: n.board.id, task: n.task.id })
-    else if (n.board) navigate({ page: 'board', id: n.board.id })
-    else if (n.workspace) navigate({ page: 'workspace', id: n.workspace.id })
+    if (n.kind === 'added') {
+      if (n.board) navigate({ page: 'board', id: n.board.id })
+      else if (n.workspace) navigate({ page: 'workspace', id: n.workspace.id })
+    } else if (n.board.id) navigate({ page: 'board', id: n.board.id, ...(n.task.id && { task: n.task.id }) })
+  }
+
+  /** Stops following the card a line is about (and that line is done with). */
+  const unfollow = (n: NotificationView & { kind: 'comment' | 'change' }) => {
+    api('PUT', `/boards/${n.board.id}/tasks/${n.task.id}/follow`, { following: false }).then(
+      () => {
+        toast(`You no longer follow “${n.task.title}”.`)
+        if (!n.read) void api('POST', '/notifications/read', { ids: [n.id] }).then(refresh)
+      },
+      (e) => toast.error(errorMessage(e)),
+    )
   }
 
   return (
@@ -77,19 +91,47 @@ export function NotificationBell() {
         {items.length ? (
           <ul className="max-h-96 overflow-y-auto">
             {items.map((n) => (
-              <li key={n.id}>
-                <button
-                  onClick={() => openOne(n)}
-                  className={cn('block w-full border-b px-3 py-2.5 text-left last:border-0 hover:bg-accent', !n.read && 'bg-primary/5')}
-                >
+              <li key={n.id} className={cn('relative border-b last:border-0 hover:bg-accent', !n.read && 'bg-primary/5')}>
+                <button onClick={() => openOne(n)} className="block w-full px-3 py-2.5 text-left">
                   {n.kind === 'mention' ? (
                     <>
                       <p className="text-xs">
-                        <span className="font-semibold">{n.actor}</span> mentioned you on <span className="font-medium">“{n.task.title}”</span>
+                        <span className="font-semibold">{n.actor}</span> mentioned you {n.where === 'description' ? 'in the description of' : 'on'}{' '}
+                        <span className="font-medium">“{n.task.title}”</span>
                         <span className="text-muted-foreground"> · {n.board.name}</span>
                       </p>
                       {n.excerpt && <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">{n.excerpt}</p>}
                     </>
+                  ) : n.kind === 'comment' ? (
+                    <>
+                      <p className="text-xs">
+                        <span className="font-semibold">{n.actor}</span> commented on <span className="font-medium">“{n.task.title}”</span>
+                        <span className="text-muted-foreground"> · {n.board.name}</span>
+                      </p>
+                      {n.excerpt && <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">{n.excerpt}</p>}
+                    </>
+                  ) : n.kind === 'change' ? (
+                    n.changes.length === 1 ? (
+                      <p className="text-xs">
+                        <span className="font-semibold">{n.actor}</span> {n.changes[0]}
+                        <span className="text-muted-foreground"> · {n.board.name}</span>
+                      </p>
+                    ) : (
+                      <>
+                        <p className="text-xs">
+                          <span className="font-semibold">{n.actor}</span> {n.changes.length ? `made ${n.changes.length} changes to` : 'changed'}{' '}
+                          <span className="font-medium">“{n.task.title}”</span>
+                          <span className="text-muted-foreground"> · {n.board.name}</span>
+                        </p>
+                        {n.changes.length > 0 && (
+                          <ul className="mt-0.5 line-clamp-3 list-inside list-disc text-xs text-muted-foreground">
+                            {n.changes.map((c, i) => (
+                              <li key={i}>{c}</li>
+                            ))}
+                          </ul>
+                        )}
+                      </>
+                    )
                   ) : n.kind === 'reminder' ? (
                     <p className="text-xs">
                       ⏰ Reminder: <span className="font-medium">“{n.task.title}”</span>
@@ -120,12 +162,21 @@ export function NotificationBell() {
                     {formatDistanceToNow(parseISO(n.createdAt), { addSuffix: true })}
                   </p>
                 </button>
+                {(n.kind === 'comment' || n.kind === 'change') && n.board.id && n.task.id && (
+                  <button
+                    onClick={() => unfollow(n)}
+                    title="Stop being told about this card"
+                    className="absolute right-3 bottom-2 text-[11px] text-muted-foreground hover:text-foreground hover:underline"
+                  >
+                    Unfollow
+                  </button>
+                )}
               </li>
             ))}
           </ul>
         ) : (
           <p className="px-3 py-6 text-center text-xs text-muted-foreground">
-            When someone @mentions you in a comment or adds you to a board, it shows up here.
+            Mentions of you, news from the cards you follow, reminders and new boards show up here.
           </p>
         )}
       </PopoverContent>

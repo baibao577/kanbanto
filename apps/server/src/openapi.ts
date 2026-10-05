@@ -313,6 +313,7 @@ The answer lists the records that changed.
             },
             { name: 'kind', in: 'query', schema: { ...str, description: 'Kinds of list, with commas: `backlog`, `todo`, `doing`, `done`.' } },
             { name: 'assignee', in: 'query', schema: { ...str, description: '`me`, `none` (no one), or a person’s id.' } },
+            { name: 'following', in: 'query', schema: { enum: ['true'], description: 'Only the cards you follow.' } },
             { name: 'priority', in: 'query', schema: { ...str, description: 'With commas: `urgent`, `high`, `medium`, `low`, `none`.' } },
             { name: 'label', in: 'query', schema: { ...str, description: 'A label’s name.' } },
             { name: 'due', in: 'query', schema: { enum: ['overdue', 'week', 'none'] } },
@@ -442,6 +443,21 @@ The answer lists the records that changed.
             },
           },
           responses: { 200: json(obj({ comment: ref('Comment') })) },
+        },
+      },
+      '/api/boards/{id}/tasks/{taskId}/follow': {
+        get: {
+          tags: ['Comments'],
+          summary: 'Whether you follow a task (you’re told about its comments and changes)',
+          parameters: [id('id'), id('taskId')],
+          responses: { 200: json(obj({ following: { type: 'boolean' } })) },
+        },
+        put: {
+          tags: ['Comments'],
+          summary: 'Follow a task, or stop',
+          parameters: [id('id'), id('taskId')],
+          requestBody: { content: { 'application/json': { schema: obj({ following: { type: 'boolean' } }, ['following']) } } },
+          responses: { 200: json(obj({ following: { type: 'boolean' } })) },
         },
       },
       '/api/boards/{id}/webhooks': {

@@ -25,6 +25,7 @@ export function DescriptionReader({
   value,
   readOnly,
   cardFiles,
+  people,
   writing,
   start,
   typing,
@@ -41,6 +42,7 @@ export function DescriptionReader({
   value: string
   readOnly: boolean
   cardFiles: CardFiles
+  people: { id: string; name: string }[]
   writing: boolean
   /** What the editor opens with: the text, and where the cursor goes. */
   start: { text: string; caret?: Place }
@@ -144,17 +146,18 @@ export function DescriptionReader({
                     onEscape={onFinish}
                     onSubmit={onFinish}
                     onSave={onSave}
+                    members={people}
                     files={cardFiles.files}
                     onFiles={(fs) => cardFiles.add(fs)}
                     inserts
                     autoFocus
                     aria-label="Description"
-                    placeholder="Write here… Type / for headings, lists and tables, # to point to a file."
+                    placeholder="Write here… Type / for headings, lists and tables, @ to mention someone, # to point to a file."
                     className="md-reader min-h-[50vh]"
                   />
                 </Suspense>
               ) : value ? (
-                <Markdown text={value} files={cardFiles.files} headingIds onToggleTask={onTick} className="md-reader" />
+                <Markdown text={value} files={cardFiles.files} mentions={people} headingIds onToggleTask={onTick} className="md-reader" />
               ) : (
                 <p className="text-muted-foreground">No description yet.</p>
               )}

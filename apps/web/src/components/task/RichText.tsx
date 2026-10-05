@@ -14,8 +14,8 @@ const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 export function RichText({ text, mentions = [], files = [] }: { text: string; mentions?: { name: string }[]; files?: AttachmentView[] }) {
   const byName = new Map(files.map((f) => [f.name, f]))
   const tokens = [
-    ...mentions.map((m) => `@${m.name}`),
-    // Longest names first, so "📎plan v2.pdf" wins over "📎plan".
+    // Longest names first, so "@Ann Lee" wins over "@Ann", and "📎plan v2.pdf" over "📎plan".
+    ...mentions.map((m) => `@${m.name}`).sort((a, b) => b.length - a.length),
     ...[...byName.keys()].sort((a, b) => b.length - a.length).map((n) => `${FILE_MARK}${n}`),
   ]
   if (!tokens.length) return <>{text}</>

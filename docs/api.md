@@ -182,7 +182,8 @@ claude mcp add --transport http kanbanto https://kanbanto.example.com/api/mcp --
 | `manage_labels` | Add, rename, recolor, or remove (unused) labels |
 | `set_inbox` | Choose your Inbox board |
 | `log_time` | Log time you spent on a task ("1:30", "2h", "45m"), today, yesterday or another day, with a short note |
-| `add_comment` | Comment as you; `@Name` notifies people |
+| `add_comment` | Comment as you; `@Name` notifies people, and so are the task's followers |
+| `follow_task` | Follow a task (you're told about its comments and changes), or stop with `follow: false` |
 
 Read-only tokens get the reading tools only (`list_boards` to `plan_overview`). Plans can be read but not changed
 through MCP: planners change them in the app's Planning tab. Every change on a board is kept as a line of activity for 180 days ("Ann moved

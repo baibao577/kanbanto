@@ -28,6 +28,7 @@ export function cardsQuery(r: Search, opts: { offset?: number; now?: Date } = {}
   if (from) p.set('from', from.toISOString())
   if (to) p.set('to', to.toISOString())
   if (r.leaves) p.set('parents', 'hide')
+  if (r.following) p.set('following', 'true')
   if (r.sort) p.set('sort', r.sort)
   if (opts.offset) p.set('offset', String(opts.offset))
   return p.toString()
@@ -36,6 +37,12 @@ export function cardsQuery(r: Search, opts: { offset?: number; now?: Date } = {}
 /** Searches to start from. Choosing one replaces the filters (where and the words stay). */
 export const QUICK: { id: string; label: string; hint: string; search: Search }[] = [
   { id: 'mine', label: 'My tasks', hint: 'Assigned to you, not done yet', search: { state: 'active', assignee: 'me', completed: false } },
+  {
+    id: 'following',
+    label: 'Following',
+    hint: 'Cards you’re told about, not done yet',
+    search: { state: 'active', following: true, completed: false },
+  },
   {
     id: 'done-week',
     label: 'Done this week',

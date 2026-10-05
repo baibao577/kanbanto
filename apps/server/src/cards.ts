@@ -21,6 +21,7 @@ import { HttpError, parse } from './http'
 import { dayIn } from './mail/digest'
 import { requireUser } from './routes/auth'
 import { boardsFor, withPlaces } from './routes/boards'
+import { followedBy } from './boards/follows'
 import { commentsWith, lastCommentsFor } from './routes/comments'
 
 /**
@@ -75,6 +76,8 @@ export async function searchCards(app: FastifyInstance, me: SessionUser, q: Card
   const dated = !q.when || q.when === 'any' || q.when === 'changed'
   const commented = dated ? await lastCommentsFor(app.db, boardIds) : new Map<string, Record<string, string>>()
 
+  const iFollow = q.following ? await followedBy(app.db, me.id, boardIds) : null
+
   const rows: { row: CardRow; at: number; createdAt: number; due?: string; priority?: Task['priority'] }[] = []
   const labels = new Set<string>()
   const people = new Map<string, string>()
@@ -90,6 +93,7 @@ export async function searchCards(app: FastifyInstance, me: SessionUser, q: Card
     const lastComment = commented.get(b.id) ?? {}
 
     const consider = (t: Task, put: boolean) => {
+      if (iFollow && !iFollow(b.id, t)) return
       const own = `${t.title} ${t.description ?? ''}`.toLowerCase()
       const bodies = found.get(`${b.id}:${t.id}`) ?? []
       const kind = put ? (t.archivedDone ? 'done' : null) : idx.category.get(t.id)!
@@ -274,6 +278,10 @@ const Query = z
     from: z.string().max(40).optional(),
     to: z.string().max(40).optional(),
     parents: z.enum(['hide']).optional(),
+    following: z
+      .enum(['true'])
+      .transform(() => true)
+      .optional(),
     sort: z.enum(CARD_SORTS).optional(),
     offset: z.coerce.number().int().min(0).optional(),
     limit: z.coerce.number().int().min(1).max(100).optional(),

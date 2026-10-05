@@ -59,7 +59,8 @@ It can:
 - show cards **on their boards**, **archived** ones, or both,
 - narrow by **board** or workspace, **person**, **priority**, **label** and **due date** (some of these are under
   **More**),
-- start from a ready-made search: **My tasks**, **Done this week**, **Recently changed**, **Archived**,
+- start from a ready-made search: **My tasks**, **Following** (the cards you are
+  [told about](/people/notifications#cards-you-follow)), **Done this week**, **Recently changed**, **Archived**,
 - and look at a **stretch of time**: cards done, made, changed or archived today, this week, last month, or between
   two days you choose.
 

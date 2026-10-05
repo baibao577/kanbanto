@@ -30,7 +30,7 @@ describe('router', () => {
       ['#/cards?state=archived&board=b1&q=old+idea&completed=yes', { page: 'cards', state: 'archived', board: 'b1', q: 'old idea', completed: true }],
       ['#/cards?state=all&assignee=me&when=done&range=this-week', { page: 'cards', state: 'all', assignee: 'me', when: 'done', range: 'this-week' }],
       [
-        '#/cards?place=personal&kind=backlog%2Ctodo&priority=urgent%2Cnone&label=Bug&due=overdue&from=2026-07-01&to=2026-07-31&parents=hide&sort=due',
+        '#/cards?place=personal&kind=backlog%2Ctodo&priority=urgent%2Cnone&label=Bug&due=overdue&from=2026-07-01&to=2026-07-31&parents=hide&following=yes&sort=due',
         {
           page: 'cards',
           state: 'active',
@@ -42,6 +42,7 @@ describe('router', () => {
           from: '2026-07-01',
           to: '2026-07-31',
           leaves: true,
+          following: true,
           sort: 'due',
         },
       ],

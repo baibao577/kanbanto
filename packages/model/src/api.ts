@@ -32,6 +32,8 @@ export interface PublicUser {
   /** Desktop notifications (on computers where they're turned on) for reminders, and for @mentions. */
   pushReminders: boolean
   pushMentions: boolean
+  /** …and for news from cards they follow. */
+  pushFollows: boolean
   /** Their Inbox: the board where tasks go when an app (like Claude) adds one without saying where. */
   inboxBoardId: string | null
 }
@@ -246,7 +248,10 @@ export interface WeekView {
   touched: Record<string, string[]>
 }
 
-/** Under the bell: someone @mentioned you in a comment, or added you to a board or a workspace. */
+/**
+ * Under the bell: someone @mentioned you, something happened on a card you follow, a reminder, or someone added you to
+ * a board or a workspace.
+ */
 export type NotificationView =
   | {
       id: string
@@ -254,8 +259,34 @@ export type NotificationView =
       actor: string
       board: { id: string; name: string }
       task: { id: string; title: string }
+      /** Where: a comment, or the card's description. */
+      where: 'comment' | 'description'
+      /** The start of the comment, or the line of the description. */
+      excerpt: string
+      createdAt: string
+      read: boolean
+    }
+  | {
+      id: string
+      /** A new comment on a card you follow. */
+      kind: 'comment'
+      actor: string
+      board: { id: string; name: string }
+      task: { id: string; title: string }
       /** The start of the comment. */
       excerpt: string
+      createdAt: string
+      read: boolean
+    }
+  | {
+      id: string
+      /** Something happened to a card you follow. */
+      kind: 'change'
+      actor: string
+      board: { id: string; name: string }
+      task: { id: string; title: string }
+      /** What, in words that follow the actor's name ("moved “Deploy” to Done"), oldest first. */
+      changes: string[]
       createdAt: string
       read: boolean
     }
@@ -420,6 +451,8 @@ export interface CardsQuery {
   to?: string
   /** `hide`: only cards without subtasks. */
   parents?: 'hide'
+  /** Only the cards you follow (you're told about their comments and changes). */
+  following?: boolean
   sort?: CardSort
   offset?: number
   limit?: number

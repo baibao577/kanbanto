@@ -240,6 +240,8 @@ export const emails = {
       overdue: DigestList
       reminders: DigestList
       mentions: DigestList
+      /** News from the cards they follow: comments, and what changed. */
+      followed: DigestList
     },
   ): EmailContent => {
     const count = (l: DigestList) => l.items.length + l.more
@@ -248,6 +250,7 @@ export const emails = {
       count(d.overdue) && `${count(d.overdue)} overdue`,
       count(d.reminders) && `${count(d.reminders)} ${count(d.reminders) === 1 ? 'reminder' : 'reminders'}`,
       count(d.mentions) && `${count(d.mentions)} ${count(d.mentions) === 1 ? 'mention' : 'mentions'}`,
+      count(d.followed) && `${count(d.followed)} ${count(d.followed) === 1 ? 'update' : 'updates'}`,
     ].filter(Boolean) as string[]
     const section = (title: string, l: DigestList) =>
       count(l)
@@ -262,6 +265,7 @@ export const emails = {
         ...section('Overdue', d.overdue),
         ...section('Reminders later today', d.reminders),
         ...section('You were mentioned', d.mentions),
+        ...section('On cards you follow', d.followed),
       ],
       button: { label: `Open ${brand.name}`, href: d.site },
       reason: `You’re receiving this morning summary from ${brand.name} because it’s on in Account settings → Notifications, where you can turn it off.`,
@@ -352,6 +356,7 @@ export function sampleEmail(kind: EmailKind, brand: Brand, appUrl: string): Emai
         overdue: { items: [{ task: 'Send the invoices', board: 'Studio admin', note: 'was due Mon 28 Sep' }], more: 0 },
         reminders: { items: [{ task: 'Call the printer', board: 'Studio admin', note: '14:00' }], more: 0 },
         mentions: { items: [{ task: 'Logo', board: 'Website launch', note: 'Jo: “Two options attached, @Sam which one do you prefer?”' }], more: 0 },
+        followed: { items: [{ task: 'Launch plan', board: 'Website launch', note: 'Jo moved “Launch plan” to Done' }], more: 0 },
       })
     case 'test':
       return emails.test(brand, { from: `${brand.name} <noreply@example.com>`, to: 'you@example.com', site: appUrl })

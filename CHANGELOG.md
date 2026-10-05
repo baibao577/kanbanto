@@ -17,6 +17,12 @@ then `git pull` (or download the new release) and `docker compose up -d --build`
   shared one by one; owners, editors and viewers; share links, access codes and invites by email; a public link anyone
   can view. Changes appear for everyone live.
 - **Comments** with @mentions, a notification bell and a daily email summary; **attachments** on cards and in comments.
+  A description can @mention people too: they're told once, when their name is first written there.
+- **Following cards:** you're told about new comments and what happens to the cards you're part of (moved to another
+  list, assigned, due date, description, archived or deleted): the ones you made, are assigned, commented on or were
+  mentioned on, which includes being told when a card is given to you. Follow or unfollow any card from its side
+  column, or unfollow from the bell. Several changes in a row are one line, and never your own. Search cards has a
+  **Following** search for them, and assistants can follow a task for you (`follow_task`).
 - **Integrations:** personal API tokens (once a platform admin turns them on), webhooks per board with signed
   deliveries and retries, an MCP endpoint for AI assistants, a Skill for Claude Code, and an API reference at
   `/api/docs` on every site. Claude on the web and in Claude Desktop (and ChatGPT) can connect by signing in (OAuth),
@@ -49,9 +55,10 @@ then `git pull` (or download the new release) and `docker compose up -d --build`
   (following it). They go to whoever is assigned, under the bell and by email (which can be turned off), and to
   webhooks as `reminder.due`. Assistants can set and list them.
 - **Desktop notifications** (Web Push, no app to install), turned on per computer in Account → Notifications:
-  reminders and @mentions pop up even when Kanbanto isn't open; clicking one opens the card.
+  reminders, @mentions and news from the cards you follow pop up even when Kanbanto isn't open; clicking one opens
+  the card.
 - **Morning summary email** around 8:00 in your own time zone (set from your browser, changeable): cards due today and
-  overdue, reminders later today, and mentions you haven't seen. Only when there's something; it replaces the daily
+  overdue, reminders later today, and mentions and news from the cards you follow that you haven't seen. Only when there's something; it replaces the daily
   mention email.
 - **Times in plain words** when adding or renaming a card ("buy cat next monday 1pm" becomes "buy cat", due then, with
   a reminder if you like) and in the Due and Start pickers.

@@ -201,14 +201,15 @@ const ARCHIVED: { state: CardState; label: string }[] = [
   { state: 'archived', label: 'Only' },
 ]
 
-/** The filters used less: archived cards, priority, label, due, and leaving parents out. */
+/** The filters used less: archived cards, priority, label, due, leaving parents out, and only the cards you follow. */
 function MoreMenu({ search, set, labels }: { search: Search; set: (patch: Partial<Search>) => void; labels: string[] }) {
   const n =
     (search.state !== 'active' ? 1 : 0) +
     (search.priorities?.length ? 1 : 0) +
     (search.label ? 1 : 0) +
     (search.due ? 1 : 0) +
-    (search.leaves ? 1 : 0)
+    (search.leaves ? 1 : 0) +
+    (search.following ? 1 : 0)
   const toggle = (p: Priority | 'none') => {
     const now = search.priorities ?? []
     const next = now.includes(p) ? now.filter((x) => x !== p) : [...now, p]
@@ -229,7 +230,8 @@ function MoreMenu({ search, set, labels }: { search: Search; set: (patch: Partia
           )}
         </Button>
       </PopoverTrigger>
-      <PopoverContent align="start" className="max-h-[calc(100dvh-7rem)] w-80 overflow-y-auto p-0">
+      {/* (As tall as the room under the button: the rest scrolls.) */}
+      <PopoverContent align="start" className="max-h-(--radix-popover-content-available-height) w-80 overflow-y-auto p-0">
         <Part title="Archived cards">
           <ToggleGroup
             type="single"
@@ -304,6 +306,15 @@ function MoreMenu({ search, set, labels }: { search: Search; set: (patch: Partia
             <span className="block text-xs text-muted-foreground">Only the cards work is done on, not the ones that group them</span>
           </label>
           <Switch id="cards-leaves" checked={!!search.leaves} onCheckedChange={(on) => set({ leaves: on || undefined })} />
+        </div>
+        <div className="flex items-center justify-between gap-3 border-t p-4">
+          <label htmlFor="cards-following" className="cursor-pointer">
+            <span className="block text-sm">Only cards I follow</span>
+            <span className="block text-xs text-muted-foreground">
+              The ones you’re told about: yours, and those you commented on or chose to follow
+            </span>
+          </label>
+          <Switch id="cards-following" checked={!!search.following} onCheckedChange={(on) => set({ following: on || undefined })} />
         </div>
       </PopoverContent>
     </Popover>

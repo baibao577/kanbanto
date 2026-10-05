@@ -149,11 +149,11 @@ function Notifications() {
     <div className="space-y-6">
       <PageTitle
         title="Notifications"
-        description="Mentions and reminders show under the bell. Choose what’s emailed too, and when your morning is."
+        description="Mentions, reminders and news from the cards you follow show under the bell. Choose what’s emailed too, and when your morning is."
       />
       <SettingsCard
         title="Morning summary email"
-        description="Around 8:00 your time: cards due today and overdue, reminders later today, and mentions you haven’t seen. Only when there’s something."
+        description="Around 8:00 your time: cards due today and overdue, reminders later today, and mentions and news from the cards you follow that you haven’t seen. Only when there’s something."
         action={
           <Switch
             checked={user.mentionEmails}
@@ -170,7 +170,9 @@ function Notifications() {
           />
         }
       >
-        <p className="text-xs text-muted-foreground">{user.mentionEmails ? 'On.' : 'Off: mentions and reminders still show under the bell.'}</p>
+        <p className="text-xs text-muted-foreground">
+          {user.mentionEmails ? 'On.' : 'Off: mentions, reminders and news from the cards you follow still show under the bell.'}
+        </p>
       </SettingsCard>
       <TimeZoneCard />
       <DesktopNotifications />

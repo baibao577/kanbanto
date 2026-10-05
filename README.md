@@ -39,7 +39,9 @@
   time shows next to each person's planned man-days.
 - **Write things down properly:** a card's description is formatted text (headings, checklists, tables, code) with
   a "/" menu, a full-page view for long ones, and a draft kept in your browser until it's saved.
-- **Comments and files:** discuss each card, @mention people, attach files and screenshots, and point to a file with `#`.
+- **Comments and files:** discuss each card, @mention people (in comments and descriptions), attach files and
+  screenshots, and point to a file with `#`.
+- **Follow cards:** hear about comments and changes on the cards you're part of, and stop whenever you like.
 - **Dates and reminders:** type "fri 2pm" for a due date, set reminders at a time or before it's due, and get them
   in the app, by email and as desktop notifications, with a morning summary of what's due.
 - **Find and tidy:** search and filters on every view, presets a board's people share, a search across all your

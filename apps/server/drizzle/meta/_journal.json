@@ -218,6 +218,13 @@
       "when": 1791046128424,
       "tag": "0030_calendar",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1791180945771,
+      "tag": "0031_follow_cards",
+      "breakpoints": true
     }
   ]
 }

@@ -8,7 +8,7 @@ import type { Change } from '@kanbanto/model/records'
 import type { BoardData } from '@kanbanto/model/types'
 import { and, eq, lt, sql } from 'drizzle-orm'
 import type { Db } from '../db'
-import { attachments, boardActivity, boards, comments, notifications, timeEntries } from '../db/schema'
+import { attachments, boardActivity, boards, comments, notifications, taskFollowers, timeEntries } from '../db/schema'
 import { HttpError } from '../http'
 import type { LiveHub } from '../live'
 import { ACTIVITY_DAYS } from './activityLog'
@@ -46,6 +46,12 @@ export class BoardEngine {
   onChanged:
     ((boardId: string, e: { board: { id: string; name: string }; userId: string; command: string; seq: number; changes: Change[] }) => void) | null =
     null
+
+  /**
+   * Run after each command that changed something, before its answer goes back (following cards and telling people):
+   * what it does is there by the time the person who made the change looks. `data`: the board after the change.
+   */
+  afterChange: ((boardId: string, e: { userId: string; command: string; changes: Change[]; data: BoardData }) => Promise<void>) | null = null
 
   constructor(db: Db, hub: LiveHub) {
     this.db = db
@@ -105,6 +111,7 @@ export class BoardEngine {
       this.hub.broadcast(boardId, { type: 'changes', ...out, mutationId })
       const board = { id: boardId, name: result.data.board.name }
       this.onChanged?.(boardId, { board, userId, command: command.type, seq: out.seq, changes: out.changes })
+      await this.afterChange?.(boardId, { userId, command: command.type, changes: out.changes, data: result.data })
     }
     return out
   }
@@ -140,12 +147,17 @@ export class BoardEngine {
       await writeChanges(tx, fromId, plan.source)
       await writeChanges(tx, toId, plan.target)
 
-      // Its comments, files, mentions and logged time follow it (files stay where they're stored, and count where they did).
+      // Its comments, files, mentions, followers and logged time follow it (files stay where they're stored, and count where they did).
       for (const [oldId, id] of plan.ids) {
         const at = (t: typeof comments | typeof attachments | typeof notifications) => and(eq(t.boardId, fromId), eq(t.taskId, oldId))
         await tx.update(comments).set({ boardId: toId, taskId: id }).where(at(comments))
         await tx.update(attachments).set({ boardId: toId, taskId: id }).where(at(attachments))
         await tx.update(notifications).set({ boardId: toId, taskId: id }).where(at(notifications))
+        // Its followers too, the ones who can open the board it went to (the bell checks that when it's read).
+        await tx
+          .update(taskFollowers)
+          .set({ boardId: toId, taskId: id })
+          .where(and(eq(taskFollowers.boardId, fromId), eq(taskFollowers.taskId, oldId)))
         await tx
           .update(timeEntries)
           .set({ boardId: toId, taskId: id })

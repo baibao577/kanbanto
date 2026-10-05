@@ -1,6 +1,8 @@
 import {
   Archive,
   ArrowSquareRight,
+  BellRinging,
+  BellSlash,
   CaretRight,
   ChatCircle,
   CheckCircle,
@@ -13,6 +15,8 @@ import {
   X,
 } from '@phosphor-icons/react'
 import { formatMoment } from '@/lib/format'
+import { api, errorMessage } from '@/api/client'
+import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import { useMediaQuery } from '@/lib/useMediaQuery'
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
@@ -202,6 +206,7 @@ function TaskDetail({ id, onClose }: { id: string; onClose: () => void }) {
             value={t.description ?? ''}
             readOnly={readOnly}
             cardFiles={cardFiles}
+            people={data.members}
             draftId={`${data.board.id}:${id}`}
             onSave={(description) => patch({ description })}
           />
@@ -443,6 +448,7 @@ function TaskDetail({ id, onClose }: { id: string; onClose: () => void }) {
           </fieldset>
 
           <div className="space-y-1 border-t pt-4">
+            {canComment && <FollowTask boardId={data.board.id} id={id} assigneeId={t.assigneeId} />}
             {kids.length > 0 && (
               <Button
                 variant="ghost"
@@ -557,6 +563,54 @@ function SideField({ label, children }: { label: string; children: ReactNode }) 
       <p className="mb-0.5 px-2 text-xs font-medium text-muted-foreground">{label}</p>
       {children}
     </div>
+  )
+}
+
+/**
+ * Whether you follow this card, and the button to start or stop. Followers are told (bell, morning email, desktop
+ * notifications) about its comments and what happens to it; people follow the cards they're part of without asking.
+ */
+function FollowTask({ boardId, id, assigneeId }: { boardId: string; id: string; assigneeId?: string }) {
+  const [following, setFollowing] = useState<boolean | null>(null)
+  // (Asked again when it's assigned: that can start it. Commenting does too, so the comments say when they change.)
+  const { onActivity } = useBoard()
+  useEffect(() => {
+    const load = () =>
+      api<{ following: boolean }>('GET', `/boards/${boardId}/tasks/${id}/follow`).then(
+        (r) => setFollowing(r.following),
+        () => {},
+      )
+    void load()
+    return onActivity((m) => {
+      if (m.type === 'comment' && m.taskId === id && m.action === 'added') void load()
+    })
+  }, [boardId, id, assigneeId, onActivity])
+  if (following === null) return null
+  const set = (next: boolean) => {
+    setFollowing(next)
+    api<{ following: boolean }>('PUT', `/boards/${boardId}/tasks/${id}/follow`, { following: next }).then(
+      (r) => setFollowing(r.following),
+      (e) => {
+        setFollowing(!next)
+        toast.error(errorMessage(e))
+      },
+    )
+  }
+  return (
+    <Button
+      variant="ghost"
+      size="sm"
+      className="w-full justify-start gap-2"
+      aria-pressed={following}
+      title={
+        following
+          ? 'You’re told about comments and changes on this card. Click to stop.'
+          : 'Be told about comments and changes on this card (bell, morning email, desktop notifications)'
+      }
+      onClick={() => set(!following)}
+    >
+      {following ? <BellSlash /> : <BellRinging />} {following ? 'Unfollow' : 'Follow'}
+    </Button>
   )
 }
 

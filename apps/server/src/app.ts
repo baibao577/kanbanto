@@ -10,6 +10,7 @@ import pretty from 'pino-pretty'
 import { TOKEN_ROUTES, userForApiToken, type TokenAccess } from './auth/apiTokens'
 import { SESSION_COOKIE, userForToken, type SessionUser } from './auth/sessions'
 import { BoardEngine } from './boards/engine'
+import { afterBoardChange } from './boards/follows'
 import type { Db } from './db'
 import { env } from './env'
 import { dbErrorCode, loggable } from './errors'
@@ -131,6 +132,8 @@ export async function buildApp(
     void webhooks.boardChanged(boardId, e).catch((err) => app.log.error({ err: loggable(err) }, 'queueing webhooks'))
     calendar.kick()
   }
+  // (Telling people never undoes the change it's about.)
+  engine.afterChange = (boardId, e) => afterBoardChange(app, boardId, e).catch((err) => app.log.error({ err: loggable(err) }, 'telling followers'))
   app.decorate('engine', engine)
   app.decorate('mail', mail)
   app.decorate('webhooks', webhooks)

@@ -62,6 +62,10 @@ Without MCP, use the REST API (see "REST fallback" below).
 - **Plans:** `plan_overview` reads a workspace's resource plan: projects' planned vs scheduled vs logged man-days, who's
   booked where at what share, who's over 100% and when people are free. It's read only: changes are made by planners
   in the app's Planning tab.
+- **Following:** people are told about comments and changes on the tasks they follow: the ones they made, are
+  assigned, commented on or were mentioned on. `follow_task` follows any other task for the user (`follow: false`
+  stops), `get_task` says whether they follow it, and `find_tasks` with `following: true` lists what they follow.
+  `@Name` in a description notifies that person once, like in a comment.
 - **Comments:** `add_comment`; write `@Name` to notify someone on the board. Use comments to explain changes you made
   on the user's behalf when that helps their team.
 - **Setting up a board:** `create_board` (with `about`, in Personal or a workspace), then `manage_lists` for its

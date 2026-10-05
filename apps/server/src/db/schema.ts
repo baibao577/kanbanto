@@ -50,6 +50,8 @@ export const users = pgTable('users', {
   /** Desktop notifications (on computers where they turned them on) for reminders, and for @mentions. */
   pushReminders: boolean('push_reminders').notNull().default(true),
   pushMentions: boolean('push_mentions').notNull().default(true),
+  /** …and for news from cards they follow. */
+  pushFollows: boolean('push_follows').notNull().default(true),
   /** Email reminders as they fire, as well as the bell (they can turn it off). */
   reminderEmails: boolean('reminder_emails').notNull().default(true),
   /** When the last daily summary went out (at most one per 24 hours). */
@@ -590,7 +592,28 @@ export const timeEntries = pgTable(
   ],
 )
 
-/** Things to tell someone about (an @mention for now). Shown under the bell, and in the daily email summary. */
+/**
+ * Who follows which card, to be told what happens on it. People follow the cards they're part of without asking
+ * (they made it, it's assigned to them, they commented, they were @mentioned); `following: false` is someone who
+ * chose to stop, which only a new assignment undoes. Like comments, the card is only named (no foreign key).
+ */
+export const taskFollowers = pgTable(
+  'task_followers',
+  {
+    boardId: text('board_id')
+      .notNull()
+      .references(() => boards.id, { onDelete: 'cascade' }),
+    taskId: text('task_id').notNull(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    following: boolean('following').notNull().default(true),
+    createdAt: at('created_at').notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.boardId, t.taskId, t.userId] })],
+)
+
+/** Things to tell someone about. Shown under the bell, and in the daily email summary. */
 export const notifications = pgTable(
   'notifications',
   {
@@ -598,13 +621,18 @@ export const notifications = pgTable(
     userId: uuid('user_id')
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
-    /** mention: in a comment (board, task, comment) · added: to a board or a workspace (one of the two). */
-    kind: text('kind', { enum: ['mention', 'added', 'reminder'] }).notNull(),
+    /**
+     * mention: in a comment (board, task, comment) or a description (no comment) · added: to a board or a workspace
+     * (one of the two) · comment, change: on a card they follow.
+     */
+    kind: text('kind', { enum: ['mention', 'added', 'reminder', 'comment', 'change'] }).notNull(),
     boardId: text('board_id').references(() => boards.id, { onDelete: 'cascade' }),
     workspaceId: uuid('workspace_id').references(() => workspaces.id, { onDelete: 'cascade' }),
     taskId: text('task_id'),
     commentId: uuid('comment_id').references(() => comments.id, { onDelete: 'cascade' }),
     actorId: uuid('actor_id').references(() => users.id, { onDelete: 'set null' }),
+    /** change: what happened, in words to follow the actor's name ("moved “Deploy” to Done"), oldest first. */
+    changes: jsonb('changes').$type<string[]>(),
     createdAt: at('created_at').notNull().defaultNow(),
     readAt: at('read_at'),
     /** Included in a daily email summary. */

@@ -51,6 +51,8 @@ export type CardsRoute = {
   to?: string
   /** Leave out cards that have subtasks. */
   leaves?: boolean
+  /** Only the cards you follow. */
+  following?: boolean
   sort?: CardSort
 }
 export type Route =
@@ -114,6 +116,7 @@ export function parseRoute(hash: string): Route {
       // A named range, or days: not both.
       ...(range ? { range } : { ...(day('from') && { from: day('from') }), ...(day('to') && { to: day('to') }) }),
       ...(p.get('parents') === 'hide' && { leaves: true }),
+      ...(p.get('following') === 'yes' && { following: true }),
       ...(one('sort', CARD_SORTS) && one('sort', CARD_SORTS) !== 'recent' && { sort: one('sort', CARD_SORTS) }),
     }
   }
@@ -191,6 +194,7 @@ export function hrefFor(r: Route) {
       if (r.to) p.set('to', r.to)
     }
     if (r.leaves) p.set('parents', 'hide')
+    if (r.following) p.set('following', 'yes')
     if (r.sort && r.sort !== 'recent') p.set('sort', r.sort)
     const qs = p.toString()
     return `#/cards${qs ? `?${qs}` : ''}`

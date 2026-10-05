@@ -31,6 +31,12 @@ They are told:
 Only people on the board can be mentioned: everyone it is shared with, which on a workspace board includes the
 workspace's members.
 
+**@** works in a card's description too. Someone is told the first time their name is written there, not each time
+the description is edited afterwards.
+
+Commenting on a card, or being mentioned on it, means you follow it: you are told about later comments and changes.
+See [notifications](/people/notifications) for how to stop.
+
 ### Change or remove a comment
 
 You can **Edit** your own comments; an edited one says "(edited)". You can delete your own, and a board's owner can

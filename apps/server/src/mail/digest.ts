@@ -2,6 +2,7 @@ import { fireTime } from '@kanbanto/model/reminders'
 import { and, desc, eq, inArray, isNotNull, isNull, ne, or, sql } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import { boards, comments, lists, notifications, tasks, users } from '../db/schema'
+import { mentionLine } from '../boards/follows'
 import { excerpt } from '../routes/comments'
 import { boardsFor } from '../routes/boards'
 import { emails, type DigestItem } from './templates'
@@ -24,7 +25,8 @@ const dayWords = (day: string) =>
 
 /**
  * The morning summary email, around 8:00 in each person's time zone (checked every 10 minutes): cards assigned to them
- * due today and overdue, reminders due later today, and mentions they haven't seen. At most one a day, only when
+ * due today and overdue, reminders due later today, and mentions and news from the cards they follow that they haven't
+ * seen. At most one a day, only when
  * there's something in it, and only for people who want it (Account → Notifications). If email isn't set up, or the
  * budget is used up, it tries again at the next check.
  */
@@ -91,8 +93,18 @@ export async function sendDigests(app: FastifyInstance, now = new Date()) {
             if (at && at > now && dayIn(at, tz) === today) later.push({ task: t.title, board: t.board, note: timeIn(at, tz) })
           }
       }
-      const mentions = await app.db
-        .select({ id: notifications.id, actor: users.name, board: boards.name, task: tasks.title, body: comments.body })
+      const news = await app.db
+        .select({
+          id: notifications.id,
+          kind: notifications.kind,
+          commentId: notifications.commentId,
+          changes: notifications.changes,
+          actor: users.name,
+          board: boards.name,
+          task: tasks.title,
+          description: tasks.description,
+          body: comments.body,
+        })
         .from(notifications)
         .innerJoin(boards, eq(boards.id, notifications.boardId))
         .leftJoin(users, eq(users.id, notifications.actorId))
@@ -101,7 +113,7 @@ export async function sendDigests(app: FastifyInstance, now = new Date()) {
         .where(
           and(
             eq(notifications.userId, u.id),
-            eq(notifications.kind, 'mention'),
+            inArray(notifications.kind, ['mention', 'comment', 'change']),
             isNull(notifications.readAt),
             isNull(notifications.emailedAt),
             // (Only from boards they can still open: what's quoted is read now, not when they were mentioned.)
@@ -111,7 +123,9 @@ export async function sendDigests(app: FastifyInstance, now = new Date()) {
         .orderBy(desc(notifications.createdAt))
         // (The email shows a few and counts the rest: there's no need to read every one.)
         .limit(500)
-      if (!due.length && !overdue.length && !later.length && !mentions.length) continue
+      if (!due.length && !overdue.length && !later.length && !news.length) continue
+      const mentions = news.filter((m) => m.kind === 'mention')
+      const followed = news.filter((m) => m.kind !== 'mention')
 
       later.sort((a, b) => (a.note ?? '').localeCompare(b.note ?? ''))
       const cut = <T>(xs: T[]) => ({ items: xs.slice(0, MAX_ITEMS), more: Math.max(0, xs.length - MAX_ITEMS) })
@@ -131,20 +145,30 @@ export async function sendDigests(app: FastifyInstance, now = new Date()) {
               mentions.map((m) => ({
                 task: m.task ?? 'a deleted task',
                 board: m.board,
-                note: `${m.actor ?? 'Someone'}: “${excerpt(m.body ?? '', 120)}”`,
+                note: `${m.actor ?? 'Someone'}: “${excerpt(m.commentId ? (m.body ?? '') : mentionLine(m.description, u.name), 120)}”`,
+              })),
+            ),
+            followed: cut(
+              followed.map((m) => ({
+                task: m.task ?? 'a deleted task',
+                board: m.board,
+                note:
+                  m.kind === 'comment'
+                    ? `${m.actor ?? 'Someone'}: “${excerpt(m.body ?? '', 120)}”`
+                    : excerpt(`${m.actor ?? 'Someone'} ${(m.changes ?? []).join(', ')}`, 160),
               })),
             ),
           }),
       })
       if (!result.queued) continue
-      if (mentions.length)
+      if (news.length)
         await app.db
           .update(notifications)
           .set({ emailedAt: now })
           .where(
             inArray(
               notifications.id,
-              mentions.map((m) => m.id),
+              news.map((m) => m.id),
             ),
           )
       await app.db.update(users).set({ lastDigestAt: now }).where(eq(users.id, u.id))

@@ -117,8 +117,11 @@ export class Push {
   }
 
   /** Whether someone wants pushes of a kind. */
-  async wants(userId: string, kind: 'reminders' | 'mentions') {
-    const [u] = await this.db.select({ r: users.pushReminders, m: users.pushMentions }).from(users).where(eq(users.id, userId))
-    return !!u && (kind === 'reminders' ? u.r : u.m)
+  async wants(userId: string, kind: 'reminders' | 'mentions' | 'follows') {
+    const [u] = await this.db
+      .select({ reminders: users.pushReminders, mentions: users.pushMentions, follows: users.pushFollows })
+      .from(users)
+      .where(eq(users.id, userId))
+    return !!u && u[kind]
   }
 }

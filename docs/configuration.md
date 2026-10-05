@@ -141,7 +141,7 @@ Run in the Kanbanto folder as `docker compose exec app node dist/cli.js <command
 | Wrong passwords | 10 sign-in attempts a minute from one address, and 10 wrong passwords for one account in 15 minutes (then it waits). |
 | Invites | 30 invitations an hour per person; 10 invite emails an hour; brand-new accounts send 5 invite emails on their first day. Joining with a code: 20 tries a minute. |
 | Email links | Confirm email: 24 hours. Reset password: 1 hour, once. A reset link from an admin: 24 hours, once. Invites by email: until used or cancelled. Share links and access codes: until turned off or replaced. |
-| Morning summary | At most one per person per day, around 8:00 in their time zone (UTC if they haven't set one), only when there's something in it: cards due today or overdue, reminders later today, mentions they haven't seen. |
+| Morning summary | At most one per person per day, around 8:00 in their time zone (UTC if they haven't set one), only when there's something in it: cards due today or overdue, reminders later today, mentions and news from the cards they follow that they haven't seen. |
 | Integrations | 20 API tokens per person; 10 webhooks per board; apps registering for sign-in: 20 an hour per address; a calendar link: 120 requests a minute. |
 | Sent emails | Kept for 60 days (for the limits), without their contents: those are removed once sent. |
 | Files | Deleted files stay in a trash for 30 days (restorable, if there's room in the owner's space). Files waiting in unposted comments: 10 per person, up to 3 times the largest file size, removed after a day. |

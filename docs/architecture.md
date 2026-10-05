@@ -194,8 +194,18 @@ The app uses hash routing, so any static host or proxy works without rewrite rul
 
 - Every card has a live comment thread. Everyone on the board can comment, viewers included (not visitors with the
   public link).
-- **@mentions** (of board members) show under the bell. By email, people get one morning summary a day
-  (about 8:00 their time): what's due, today's reminders and mentions they haven't seen.
+- **@mentions** (of board members) show under the bell. In a comment, the app says who was picked; in a description,
+  the server compares the text before and after a change and tells only the people whose `@Name` is new (never the
+  person writing, and not when undo puts a mention back).
+- **Following a card** (`task_followers`): people follow the cards they're part of without asking (they made it, it's
+  assigned to them, they commented, they were mentioned) and can follow or unfollow any card. Stopping is remembered;
+  only a new assignment starts it again. Followers get a line under the bell for each new comment, and for what
+  happens to the card: moved to another list, assigned, due date, description, archived, deleted. Changes by the same
+  person to the same card within ten minutes share one line while it's unread, and nobody is told about what they did
+  themselves. This runs after every board command (`afterBoardChange` in `boards/follows.ts`), whichever way the
+  command arrived (the app, an API token, an assistant).
+- By email, people get one morning summary a day (about 8:00 their time): what's due, today's reminders, and the
+  mentions and followed-card news they haven't seen.
 - `#` in a comment or description links to one of the card's files.
 
 ## Files

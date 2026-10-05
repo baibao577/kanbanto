@@ -14,7 +14,8 @@ import { currentSubscription, pushPermission, pushSupported, turnOffHere, turnOn
 type Device = { id: string; label: string; endpoint: string; createdAt: string; lastUsedAt: string | null }
 
 /**
- * Desktop notifications (Web Push): turned on per computer, no app to install. Reminders and mentions show as
+ * Desktop notifications (Web Push): turned on per computer, no app to install. Reminders, mentions and news from
+ * the cards you follow show as
  * notifications there; clicking one opens the card.
  */
 export function DesktopNotifications() {
@@ -57,7 +58,7 @@ export function DesktopNotifications() {
       setBusy(false)
     }
   }
-  const setPref = (field: 'pushReminders' | 'pushMentions', value: boolean) =>
+  const setPref = (field: 'pushReminders' | 'pushMentions' | 'pushFollows', value: boolean) =>
     api<{ user: PublicUser }>('PATCH', '/auth/me', { [field]: value }).then(
       (r) => setUser(r.user),
       (e) => toast.error(errorMessage(e)),
@@ -66,7 +67,7 @@ export function DesktopNotifications() {
   return (
     <SettingsCard
       title="Desktop notifications"
-      description="Reminders and mentions pop up on your computer, even when Kanbanto isn’t open (as long as the browser is running). Turn them on for each computer."
+      description="Reminders, mentions and news from the cards you follow pop up on your computer, even when Kanbanto isn’t open (as long as the browser is running). Turn them on for each computer."
     >
       <div className="space-y-4">
         <div className="flex flex-wrap items-center gap-3">
@@ -114,6 +115,14 @@ export function DesktopNotifications() {
               checked={user.pushMentions}
               onCheckedChange={(v) => void setPref('pushMentions', v)}
               aria-label="Desktop notifications for mentions"
+            />
+          </label>
+          <label className="flex items-center justify-between gap-3 text-sm">
+            Comments and changes on cards I follow
+            <Switch
+              checked={user.pushFollows}
+              onCheckedChange={(v) => void setPref('pushFollows', v)}
+              aria-label="Desktop notifications for cards I follow"
             />
           </label>
         </div>
