@@ -62,7 +62,7 @@ rows to rearrange them.
 
 ## Change where a task belongs
 
-- In the open card, click **Parent** and pick another card, or none to make it top-level.
+- In the open card, under **More**, click **Parent** and pick another card, or none to make it top-level.
 - In the Outline, drag the row to its new place.
 
 ## Good to know

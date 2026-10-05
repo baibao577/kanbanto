@@ -8,6 +8,8 @@ then `git pull` (or download the new release) and `docker compose up -d --build`
 - **Boards of tasks inside tasks**, as deep as you like, shown as a **Board** (lists you name), a **Timeline** and an
   **Outline** (a table you can sort, filter and rearrange). Undo and redo, filters, search, zooming into a task.
   Lists can group subtasks under their parent; drag groups and cards into any order.
+  An open card lists what every card has one line each, the most used first, with dates and the rest in groups you
+  can fold away.
 - **Dates with or without a time:** start and due are whole days by default; add a time (24-hour) when it matters.
   Everyone sees it in their own time zone, and dates read day first ("Mon 12 Oct · 14:30").
 - **Works on phones and tablets:** press and hold a card, list or row to drag it. Each card's menu can also move it to
@@ -21,7 +23,8 @@ then `git pull` (or download the new release) and `docker compose up -d --build`
 - **Custom fields:** add your own fields to cards: text (or a link, an email, a phone number), a number with a unit,
   a date, a choice from a list of options, or a checkbox. A field is defined once in a library, a workspace's
   (its admins) or your own for Personal boards, and each board's owners pick the ones it uses, their order, and up to
-  three that show on the card front. Taking a field off a board, or archiving it, keeps its values; deleting an
+  three that show on the card front. On an open card they are its first section, a box for each. Taking a field off
+  a board, or archiving it, keeps its values; deleting an
   archived field for good removes them. Values go along when a card or a board moves, where the other side has a
   field for them, and with an exported board. In the Outline each field is a column: sort by it, change values in
   place, hide the ones you don't need. Filter by a field in every view (saved presets keep it), and in Search cards

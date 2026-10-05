@@ -50,7 +50,8 @@ A board can use up to 20 fields. Every card on it gets them, subtasks too.
 
 ## Fill it in
 
-Open a card. The board's fields are in the side column, under the dates. Click one and type, pick, or switch it on.
+Open a card. The board's fields are its first section, under the title: a box for each. Click one and type, pick,
+or switch it on.
 
 Fields switched **On cards** show on the board once a card has a value. A number with **Total in lists** on is
 added up under each list's name:

@@ -29,7 +29,7 @@ Switch between days, weeks and months to see the next two weeks or a whole year.
 
 ## Bar colors
 
-A bar takes the color of its status. To pick one yourself, open the card and choose a **Timeline color**.
+A bar takes the color of its status. To pick one yourself, open the card and choose a **Timeline color**, under **More**.
 
 ## When the board belongs to a plan
 

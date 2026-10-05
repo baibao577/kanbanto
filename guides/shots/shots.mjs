@@ -378,7 +378,12 @@ await shot('reminders', async () => {
   const card = await openCard('announce')
   await card.getByRole('button', { name: 'Add a reminder' }).click()
   await page.waitForTimeout(600)
-  return around([page.getByPlaceholder(/tmr 10:00/), page.getByText('2 days before'), card.getByRole('button', { name: 'Add a reminder' })], 36)
+  const { clip } = await around(
+    [page.getByPlaceholder(/tmr 10:00/), page.getByText('2 days before'), card.getByRole('button', { name: 'Add a reminder' })],
+    36,
+  )
+  // (From the list's own edge: the names of the card's other fields, to its left, would only be cut in half.)
+  return { clip: { ...clip, x: clip.x + 26, width: clip.width - 26 } }
 })
 await shot('comments', async () => {
   const card = await openCard('announce')
@@ -1087,11 +1092,11 @@ await shot('fields-3-card', async () => {
   await page.reload()
   const card = page.getByRole('dialog').first()
   await card.getByLabel('Client').waitFor()
-  // (The whole group in view: the side column scrolls on its own.)
-  await card.getByText('Amount', { exact: true }).evaluate((el) => el.scrollIntoView({ block: 'center' }))
   await page.waitForTimeout(500)
-  const { clip } = await around([card.getByText('Stage', { exact: true }), card.getByRole('switch', { name: 'Contract signed' })], 22)
-  return { clip: { ...clip, x: clip.x - 6, width: clip.width + 12 } }
+  // The card's first section: a box for each of the board's fields.
+  const { clip } = await around([card.locator('section').filter({ has: page.getByRole('heading', { name: 'Fields', exact: true }) })], 20)
+  // (Up to the section's last box: the line under it belongs to the next one.)
+  return { clip: { ...clip, height: clip.height - 18 } }
 })
 await shot('fields-4-front', async () => {
   const { id } = await clientWork()

@@ -19,10 +19,10 @@ export function TimeField({ taskId }: { taskId: string }) {
   const own = counts.time[taskId] ?? 0
   const all = own + descendantsOf(idx, taskId).reduce((s, k) => s + (counts.time[k] ?? 0), 0)
   return (
-    <div className="flex h-8 items-center gap-2 px-2 text-sm">
-      <span className={cn('tabular-nums', !all && 'text-muted-foreground')}>
+    <div className="flex min-h-8 items-center gap-2 px-2 py-1 text-sm">
+      <span className={cn('min-w-0 tabular-nums', !all && 'text-muted-foreground')}>
         {own ? formatDuration(own) : all ? 'None on this card' : 'None yet'}
-        {all > own && <span className="text-muted-foreground"> · {formatDuration(all)} with subtasks</span>}
+        {all > own && <span className="block text-xs text-muted-foreground">{formatDuration(all)} with subtasks</span>}
       </span>
       {logTime && (
         <button

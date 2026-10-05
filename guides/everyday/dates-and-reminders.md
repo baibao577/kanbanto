@@ -41,7 +41,7 @@ A card whose due date has passed shows the date in red on the board, until it is
 A reminder is a nudge at a moment you choose.
 
 1. Open a card.
-2. Under **Reminders**, click **Add a reminder**.
+2. Beside **Reminders**, click **Add a reminder**.
 3. Type a time ("tmr 10:00", "fri 2pm", "in 2 hours"), or pick one from the list.
 
 ![Adding a reminder to a card](/images/reminders.webp)

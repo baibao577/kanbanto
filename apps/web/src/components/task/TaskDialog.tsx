@@ -3,6 +3,7 @@ import {
   ArrowSquareRight,
   BellRinging,
   BellSlash,
+  CaretDown,
   CaretRight,
   ChatCircle,
   CheckCircle,
@@ -14,7 +15,7 @@ import {
   Trash,
   X,
 } from '@phosphor-icons/react'
-import { formatMoment } from '@/lib/format'
+import { formatDay, formatMoment } from '@/lib/format'
 import { api, errorMessage } from '@/api/client'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
@@ -76,8 +77,9 @@ export function TaskDialog({
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
       <DialogContent
         // One column that never grows past the dialog: a long name inside (a parent, say) is cut, not the card widened.
-        // On wide screens it's as tall as the window, with the comments as a third column (each column scrolls).
-        className="max-h-[calc(100dvh-4rem)] grid-cols-[minmax(0,1fr)] gap-0 overflow-y-auto p-0 sm:max-w-3xl xl:flex xl:h-[calc(100dvh-4rem)] xl:max-w-[1180px] xl:flex-col xl:overflow-hidden"
+        // On wide screens it's as tall as the window, with the comments as a third column (each column scrolls), and
+        // wide enough for the side column to put each field's name and value on one line.
+        className="max-h-[calc(100dvh-4rem)] grid-cols-[minmax(0,1fr)] gap-0 overflow-y-auto p-0 sm:max-w-3xl lg:max-w-4xl xl:flex xl:h-[calc(100dvh-4rem)] xl:max-w-[1280px] xl:flex-col xl:overflow-hidden"
         // Opening a card is for reading it: nothing in it is put into editing (on a phone, a focused title brings up
         // the keyboard). A card made just now starts in its title, so its name can be typed straight away.
         onOpenAutoFocus={(e) => {
@@ -198,9 +200,11 @@ function TaskDetail({ id, onClose }: { id: string; onClose: () => void }) {
         />
       </div>
 
-      <div className="grid grid-cols-[minmax(0,1fr)] items-start gap-6 px-6 pt-4 pb-6 md:grid-cols-[minmax(0,1fr)_14rem] md:gap-0 xl:min-h-0 xl:flex-1 xl:grid-cols-[minmax(0,1fr)_14rem_23rem] xl:grid-rows-[minmax(0,1fr)] xl:items-stretch xl:pb-0">
+      <div className="grid grid-cols-[minmax(0,1fr)] items-start gap-6 px-6 pt-4 pb-6 md:grid-cols-[minmax(0,1fr)_20rem] md:gap-0 xl:min-h-0 xl:flex-1 xl:grid-cols-[minmax(0,1fr)_20rem_22rem] xl:grid-rows-[minmax(0,1fr)] xl:items-stretch xl:pb-0">
         {/* Main column */}
         <div className="min-w-0 divide-y md:pr-6 xl:min-h-0 xl:overflow-y-auto xl:pb-6 [&>*]:py-5 [&>*:first-child]:pt-0 [&>*:last-child]:pb-0">
+          {/* The board's own fields: what this kind of card is about, so they come first. */}
+          <CustomFields task={t} readOnly={readOnly} onChange={(custom) => patch({ custom })} />
           <Description
             key={`desc-${id}`}
             title={t.title}
@@ -315,15 +319,16 @@ function TaskDetail({ id, onClose }: { id: string; onClose: () => void }) {
         </div>
 
         {/* Side column */}
-        <aside className="border-t pt-5 md:sticky md:top-4 md:border-t-0 md:border-l md:pt-0 md:pl-6 xl:static xl:min-h-0 xl:overflow-y-auto xl:pr-6 xl:pb-6">
-          {/* View only: every field shows its value but can't be changed. */}
-          <fieldset disabled={readOnly} className="min-w-0 divide-y [&>*]:space-y-4 [&>*]:py-4 [&>*:first-child]:pt-0">
-            <div>
+        <aside className="border-t pt-5 md:sticky md:top-4 md:border-t-0 md:border-l md:pt-0 md:pl-4 xl:static xl:min-h-0 xl:overflow-y-auto xl:pr-4 xl:pb-6">
+          {/* One line each, in groups, the most used first; the last two groups fold. (The board's own fields are in the
+              main column.) View only: every field shows its value but can't be changed. */}
+          <div className="min-w-0 divide-y [&>*]:py-3 [&>*:first-child]:pt-0">
+            <fieldset disabled={readOnly} className="min-w-0 space-y-1.5">
               <SideField label="Status">
                 {derived ? (
-                  <div className="flex h-8 items-center gap-2 px-2 text-sm">
+                  <div className="flex min-h-8 flex-wrap items-center gap-x-2 px-2 py-1 text-sm">
                     <StatusPill col={col} />
-                    <span className="text-xs text-muted-foreground">follows its subtasks</span>
+                    <span className="text-xs whitespace-nowrap text-muted-foreground">follows its subtasks</span>
                   </div>
                 ) : (
                   <Select value={col.id} onValueChange={(v) => patch({ status: v })}>
@@ -340,21 +345,9 @@ function TaskDetail({ id, onClose }: { id: string; onClose: () => void }) {
                   </Select>
                 )}
               </SideField>
-
-              <SideField label="Parent">
-                <TaskPicker
-                  placeholder="Move it under…"
-                  exclude={notParent}
-                  noneLabel="No parent (make it a project)"
-                  onPick={(p) => run({ type: 'task.move', id, parentId: p })}
-                  trigger={<FieldButton empty={!t.parentId}>{t.parentId ? data.tasks[t.parentId]?.title : 'None — it’s a project'}</FieldButton>}
-                />
-              </SideField>
-
               <SideField label="Assignee">
                 <PersonPicker value={t.assigneeId} onChange={(assigneeId) => patch({ assigneeId })} />
               </SideField>
-
               <SideField label="Priority">
                 <Select value={t.priority ?? 'none'} onValueChange={(v) => patch({ priority: v === 'none' ? null : (v as Priority) })}>
                   <SelectTrigger
@@ -376,24 +369,6 @@ function TaskDetail({ id, onClose }: { id: string; onClose: () => void }) {
                   </SelectContent>
                 </Select>
               </SideField>
-            </div>
-            <div>
-              <SideField label="Start">
-                <DateField value={t.start} placeholder="Add a start date" onChange={(start) => patch({ start: start ?? '' })} />
-              </SideField>
-              <SideField label="Due">
-                <DateField value={t.due} placeholder="Add a due date" defaultTime="17:00" onChange={(due) => patch({ due: due ?? '' })} />
-              </SideField>
-              <SideField label="Reminders">
-                <Reminders task={t} readOnly={readOnly} onChange={(reminders) => patch({ reminders })} />
-              </SideField>
-              <SideField label="Time">
-                <TimeField taskId={id} />
-              </SideField>
-            </div>
-            {/* The board's own fields, before the ones every card has but few use. */}
-            <CustomFields task={t} onChange={(custom) => patch({ custom })} />
-            <div>
               <SideField label="Labels">
                 <div className="flex flex-wrap items-center gap-1 px-1">
                   {t.labels
@@ -430,7 +405,42 @@ function TaskDetail({ id, onClose }: { id: string; onClose: () => void }) {
                   />
                 </div>
               </SideField>
-
+            </fieldset>
+            <SideGroup
+              id="dates"
+              title="Dates"
+              summary={t.due ? `Due ${formatDay(t.due)}` : t.start ? `Starts ${formatDay(t.start)}` : undefined}
+              readOnly={readOnly}
+            >
+              <SideField label="Start">
+                <DateField icon={false} value={t.start} placeholder="Add a start date" onChange={(start) => patch({ start: start ?? '' })} />
+              </SideField>
+              <SideField label="Due">
+                <DateField
+                  icon={false}
+                  value={t.due}
+                  placeholder="Add a due date"
+                  defaultTime="17:00"
+                  onChange={(due) => patch({ due: due ?? '' })}
+                />
+              </SideField>
+              <SideField label="Reminders">
+                <Reminders task={t} readOnly={readOnly} onChange={(reminders) => patch({ reminders })} />
+              </SideField>
+            </SideGroup>
+            <SideGroup id="more" title="More" readOnly={readOnly}>
+              <SideField label="Time">
+                <TimeField taskId={id} />
+              </SideField>
+              <SideField label="Parent">
+                <TaskPicker
+                  placeholder="Move it under…"
+                  exclude={notParent}
+                  noneLabel="No parent (make it a project)"
+                  onPick={(p) => run({ type: 'task.move', id, parentId: p })}
+                  trigger={<FieldButton empty={!t.parentId}>{t.parentId ? data.tasks[t.parentId]?.title : 'None — it’s a project'}</FieldButton>}
+                />
+              </SideField>
               <SideField label="Timeline color">
                 <Popover>
                   <PopoverTrigger asChild>
@@ -447,8 +457,8 @@ function TaskDetail({ id, onClose }: { id: string; onClose: () => void }) {
                   </PopoverContent>
                 </Popover>
               </SideField>
-            </div>
-          </fieldset>
+            </SideGroup>
+          </div>
 
           <div className="space-y-1 border-t pt-4">
             {canComment && <FollowTask boardId={data.board.id} id={id} assigneeId={t.assigneeId} />}
@@ -560,11 +570,69 @@ function TitleField({ title, readOnly, onSave }: { title: string; readOnly: bool
   )
 }
 
+/** A field in the side column: its name and its value on one line (the value may take more lines, like labels). */
 function SideField({ label, children }: { label: string; children: ReactNode }) {
   return (
+    <div className="grid grid-cols-[6rem_minmax(0,1fr)] items-start">
+      <p className="truncate pl-2 text-[13px] leading-8 font-medium text-foreground" title={label}>
+        {label}
+      </p>
+      <div className="min-w-0">{children}</div>
+    </div>
+  )
+}
+
+const foldKey = (id: string) => `kankan:card:fold:${id}`
+
+/**
+ * A group of side fields under a small heading that folds it away (remembered on this device, for every card).
+ * Folded, the heading says the one thing worth knowing (`summary`).
+ */
+function SideGroup({
+  id,
+  title,
+  summary,
+  readOnly,
+  children,
+}: {
+  id: string
+  title: string
+  summary?: string
+  readOnly: boolean
+  children: ReactNode
+}) {
+  const [folded, setFolded] = useState(() => {
+    try {
+      return localStorage.getItem(foldKey(id)) === '1'
+    } catch {
+      return false
+    }
+  })
+  const toggle = () => {
+    setFolded(!folded)
+    try {
+      localStorage.setItem(foldKey(id), folded ? '0' : '1')
+    } catch {
+      // (Not remembered, then.)
+    }
+  }
+  return (
     <div>
-      <p className="mb-0.5 px-2 text-xs font-medium text-muted-foreground">{label}</p>
-      {children}
+      <button
+        type="button"
+        onClick={toggle}
+        aria-expanded={!folded}
+        className="flex h-7 w-full items-center gap-1 rounded pl-1 pr-2 text-left text-sm font-semibold text-foreground hover:bg-accent"
+      >
+        {folded ? <CaretRight className="size-3 shrink-0 text-muted-foreground" /> : <CaretDown className="size-3 shrink-0 text-muted-foreground" />}
+        {title}
+        {folded && summary && <span className="ml-auto truncate pl-2 text-xs font-normal text-muted-foreground">{summary}</span>}
+      </button>
+      {!folded && (
+        <fieldset disabled={readOnly} className="mt-1 min-w-0 space-y-1.5">
+          {children}
+        </fieldset>
+      )}
     </div>
   )
 }

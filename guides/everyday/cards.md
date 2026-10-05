@@ -27,6 +27,8 @@ Click a card to open it.
 **On the left**
 
 - **Title.** Click it to rename.
+- **Fields.** The board's [own fields](/everyday/fields), when it has any: a box for each, such as a client or an
+  amount.
 - **Description.** The full story, with headings, lists and checklists. See
   [writing a description](/everyday/descriptions).
 - **Files.** Anything attached to the card.
@@ -34,19 +36,28 @@ Click a card to open it.
 - **Waiting on.** Other cards that have to finish first. Until they are done, the card shows an amber **Waiting**
   sign on the board.
 
-**In the middle**
+**In the middle**, one line each, the ones used most first:
 
 - **Status.** The list it is in. Changing it here is the same as dragging the card.
-- **Parent.** The card it sits inside. A card with no parent is called a **project**, which is why the top of the
-  card says "Project".
 - **Assignee.** The person responsible, picked from the people on the board: everyone it is shared with, which on a
   workspace board includes the workspace's members. One per card.
 - **Priority.** Urgent, High, Medium, Low, or none.
+- **Labels.** Colored tags you make up, such as "design" or "bug".
+
+Under **Dates**:
+
 - **Start** and **Due.** See [due dates and reminders](/everyday/dates-and-reminders).
 - **Reminders.** A nudge at a time you choose.
+
+Under **More**:
+
 - **Time.** Time logged on this card.
-- **Labels.** Colored tags you make up, such as "design" or "bug".
-- **Timeline color.** The color of its bar in the Timeline view. (Scroll down the card's side to find it.)
+- **Parent.** The card it sits inside. A card with no parent is called a **project**, which is why the top of the
+  card says "Project".
+- **Timeline color.** The color of its bar in the Timeline view.
+
+Click **Dates** or **More** to fold that group away. It stays folded on every card you open on that device, until
+you click it again. Folded, **Dates** still says when the card is due.
 
 **On the right:** [comments](/everyday/comments-and-files).
 

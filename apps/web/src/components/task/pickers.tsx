@@ -219,6 +219,7 @@ export function DateField({
   placeholder,
   defaultTime = '09:00',
   bare,
+  icon = true,
 }: {
   value?: string
   onChange: (iso: string | undefined) => void
@@ -226,6 +227,8 @@ export function DateField({
   defaultTime?: string
   /** In a table cell: nothing at all while there's no date (still clickable), and the short form of one. */
   bare?: boolean
+  /** The calendar picture before the date (left out where a label beside it already says what it is). */
+  icon?: boolean
 }) {
   const [open, setOpen] = useState(false)
   // In a table cell, the calendar is only built once it's first opened: a table has thousands of these.
@@ -236,7 +239,7 @@ export function DateField({
   const label = bare && !value ? 'Add a date' : undefined
   const shown = (
     <>
-      {!bare && <CalendarBlank className="size-4" />}
+      {!bare && icon && <CalendarBlank className="size-4" />}
       {value ? formatDay(value, !bare) : placeholder}
     </>
   )
