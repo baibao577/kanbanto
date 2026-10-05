@@ -12,10 +12,13 @@ In a hurry? [A starter board](#start-from-a-ready-made-board) comes with its fie
 
 ## Make a field
 
-For your own boards: open **your initials → Account settings → Fields**, and click **New field**.
+Where you make it depends on where the board lives:
 
-For a workspace's boards: open the workspace, click the **Fields** tab, then **New field**. Only the workspace's
-admins can do this.
+- **For your own (Personal) boards:** open **your initials → Account settings → Fields**, and click **New field**.
+- **For a workspace's boards:** on the boards page, beside the workspace's name, click **2 people** (it shows the
+  number), then the **Fields** tab, then **New field**. Only the workspace's admins can do this; everyone else in
+  the workspace sees the list. [Set up fields for the workspace](/people/workspaces#set-up-fields-for-the-workspace)
+  shows it step by step.
 
 ![Your fields in Account settings](/images/fields-library.webp)
 
@@ -40,7 +43,8 @@ changed whenever you like.
 ## Put it on a board
 
 1. Open the board, then **⋯ → Board settings → Fields**.
-2. Click **Add a field** and pick it.
+2. Click **Add a field** and pick it. A board in a workspace offers the workspace's fields; a Personal board offers
+   your own.
 
 ![A board's fields in Board settings](/images/fields-2-board.webp)
 

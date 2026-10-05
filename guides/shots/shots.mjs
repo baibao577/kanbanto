@@ -1277,6 +1277,52 @@ await shot('fields-11-starter', async () => {
 })
 await page.setViewportSize({ width: 1360, height: 860 })
 
+// ── Fields in a workspace: Studio's own, and one of its boards choosing from them (last: its board gains fields) ──
+let studioFields = false
+/** A handful of fields for the Studio workspace, two of them on its board. */
+async function fieldsInStudio() {
+  if (studioFields) return
+  const field = async (body) => (await api(ann, 'POST', `/workspaces/${studio}/fields`, body)).id
+  const client = await field({ name: 'Client', type: 'text' })
+  const budget = await field({ name: 'Budget', type: 'number', unit: '$', decimals: 0, sum: true })
+  await field({
+    name: 'Stage',
+    type: 'choice',
+    options: [
+      { name: 'Brief', color: 'gray' },
+      { name: 'In design', color: 'blue' },
+      { name: 'Approved', color: 'green' },
+    ],
+  })
+  await field({ name: 'Approved by', type: 'person' })
+  await field({ name: 'Contract signed', type: 'checkbox' })
+  await api(ann, 'PUT', `/boards/${clientBoard}/fields`, { fields: [{ id: client, front: true }, { id: budget }] })
+  studioFields = true
+}
+await shot('ws-2-fields', async () => {
+  await fieldsInStudio()
+  await page.goto(`${SITE}/#/w/${studio}/fields`)
+  await page.reload()
+  await page.getByText('Contract signed', { exact: true }).waitFor()
+  await page.waitForTimeout(500)
+  await ring(page.getByRole('tab', { name: 'Fields' }), page.getByRole('button', { name: 'New field' }))
+  return { clip: { x: 0, y: 0, width: 1360, height: 610 } }
+})
+await shot('ws-3-board-fields', async () => {
+  await fieldsInStudio()
+  await page.goto(`${SITE}/#/b/${clientBoard}/board`)
+  await page.reload()
+  await page.getByRole('button', { name: 'More', exact: true }).click()
+  await page.getByRole('menuitem', { name: 'Board settings' }).click()
+  await page.getByRole('button', { name: 'Fields', exact: true }).click()
+  await page.getByRole('switch', { name: 'Show Client on cards' }).waitFor()
+  await page.getByRole('button', { name: 'Add a field' }).click()
+  await page.getByText('New field…').waitFor()
+  await page.waitForTimeout(500)
+  // (The settings window and, over it, the list of fields to pick from.)
+  return around([page.getByRole('dialog').first(), page.getByRole('dialog').last()], 20)
+})
+
 await browser.close()
 console.log(`made ${made.length}: ${made.join(', ')}`)
 if (failed.length) console.log(`\nnot made (${failed.length}):\n  ${failed.join('\n  ')}`)

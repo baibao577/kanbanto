@@ -21,7 +21,9 @@ You become its admin, and its **People** page opens so you can invite your team.
 ## Find your way around a workspace
 
 A workspace has three pages of its own, **People**, **Planning** and **Fields**, shown as tabs at the top (they are
-in the picture further down). Fields is where the workspace's admins add [fields](/everyday/fields) for its boards. **← Boards** beside them takes you back to the boards page, where the workspace's boards are.
+in the picture further down). Fields is where the workspace's admins add fields for its boards: see
+[Set up fields for the workspace](#set-up-fields-for-the-workspace). **← Boards** beside them takes you back to the
+boards page, where the workspace's boards are.
 
 To come back later: on the boards page, beside the workspace's name, click **2 people** (it shows the number) for the
 People page, or **Planning** for the plan.
@@ -47,7 +49,7 @@ see "Boards in a workspace" below.
 | Role | Can |
 |---|---|
 | **Member** | Open the workspace's boards, and read its plan. |
-| **Admin** | Also invite and remove people, rename the workspace, and change its plan. |
+| **Admin** | Also invite and remove people, rename the workspace, change its plan, and set up its fields. |
 
 An admin can also let a member change the plan without making them an admin: turn on the **Plans** switch beside
 their name. ("Plan" here is the team's schedule, not a price. See [planning people](/time/planning).)
@@ -82,6 +84,59 @@ A few things follow from this:
   page at all.
 - On the boards page, each board says how it is shared: **Workspace** (everyone in the workspace), **Invited only**
   (the same as "Only people added") or **Private**.
+
+## Set up fields for the workspace
+
+[Fields](/everyday/fields) are the extra things a team fills in on its cards: a client, an amount, a stage. In a
+workspace they are set up once, for all its boards, so "Client" means the same thing on every one of them.
+
+It takes two steps, and each has its own people.
+
+### 1. An admin adds the field to the workspace
+
+1. On the boards page, beside the workspace's name, click **2 people** (it shows the number). Then click the
+   **Fields** tab at the top.
+2. Click **New field**.
+3. Give it a name and pick its kind: text, a number, a date, a choice from a list, a checkbox, a link to another
+   card, or a person. Then click **Add field**.
+
+![A workspace's Fields page, with the Fields tab and New field ringed](/images/ws-2-fields.webp)
+
+The field is now in the workspace, and on no board yet.
+
+### 2. A board's owner switches it on for the board
+
+1. Open a board of the workspace, then **⋯ → Board settings → Fields**.
+2. Click **Add a field** and pick it from the workspace's fields.
+
+![A workspace board's Fields settings, with the workspace's fields to pick from](/images/ws-3-board-fields.webp){.medium}
+
+From then on every card on that board has the field, and anyone who can edit the board can fill it in.
+
+### Who can do what
+
+| Who | Can |
+|---|---|
+| **The workspace's admins** | Add fields, rename them, change a choice's options, and archive, merge or delete them. |
+| **A board's owners** | Choose which of the workspace's fields their board uses, their order, and which show on the cards. |
+| **Anyone who can edit a board** | Fill the fields in on its cards. |
+| **Every member** | See the workspace's fields, on the Fields page. |
+
+Good to know:
+
+- **An admin who owns the board can do both from the board.** In Board settings → Fields, **Add a field → New
+  field…** makes the field in the workspace and puts it on the board in one go.
+- **A workspace's boards use the workspace's fields**, not your own. The ones under Account settings → Fields are for
+  your Personal boards.
+- **A board moved into the workspace** brings its fields along. The ones the workspace already has (same name and
+  kind) are used. The rest are added if you are an admin; if you are not, the move lists what would be lost and asks
+  first.
+- **A starter board** (Create board → A sales pipeline, or A support desk) adds its fields to the workspace the first
+  time, which only an admin can do. After that, any member can make one.
+- **Not sure a field is still needed?** Archive it on the Fields page. It goes from every board and its values are
+  kept, until you restore it.
+
+Each kind of field, filtering, totals and the rest are in [Your own fields](/everyday/fields).
 
 ## Leave or delete
 
