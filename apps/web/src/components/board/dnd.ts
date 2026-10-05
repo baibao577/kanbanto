@@ -11,12 +11,44 @@ export interface GroupDrag {
   cell: string
 }
 
-export const dragging: { card: string | null; list: string | null; group: GroupDrag | null; height: number } = {
+export const dragging: {
+  card: string | null
+  list: string | null
+  group: GroupDrag | null
+  height: number
+  /** A card of another board is being dragged in (from the Inbox panel): it has no id here yet. */
+  outside: boolean
+} = {
   card: null,
   list: null,
   group: null,
   height: 40,
+  outside: false,
 }
+
+/** Where a card that comes from another board would land on this one (see `MoveTarget` in model/moveBoard.ts). */
+export interface DropPlace {
+  /** The list it was dropped on. Without one: the list the move picks (same name, else the same kind). */
+  list?: string
+  parentId?: string | null
+  /** Its place in that list: the list's cards as shown, and where among them. */
+  order?: { ids: string[]; at: number }
+}
+
+/** Somewhere on the open page a card dragged in from outside can be dropped. */
+export interface DropZone {
+  /** The pointer is at (x, y): shows where the card would land, and says where that is (null: not here). */
+  over(x: number, y: number): DropPlace | null
+  /** It left, or the drop is over: the marker goes. */
+  leave(): void
+}
+
+/**
+ * What the open page offers such a card: the board's lists when they're showing (`lists`), else the whole view
+ * (`page`: the Timeline, the Outline, a board in columns per parent). The board registers them; the Inbox panel
+ * asks them while a card of its own is dragged out of it.
+ */
+export const zones: { lists: DropZone | null; page: DropZone | null } = { lists: null, page: null }
 
 /**
  * Where a pointer at `y` would insert among the `item` elements inside `container`. The dragged one is hidden but still

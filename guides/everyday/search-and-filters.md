@@ -5,11 +5,12 @@ looks across every board.
 
 ## Search this board
 
-Click **Search tasks** at the top, or press <kbd>/</kbd>, and type.
+Click the **magnifier** at the top, or press <kbd>/</kbd>, and type.
 
 ![Searching a board for "launch"](/images/search.webp)
 
-The board shows only cards whose title or description has your words. Clear the box to see everything again.
+The board shows only cards whose title or description has your words. Clear the box to see everything again: it
+folds back into the magnifier.
 
 If archived cards match too, a line under the bar says how many, as a link to them.
 

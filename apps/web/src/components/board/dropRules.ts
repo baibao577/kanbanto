@@ -2,7 +2,7 @@ import type { Command, TaskFields } from '@kanbanto/model/commands'
 import { isLeaf, wouldCycle, type TaskIndex } from '@kanbanto/model/indexer'
 import type { BoardData, ViewConfig } from '@kanbanto/model/types'
 import { byHand, cellKey, groupCell, groupsSubtasks, TOP_LEVEL, UNASSIGNED, type CardGroup } from '@kanbanto/model/view'
-import type { GroupDrag } from './dnd'
+import type { DropPlace, GroupDrag } from './dnd'
 
 /**
  * What dropping a card (or a parent's group of cards) on the board means: the rules, apart from the drag and drop
@@ -152,6 +152,24 @@ export function dropGroupCommand(c: DropContext, g: GroupDrag, row: string, col:
   const list = placeItem(items, mine, at, { parentId: g.parentId, ids: [...others, ...g.ids] }).flatMap((x) => x.ids)
   if (g.cell === k && list.join() === cell.join()) return null
   return { type: 'tasks.moveToList', ids: g.ids, status: col, list, ...assignee }
+}
+
+/**
+ * Where a card from another board lands when it's dropped in cell (row, col) of status lists, at position `at`
+ * (among the list's items, as for a card without a parent header in `dropCommand`): the cell's list and parent, and
+ * its place among the cards the cell shows. In a list shown by priority, due date or title it goes to the end of the
+ * order made by hand, like any card arriving there.
+ */
+export function arrivalIn(c: DropContext, focusId: string | undefined, row: string, col: string, at: number): DropPlace {
+  const { parentId } = newCardIn(c, focusId, row, col, '')
+  if (ordered(c, col)) return { list: col, parentId }
+  const cell = c.cells.get(cellKey(row, col)) ?? []
+  const before = groupsSubtasks(c.config)
+    ? groupCell(c.idx, cell, row)
+        .slice(0, at)
+        .flatMap((g) => g.ids).length
+    : at
+  return { list: col, parentId, order: { ids: cell, at: Math.min(before, cell.length) } }
 }
 
 /** A new card typed into a cell takes that cell's status / parent / person, and lands at the bottom. */

@@ -4,7 +4,7 @@ import { exampleData } from '@kanbanto/model/sample'
 import type { ViewConfig } from '@kanbanto/model/types'
 import { buildView, cellKey, NO_ROW, TOP_LEVEL, UNASSIGNED } from '@kanbanto/model/view'
 import { describe, expect, it } from 'vitest'
-import { BLOCKED, blockReason, dropCommand, dropGroupCommand, newCardIn, type DropContext } from './dropRules'
+import { arrivalIn, BLOCKED, blockReason, dropCommand, dropGroupCommand, newCardIn, type DropContext } from './dropRules'
 
 /**
  * The example board: A "Launch website" (A1 done, A2 Design → A2a doing / A2b todo, A3 todo, A4 backlog),
@@ -115,5 +115,32 @@ describe('dropping a card on the board', () => {
     expect(byParent).toMatchObject({ parentId: 'B', fields: { status: 'todo' } })
     const zoomedIn = newCardIn(board(), 'C', NO_ROW, 'todo', 'Choose fonts')
     expect(zoomedIn.parentId).toBe('C')
+  })
+})
+
+describe('a card dropped in from another board (the Inbox panel)', () => {
+  it('takes the list it was dropped on, and its place among the cards the list shows', () => {
+    const c = board({ filter: 'topLevel' }, 'manual')
+    const cell = c.cells.get(cellKey(NO_ROW, 'todo'))!
+    expect(arrivalIn(c, undefined, NO_ROW, 'todo', 1)).toEqual({ list: 'todo', parentId: null, order: { ids: cell, at: 1 } })
+    // Past the end (a folded list): last.
+    expect(arrivalIn(c, undefined, NO_ROW, 'todo', 1_000_000).order).toEqual({ ids: cell, at: cell.length })
+    // While focused on a task, it lands under it, like a card typed there.
+    expect(arrivalIn(c, 'A', NO_ROW, 'doing', 0).parentId).toBe('A')
+  })
+
+  it('with subtasks grouped under their parent: its place is counted in cards, whole groups before it', () => {
+    const c = board({ groupByParent: true })
+    const cell = c.cells.get(cellKey(NO_ROW, 'todo'))!
+    // (To Do shows two cards, each under its own parent's header: after the first group is after its one card.)
+    expect(cell).toHaveLength(2)
+    expect(arrivalIn(c, undefined, NO_ROW, 'todo', 1).order).toEqual({ ids: cell, at: 1 })
+    expect(arrivalIn(c, undefined, NO_ROW, 'todo', 2).order).toEqual({ ids: cell, at: 2 })
+  })
+
+  it('in a row per parent it goes under that parent; in a list shown in another order, to the end of the one made by hand', () => {
+    expect(arrivalIn(board({ rows: 'directParent' }), undefined, 'B', 'todo', 0)).toMatchObject({ list: 'todo', parentId: 'B' })
+    expect(arrivalIn(board({ rows: 'directParent' }), undefined, TOP_LEVEL, 'todo', 0).parentId).toBe(null)
+    expect(arrivalIn(board({ listOrder: { todo: 'priority' } }), undefined, NO_ROW, 'todo', 0)).toEqual({ list: 'todo', parentId: null })
   })
 })

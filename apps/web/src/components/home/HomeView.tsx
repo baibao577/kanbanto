@@ -34,6 +34,8 @@ import { ConfirmDialog, type ConfirmRequest } from '@/components/common/ConfirmD
 import { visibilityOf } from '@/components/share/visibility'
 import { SEARCH_KEYS } from '@/components/cards/search'
 import { AccountMenu } from '@/components/shell/AccountMenu'
+import { InboxButton } from '@/components/inbox/InboxButton'
+import { InboxDock } from '@/components/inbox/InboxDock'
 import { NotificationBell } from '@/components/shell/NotificationBell'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -139,8 +141,9 @@ export function HomeView() {
     }
   }
 
-  // Archived boards are shown apart, at the bottom.
-  const all = (boards ?? []).filter((b) => !b.archivedAt)
+  // Archived boards are shown apart, at the bottom. Your Inbox isn't a tile: it opens from the top bar, beside any
+  // board (as a favourite it still shows with them).
+  const all = (boards ?? []).filter((b) => !b.archivedAt && !b.inbox)
   const archivedBoards = (boards ?? []).filter((b) => b.archivedAt)
   const spaces = workspaces ?? []
   const setArchived = async (b: BoardSummary, archived: boolean) => {
@@ -161,14 +164,14 @@ export function HomeView() {
       <BoardTile
         key={b.id}
         board={b}
-        inbox={b.id === user?.inboxBoardId}
+        inbox={b.inbox}
         onFavorite={() => void setFavorite(b.id, !b.favoritedAt)}
         onRename={b.role === 'owner' || b.role === 'editor' ? () => setRenaming(b) : undefined}
-        onDelete={b.role === 'owner' ? () => askDelete(b) : undefined}
-        onArchive={b.role === 'owner' ? () => void setArchived(b, true) : undefined}
+        onDelete={b.role === 'owner' && !b.inbox ? () => askDelete(b) : undefined}
+        onArchive={b.role === 'owner' && !b.inbox ? () => void setArchived(b, true) : undefined}
         onLeave={b.role !== 'owner' && b.via === 'member' ? () => askLeave(b) : undefined}
         move={
-          b.role === 'owner' && (spaces.length > 0 || b.workspaceId)
+          b.role === 'owner' && !b.inbox && (spaces.length > 0 || b.workspaceId)
             ? {
                 places: [null, ...spaces].filter((w) => (w?.id ?? null) !== b.workspaceId),
                 // Taking a board out of a workspace is for its admins.
@@ -233,6 +236,7 @@ export function HomeView() {
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
+          <InboxButton />
           <NotificationBell />
           <AccountMenu />
           <input
@@ -249,73 +253,78 @@ export function HomeView() {
         </div>
       </header>
 
-      <main className="min-h-0 flex-1 overflow-auto">
-        <div className="mx-auto max-w-6xl space-y-10 px-4 py-8">
-          {error && !boards && <p className="text-sm text-destructive">{error}</p>}
-          {/* Starred boards first (they stay in their own section too). */}
-          {favorites.length > 0 && (
-            <BoardSection title="Favourites" icon={<Star weight="fill" className="size-4 text-amber-500" />} count={favorites.length}>
-              {favorites.map(tile)}
-            </BoardSection>
-          )}
-          {spaces.length === 0 ? (
-            <BoardSection title="Your boards" count={boards ? all.length : undefined}>
-              {all.map(tile)}
-              {createTile(null)}
-            </BoardSection>
-          ) : (
-            <>
-              <BoardSection title="Personal" count={personal.length}>
-                {personal.map(tile)}
+      <div className="flex min-h-0 flex-1">
+        <InboxDock />
+        <main className="min-h-0 min-w-0 flex-1 overflow-auto">
+          <div className="mx-auto max-w-6xl space-y-10 px-4 py-8">
+            {error && !boards && <p className="text-sm text-destructive">{error}</p>}
+            {/* Starred boards first (they stay in their own section too). */}
+            {favorites.length > 0 && (
+              <BoardSection title="Favourites" icon={<Star weight="fill" className="size-4 text-amber-500" />} count={favorites.length}>
+                {favorites.map(tile)}
+              </BoardSection>
+            )}
+            {spaces.length === 0 ? (
+              <BoardSection title="Your boards" count={boards ? all.length : undefined}>
+                {all.map(tile)}
                 {createTile(null)}
               </BoardSection>
-              {spaces.map((w) => (
-                <BoardSection
-                  key={w.id}
-                  title={w.name}
-                  icon={<Buildings className="size-4 text-muted-foreground" />}
-                  count={all.filter((b) => b.workspaceId === w.id).length}
-                  action={
-                    <span className="flex items-center gap-0.5">
-                      <Button asChild size="sm" variant="ghost" className="h-7 gap-1.5 text-muted-foreground">
-                        <a href={hrefFor({ page: 'workspace', id: w.id, section: 'planning' })}>
-                          <ChartBarHorizontal /> Planning
-                        </a>
-                      </Button>
-                      <Button asChild size="sm" variant="ghost" className="h-7 gap-1.5 text-muted-foreground">
-                        <a href={hrefFor({ page: 'workspace', id: w.id })}>
-                          <UsersThree /> {w.memberCount} {w.memberCount === 1 ? 'person' : 'people'}
-                        </a>
-                      </Button>
-                    </span>
-                  }
-                >
-                  {all.filter((b) => b.workspaceId === w.id).map(tile)}
-                  {createTile(w.id)}
+            ) : (
+              <>
+                <BoardSection title="Personal" count={personal.length}>
+                  {personal.map(tile)}
+                  {createTile(null)}
                 </BoardSection>
-              ))}
-              {shared.length > 0 && (
-                <BoardSection title="Shared with you" count={shared.length}>
-                  {shared.map(tile)}
-                </BoardSection>
-              )}
-            </>
-          )}
-          {archivedBoards.length > 0 && <ArchivedBoards boards={archivedBoards} onRestore={(b) => void setArchived(b, false)} onDelete={askDelete} />}
-          {workspaces && (
-            <div className="border-t pt-6">
-              <Button variant="outline" size="sm" className="gap-1.5" onClick={() => setNewWorkspace(true)}>
-                <Buildings /> New workspace
-              </Button>
-              {spaces.length === 0 && (
-                <p className="mt-2 text-xs text-muted-foreground">
-                  A place for a team’s boards: everyone in it can open them, without being invited to each one.
-                </p>
-              )}
-            </div>
-          )}
-        </div>
-      </main>
+                {spaces.map((w) => (
+                  <BoardSection
+                    key={w.id}
+                    title={w.name}
+                    icon={<Buildings className="size-4 text-muted-foreground" />}
+                    count={all.filter((b) => b.workspaceId === w.id).length}
+                    action={
+                      <span className="flex items-center gap-0.5">
+                        <Button asChild size="sm" variant="ghost" className="h-7 gap-1.5 text-muted-foreground">
+                          <a href={hrefFor({ page: 'workspace', id: w.id, section: 'planning' })}>
+                            <ChartBarHorizontal /> Planning
+                          </a>
+                        </Button>
+                        <Button asChild size="sm" variant="ghost" className="h-7 gap-1.5 text-muted-foreground">
+                          <a href={hrefFor({ page: 'workspace', id: w.id })}>
+                            <UsersThree /> {w.memberCount} {w.memberCount === 1 ? 'person' : 'people'}
+                          </a>
+                        </Button>
+                      </span>
+                    }
+                  >
+                    {all.filter((b) => b.workspaceId === w.id).map(tile)}
+                    {createTile(w.id)}
+                  </BoardSection>
+                ))}
+                {shared.length > 0 && (
+                  <BoardSection title="Shared with you" count={shared.length}>
+                    {shared.map(tile)}
+                  </BoardSection>
+                )}
+              </>
+            )}
+            {archivedBoards.length > 0 && (
+              <ArchivedBoards boards={archivedBoards} onRestore={(b) => void setArchived(b, false)} onDelete={askDelete} />
+            )}
+            {workspaces && (
+              <div className="border-t pt-6">
+                <Button variant="outline" size="sm" className="gap-1.5" onClick={() => setNewWorkspace(true)}>
+                  <Buildings /> New workspace
+                </Button>
+                {spaces.length === 0 && (
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    A place for a team’s boards: everyone in it can open them, without being invited to each one.
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+        </main>
+      </div>
 
       <CreateBoardDialog open={!!creating} onOpenChange={(o) => !o && setCreating(null)} workspaces={spaces} where={creating?.where} />
       <CreateWorkspaceDialog
@@ -456,7 +465,7 @@ function BoardTile({
           {inbox && (
             <span
               className="absolute top-2 left-2 inline-flex items-center gap-1 rounded-md border border-white/30 bg-white/60 px-1.5 py-0.5 text-[10px] font-medium text-black/75 backdrop-blur-sm dark:bg-black/40 dark:text-white/90"
-              title="Your Inbox: tasks apps add without choosing a board go here"
+              title="Your Inbox: quick notes and cards that have no board yet. Only you can see it."
             >
               <Tray weight="fill" className="size-3" /> Inbox
             </span>

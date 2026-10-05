@@ -88,9 +88,10 @@ Treat a token like a password. Delete it on the same page when you no longer nee
 
 ## An Inbox for quick notes
 
-When you tell an assistant "remind me to call the bank" without naming a board, it needs somewhere to put the card.
-Choose one board as your **Inbox**: open that board's **⋯ → Board settings** and turn on **Use as my Inbox**. Later,
-ask the assistant to file Inbox cards where they belong.
+When you tell an assistant "remind me to call the bank" without naming a board, the card goes to
+[your Inbox](/everyday/inbox): a board of your own that only you can see, one click away beside any board (the
+**tray** in the top bar). There is nothing to set up: everyone has one. Later, drag its cards onto the boards they
+belong to, or ask the assistant to file them.
 
 ## Next
 

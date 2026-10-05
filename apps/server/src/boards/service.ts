@@ -28,10 +28,13 @@ function freshMeta(data: BoardData, now: string): BoardData {
   }
 }
 
-/** Saves a new board with `ownerId` as its owner: in a workspace (shared with everyone in it), or in Personal. */
-export async function insertBoard(tx: Tx, data: BoardData, ownerId: string, workspaceId: string | null = null) {
+/**
+ * Saves a new board with `ownerId` as its owner: in a workspace (shared with everyone in it), or in Personal.
+ * `inbox`: as their Inbox, private to them.
+ */
+export async function insertBoard(tx: Tx, data: BoardData, ownerId: string, workspaceId: string | null = null, opts: { inbox?: boolean } = {}) {
   const now = new Date()
-  const visibility: Visibility = workspaceId ? 'workspace' : 'invited'
+  const visibility: Visibility = opts.inbox ? 'private' : workspaceId ? 'workspace' : 'invited'
   await tx.insert(boards).values({
     id: data.board.id,
     name: data.board.name,
@@ -44,6 +47,7 @@ export async function insertBoard(tx: Tx, data: BoardData, ownerId: string, work
     createdAt: now,
     updatedAt: now,
     version: data.board.version,
+    ...(opts.inbox && { inboxOf: ownerId }),
   })
   await tx.insert(boardMembers).values({ boardId: data.board.id, userId: ownerId, role: 'owner', createdAt: now, updatedAt: now, version: 1 })
   // Cards that arrive finished (the example board, an imported one) were done by their last change, as far as we know.

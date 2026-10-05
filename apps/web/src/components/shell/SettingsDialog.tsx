@@ -1,10 +1,9 @@
-import { Archive, Desktop, Info, Moon, PaintBrush, Sun, Tag, Trash, Tray, User, UsersThree, type Icon } from '@phosphor-icons/react'
+import { Archive, Desktop, Info, Moon, PaintBrush, Sun, Tag, Trash, User, UsersThree, type Icon } from '@phosphor-icons/react'
 import { toast } from 'sonner'
 import { useState, type ReactNode } from 'react'
 import { api, errorMessage } from '@/api/client'
 import { useBoard } from '@/app/board-context'
 import { navigate } from '@/app/router'
-import { useAuth } from '@/app/use-auth'
 import { useTheme } from '@/app/use-theme'
 import { WebhookDetail, WebhookList } from '@/components/board/Webhooks'
 import { BoardFields } from '@/components/fields/BoardFields'
@@ -24,11 +23,9 @@ import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
-import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { cn } from '@/lib/utils'
-import type { PublicUser } from '@kanbanto/model/api'
 import { formatDuration } from '@kanbanto/model/time'
 import { backgroundOf, gradientCss } from '@kanbanto/model/colors'
 import type { StatusMode } from '@kanbanto/model/types'
@@ -49,7 +46,8 @@ export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCh
     { id: 'look', label: 'Background', icon: PaintBrush },
     { id: 'people', label: 'People & apps', icon: UsersThree },
     { id: 'you', label: 'Just for you', icon: User },
-    ...(owner ? [{ id: 'delete' as const, label: 'Archive or delete', icon: Trash, danger: true }] : []),
+    // (Your Inbox stays: it can't be archived or deleted.)
+    ...(owner && !access.inbox ? [{ id: 'delete' as const, label: 'Archive or delete', icon: Trash, danger: true }] : []),
   ]
 
   return (
@@ -181,36 +179,45 @@ function People({ onClose }: { onClose: () => void }) {
   const [hook, setHook] = useState<string | null>(null)
   if (hook) return <WebhookDetail id={hook} onBack={() => setHook(null)} />
   return (
-    <Section title="People & apps" hint="Who can work on this board, and what it tells other apps.">
-      <Card>
-        <Row
-          label="People"
-          icon={UsersThree}
-          hint={
-            data.members.length === 1
-              ? 'Only you so far. Invite people and choose what they can do in Share.'
-              : `${data.members.length} people can work on this board.`
-          }
-          action={
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                onClose()
-                openShare()
-              }}
-            >
-              Share…
-            </Button>
-          }
-        >
-          <div className="flex -space-x-1.5">
-            {data.members.slice(0, 8).map((m) => (
-              <Avatar key={m.id} name={m.name} className="ring-2 ring-card" />
-            ))}
-          </div>
-        </Row>
-      </Card>
+    <Section
+      title="People & apps"
+      hint={
+        access.inbox
+          ? 'Your Inbox is yours alone. It can still tell other apps what changes.'
+          : 'Who can work on this board, and what it tells other apps.'
+      }
+    >
+      {!access.inbox && (
+        <Card>
+          <Row
+            label="People"
+            icon={UsersThree}
+            hint={
+              data.members.length === 1
+                ? 'Only you so far. Invite people and choose what they can do in Share.'
+                : `${data.members.length} people can work on this board.`
+            }
+            action={
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  onClose()
+                  openShare()
+                }}
+              >
+                Share…
+              </Button>
+            }
+          >
+            <div className="flex -space-x-1.5">
+              {data.members.slice(0, 8).map((m) => (
+                <Avatar key={m.id} name={m.name} className="ring-2 ring-card" />
+              ))}
+            </div>
+          </Row>
+        </Card>
+      )}
       {access.role === 'owner' && (
         <Card title="Webhooks: send changes, comments and reminders to another app (Slack, n8n, Zapier…)">
           <WebhookList onOpen={setHook} />
@@ -221,29 +228,10 @@ function People({ onClose }: { onClose: () => void }) {
 }
 
 function JustForYou() {
-  const { data } = useBoard()
-  const { user, setUser } = useAuth()
   const { theme, setTheme } = useTheme()
-  const isInbox = !!user && user.inboxBoardId === data.board.id
-  const setInbox = (on: boolean) =>
-    api<{ user: PublicUser }>('PATCH', '/auth/me', { inboxBoardId: on ? data.board.id : null }).then(
-      ({ user }) => {
-        setUser(user)
-        toast(on ? `“${data.board.name}” is your Inbox` : 'You have no Inbox now')
-      },
-      (e) => toast.error(errorMessage(e)),
-    )
   return (
     <Section title="Just for you" hint="Only you see these. Nobody else’s board changes.">
       <Card>
-        {user && (
-          <Row
-            label="Use as my Inbox"
-            icon={Tray}
-            hint="Tasks you add from Claude or other apps without choosing a board go here. You can move them to the right board later."
-            action={<Switch checked={isInbox} onCheckedChange={(on) => void setInbox(on)} aria-label="Use as my Inbox" />}
-          />
-        )}
         <Row label="Appearance" icon={theme === 'dark' ? Moon : theme === 'light' ? Sun : Desktop} hint="Light, dark, or the same as your computer.">
           <ToggleGroup type="single" variant="outline" value={theme} onValueChange={(v) => v && setTheme(v)} className="w-full">
             <ToggleGroupItem value="light" className="flex-1 gap-1.5">

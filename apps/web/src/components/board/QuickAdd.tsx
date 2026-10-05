@@ -1,5 +1,5 @@
 import { Plus, X } from '@phosphor-icons/react'
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useReadOnly } from '@/app/board-context'
 import { Button } from '@/components/ui/button'
 import { TitleDateChip } from '@/components/text/TitleDate'
@@ -23,6 +23,11 @@ interface Props {
   single?: boolean
   /** Drawn straight on the board background (uses its text colors). */
   onCanvas?: boolean
+  /**
+   * Each time this changes to something other than 0, the field opens with the cursor in it (a key that means "add
+   * a card here"). Also when it's there from the start: the key was pressed before this was on the page.
+   */
+  focusSignal?: number
 }
 
 /** "+ Add a card" that turns into an inline field. */
@@ -35,10 +40,21 @@ export function QuickAdd({
   single,
   onCanvas,
   dates,
+  focusSignal = 0,
 }: Props) {
   const [open, setOpen] = useState(false)
   const [value, setValue] = useState('')
   const readOnly = useReadOnly()
+  const field = useRef<HTMLTextAreaElement>(null)
+  const [signal, setSignal] = useState(0)
+  if (signal !== focusSignal) {
+    setSignal(focusSignal)
+    if (focusSignal) setOpen(true)
+  }
+  // (Already open: the cursor goes back in it. Opening it puts the cursor there by itself.)
+  useEffect(() => {
+    if (focusSignal) field.current?.focus()
+  }, [focusSignal])
   const date = useTitleDate(dates ? value : '')
 
   const submit = () => {
@@ -94,6 +110,7 @@ export function QuickAdd({
         />
       ) : (
         <textarea
+          ref={field}
           autoFocus
           rows={2}
           value={value}

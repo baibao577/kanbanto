@@ -41,6 +41,7 @@ import { createField, editBoardFields, libraryOf, listLibrary, updateField, type
 import { linksToResolve, pickCards, resolveLinks } from './boards/links'
 import { ACTIVITY_DAYS, parseMoment, readActivity, workSigns } from './boards/activityLog'
 import { comments, notifications, reminderSends, tasks, users, workspaceMembers, workspaces } from './db/schema'
+import { ensureInbox } from './boards/inbox'
 import { HttpError } from './http'
 import { followedBy, isFollowing, setFollowing } from './boards/follows'
 import { createBoard, createStarter } from './boards/service'
@@ -318,7 +319,7 @@ function buildServer(app: FastifyInstance, me: SessionUser, token: TokenAccess) 
     {
       title: 'List boards',
       description:
-        'Who you act as (their name, time zone and today’s date there), and the boards you can open, most recently active first: where each lives (a workspace’s name, "Personal" or "Shared with you"), what it’s for (about), your role, which is your Inbox, and which are your favourites. Archived boards only with include_archived.',
+        'Who you act as (their name, time zone and today’s date there), and the boards you can open, most recently active first: where each lives (a workspace’s name, "Personal" or "Shared with you"), what it’s for (about), your role, which is your Inbox (a private board of your own, for cards that have no board yet), and which are your favourites. Archived boards only with include_archived.',
       inputSchema: { include_archived: z.boolean().optional() },
       annotations: readOnly,
     },
@@ -329,7 +330,7 @@ function buildServer(app: FastifyInstance, me: SessionUser, token: TokenAccess) 
         name: b.name,
         workspace: b.place,
         ...(b.description && { about: b.description }),
-        ...(b.id === me.inboxBoardId && { inbox: true }),
+        ...(b.inbox && { inbox: true }),
         ...(b.favoritedAt && { favorite: true }),
         role: b.role,
         workspace_id: b.workspaceId,
@@ -399,7 +400,7 @@ function buildServer(app: FastifyInstance, me: SessionUser, token: TokenAccess) 
             ...(data.board.description && { about: data.board.description }),
             workspace: where.place,
             your_role: access.role,
-            ...(data.board.id === me.inboxBoardId && { inbox: true }),
+            ...(board.inboxOf === me.id && { inbox: true }),
           },
           lists: idx.columns.map((c) => ({ id: c.id, name: c.name, counts_as: c.category })),
           labels: data.labels.map((l) => ({ id: l.id, name: l.name })),
@@ -1365,7 +1366,7 @@ function buildServer(app: FastifyInstance, me: SessionUser, token: TokenAccess) 
       {
         title: 'Create tasks',
         description:
-          'Adds one or more tasks to a board: at the top level, or as subtasks of parent_id (to break a task down). Each can come with its own subtasks. Each gets the given list, or the first list, at the end of it. Without board_id they go to your Inbox board.',
+          'Adds one or more tasks to a board: at the top level, or as subtasks of parent_id (to break a task down). Each can come with its own subtasks. Each gets the given list, or the first list, at the end of it. Without board_id they go to your Inbox: a private board everyone has, for cards that have no board yet.',
         inputSchema: {
           board_id: z.string().optional().describe('Leave out to use your Inbox (for quick capture).'),
           parent_id: z.string().optional(),
@@ -1387,19 +1388,9 @@ function buildServer(app: FastifyInstance, me: SessionUser, token: TokenAccess) 
         annotations: { destructiveHint: false, openWorldHint: false },
       },
       tool(async (a: { board_id?: string; parent_id?: string; tasks: (NewTask & { subtasks?: NewTask[] })[] }) => {
-        const boardId = a.board_id ?? me.inboxBoardId
-        if (!boardId)
-          throw new HttpError(
-            400,
-            'Say which board (list_boards shows them). They have no Inbox yet: one can be chosen in a board’s settings (“Use as my Inbox”).',
-          )
-        const { board, data, idx } = await open(boardId, 'editor').catch((e: unknown) => {
-          if (a.board_id || !(e instanceof HttpError)) throw e
-          throw new HttpError(
-            400,
-            'Their Inbox board can’t be used anymore. Say which board, and suggest choosing a new Inbox in a board’s settings.',
-          )
-        })
+        // No board named: their Inbox (made now, if this is the first time it's needed).
+        const boardId = a.board_id ?? (await ensureInbox(app.db, me.id))
+        const { board, data, idx } = await open(boardId, 'editor')
         if (a.parent_id && !data.tasks[a.parent_id]) throw new HttpError(404, 'There’s no such parent task on this board.')
         // Every list, label and person is looked up before anything is added, so a wrong name adds nothing.
         const plan: { id: string; title: string; fields: TaskFields; subtasks: { id: string; title: string; fields: TaskFields }[] }[] = []
@@ -2105,25 +2096,6 @@ function buildServer(app: FastifyInstance, me: SessionUser, token: TokenAccess) 
           await updateField(app, lib, f.id, { renameOption: { from: need(a.option, 'the option'), to: need(a.name, 'a name') } }, me.id)
         else await updateField(app, lib, f.id, { ...settings, ...(a.name !== undefined && { name: a.name }) }, me.id)
         return shown(f.id)
-      }),
-    )
-
-    server.registerTool(
-      'set_inbox',
-      {
-        title: 'Choose your Inbox',
-        description: 'Makes a board your Inbox, where create_tasks puts tasks when no board is given. board_id null: no Inbox.',
-        inputSchema: { board_id: z.string().nullable() },
-        annotations: { destructiveHint: false, idempotentHint: true, openWorldHint: false },
-      },
-      tool(async (a: { board_id: string | null }) => {
-        const board = a.board_id ? (await open(a.board_id, 'editor')).data.board : null
-        await app.db
-          .update(users)
-          .set({ inboxBoardId: board?.id ?? null, updatedAt: new Date() })
-          .where(eq(users.id, me.id))
-        me.inboxBoardId = board?.id ?? null
-        return { inbox: board ? { id: board.id, name: board.name } : null }
       }),
     )
 

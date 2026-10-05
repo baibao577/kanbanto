@@ -57,7 +57,7 @@ export const users = pgTable('users', {
   reminderEmails: boolean('reminder_emails').notNull().default(true),
   /** When the last daily summary went out (at most one per 24 hours). */
   lastDigestAt: at('last_digest_at'),
-  /** Their Inbox: where apps put tasks they add without naming a board. */
+  /** No longer read: a person's Inbox is the board with `inboxOf` set to them. Kept until a later release drops it. */
   inboxBoardId: text('inbox_board_id').references((): AnyPgColumn => boards.id, { onDelete: 'set null' }),
   disabledAt: at('disabled_at'),
   createdAt: at('created_at').notNull().defaultNow(),
@@ -419,8 +419,22 @@ export const boards = pgTable(
     activityAt: at('activity_at').notNull().defaultNow(),
     /** Archived by an owner: read-only and off the boards page until restored. */
     archivedAt: at('archived_at'),
+    /**
+     * Whose Inbox this is (null: an ordinary board). Everyone has one, made the first time it's needed: private,
+     * in Personal, theirs alone. It can't be shared, moved, archived or deleted (see boards/inbox.ts).
+     */
+    inboxOf: uuid('inbox_of').references((): AnyPgColumn => users.id, { onDelete: 'cascade' }),
   },
-  (t) => [index('boards_workspace_idx').on(t.workspaceId)],
+  (t) => [
+    index('boards_workspace_idx').on(t.workspaceId),
+    uniqueIndex('boards_inbox_of_idx')
+      .on(t.inboxOf)
+      .where(sql`${t.inboxOf} is not null`),
+    check(
+      'boards_inbox_check',
+      sql`${t.inboxOf} is null or (${t.visibility} = 'private' and ${t.workspaceId} is null and ${t.publicLink} = false and ${t.archivedAt} is null)`,
+    ),
+  ],
 )
 
 export const boardMembers = pgTable(

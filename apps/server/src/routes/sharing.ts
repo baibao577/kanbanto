@@ -10,6 +10,7 @@ import { clearPerson } from '../boards/people'
 import type { Tx } from '../db'
 import { attachments, boardInvites, boardMembers, boards, ROLES, users, VISIBILITIES, workspaceMembers, workspaces } from '../db/schema'
 import { env } from '../env'
+import { notOnInbox } from '../boards/inbox'
 import { HttpError, parse, siteUrl } from '../http'
 import { WHY_NOT_SENT } from '../mail/mailer'
 import { emails } from '../mail/templates'
@@ -98,6 +99,7 @@ export const sharingRoutes: FastifyPluginAsync = async (app) => {
   app.patch('/boards/:id/sharing', async (req) => {
     const { id } = parse(Params, req.params)
     const { board } = await requireAccess(app.db, requireUser(req.user), id, 'owner')
+    notOnInbox(board, 'share')
     const body = parse(
       z
         .object({ visibility: z.enum(VISIBILITIES), publicLink: z.boolean(), workspaceRole: inviteRole })
@@ -115,7 +117,7 @@ export const sharingRoutes: FastifyPluginAsync = async (app) => {
   app.put('/boards/:id/invites/:kind', async (req) => {
     const { id, kind } = parse(KindParams, req.params)
     const me = requireUser(req.user)
-    await requireAccess(app.db, me, id, 'owner')
+    notOnInbox((await requireAccess(app.db, me, id, 'owner')).board, 'share')
     const body = parse(z.object({ role: inviteRole, regenerate: z.boolean().optional() }), req.body)
     await app.db.transaction(async (tx) => {
       const active = and(eq(boardInvites.boardId, id), eq(boardInvites.kind, kind), isNull(boardInvites.revokedAt))
@@ -154,6 +156,7 @@ export const sharingRoutes: FastifyPluginAsync = async (app) => {
     const { id } = parse(Params, req.params)
     const me = requireUser(req.user)
     const { board } = await requireAccess(app.db, me, id, 'owner')
+    notOnInbox(board, 'share')
     const body = parse(
       z.object({
         email: z
@@ -228,7 +231,7 @@ export const sharingRoutes: FastifyPluginAsync = async (app) => {
 
   app.patch('/boards/:id/members/:userId', async (req) => {
     const { id, userId } = parse(MemberParams, req.params)
-    await requireAccess(app.db, requireUser(req.user), id, 'owner')
+    notOnInbox((await requireAccess(app.db, requireUser(req.user), id, 'owner')).board, 'people')
     const { role } = parse(z.object({ role: z.enum(ROLES) }), req.body)
     await app.db.transaction(async (tx) => {
       // (One change to a board's people at a time, so two at once can't each see the other owner still there.)
@@ -255,9 +258,10 @@ export const sharingRoutes: FastifyPluginAsync = async (app) => {
     const me = requireUser(req.user)
     if (userId !== me.id) await requireAccess(app.db, me, id, 'owner')
     await app.db.transaction(async (tx) => {
-      await tx.select({ id: boards.id }).from(boards).where(eq(boards.id, id)).for('update')
+      const [board] = await tx.select({ inboxOf: boards.inboxOf }).from(boards).where(eq(boards.id, id)).for('update')
       const current = await memberRole(tx, id, userId)
       if (!current) throw new HttpError(404, 'That person isn’t on this board.')
+      notOnInbox(board, 'leave')
       if (current === 'owner' && (await ownerCount(tx, id)) < 2)
         throw new HttpError(400, 'A board needs at least one owner. Make someone else an owner first.')
       await tx.delete(boardMembers).where(and(eq(boardMembers.boardId, id), eq(boardMembers.userId, userId)))

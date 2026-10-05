@@ -663,6 +663,30 @@ describe('moving a task to another board', () => {
     // A move to the same board is refused.
     expect((await ann.request('POST', `/api/boards/${home}/tasks/${moved.id}/move`, { boardId: home })).status).toBe(422)
   })
+
+  it('lands at the place it was dropped in a list', async () => {
+    const { ann, id } = await team()
+    const { id: home } = await ann.ok('POST', '/api/boards', { name: 'Home' })
+    const add = (title: string) =>
+      ann.ok('POST', `/api/boards/${home}/mutations`, {
+        mutationId: mid(),
+        command: { type: 'task.create', id: title, parentId: null, fields: { title } },
+      })
+    for (const title of ['x', 'y', 'z']) await add(title)
+    const todo = async () => {
+      const { tasks } = (await ann.ok('GET', `/api/boards/${home}`)).data as { tasks: Record<string, { id: string; status: string; rank?: string }> }
+      const inList = Object.values(tasks).filter((c) => c.status === 'todo')
+      return inList.sort((a, b) => (a.rank! < b.rank! ? -1 : 1)).map((c) => c.id)
+    }
+    // Between two cards; the list hadn't been ordered by hand, so all of it gets positions.
+    const moved = await ann.ok('POST', `/api/boards/${id}/tasks/A3/move`, { boardId: home, list: 'todo', order: { ids: ['x', 'y', 'z'], at: 1 } })
+    expect(await todo()).toEqual(['x', moved.id, 'y', 'z'])
+    // A finished card goes in the list it was dropped on, first.
+    const done = await ann.ok('POST', `/api/boards/${id}/tasks/A1/move`, { boardId: home, list: 'todo', order: { ids: await todo(), at: 0 } })
+    expect(await todo()).toEqual([done.id, 'x', moved.id, 'y', 'z'])
+    // A place needs its list.
+    expect((await ann.request('POST', `/api/boards/${id}/tasks/A2/move`, { boardId: home, order: { ids: [], at: 0 } })).status).toBe(400)
+  })
 })
 
 describe('reminders', () => {

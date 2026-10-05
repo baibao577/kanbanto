@@ -10,6 +10,9 @@ describe('router', () => {
       ['#/b/abc/outline', { page: 'board', id: 'abc', layout: 'outline' }],
       ['#/b/abc/timeline?focus=t1', { page: 'board', id: 'abc', layout: 'timeline', focus: 't1' }],
       ['#/b/abc/board?focus=t1&task=t2', { page: 'board', id: 'abc', layout: 'board', focus: 't1', task: 't2' }],
+      // A card of your Inbox, open over a board or over your boards.
+      ['#/b/abc/timeline?inbox=n1', { page: 'board', id: 'abc', layout: 'timeline', inbox: 'n1' }],
+      ['#/?inbox=n1', { page: 'home', inbox: 'n1' }],
       ['#/join/tok_1-x', { page: 'join', token: 'tok_1-x' }],
       ['#/signin', { page: 'signin' }],
       ['#/signup?next=%23%2Fjoin%2Fabc', { page: 'signup', next: '#/join/abc' }],

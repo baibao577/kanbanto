@@ -21,10 +21,14 @@ import { cn } from '@/lib/utils'
 import type { Connection } from '@/data/sync'
 import { AccountMenu } from './AccountMenu'
 import { NotificationBell } from './NotificationBell'
+import { InboxButton } from '@/components/inbox/InboxButton'
 import { MoreMenu, type MoreMenuProps } from './MoreMenu'
 import { LogoMark, LogoTile } from '@/components/common/Logo'
 import { backgroundOf } from '@kanbanto/model/colors'
 import { VIEW_TABS } from '@/components/views'
+
+/** An icon in the bar that says what it is when pointed at (the bell and the Inbox tray look the same). */
+const ICON_BUTTON = 'grid size-8 shrink-0 place-items-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground'
 
 interface Props extends MoreMenuProps {
   search: string
@@ -38,10 +42,13 @@ export function TopBar({ search, onSearch, onNewTask, connection, unsaved, ...me
   const { data, prefs, setPrefs, run, readOnly, access, openShare } = useBoard()
   const { user } = useAuth()
   const tile = backgroundOf(data.board.background)
+  // Visitors of a public board aren't on it, so there's nothing for them to share or see. Your Inbox is yours alone.
+  const canShare = !!user && access.via !== 'public' && !access.inbox
 
   return (
-    <header className="flex h-14 shrink-0 items-center gap-3 border-b bg-background px-3 sm:px-4">
-      <div className="flex min-w-0 items-center gap-2">
+    <header className="flex h-14 shrink-0 items-center gap-2 border-b bg-background px-3 sm:gap-3 sm:px-4">
+      {/* (On a phone the name has no room: it's cut off here rather than left to run under the tabs.) */}
+      <div className="flex min-w-0 items-center gap-2 max-sm:overflow-hidden">
         <Tooltip>
           <TooltipTrigger asChild>
             <a
@@ -109,7 +116,22 @@ export function TopBar({ search, onSearch, onNewTask, connection, unsaved, ...me
 
       <div className="ml-auto flex items-center gap-2">
         <SaveState connection={connection} unsaved={unsaved} />
-        <SearchBox value={search} onChange={onSearch} />
+        {/* This board's tools are quiet icons, named when pointed at: the one button with a word is the one used most. */}
+        <div className="flex items-center gap-0.5">
+          <SearchBox value={search} onChange={onSearch} />
+          {/* (On a phone there's no room for it: there it's the first thing under More.) */}
+          {canShare && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button aria-label="Share" onClick={openShare} className={cn(ICON_BUTTON, 'max-sm:hidden')}>
+                  <UsersThree className="size-5" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent>Share: {data.members.length < 2 ? 'only you so far' : `${data.members.length} people`}</TooltipContent>
+            </Tooltip>
+          )}
+          <MoreMenu {...menu} canShare={canShare} />
+        </div>
         {!readOnly && (
           <Tooltip>
             <TooltipTrigger asChild>
@@ -123,17 +145,14 @@ export function TopBar({ search, onSearch, onNewTask, connection, unsaved, ...me
             </TooltipContent>
           </Tooltip>
         )}
-        {/* Visitors of a public board aren't on it, so there's nothing for them to share or see. */}
-        {user && access.via !== 'public' && (
-          <Button size="sm" variant="outline" onClick={openShare} className="gap-1.5" aria-label="Share">
-            <UsersThree />
-            <span className="hidden sm:inline">Share</span>
-          </Button>
-        )}
-        <MoreMenu {...menu} />
         {user ? (
           <>
-            <NotificationBell />
+            {/* What's yours, the same on every page, apart from what's this board's. */}
+            <span aria-hidden className="h-5 w-px bg-border max-sm:hidden" />
+            <div className="flex items-center gap-0.5">
+              <InboxButton />
+              <NotificationBell />
+            </div>
             <AccountMenu />
           </>
         ) : (
@@ -154,7 +173,7 @@ function BoardSwitcher({ name, currentId, onRename }: { name: string; currentId:
   const favorites = favoritesOf(boards).filter((b) => b.id !== currentId)
   const current = boards?.find((b) => b.id === currentId)
   // Most recently changed first (the server's order), after the favourites.
-  const recent = (boards ?? []).filter((b) => b.id !== currentId && !b.archivedAt && !b.favoritedAt).slice(0, 8)
+  const recent = (boards ?? []).filter((b) => b.id !== currentId && !b.archivedAt && !b.favoritedAt && !b.inbox).slice(0, 8)
   const item = (b: BoardSummary) => (
     <DropdownMenuItem key={b.id} onSelect={() => navigate({ page: 'board', id: b.id })}>
       <BoardDot background={b.background} />
@@ -255,6 +274,10 @@ function SaveState({ connection, unsaved }: { connection: Connection; unsaved: n
 
 function SearchBox({ value, onChange }: { value: string; onChange: (q: string) => void }) {
   const input = useRef<HTMLInputElement>(null)
+  const [focused, setFocused] = useState(false)
+  const [tip, setTip] = useState(false)
+  // An icon until it's used: it opens into the box when clicked (or with "/"), and stays open while it holds words.
+  const open = focused || !!value
 
   // "/" jumps to search from anywhere that isn't a text field.
   useEffect(() => {
@@ -269,35 +292,50 @@ function SearchBox({ value, onChange }: { value: string; onChange: (q: string) =
   }, [])
 
   return (
-    <div className="relative hidden sm:block">
-      <MagnifyingGlass className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
-      <input
-        ref={input}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === 'Escape') {
-            onChange('')
-            e.currentTarget.blur()
-          }
-        }}
-        placeholder="Search tasks"
-        aria-label="Search tasks"
-        className="h-8 w-40 rounded-md border border-transparent bg-muted pr-8 pl-8 text-sm transition-[width,background-color] outline-none placeholder:text-muted-foreground focus:w-60 focus:border-input focus:bg-background focus-visible:ring-2 focus-visible:ring-ring/30 lg:w-52"
-      />
-      {value ? (
-        <button
-          onClick={() => onChange('')}
-          aria-label="Clear search"
-          className="absolute top-1/2 right-1.5 grid size-5 -translate-y-1/2 place-items-center rounded text-muted-foreground hover:text-foreground"
-        >
-          <X className="size-3.5" />
-        </button>
-      ) : (
-        <span className="absolute top-1/2 right-1.5 -translate-y-1/2">
-          <Kbd>/</Kbd>
-        </span>
-      )}
-    </div>
+    <Tooltip open={tip && !open} onOpenChange={setTip}>
+      <TooltipTrigger asChild>
+        <div className="group relative hidden sm:block">
+          <MagnifyingGlass
+            className={cn(
+              'pointer-events-none absolute top-1/2 left-1.5 size-5 -translate-y-1/2 text-muted-foreground',
+              !open && 'group-hover:text-foreground',
+            )}
+          />
+          <input
+            ref={input}
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+            onFocus={() => setFocused(true)}
+            onBlur={() => setFocused(false)}
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') {
+                onChange('')
+                e.currentTarget.blur()
+              }
+            }}
+            placeholder={open ? 'Search tasks' : undefined}
+            aria-label="Search tasks"
+            className={cn(
+              'h-8 rounded-md border border-transparent pl-8 text-sm transition-[width,background-color] outline-none placeholder:text-muted-foreground',
+              open
+                ? 'w-56 bg-muted pr-8 focus:border-input focus:bg-background focus-visible:ring-2 focus-visible:ring-ring/30'
+                : 'w-8 cursor-pointer bg-transparent hover:bg-accent',
+            )}
+          />
+          {value && (
+            <button
+              onClick={() => onChange('')}
+              aria-label="Clear search"
+              className="absolute top-1/2 right-1.5 grid size-5 -translate-y-1/2 place-items-center rounded text-muted-foreground hover:text-foreground"
+            >
+              <X className="size-3.5" />
+            </button>
+          )}
+        </div>
+      </TooltipTrigger>
+      <TooltipContent>
+        Search tasks <Kbd>/</Kbd>
+      </TooltipContent>
+    </Tooltip>
   )
 }

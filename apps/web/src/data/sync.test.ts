@@ -79,7 +79,7 @@ const onBoard = ({ archived: _putAway, ...data }: BoardData): BoardData => data
 const snapshot = (): BoardSnapshot => ({
   data: onBoard(server),
   seq,
-  access: { role: 'editor', via: 'member', visibility: 'invited', publicLink: false, workspace: null, archivedAt: null },
+  access: { role: 'editor', via: 'member', visibility: 'invited', publicLink: false, workspace: null, archivedAt: null, inbox: false },
   counts: { comments: {}, attachments: {}, lastComment: {}, time: {} },
   canComment: true,
 })

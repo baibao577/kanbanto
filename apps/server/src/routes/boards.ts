@@ -10,6 +10,7 @@ import type { FastifyPluginAsync } from 'fastify'
 import { z } from 'zod'
 import { accessFor, accessOf, requireAccess, type BoardRow } from '../boards/access'
 import { parseMoment, readActivity } from '../boards/activityLog'
+import { notOnInbox } from '../boards/inbox'
 import { canBeLinked, factOf, linksToResolve, resolveLinks, unlinkBoard } from '../boards/links'
 import { createBoard, createStarter, importBoard } from '../boards/service'
 import { requireWorkspace } from '../boards/workspaces'
@@ -73,8 +74,9 @@ export async function boardsFor(db: Db, userId: string): Promise<BoardSummary[]>
     activity_at: Date
     archived_at: Date | null
     favorited_at: Date | null
+    inbox_of: string | null
   }>(sql`
-      select b.id, b.name, b.description, b.background, b.visibility, b.public_link, b.workspace_id, b.workspace_role, m.role,
+      select b.id, b.name, b.description, b.background, b.visibility, b.public_link, b.workspace_id, b.workspace_role, b.inbox_of, m.role,
         (w.user_id is not null) as in_workspace, b.created_at, b.activity_at, b.archived_at, f.created_at as favorited_at,
         (select count(*)::int from tasks t where t.board_id = b.id and t.archived_at is null) as task_count,
         (select count(*)::int from tasks t join lists l on l.board_id = t.board_id and l.id = t.status
@@ -112,6 +114,7 @@ export async function boardsFor(db: Db, userId: string): Promise<BoardSummary[]>
       updatedAt: new Date(r.activity_at).toISOString(),
       archivedAt: r.archived_at ? new Date(r.archived_at).toISOString() : null,
       favoritedAt: r.favorited_at ? new Date(r.favorited_at).toISOString() : null,
+      inbox: r.inbox_of === userId,
     })
   }
   return summaries
@@ -183,6 +186,7 @@ export const boardRoutes: FastifyPluginAsync = async (app) => {
       publicLink: board.publicLink,
       workspace: workspace ?? null,
       archivedAt: board.archivedAt?.toISOString() ?? null,
+      inbox: !!board.inboxOf,
     }
     // What the cards' links point at, for this person (a visitor with the public link: cards of this board only).
     const viewer = access.via === 'public' ? undefined : req.user?.id
@@ -243,6 +247,7 @@ export const boardRoutes: FastifyPluginAsync = async (app) => {
     const { id } = parse(Params, req.params)
     const { archived } = parse(z.object({ archived: z.boolean() }), req.body)
     const { board } = await requireAccess(app.db, requireUser(req.user), id, 'owner', { archived: true })
+    if (archived) notOnInbox(board, 'archive')
     if (!!board.archivedAt !== archived) {
       await app.db
         .update(boards)
@@ -257,7 +262,8 @@ export const boardRoutes: FastifyPluginAsync = async (app) => {
 
   app.delete('/boards/:id', async (req) => {
     const { id } = parse(Params, req.params)
-    await requireAccess(app.db, requireUser(req.user), id, 'owner', { archived: true })
+    const { board } = await requireAccess(app.db, requireUser(req.user), id, 'owner', { archived: true })
+    notOnInbox(board, 'delete')
     // (As it was: other boards' links to its cards are taken out once it's gone.)
     const was = await factOf(app.db, id)
     await deleteBoardFiles(app.db, id)
@@ -280,18 +286,27 @@ export const boardRoutes: FastifyPluginAsync = async (app) => {
 
   /**
    * Moves a task, with its subtasks, comments and files, to another board you can edit. Lists and labels are matched by
-   * name; people who aren't on that board are unassigned. `list`: a list there for what isn't done yet.
+   * name; people who aren't on that board are unassigned. `list`: a list there for what isn't done yet. `order`, with
+   * `list`: where in that list (its cards as the board shows them, and the place among them); then the task goes in
+   * exactly that list.
    */
   app.post('/boards/:id/tasks/:taskId/move', async (req) => {
     const { id, taskId } = parse(z.object({ id: z.string().max(100), taskId: z.string().max(100) }), req.params)
     const me = requireUser(req.user)
     const body = parse(
-      z.object({ boardId: z.string().max(100), list: z.string().max(100).optional(), parentId: z.string().max(100).nullable().optional() }),
+      z.object({
+        boardId: z.string().max(100),
+        list: z.string().max(100).optional(),
+        parentId: z.string().max(100).nullable().optional(),
+        order: z.object({ ids: z.array(z.string().max(100)).max(5000), at: z.number().int().min(0) }).optional(),
+      }),
       req.body,
     )
+    if (body.order && !body.list) throw new HttpError(400, 'order: say which list (list) it’s the order of.')
     await requireAccess(app.db, me, id, 'editor')
     await requireAccess(app.db, me, body.boardId, 'editor')
-    return app.engine.transfer(id, body.boardId, taskId, { status: body.list, parentId: body.parentId }, me.id, req.apiToken?.app)
+    const to = { status: body.list, parentId: body.parentId, order: body.order }
+    return app.engine.transfer(id, body.boardId, taskId, to, me.id, req.apiToken?.app)
   })
 
   /**

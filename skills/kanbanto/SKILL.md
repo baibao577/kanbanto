@@ -31,7 +31,8 @@ Without MCP, use the REST API (see "REST fallback" below).
   `list_boards` says which, and what each board is for (`about`). "Work" and "personal" usually mean a workspace and
   Personal. If it's still unclear, ask and name the likely boards: don't guess.
 - **Quick capture** ("remind me to…", "add: call the bank"): if no board clearly fits, `create_tasks` without `board_id`
-  puts it in their Inbox. Say where it went. No Inbox yet: ask, and mention they can pick one in a board's settings.
+  puts it in their Inbox: a private board of their own that everyone has (`list_boards` marks it `inbox`). Say where
+  it went.
 - **Filing things away:** `move_to_board` moves a task (with its subtasks, comments and files) to another board, e.g.
   Inbox items to where they belong. Tell the user what didn't fit (people not on that board, dropped links).
 - **Search before creating.** `find_tasks` (by text, list, label, assignee, priority, due date; leave out `board_id` to
@@ -93,7 +94,7 @@ Without MCP, use the REST API (see "REST fallback" below).
   workflow (e.g. add "Review" before Done, counting as in progress) and `manage_labels`. For a sales pipeline or a
   support desk, `starter: "sales"` or `"support"` makes one with its lists, fields and saved filters ready (in a
   workspace its fields can only be added by an admin: if it's refused, say which fields are missing). `update_board` renames it or
-  changes what it's for. `set_inbox` picks their Inbox.
+  changes what it's for.
 - **Reminders:** `set_reminder` with `at` ("remind me Monday 1pm") or `before_due_minutes` (e.g. 1440 for a day
   before; pass the user's `time_zone`). They go to the task's assignee, or the user if nobody is assigned. `reminders`
   lists what's coming up: good for a morning check-in.

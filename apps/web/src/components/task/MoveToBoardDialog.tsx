@@ -4,7 +4,6 @@ import { toast } from 'sonner'
 import { api, errorMessage } from '@/api/client'
 import { useBoard } from '@/app/board-context'
 import { navigate } from '@/app/router'
-import { useAuth } from '@/app/use-auth'
 import { BoardDot, StatusDot } from '@/components/common/bits'
 import { Button } from '@/components/ui/button'
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command'
@@ -23,12 +22,23 @@ const SAME = '__same'
  * Moving a task (with its subtasks, comments and files) to another board you can edit. Shows what will happen before
  * it does: what comes along, and what doesn't fit on the other board.
  */
-export function MoveToBoardDialog({ taskId, onClose, onMoved }: { taskId: string; onClose: () => void; onMoved: () => void }) {
+export function MoveToBoardDialog({
+  taskId,
+  toBoardId,
+  onClose,
+  onMoved,
+}: {
+  taskId: string
+  /** The board already picked when it opens (it can still be changed). */
+  toBoardId?: string
+  onClose: () => void
+  onMoved: () => void
+}) {
   const { data, idx, counts, access, canBeLinked } = useBoard()
-  const { user } = useAuth()
   const { boards } = useBoards()
   const { workspaces } = useWorkspaces()
-  const [to, setTo] = useState<BoardSummary | null>(null)
+  const [picked, setTo] = useState<BoardSummary | null>(null)
+  const to = picked ?? (toBoardId ? (boards?.find((b) => b.id === toBoardId && b.role !== 'viewer' && !b.archivedAt) ?? null) : null)
   const [target, setTarget] = useState<BoardSnapshot['data'] | null>(null)
   const [list, setList] = useState(SAME)
   const [busy, setBusy] = useState(false)
@@ -52,7 +62,8 @@ export function MoveToBoardDialog({ taskId, onClose, onMoved }: { taskId: string
   // Boards you can add to, grouped by where they live.
   const groups = useMemo(() => {
     const out = new Map<string, BoardSummary[]>()
-    for (const b of boards ?? []) {
+    // (Your Inbox first among your own boards.)
+    for (const b of [...(boards ?? [])].sort((a, b) => Number(b.inbox) - Number(a.inbox))) {
       if (b.id === data.board.id || b.role === 'viewer' || b.archivedAt) continue
       const place = b.workspaceId
         ? (workspaces?.find((w) => w.id === b.workspaceId)?.name ?? 'Workspace')
@@ -140,9 +151,7 @@ export function MoveToBoardDialog({ taskId, onClose, onMoved }: { taskId: string
                     >
                       <BoardDot background={b.background} />
                       <span className="truncate">{b.name}</span>
-                      {b.id === user?.inboxBoardId && (
-                        <span className="rounded bg-secondary px-1.5 text-[10px] font-medium text-muted-foreground">Inbox</span>
-                      )}
+                      {b.inbox && <span className="rounded bg-secondary px-1.5 text-[10px] font-medium text-muted-foreground">Inbox</span>}
                       {to?.id === b.id && <Check weight="bold" className="ml-auto text-primary" />}
                     </CommandItem>
                   ))}

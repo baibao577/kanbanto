@@ -110,6 +110,7 @@ The app uses hash routing, so any static host or proxy works without rewrite rul
 |---|---|
 | `#/` | Your boards |
 | `#/b/<id>/<tab>?focus=<task>&task=<task>` | A board: tab (board, timeline, outline), zoomed-in task, open card. Back/Forward work. |
+| `…?inbox=<task>` | On either of those: a card of your Inbox, open on top |
 | `#/join/<token>` | An invite link, to a board or a workspace |
 | `#/w/<id>` | A workspace's people and settings |
 | `#/w/<id>/planning?by=person&zoom=days` | Its plan, by project or by person, in weeks, days or months (`zoom=months`) |
@@ -132,6 +133,16 @@ The app uses hash routing, so any static host or proxy works without rewrite rul
 - **Platform admins** are granted only on the server (`admin grant`), never through the website. They manage
   settings and accounts but get **no access to boards** unless a board is shared with them. Workspace admins manage
   the workspace's people, and likewise get no access to its boards that aren't shared with the workspace.
+- **The Inbox** (`src/boards/inbox.ts`): everyone has one board with `boards.inbox_of` set to them, made the first
+  time it's needed (the app opening, or an assistant adding a task without a board). It is an ordinary board in every
+  other way (the engine, the three views, moves to and from it), kept theirs alone: private, in Personal, and the
+  routes that would share, move, archive or delete it refuse (`notOnInbox`; a check constraint on the table is the
+  backstop). In the app it is a panel beside the open page (`app/inbox.tsx`, `components/inbox/`): a second
+  `useBoardStore` on that board, mounted while the panel or one of its cards shows, never on the Inbox board's own
+  page. A card dragged out of the panel asks the open page where it would land (`zones` in
+  `components/board/dnd.ts`: the board's lists, with the board's own drop marker, or the whole view), and the move to
+  that board carries the place (`MoveTarget.order` in `model/moveBoard.ts`), so it arrives where it was dropped in
+  one change.
 - **Who can open a board** (`accessFor` in `src/boards/access.ts`): *Private* (owners only), *Only people added*
   (its members), *Everyone in the workspace* (its members, plus everyone in its workspace with the board's workspace
   role: editor by default, or viewer). Someone who's both gets the higher role. *Anyone with the link can view* is a

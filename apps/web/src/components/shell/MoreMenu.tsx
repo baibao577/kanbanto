@@ -1,4 +1,15 @@
-import { Archive, ArrowsLeftRight, Buildings, ChartBar, DotsThree, DownloadSimple, GearSix, LockSimple, PaintBucket } from '@phosphor-icons/react'
+import {
+  Archive,
+  ArrowsLeftRight,
+  Buildings,
+  ChartBar,
+  DotsThree,
+  DownloadSimple,
+  GearSix,
+  LockSimple,
+  PaintBucket,
+  UsersThree,
+} from '@phosphor-icons/react'
 import { useState } from 'react'
 import { toast } from 'sonner'
 import type { CardsPage, WorkspaceSummary } from '@kanbanto/model/api'
@@ -22,14 +33,16 @@ import {
 } from '@/components/ui/dropdown-menu'
 
 export interface MoreMenuProps {
+  /** Share has its own button in the bar; on a phone, where there's no room for it, it's the first thing here. */
+  canShare?: boolean
   onOpenSettings: () => void
   onOpenStats: () => void
   onExport: () => void
 }
 
 /** The board's ⋯ menu: settings, background, stats, moving it (owners), export. */
-export function MoreMenu({ onOpenSettings, onOpenStats, onExport }: MoreMenuProps) {
-  const { data, run, readOnly, access } = useBoard()
+export function MoreMenu({ canShare, onOpenSettings, onOpenStats, onExport }: MoreMenuProps) {
+  const { data, run, readOnly, access, openShare } = useBoard()
   const owner = access.role === 'owner'
   // How many archived cards it has: asked when the menu opens (they aren't sent with the board).
   const [archived, setArchived] = useState(0)
@@ -73,11 +86,16 @@ export function MoreMenu({ onOpenSettings, onOpenStats, onExport }: MoreMenuProp
         }}
       >
         <DropdownMenuTrigger asChild>
-          <Button variant="ghost" size="icon" className="size-8" aria-label="More">
+          <Button variant="ghost" size="icon" className="size-8 text-muted-foreground hover:text-foreground" aria-label="More">
             <DotsThree weight="bold" className="size-5" />
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-56">
+          {canShare && (
+            <DropdownMenuItem className="sm:hidden" onSelect={openShare}>
+              <UsersThree /> Share
+            </DropdownMenuItem>
+          )}
           {!readOnly && (
             <>
               <DropdownMenuItem onSelect={onOpenSettings}>
@@ -100,7 +118,7 @@ export function MoreMenu({ onOpenSettings, onOpenStats, onExport }: MoreMenuProp
           <DropdownMenuItem onSelect={onOpenStats}>
             <ChartBar /> Board stats
           </DropdownMenuItem>
-          {owner && (from || !!spaces?.length) && (
+          {owner && !access.inbox && (from || !!spaces?.length) && (
             <DropdownMenuSub>
               <DropdownMenuSubTrigger>
                 <ArrowsLeftRight /> Move to

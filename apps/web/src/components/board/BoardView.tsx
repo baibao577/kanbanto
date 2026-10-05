@@ -1,5 +1,5 @@
 import { ArrowsInSimple, ArrowsOutSimple, CaretDown, CaretRight, Crosshair, Eye, EyeSlash } from '@phosphor-icons/react'
-import { useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { flushSync } from 'react-dom'
 import { toast } from 'sonner'
 import { useBoard } from '@/app/board-context'
@@ -31,8 +31,17 @@ import type { TaskFields } from '@kanbanto/model/commands'
 import type { StatusColumn } from '@kanbanto/model/types'
 import { buildView, cellKey, groupCell, groupsSubtasks, NO_ROW, UNASSIGNED, type Lane } from '@kanbanto/model/view'
 import { ArchiveOlderDialog } from './ArchiveOlderDialog'
-import { cardIndexAt, cellAt, dragging, itemIndexAt, listIndexAt, type GroupDrag } from './dnd'
-import { BLOCKED, blockReason as blockReasonIn, dropCommand, dropGroupCommand, groupOf as groupOfIn, newCardIn, type DropContext } from './dropRules'
+import { cardIndexAt, cellAt, dragging, itemIndexAt, listIndexAt, zones, type DropZone, type GroupDrag } from './dnd'
+import {
+  arrivalIn,
+  BLOCKED,
+  blockReason as blockReasonIn,
+  dropCommand,
+  dropGroupCommand,
+  groupOf as groupOfIn,
+  newCardIn,
+  type DropContext,
+} from './dropRules'
 import { GroupHeader } from './GroupHeader'
 import { numberText } from '@kanbanto/model/fields'
 import { numberOf, subtreeSums, sumOf } from '@kanbanto/model/totals'
@@ -278,20 +287,22 @@ function Board({ search }: { search: string }) {
     const { row = NO_ROW, col = '' } = el.dataset
     const cell = cellKey(row, col)
     const g = dragging.group
+    // (A card dragged in from another board has no parent or status here: nothing stops it.)
+    const outside = dragging.outside
     if (isCollapsed(col)) {
       const blocked = g
         ? config.rows === 'rootParent' && row !== g.row
           ? BLOCKED.project
           : undefined
         : (blockReason(dragging.card ?? '', row, col) ?? undefined)
-      return g || dragging.card ? { row, col, cell, index: END, blocked, moving: g ? 'group' : undefined } : null
+      return g || dragging.card || outside ? { row, col, cell, index: END, blocked, moving: g ? 'group' : undefined } : null
     }
     if (g) {
       const blocked = config.rows === 'rootParent' && row !== g.row ? BLOCKED.project : undefined
       return { row, col, cell, index: itemIndexAt(el, y), blocked, moving: 'group' }
     }
     const id = dragging.card
-    if (!id) return null
+    if (!id) return outside ? { row, col, cell, index: grouping ? itemIndexAt(el, y) : cardIndexAt(el, y) } : null
     let next: CardDrop
     if (grouping) {
       // A subtask stays under its parent: inside the parent's group if the list has one, else in a new one.
@@ -394,11 +405,31 @@ function Board({ search }: { search: string }) {
   }
 
   // ---- picking things up ----
+  /** Where a card from another board lands, dropped where the marker is. */
+  const arrival = (at: CardDrop) => arrivalIn(rules, prefs.focusId, at.row, at.col, at.index)
   // A drag outlives the render it started in, so it calls the latest version of these.
-  const live = useRef({ cardDropAt, listDropAt, drop, dropGroup, moveList })
+  const live = useRef({ cardDropAt, listDropAt, drop, dropGroup, moveList, arrival })
   useLayoutEffect(() => {
-    live.current = { cardDropAt, listDropAt, drop, dropGroup, moveList }
+    live.current = { cardDropAt, listDropAt, drop, dropGroup, moveList, arrival }
   })
+
+  // A card dragged out of the Inbox panel lands in these lists like one of their own: the same marker, and the place
+  // it shows is where the card goes (see `zones` in dnd.ts).
+  useEffect(() => {
+    if (!statusLists || readOnly) return
+    const zone: DropZone = {
+      over: (x, y) => {
+        const next = live.current.cardDropAt(x, y)
+        setCardDrop((c) => (next && sameDrop(c, next) ? c : next))
+        return next && live.current.arrival(next)
+      },
+      leave: () => setCardDrop(null),
+    }
+    zones.lists = zone
+    return () => {
+      if (zones.lists === zone) zones.lists = null
+    }
+  }, [statusLists, readOnly])
 
   /**
    * Cards, parent groups and lists are picked up here (they're marked with `data-drag`). Anywhere else, a mouse
@@ -799,7 +830,7 @@ function Board({ search }: { search: string }) {
 }
 
 /** Where a dragged card will land. Red with a reason when it can't go there. */
-function DropSlot({ blocked, top }: { blocked?: string; top?: boolean }) {
+export function DropSlot({ blocked, top }: { blocked?: string; top?: boolean }) {
   // `top`: between a grouped list's items, rather than between cards (see dnd.ts).
   const mark = top ? { 'data-item-slot': '' } : { 'data-drop-slot': '' }
   if (blocked)

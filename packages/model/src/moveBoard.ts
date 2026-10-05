@@ -1,8 +1,8 @@
-import { execute } from './commands'
+import { execute, listRanks } from './commands'
 import { carryCustom, linkRef, matchFields, parseRef, peopleOf } from './fields'
 import { descendantsOf, indexFor } from './indexer'
 import { positionBetween } from './position'
-import type { Change } from './records'
+import { stamp, type Change } from './records'
 import type { BoardData, LabelDef, Task } from './types'
 
 /** Where a task lands on the other board. */
@@ -11,6 +11,11 @@ export interface MoveTarget {
   status?: string
   /** A task on the other board to put it under. Omit: the top level. */
   parentId?: string | null
+  /**
+   * Where it was dropped in `status`, as that list shows on the board: the list's cards in order, and its place among
+   * them (0: first). Then the task itself goes in exactly that list, done or not. Omit: the end of the list.
+   */
+  order?: { ids: string[]; at: number }
 }
 
 export interface MovePlan {
@@ -67,10 +72,12 @@ export function planMove(
   const ids = new Map(moving.map((id) => [id, ctx.newId()]))
   const lower = (s: string) => s.trim().toLowerCase()
 
-  // Lists: the one asked for (except for what's done), else the same name, else the first of the same kind.
+  // Lists: the one asked for (except for what's done, unless it was dropped there), else the same name, else the
+  // first of the same kind.
   const firstDone = tIdx.firstOf.done
   const listFor = (t: Task) => {
     const from = source.columns.find((c) => c.id === t.status)
+    if (to.status && to.order && t.id === taskId) return to.status
     if (to.status) return from?.category === 'done' ? firstDone : to.status
     const same = from && target.columns.find((c) => lower(c.name) === lower(from.name))
     return same?.id ?? (from ? tIdx.firstOf[from.category] : tIdx.firstOf.todo)
@@ -148,6 +155,21 @@ export function planMove(
       version: 1,
     }
     target_.push({ entity: 'task', id: next.id, before: null, after: next })
+  }
+
+  // Dropped at a place in the list: it gets a board position there (and so do the list's other cards, the first time
+  // one of them is placed by hand).
+  if (to.status && to.order) {
+    const rootId = ids.get(taskId)!
+    const made = target_.find((c) => c.entity === 'task' && c.id === rootId)!
+    const there = to.order.ids.filter((id) => target.tasks[id] && id !== rootId)
+    const at = Math.max(0, Math.min(to.order.at, there.length))
+    const list = [...there.slice(0, at), rootId, ...there.slice(at)]
+    const ranks = listRanks({ ...target, tasks: { ...target.tasks, [rootId]: made.after as Task } }, list, new Set([rootId]))
+    for (const [id, rank] of Object.entries(ranks)) {
+      if (id === rootId) made.after = { ...(made.after as Task), rank }
+      else target_.push({ entity: 'task', id, before: target.tasks[id], after: stamp(target.tasks[id], { ...target.tasks[id], rank }, ctx.now) })
+    }
   }
 
   return {

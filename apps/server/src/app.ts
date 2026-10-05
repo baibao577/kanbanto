@@ -34,6 +34,7 @@ import { fieldRoutes } from './routes/fields'
 import { linkRoutes } from './routes/links'
 import { boardRoutes } from './routes/boards'
 import { cardRoutes } from './cards'
+import { inboxRoutes } from './routes/inbox'
 import { commentRoutes } from './routes/comments'
 import { timeRoutes } from './routes/time'
 import { emailRoutes } from './routes/email'
@@ -261,6 +262,7 @@ export async function buildApp(
   await app.register(authRoutes, { prefix: '/api/auth' })
   await app.register(boardRoutes, { prefix: '/api' })
   await app.register(cardRoutes, { prefix: '/api' })
+  await app.register(inboxRoutes, { prefix: '/api' })
   await app.register(pushRoutes, { prefix: '/api' })
   await app.register(presetRoutes, { prefix: '/api' })
   await app.register(fieldRoutes, { prefix: '/api' })

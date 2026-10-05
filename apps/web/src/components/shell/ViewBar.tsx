@@ -47,7 +47,7 @@ export function ViewBar({ children, search, style }: { children: ReactNode; sear
   const slots = useMemo(() => ({ main, lead }), [main, lead])
   return (
     <SlotContext.Provider value={slots}>
-      <div className="flex min-h-0 flex-1 flex-col" style={style}>
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col" style={style}>
         <div className="relative z-10 flex min-h-11 shrink-0 flex-wrap items-center gap-2 border-b border-white/25 bg-background/35 px-3 py-1.5 shadow-[0_6px_16px_-12px_oklch(0_0_0/0.25)] backdrop-blur-md backdrop-saturate-[1.15] sm:px-4 dark:border-white/[0.06] dark:bg-background/40">
           <ScopeTrail search={search} />
           <FilterChips />

@@ -89,6 +89,9 @@ Without opening it, a card shows its labels, its title, and a line of small sign
 Moving a card to another board takes its subtasks, comments and files with it. Before it moves you are shown what
 will fit: lists and labels are matched by name, and people who are not on the other board are named.
 
+No board for it yet? [Your Inbox](/everyday/inbox) is first in that list, and a card waiting there can be dragged
+straight onto a list of the board you have open.
+
 ## The rest of the card's menu
 
 - **Open.** The same as clicking the card.

@@ -580,7 +580,7 @@ function orderAt(data: BoardData, id: string, parentId: string | null, place: Pl
  * Board positions for a list in its new order. Normally only the moved cards get a new position (one
  * write each). If the list has cards that were never placed by hand, the whole list gets positions once.
  */
-function listRanks(data: BoardData, order: string[], moved: Set<string>): Record<string, string> {
+export function listRanks(data: BoardData, order: string[], moved: Set<string>): Record<string, string> {
   const ids = order.filter((id) => data.tasks[id])
   const fixed = ids.filter((id) => !moved.has(id))
   const ranked = fixed.every((id) => data.tasks[id].rank !== undefined)

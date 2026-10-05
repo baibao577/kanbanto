@@ -7,7 +7,6 @@ import { hashPassword, verifyPassword } from '../auth/password'
 import { createSession, endAllSessions, endSession, SESSION_COOKIE, type SessionUser } from '../auth/sessions'
 import { acceptInvite, checkInviteFor, findAnyInvite, provesEmail } from '../boards/invites'
 import { createBoard } from '../boards/service'
-import { requireAccess } from '../boards/access'
 import { emailOutbox, users } from '../db/schema'
 import { env } from '../env'
 import { HttpError, parse, siteUrl } from '../http'
@@ -58,7 +57,6 @@ export const publicUser = (u: SessionUser) => ({
   pushReminders: u.pushReminders,
   pushMentions: u.pushMentions,
   pushFollows: u.pushFollows,
-  inboxBoardId: u.inboxBoardId,
 })
 
 export { loadSettings as getSettings } from '../settings'
@@ -175,7 +173,6 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
         pushReminders: true,
         pushMentions: true,
         pushFollows: true,
-        inboxBoardId: null,
       }
       await tx.insert(users).values({ id: user.id, email: user.email, name: user.name, passwordHash, emailVerifiedAt: verified ? new Date() : null })
       const joined = body.invite ? await acceptInvite(tx, { id: user.id, email: user.email }, body.invite) : null
@@ -235,7 +232,7 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
     return { ok: true }
   })
 
-  /** Your name, whether you get the daily email summary of @mentions, and your Inbox board. */
+  /** Your name, and what you're told about by email and on your desktop. */
   app.patch('/me', async (req) => {
     const user = requireUser(req.user, { allowUnverified: true })
     const body = parse(
@@ -247,14 +244,11 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
           pushReminders: z.boolean(),
           pushMentions: z.boolean(),
           pushFollows: z.boolean(),
-          inboxBoardId: z.string().max(100).nullable(),
           timeZone: z.string().max(64).refine(validZone, 'That isn’t a time zone this server knows (e.g. Asia/Bangkok).').nullable(),
         })
         .partial(),
       req.body,
     )
-    // Your Inbox has to be a board you can add tasks to.
-    if (body.inboxBoardId) await requireAccess(app.db, user, body.inboxBoardId, 'editor')
     await app.db
       .update(users)
       .set({ ...body, updatedAt: new Date() })

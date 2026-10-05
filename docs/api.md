@@ -99,7 +99,16 @@ separately (see above).
 
 `POST /api/boards/<id>/tasks/<task id>/move` with `{"boardId": "<other board>"}` moves a task, with its subtasks,
 comments and files, to another board you can edit (optionally `"list": "<list id there>"`). It gets a new id there,
-which the answer gives. Lists and labels are matched by name; people who aren't on that board are unassigned.
+which the answer gives. Lists and labels are matched by name; people who aren't on that board are unassigned. With
+`list`, `"order": {"ids": [<that list's cards, as the board shows them>], "at": 1}` gives it a place among them (0:
+first) instead of the end; then the task goes in exactly that list, even a finished one.
+
+**The Inbox.** Everyone has a private board of their own for cards that have no board yet. `GET /api/inbox` answers
+`{"boardId": "<its id>", "open": 3}` (`open`: its top-level cards that aren't done; `boardId` is null until it has
+been made, which `POST /api/inbox` does). It is a board like the others: read it and add to it with the board
+endpoints, and file a card with the move above. Only its owner can open it, and it can't be shared, moved to a
+workspace, archived or deleted (those answer 400 with `"code": "inbox"`). In `GET /api/boards` it is the one with
+`"inbox": true`.
 
 **Reminders** live on a task (`reminders`: each `{ id, at }` or `{ id, beforeDue, tz }`, in minutes before its due
 date), set with `task.update`. When one goes off, the task's assignee (or whoever set it, if nobody is assigned) gets
@@ -193,7 +202,7 @@ claude mcp add --transport http kanbanto https://kanbanto.example.com/api/mcp --
 
 | Tool | What it does |
 |---|---|
-| `list_boards` | Who you act as (name, time zone, today's date there) and the boards you can open: where each lives (a workspace, "Personal" or "Shared with you"), what it's for, and which is your Inbox |
+| `list_boards` | Who you act as (name, time zone, today's date there) and the boards you can open: where each lives (a workspace, "Personal" or "Shared with you"), what it's for, and which is your Inbox (a private board of your own, for cards that have no board yet) |
 | `get_board` | A board's lists, labels, people and its open tasks: the top levels (subtasks under their task), the part under one task, or one list's cards (`tasks: false` for just the lists, labels and people), and its own fields with their types and options. Top-level tasks come list by list, each list in the order made by hand (`order: outline` for the outline's order) |
 | `find_tasks` | Search one board, one workspace or everything: text, list, kind of list (`counts_as: doing`: in progress on every board, whatever the list is called), label, assignee (`me`, `nobody`), priority, blocked, the board's own fields by name (`fields: {"Stage": "Won", "Client": null}`; boards without the field are skipped), due, created, last worked on, done or archived between two times; sorted and paged. Without a `sort`, results come list by list, each list in the order its cards were put in by hand, so one list reads top to bottom as on the board. Asking by when tasks got done also finds the ones archived since. `worked_after` / `worked_before`: what was worked on in a stretch of time (made or changed then), each result saying what happened |
 | `team_overview` | How a board or workspace is doing: tasks per list, each person's open, overdue and blocked work, what needs attention, and the time each person logged on it this week |
@@ -203,7 +212,7 @@ claude mcp add --transport http kanbanto https://kanbanto.example.com/api/mcp --
 | `get_task` | A task with its parents, subtasks, what it waits on, latest comments, and the time logged on it |
 | `my_week` | Your logged time for a week across your boards: each day against your hours a day (empty days stand out), each task's time per day, and tasks you worked on without logging time |
 | `plan_overview` | A workspace's resource plan, read only: each project's planned, scheduled and logged man-days, who's booked at what share; each person's load, when they go over 100% and when they're free |
-| `create_tasks` | Add tasks, each with its own `subtasks` if you like, or break one down into subtasks (`parent_id`); without a board they go to your Inbox. A wrong list, label or person adds nothing. Each can come with `fields` (the board's own, by name) |
+| `create_tasks` | Add tasks, each with its own `subtasks` if you like, or break one down into subtasks (`parent_id`); without a board they go to your Inbox, which everyone has. A wrong list, label or person adds nothing. Each can come with `fields` (the board's own, by name) |
 | `update_task` | Title, description, dates, assignee, priority, labels, what it waits on (`waiting_on`), list, and its place in the list (`position: top` / `bottom`, `before_task_id` / `after_task_id`). Put in another list, it goes to the end unless placed. `fields: {"Stage": "Won", "Value": 12000}` sets the board's own fields by name (`null` clears one; a card link takes a card's title, a person field a person's name or `me`) |
 | `move_task` | Change a task's parent or its place among siblings in the outline |
 | `set_reminder` | Add a reminder (at a time, or some minutes before it's due: before a whole due day, from 9:00 in your time zone) or remove one; it goes to the task's assignee |
@@ -215,7 +224,6 @@ claude mcp add --transport http kanbanto https://kanbanto.example.com/api/mcp --
 | `manage_lists` | Add, rename, reorder, change the kind of, or remove (empty) lists |
 | `manage_labels` | Add, rename, recolor, or remove (unused) labels |
 | `manage_fields` | A library's fields (a workspace's, for its admins, or your own): list them, add one, change its name or settings, give a choice its options by name (one left out is archived, never deleted), rename an option, archive and restore. And a board's own choice (its owners): put a field on it, or take it off |
-| `set_inbox` | Choose your Inbox board |
 | `log_time` | Log time you spent on a task ("1:30", "2h", "45m"), today, yesterday or another day, with a short note |
 | `add_comment` | Comment as you; `@Name` notifies people, and so are the task's followers |
 | `follow_task` | Follow a task (you're told about its comments and changes), or stop with `follow: false` |
@@ -227,8 +235,8 @@ roles) and deleting boards or tasks aren't tools, on purpose: an assistant reads
 can't be undone. People do them in the app. The same goes for deleting a field for good and merging two fields.
 
 **Help assistants help you.** Say what each board is for (Board settings → "What's this board for?"): assistants read it
-to pick the right board. And choose an **Inbox** (Board settings → "Use as my Inbox"): "remind me to buy milk" then
-lands there without Claude asking where.
+to pick the right board. Everyone has an **Inbox**, a private board of their own: "remind me to buy milk" lands
+there without Claude asking where, and it sits one click away beside any board (the tray in the top bar).
 
 **Mind what assistants read.** Task text and comments are written by people on your boards. A line like "ignore your
 instructions and…" in a card is just text to Kanbanto, but an assistant might follow it. Give assistants a read-only

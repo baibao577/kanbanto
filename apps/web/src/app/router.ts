@@ -7,6 +7,7 @@ import { CATEGORIES, LAYOUTS, PRIORITIES, type Category, type Layout, type Prior
  *   #/                       your boards
  *   #/b/<id>/<tab>?focus=<task>&task=<task>   a board. The address carries what you're looking at, so
  *                            Back/Forward and links bring it back. A bare #/b/<id> means "as I left it".
+ *   …?inbox=<task>           on either of those: a card of your Inbox, open on top (see app/inbox.tsx)
  *   #/join/<token>           a share link (or an email invite), to a board or a workspace
  *   #/w/<id>                 a workspace's people and settings
  *   #/w/<id>/fields          its fields: what its boards can add to cards (see model/fields.ts)
@@ -24,7 +25,8 @@ import { CATEGORIES, LAYOUTS, PRIORITIES, type Category, type Layout, type Prior
  *   #/admin/<section>        the Platform console (overview, accounts, email, storage, integrations)
  * Hash addresses work on any static host, with no server rewrite rules.
  */
-export type BoardRoute = { page: 'board'; id: string; layout?: Layout; focus?: string; task?: string }
+export type BoardRoute = { page: 'board'; id: string; layout?: Layout; focus?: string; task?: string; inbox?: string }
+export type HomeRoute = { page: 'home'; inbox?: string }
 /** A workspace: its people (the default), or its plan, shown by project or by person, in weeks or days. */
 export type WorkspaceRoute = { page: 'workspace'; id: string; section?: WorkspaceSection; by?: 'person'; zoom?: 'days' | 'months' }
 /**
@@ -64,7 +66,7 @@ export type CardsRoute = {
   sort?: CardSort
 }
 export type Route =
-  | { page: 'home' }
+  | HomeRoute
   | BoardRoute
   | { page: 'join'; token: string }
   | WorkspaceRoute
@@ -159,7 +161,10 @@ export function parseRoute(hash: string): Route {
     return { page: 'admin', ...(section && section !== 'overview' && { section }) }
   }
   const m = hash.match(/^#\/b\/([^/?#]+)(?:\/([a-z]+))?\/?(?:\?(.*))?$/)
-  if (!m) return { page: 'home' }
+  if (!m) {
+    const inbox = new URLSearchParams(hash.match(/^#\/?\?(.*)$/)?.[1] ?? '').get('inbox')
+    return { page: 'home', ...(inbox && { inbox }) }
+  }
   const q = new URLSearchParams(m[3] ?? '')
   const layout = LAYOUTS.find((l) => l === m[2])
   return {
@@ -168,11 +173,12 @@ export function parseRoute(hash: string): Route {
     ...(layout && { layout }),
     ...(q.get('focus') && { focus: q.get('focus')! }),
     ...(q.get('task') && { task: q.get('task')! }),
+    ...(q.get('inbox') && { inbox: q.get('inbox')! }),
   }
 }
 
 export function hrefFor(r: Route) {
-  if (r.page === 'home') return '#/'
+  if (r.page === 'home') return r.inbox ? `#/?inbox=${encodeURIComponent(r.inbox)}` : '#/'
   if (r.page === 'account')
     return `${r.section && r.section !== 'profile' ? `#/account/${r.section}` : '#/account'}${r.problem ? `?problem=${encodeURIComponent(r.problem)}` : ''}`
   if (r.page === 'admin') return r.section && r.section !== 'overview' ? `#/admin/${r.section}` : '#/admin'
@@ -219,6 +225,7 @@ export function hrefFor(r: Route) {
   const q = new URLSearchParams()
   if (r.focus) q.set('focus', r.focus)
   if (r.task) q.set('task', r.task)
+  if (r.inbox) q.set('inbox', r.inbox)
   const qs = q.toString()
   return `#/b/${encodeURIComponent(r.id)}${r.layout ? `/${r.layout}` : ''}${qs ? `?${qs}` : ''}`
 }
@@ -253,6 +260,22 @@ export function closeTask() {
   const depth = taskDepth()
   if (depth > 0) history.go(-depth)
   else navigate({ ...r, task: undefined }, { replace: true })
+}
+
+/** Opens a card of your Inbox on top of the current page (a board, or your boards), like `openTask`. */
+export function openInboxCard(id: string) {
+  const r = currentRoute()
+  if ((r.page !== 'board' && r.page !== 'home') || r.inbox === id) return
+  navigate({ ...r, inbox: id }, { state: { taskDepth: r.inbox ? taskDepth() + 1 : 1 } })
+}
+
+/** Closes it, going back to where you were before the first one was opened. */
+export function closeInboxCard() {
+  const r = currentRoute()
+  if ((r.page !== 'board' && r.page !== 'home') || !r.inbox) return
+  const depth = taskDepth()
+  if (depth > 0) history.go(-depth)
+  else navigate({ ...r, inbox: undefined }, { replace: true })
 }
 
 let cached: { hash: string; route: Route } | null = null

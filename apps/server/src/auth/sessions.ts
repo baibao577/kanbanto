@@ -24,8 +24,6 @@ export interface SessionUser {
   pushReminders: boolean
   pushMentions: boolean
   pushFollows: boolean
-  /** Their Inbox board (see users.inboxBoardId). */
-  inboxBoardId: string | null
   /** Has to confirm their email before using the app (set per request: only once the site can send email). */
   mustVerify?: boolean
 }
@@ -70,7 +68,6 @@ export const sessionUser = (u: typeof users.$inferSelect): SessionUser => ({
   pushReminders: u.pushReminders,
   pushMentions: u.pushMentions,
   pushFollows: u.pushFollows,
-  inboxBoardId: u.inboxBoardId,
 })
 
 export async function endSession(db: Db, token: string) {

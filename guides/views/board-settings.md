@@ -1,6 +1,6 @@
 # Board settings, stats and export
 
-Everything about the board itself is under the **⋯** at the top right.
+Everything about the board itself is under the **⋯** at the top.
 
 ![The board's menu](/images/board-menu.webp){.small}
 
@@ -30,9 +30,7 @@ under each list. See
 something changes here. Webhooks are for whoever sets up integrations: see
 [Webhooks: tell another app when a board changes](/more/webhooks).
 
-**Just for you**
-
-- **Use as my Inbox.** Cards that apps and assistants add without naming a board go here.
+**Just for you.** Light, dark, or the same as your computer: only what you see changes.
 
 **Archive or delete** (owners only)
 

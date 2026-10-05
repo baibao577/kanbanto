@@ -1,6 +1,7 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { AuthProvider } from '@/app/auth'
+import { InboxProvider } from '@/app/inbox'
 import { ErrorBoundary } from '@/components/common/ErrorBoundary'
 import { reloadForUpdate } from '@/lib/reload'
 import { ThemeProvider } from '@/app/theme'
@@ -20,7 +21,9 @@ createRoot(document.getElementById('root')!).render(
       <TooltipProvider delayDuration={400}>
         <ErrorBoundary>
           <AuthProvider>
-            <App />
+            <InboxProvider>
+              <App />
+            </InboxProvider>
           </AuthProvider>
         </ErrorBoundary>
         <Toaster position="bottom-center" />

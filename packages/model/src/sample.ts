@@ -1,7 +1,7 @@
 import { fromDay, todayDay } from './dates'
 import { positionsBetween } from './position'
 import { makeTask } from './records'
-import { builtIn, EXAMPLE_COLUMNS, type BoardData, type LabelDef, type Member, type Task, type TaskMap } from './types'
+import { builtIn, DEFAULT_COLUMNS, EXAMPLE_COLUMNS, type BoardData, type LabelDef, type Member, type Task, type TaskMap } from './types'
 
 // Positions a0 < a1 < a2 … are valid position keys (see model/position.ts).
 const at = (n: number) => `a${n}`
@@ -81,6 +81,30 @@ export function emptyBoard(id: string, name: string, now: string): BoardData {
     board: { id, name, mode: 'derived', createdAt: now, updatedAt: now, version: 1 },
     members: [],
     columns: EXAMPLE_COLUMNS.map((c, i) => ({ ...c, position: keys[i], createdAt: now, updatedAt: now })),
+    labels: [],
+    fields: [],
+    tasks: {},
+  }
+}
+
+/**
+ * A person's Inbox: quick notes and cards that have no board yet. To Do / Doing / Done, and statuses set by hand, so
+ * a card with steps under it can still be put in any list.
+ */
+export function inboxBoard(id: string, now: string): BoardData {
+  const keys = positionsBetween(null, null, DEFAULT_COLUMNS.length)
+  return {
+    board: {
+      id,
+      name: 'Inbox',
+      mode: 'manual',
+      description: 'Quick notes and cards that have no board yet. Only you can see it.',
+      createdAt: now,
+      updatedAt: now,
+      version: 1,
+    },
+    members: [],
+    columns: DEFAULT_COLUMNS.map((c, i) => ({ ...c, position: keys[i], createdAt: now, updatedAt: now })),
     labels: [],
     fields: [],
     tasks: {},

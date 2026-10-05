@@ -112,6 +112,7 @@ const schemas = {
     taskCount: { type: 'integer' },
     doneCount: { type: 'integer' },
     updatedAt: { ...str, format: 'date-time' },
+    inbox: { type: 'boolean', description: 'Your Inbox (see `/api/inbox`).' },
   }),
   Command: { ...z.toJSONSchema(CommandSchema, { unrepresentable: 'any' }), $schema: undefined },
   Change: obj({
@@ -335,6 +336,34 @@ The answer lists the records that changed.
           },
         },
       },
+      '/api/inbox': {
+        get: {
+          tags: ['Boards'],
+          summary: 'Your Inbox',
+          description:
+            'Everyone has an Inbox: a private board of their own for cards that have no board yet. It is a board like the others (read it and add to it with the board endpoints, file a card with “Move a task to another board”), except that it can’t be shared, moved to a workspace, archived or deleted. It is made the first time it’s needed: until then `boardId` is null.',
+          responses: {
+            200: json(
+              obj({
+                boardId: { ...nullable(str), description: 'Your Inbox’s board id (null: not made yet).' },
+                open: { type: 'integer', description: 'Its cards that aren’t done.' },
+              }),
+            ),
+          },
+        },
+        post: {
+          tags: ['Boards'],
+          summary: 'Your Inbox, made if you have none yet',
+          responses: {
+            200: json(
+              obj({
+                boardId: { ...nullable(str), description: 'Your Inbox’s board id (null: not made yet).' },
+                open: { type: 'integer', description: 'Its cards that aren’t done.' },
+              }),
+            ),
+          },
+        },
+      },
       '/api/cards': {
         get: {
           tags: ['Boards'],
@@ -424,6 +453,11 @@ The answer lists the records that changed.
                     boardId: { ...str, description: 'The board to move it to.' },
                     list: { ...str, description: 'A list there for what isn’t done yet. Default: lists with the same name, else the same kind.' },
                     parentId: { ...nullable(str), description: 'A task there to put it under. Default: the top level.' },
+                    order: {
+                      ...obj({ ids: { type: 'array', items: str }, at: { type: 'integer' } }),
+                      description:
+                        'With `list`: its place in that list. `ids` are the list’s cards in the order the board shows them, `at` where it goes among them (0: first). Then the task goes in exactly that list, even a finished one. Default: the end of the list.',
+                    },
                   },
                   ['boardId'],
                 ),

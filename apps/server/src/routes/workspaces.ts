@@ -11,6 +11,7 @@ import { factOf, unlinkBoard } from '../boards/links'
 import { addToWorkspace, adminCount, leaveWorkspace, moveBoard, requireWorkspace } from '../boards/workspaces'
 import { boards, users, WORKSPACE_ROLES, workspaceInvites, workspaceMembers, workspaces } from '../db/schema'
 import { env } from '../env'
+import { notOnInbox } from '../boards/inbox'
 import { HttpError, parse, siteUrl } from '../http'
 import { WHY_NOT_SENT } from '../mail/mailer'
 import { emails } from '../mail/templates'
@@ -276,6 +277,7 @@ export const workspaceRoutes: FastifyPluginAsync = async (app) => {
     const { id } = parse(z.object({ id: z.string().min(1).max(100) }), req.params)
     const me = requireUser(req.user)
     const { board } = await requireAccess(app.db, me, id, 'owner')
+    notOnInbox(board, 'workspace')
     const { workspaceId, confirm } = parse(z.object({ workspaceId: z.uuid().nullable(), confirm: z.boolean().optional() }), req.body)
     // Its fields belong to the space it leaves: what moving them would add or lose is asked first (see moveBoardFields).
     let touched: string[] = []

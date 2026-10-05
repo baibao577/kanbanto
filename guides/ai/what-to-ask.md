@@ -42,7 +42,7 @@ you so.
 - "Turn these notes into tasks: book a photographer, order badges, invites out by Friday."
 :::
 
-If you do not name a board and none clearly fits, the card goes to your [Inbox](/ai/connect#an-inbox-for-quick-notes).
+If you do not name a board and none clearly fits, the card goes to [your Inbox](/everyday/inbox).
 Later: "File my Inbox cards where they belong."
 
 ## Plan and break down

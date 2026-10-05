@@ -35,8 +35,6 @@ export interface PublicUser {
   pushMentions: boolean
   /** …and for news from cards they follow. */
   pushFollows: boolean
-  /** Their Inbox: the board where tasks go when an app (like Claude) adds one without saying where. */
-  inboxBoardId: string | null
 }
 
 /** A link to one of the site's own pages (its privacy policy, terms…), or to anywhere else. */
@@ -158,6 +156,8 @@ export interface BoardAccess {
   workspace: { id: string; name: string } | null
   /** Archived by an owner: read-only until restored. */
   archivedAt: string | null
+  /** Your Inbox: yours alone, so it can't be shared, moved, archived or deleted. */
+  inbox: boolean
 }
 
 /**
@@ -425,6 +425,14 @@ export interface BoardSummary {
   archivedAt: string | null
   /** When you starred it as a favourite (null: not one). Favourites show first, in the order they were starred. */
   favoritedAt: string | null
+  /** Your Inbox (see GET /api/inbox): it has its own place in the app, beside every board. */
+  inbox: boolean
+}
+
+/** GET and POST /api/inbox: your Inbox board (null: not made yet), and how many of its cards aren't done. */
+export interface InboxInfo {
+  boardId: string | null
+  open: number
 }
 
 // ── Cards across boards (GET /api/cards) ───────────────────────────────────────

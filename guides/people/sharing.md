@@ -1,6 +1,7 @@
 # Share a board
 
-A new board is yours alone until you share it. Click **Share** at the top of a board.
+A new board is yours alone until you share it. Click **Share** at the top of a board: the icon of people, beside
+the **⋯**. (On a phone it is the first thing under **⋯**.)
 
 ![The top of a board, with Share ringed](/images/share-1-button.webp)
 

@@ -61,6 +61,8 @@ interface Props {
     to: (id: string, where: { col: string } | 'top' | 'bottom') => void
     toBoard: (id: string) => void
     archive: (id: string, complete?: boolean) => void
+    /** A card of the Inbox panel: the board that's open beside it, to move the card there. */
+    here?: { name: string; go: (id: string) => void }
   }
   /** In a grouped list: the card has no parent header, so it's one of the list's items (see dnd.ts). */
   item?: boolean
@@ -338,6 +340,11 @@ function CardMenu({
               <ArrowLineDown /> Move to bottom
             </DropdownMenuItem>
             <DropdownMenuSeparator />
+            {move.here && (
+              <DropdownMenuItem onSelect={() => move.here!.go(id)}>
+                <ArrowSquareRight /> <span className="truncate">Move to “{move.here.name}”…</span>
+              </DropdownMenuItem>
+            )}
             <DropdownMenuItem onSelect={() => move.toBoard(id)}>
               <ArrowSquareRight /> Move to another board…
             </DropdownMenuItem>

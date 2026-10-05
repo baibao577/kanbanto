@@ -310,10 +310,11 @@ await shot('around', async () => {
   await mark([
     page.getByLabel('All boards'),
     page.getByRole('tablist', { name: 'Views' }),
-    page.getByLabel('Search tasks'),
+    { above: page.getByLabel('Search tasks') },
+    { above: page.getByRole('button', { name: 'Share' }) },
+    { above: page.getByRole('button', { name: 'More' }) },
     page.getByRole('button', { name: 'New task' }),
-    page.getByRole('button', { name: 'Share' }),
-    page.getByRole('button', { name: 'More' }),
+    { above: page.locator('button[aria-pressed][aria-label^="Inbox"]') },
     { above: page.getByRole('button', { name: 'Filter' }) },
     { above: page.getByRole('button', { name: 'Display' }) },
   ])
@@ -1385,6 +1386,61 @@ await shot('hooks-2-detail', async () => {
   await asInTheGuide(address)
   return page.getByRole('dialog')
 })
+
+// ── Your Inbox: the panel beside the board (made last: it stays open from page to page, and files a card) ─────────
+const { boardId: inbox } = await api(ann, 'POST', '/inbox')
+let notes = 0
+const note = (id, title, status, fields = {}) =>
+  api(ann, 'POST', `/boards/${inbox}/mutations`, {
+    mutationId: `n${stamp}-${notes++}`,
+    command: { type: 'task.create', id, parentId: null, fields: { title, status, ...fields } },
+  })
+if (!only.length || only.some((w) => 'inbox'.includes(w) || w.includes('inbox'))) {
+  await note('printer', 'Call the printer about the banner', 'todo', { due: day(1) })
+  await note('referral', 'Idea: a page for referrals', 'todo')
+  await note('budget', 'Ask Ben about the photo budget', 'todo')
+  await note('guide', 'Read the brand guide', 'doing')
+  await note('desk', 'Book a desk for Friday', 'done')
+}
+const tray = page.locator('button[aria-pressed][aria-label^="Inbox"]')
+const inboxPanel = page.locator('aside[aria-label="Inbox"]')
+await shot('inbox-1-open', async () => {
+  await openBoard()
+  await tray.click()
+  await inboxPanel.getByText('Read the brand guide').waitFor()
+  await ring(tray)
+})
+await shot('inbox-2-drag', async () => {
+  // A card on its way from the Inbox to the board's To Do list, held mid-air.
+  await openBoard()
+  await inboxPanel.getByText('Idea: a page for referrals').waitFor()
+  const from = await inboxPanel.getByText('Idea: a page for referrals').boundingBox()
+  const to = await page.getByText('Fix the sign-up form on phones', { exact: true }).first().boundingBox()
+  await page.mouse.move(from.x + 60, from.y + 10)
+  await page.mouse.down()
+  await page.mouse.move(from.x + 90, from.y + 30, { steps: 5 })
+  await page.mouse.move(to.x + 40, to.y - 14, { steps: 14 })
+  await page.waitForTimeout(400)
+  return { clip: { x: 0, y: 0, width: 1120, height: 560 } }
+})
+await page.keyboard.press('Escape')
+await page.mouse.up()
+await shot('inbox-3-menu', async () => {
+  await openBoard()
+  await inboxPanel.getByRole('button', { name: 'Ask Ben about the photo budget options' }).click()
+  await page.getByRole('menu').waitFor()
+  await ring(page.getByRole('menuitem', { name: /Move to “Website launch”/ }))
+  return around([inboxPanel.getByText('Call the printer about the banner'), page.getByRole('menu')], 40)
+})
+await page.keyboard.press('Escape')
+await shot('inbox-4-phone', async () => {
+  await page.setViewportSize({ width: 390, height: 760 })
+  await openBoard()
+  await tray.click()
+  await inboxPanel.getByText('Read the brand guide').waitFor()
+  await page.waitForTimeout(400)
+})
+await page.setViewportSize({ width: 1360, height: 860 })
 
 await browser.close()
 console.log(`made ${made.length}: ${made.join(', ')}`)

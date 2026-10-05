@@ -1,5 +1,5 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react'
-import { Archive } from '@phosphor-icons/react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Archive, Tray } from '@phosphor-icons/react'
 import { toast } from 'sonner'
 import { api, errorMessage } from '@/api/client'
 import { Button } from '@/components/ui/button'
@@ -16,10 +16,13 @@ import { LinksContext } from '@/app/links-context'
 import { setTabIcon } from '@/app/tabIcon'
 import { closeTask, currentRoute, hrefFor, navigate, openTask, parseRoute, useRoute, type BoardRoute, type Route } from '@/app/router'
 import { useAuth } from '@/app/use-auth'
+import { useInbox } from '@/app/use-inbox'
 import { AuthView } from '@/components/auth/AuthView'
 import { CheckInboxView, ForgotView, ResetView, VerifyView } from '@/components/auth/EmailViews'
 import { JoinView } from '@/components/auth/JoinView'
+import { zones, type DropZone } from '@/components/board/dnd'
 import { HomeView } from '@/components/home/HomeView'
+import { InboxDock } from '@/components/inbox/InboxDock'
 import { SettingsDialog } from '@/components/shell/SettingsDialog'
 import { TopBar } from '@/components/shell/TopBar'
 import { ViewBar } from '@/components/shell/ViewBar'
@@ -293,7 +296,7 @@ function Workspace({ store }: { store: Store }) {
   useEffect(() => {
     const r = currentRoute()
     if (r.page !== 'board' || r.id !== data.board.id) return
-    const fixed: BoardRoute = { page: 'board', id: r.id, layout, focus: focusId, task: openId ?? (looking ? r.task : undefined) }
+    const fixed: BoardRoute = { page: 'board', id: r.id, layout, focus: focusId, task: openId ?? (looking ? r.task : undefined), inbox: r.inbox }
     const depth = (history.state as { taskDepth?: number } | null)?.taskDepth
     if (fixed.task && !depth) {
       // Arrived with a task open (a link, or a new tab): put the page under it, so closing the task goes there.
@@ -316,7 +319,7 @@ function Workspace({ store }: { store: Store }) {
     (patch: { layout?: Layout; focus?: string }) => {
       const r = currentRoute()
       if (r.page !== 'board') return
-      const next: BoardRoute = { ...r, layout: r.layout ?? layout, focus: r.layout ? r.focus : focusId, ...patch, task: undefined }
+      const next: BoardRoute = { ...r, layout: r.layout ?? layout, focus: r.layout ? r.focus : focusId, ...patch, task: undefined, inbox: undefined }
       if (hrefFor(next) !== hrefFor(r)) navigate(next)
     },
     [layout, focusId],
@@ -337,6 +340,21 @@ function Workspace({ store }: { store: Store }) {
 
   const say = useCallback((message: string | null) => message && toast(message, { id: 'undo' }), [])
 
+  // The Inbox panel sits beside this board: it's told which board this is (to file cards here), and its last
+  // change is weighed against this board's when you undo.
+  const { setPage, setCount, lastActs } = useInbox()
+  const boardName = data.board.name
+  useEffect(() => {
+    setPage({ boardId: data.board.id, name: boardName, canEdit: !readOnly })
+    return () => setPage(null)
+  }, [setPage, data.board.id, boardName, readOnly])
+  // (Open as a board, the Inbox itself says how many cards wait in it.)
+  const waiting = access.inbox ? idx.roots.filter((id) => idx.category.get(id) !== 'done').length : null
+  useEffect(() => {
+    if (waiting !== null) setCount(waiting)
+  }, [waiting, setCount])
+  const lastRun = useRef(0)
+
   /** Runs a command; if the rules refuse it, says why. */
   const run = useCallback(
     (cmd: Command) => {
@@ -345,6 +363,7 @@ function Workspace({ store }: { store: Store }) {
         toast(error, { id: 'refused' })
         return false
       }
+      lastRun.current = Date.now()
       const done = cmd.type === 'task.archive' && cmd.complete ? 'Card completed and archived' : UNDOABLE_TOAST[cmd.type]
       if (done) toast(done, { id: 'undo', action: { label: 'Undo', onClick: () => say(undo()) } })
       return true
@@ -421,12 +440,15 @@ function Workspace({ store }: { store: Store }) {
       if (readOnly) return
       const key = e.key.toLowerCase()
       const mod = e.metaKey || e.ctrlKey
+      // Undo takes back the newest change: this board's, or one made in the Inbox panel since.
+      const theirs = lastActs()
+      const panel = theirs && theirs.at > lastRun.current ? theirs : null
       if (mod && key === 'z') {
         e.preventDefault()
-        say(e.shiftKey ? redo() : undo())
+        if (!(e.shiftKey ? panel?.redo() : panel?.undo())) say(e.shiftKey ? redo() : undo())
       } else if (mod && key === 'y') {
         e.preventDefault()
-        say(redo())
+        if (!panel?.redo()) say(redo())
       } else if (key === 'n' && !mod && !e.altKey) {
         e.preventDefault()
         newTask()
@@ -437,7 +459,28 @@ function Workspace({ store }: { store: Store }) {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [newTask, undo, redo, readOnly, say])
+  }, [newTask, undo, redo, readOnly, say, lastActs])
+
+  // A card dragged out of the Inbox panel can be dropped anywhere on a view that isn't showing lists (the Timeline,
+  // the Outline, a board in columns per parent): it goes to the list the move picks. See `zones` in dnd.ts.
+  const viewRef = useRef<HTMLElement>(null)
+  const [dropHere, setDropHere] = useState(false)
+  useEffect(() => {
+    if (readOnly) return
+    const zone: DropZone = {
+      over: (x, y) => {
+        const r = viewRef.current?.getBoundingClientRect()
+        const on = !!r && x >= r.left && x <= r.right && y >= r.top && y <= r.bottom
+        setDropHere(on)
+        return on ? {} : null
+      },
+      leave: () => setDropHere(false),
+    }
+    zones.page = zone
+    return () => {
+      if (zones.page === zone) zones.page = null
+    }
+  }, [readOnly])
 
   // Remount a view when you switch tabs or focus, so paging and scroll state start fresh.
   const viewKey = `${prefs.layout}|${prefs.focusId ?? ''}`
@@ -458,13 +501,23 @@ function Workspace({ store }: { store: Store }) {
             onExport={() => void exportBoard(data).catch((e) => toast.error(errorMessage(e)))}
           />
           {access.archivedAt && <ArchivedBanner boardId={data.board.id} owner={access.role === 'owner'} />}
-          <ViewBar search={search} style={prefs.layout === 'board' ? canvasStyle(data.board.background) : undefined}>
-            <main className="min-h-0 flex-1">
-              <Suspense fallback={null}>
-                <View key={viewKey} search={search} />
-              </Suspense>
-            </main>
-          </ViewBar>
+          <div className="flex min-h-0 flex-1">
+            <InboxDock />
+            <ViewBar search={search} style={prefs.layout === 'board' ? canvasStyle(data.board.background) : undefined}>
+              <main ref={viewRef} className="relative min-h-0 flex-1">
+                <Suspense fallback={null}>
+                  <View key={viewKey} search={search} />
+                </Suspense>
+                {dropHere && (
+                  <div className="pointer-events-none absolute inset-2 z-20 grid place-items-center rounded-xl border-2 border-dashed border-primary/60 bg-background/60">
+                    <p className="flex items-center gap-2 rounded-lg bg-background px-4 py-2 text-sm font-medium shadow-md">
+                      <Tray className="size-4 text-primary" /> Drop to move to “{data.board.name}”
+                    </p>
+                  </div>
+                )}
+              </main>
+            </ViewBar>
+          </div>
         </div>
 
         {openId && (

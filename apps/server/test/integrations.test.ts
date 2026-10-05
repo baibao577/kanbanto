@@ -232,7 +232,6 @@ describe('MCP', () => {
       'manage_lists',
       'manage_labels',
       'manage_fields',
-      'set_inbox',
       'log_time',
       'follow_task',
       'add_comment',
@@ -455,23 +454,19 @@ describe('MCP', () => {
     const mcp = withToken(await makeToken(ann, 'write'))
     const call = async (name: string, args: object) => toolResult(await rpc(mcp, 'tools/call', { name, arguments: args }))
 
-    // No Inbox yet: say which board.
-    expect((await call('create_tasks', { tasks: [{ title: 'Milk' }] })).error).toContain('no Inbox')
-    // Only a board you can add tasks to can be your Inbox.
-    expect((await ann.request('PATCH', '/api/auth/me', { inboxBoardId: bobs })).status).toBe(404)
-    expect((await ann.ok('PATCH', '/api/auth/me', { inboxBoardId: personal })).user.inboxBoardId).toBe(personal)
     await ann.ok('POST', `/api/boards/${personal}/mutations`, {
       mutationId: mid(),
       command: { type: 'board.update', fields: { description: 'Home and errands' } },
     })
     const [board] = (await call('list_boards', {})).boards
-    expect(board).toMatchObject({ id: personal, about: 'Home and errands', inbox: true })
+    expect(board).toMatchObject({ id: personal, about: 'Home and errands' })
+    expect(board.inbox).toBeUndefined()
 
     await new Promise((r) => setTimeout(r, 5))
     const mark = new Date().toISOString()
     const yesterday = new Date(Date.now() - 86_400_000).toISOString().slice(0, 10)
-    const added = await call('create_tasks', { tasks: [{ title: 'Buy groceries', priority: 'urgent', due: yesterday }] })
-    expect(added.board).toEqual({ id: personal, name: 'My first board', inbox: true })
+    const added = await call('create_tasks', { board_id: personal, tasks: [{ title: 'Buy groceries', priority: 'urgent', due: yesterday }] })
+    expect(added.board).toEqual({ id: personal, name: 'My first board' })
     await call('update_task', { board_id: personal, task_id: 'A3', priority: 'high' })
 
     // Priorities: "high" finds urgent and high, most important first.
@@ -521,17 +516,25 @@ describe('MCP', () => {
     expect((await call('reminders', {})).upcoming.map((r: { task_id: string }) => r.task_id)).toEqual(['A3'])
     expect((await call('set_reminder', { board_id: personal, task_id: 'A3', remove: 'all' })).reminders).toEqual([])
 
+    // The Inbox: a task with no board named goes there. Everyone has one, made the first time it's needed.
+    const noted = await call('create_tasks', { tasks: [{ title: 'Call the bank', priority: 'urgent' }] })
+    expect(noted.board).toMatchObject({ name: 'Inbox', inbox: true })
+    const inbox = noted.board.id
+    expect((await call('create_tasks', { tasks: [{ title: 'Milk' }] })).board.id).toBe(inbox)
+    const mine = (await call('list_boards', {})).boards.filter((b: { inbox?: boolean }) => b.inbox)
+    expect(mine).toMatchObject([{ id: inbox, name: 'Inbox', workspace: 'Personal', tasks: 2 }])
+    expect((await call('get_board', { board_id: inbox })).board).toMatchObject({ inbox: true, your_role: 'owner' })
+    expect((await bob.request('GET', `/api/boards/${inbox}`)).status).toBe(404)
+
     // Filing it away: from the Inbox to where it belongs.
     const { id: errands } = await ann.ok('POST', '/api/boards', { name: 'Errands' })
-    const filed = await call('move_to_board', { board_id: personal, task_id: added.created[0].id, to_board_id: errands, list: 'doing' })
-    expect(filed).toMatchObject({ board: { id: errands, name: 'Errands' }, moved: { title: 'Buy groceries', subtasks: 0 } })
+    const filed = await call('move_to_board', { board_id: inbox, task_id: noted.created[0].id, to_board_id: errands, list: 'doing' })
+    expect(filed).toMatchObject({ board: { id: errands, name: 'Errands' }, moved: { title: 'Call the bank', subtasks: 0 } })
     const there = await call('get_task', { board_id: errands, task_id: filed.task_id })
-    expect(there).toMatchObject({ title: 'Buy groceries', list: 'Doing', priority: 'urgent' })
+    expect(there).toMatchObject({ title: 'Call the bank', list: 'Doing', priority: 'urgent' })
     expect((await call('move_to_board', { board_id: errands, task_id: filed.task_id, to_board_id: bobs })).error).toContain('doesn’t exist')
-
-    // A board that's gone stops being the Inbox.
-    await ann.ok('DELETE', `/api/boards/${personal}`)
-    expect((await ann.ok('GET', '/api/auth/me')).user.inboxBoardId).toBe(null)
+    // …and back to the Inbox, like to any board.
+    expect((await call('move_to_board', { board_id: errands, task_id: filed.task_id, to_board_id: inbox })).board.id).toBe(inbox)
   })
 
   it('manages fields: a library’s fields, a choice’s options by name, and which of them a board uses', async () => {
@@ -699,11 +702,8 @@ describe('MCP', () => {
     await call('update_task', { board_id: id, task_id: task.id, labels: ['Design'] })
     expect((await call('manage_labels', { board_id: id, action: 'remove', label: 'Design' })).error).toContain('is on 1 task')
 
-    // The Inbox.
-    expect((await call('set_inbox', { board_id: id })).inbox).toEqual({ id, name: 'Q4 site launch' })
-    expect((await call('create_tasks', { tasks: [{ title: 'Call the printer' }] })).board).toMatchObject({ id, inbox: true })
-    expect((await call('set_inbox', { board_id: null })).inbox).toBe(null)
-    expect((await ann.ok('GET', '/api/auth/me')).user.inboxBoardId).toBe(null)
+    // The Inbox isn't a board you choose: a task with no board named never lands on this one.
+    expect((await call('create_tasks', { tasks: [{ title: 'Call the printer' }] })).board).toMatchObject({ name: 'Inbox', inbox: true })
   })
 
   it('the order made by hand: get_board and find_tasks follow it, list by list; update_task places a card in its list', async () => {

@@ -11,6 +11,22 @@ then `git pull` (or download the new release) and `docker compose up -d --build`
   by hand opens with one card per task, its subtasks on its card.
   An open card lists what every card has one line each, the most used first, with dates and the rest in groups you
   can fold away.
+- **Your Inbox, beside every board:** a board of your own for notes and cards that have no board yet, which only you
+  can see. The tray in the top bar (or the I key) opens it as a panel at the left of any board and of your
+  boards page, with how many cards wait in it. It shows its lists as a stack of sections that fold: add a card, drag
+  it to another section to change its list, tick small things off without ever putting them on a board. Drag a card
+  out onto a list of the open board and it lands where you drop it (on the Timeline or the Outline, anywhere on the
+  view); a card's menu does the same without dragging, which is the way on a phone, where the Inbox opens over the
+  board. It is a real board: open it as one to change its lists. It can't be shared, moved to a workspace, archived
+  or deleted. Everyone has one, made the first time the app opens; tasks an assistant adds without naming a board go
+  there. For those who had chosen a board as their Inbox (Board settings → "Use as my Inbox", now gone): if nobody
+  else could open that board, it is their Inbox now, with its cards; otherwise it stays an ordinary board and their
+  Inbox starts empty. For apps: `GET /api/inbox`, a place in the list for a card moved to another board (`order`),
+  `inbox` on a board in `GET /api/boards`; `user.inboxBoardId` and the `set_inbox` tool are gone.
+- **A quieter top bar on a board:** search, Share and More are small icons that say what they are when pointed at
+  (search opens into its box when clicked, or with the / key; Share says how many people are on the board), "New
+  task" is the one button with a word, and a thin line sets the board's own buttons apart from what is yours on
+  every page: your Inbox, the bell and your account. On a phone, Share is the first thing under More.
 - **Dates with or without a time:** start and due are whole days by default; add a time (24-hour) when it matters.
   Everyone sees it in their own time zone, and dates read day first ("Mon 12 Oct · 14:30").
 - **Works on phones and tablets:** press and hold a card, list or row to drag it. Each card's menu can also move it to
@@ -48,7 +64,7 @@ then `git pull` (or download the new release) and `docker compose up -d --build`
   deliveries and retries, an MCP endpoint for AI assistants, a Skill for Claude Code, and an API reference at
   `/api/docs` on every site. Claude on the web and in Claude Desktop (and ChatGPT) can connect by signing in (OAuth),
   when a platform admin allows it. For assistants: a 180-day activity log of who changed what (and through which app),
-  a team overview, searches by priority, label and time, and an Inbox for quick capture.
+  a team overview, searches by priority, label and time, and your Inbox for quick capture.
 - **Cards in your calendar:** connect Google Calendar (Account settings → Calendar) and your cards' due dates and
   reminders appear in a calendar of Kanbanto's own there, updated within seconds; or make a private calendar link
   for Apple Calendar, Outlook and others. Your cards are the ones assigned to you, plus nobody's cards on boards
@@ -120,8 +136,8 @@ then `git pull` (or download the new release) and `docker compose up -d --build`
   (board ⋯ → Archived cards, or from search) across all your boards, where they can be searched, opened read-only,
   restored where they were, or deleted for good; archived boards are read-only and kept under "Archived boards" on the
   boards page.
-- Assistants can **set up boards**: create one, change its settings, lists and labels, and choose your Inbox. Sharing
-  and deleting stay in the app.
+- Assistants can **set up boards**: create one, change its settings, lists and labels. Sharing and deleting stay in
+  the app.
 - **Email** through any SMTP server or Resend, with limits to stay within a free plan. **File storage** on the server's
   disk or in an S3-compatible bucket (Cloudflare R2, Amazon S3, MinIO); people can bring their own.
 - **Security review** before the first public release, with fixes: undo and imported files can no longer store a card

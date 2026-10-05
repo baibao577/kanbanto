@@ -40,6 +40,7 @@ describe('workspaces', () => {
       publicLink: false,
       workspace: { id: ws, name: 'Acme' },
       archivedAt: null,
+      inbox: false,
     })
     expect((await mutate(bob, board, { type: 'task.update', id: 'A', fields: { title: 'Go live' } })).status).toBe(200)
     // Everyone in the workspace can be assigned and @mentioned.

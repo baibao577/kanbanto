@@ -60,4 +60,54 @@ describe('moving a task to another board', () => {
     expect(planMove(source, target, 'A', { status: 'nope' }, ctx)).toEqual({ error: 'That list isn’t on the other board.' })
     expect(planMove(source, source, 'A', {}, ctx)).toEqual({ error: 'It’s already on this board.' })
   })
+
+  it('lands where it was dropped: at a place in the list, in exactly that list', () => {
+    const source = exampleData('src', 'ann')
+    const base = emptyBoard('dst', 'Home', now)
+    const card = (id: string, rank?: string): Task => ({ ...source.tasks.B1, id, parentId: null, status: 'todo', labels: [], blockedBy: [], rank })
+    const order = (data: typeof base, list: string) => {
+      const idx = indexFor(data)
+      return Object.values(data.tasks)
+        .filter((t) => t.parentId === null && t.status === list)
+        .sort((a, b) => (a.rank! < b.rank! ? -1 : 1))
+        .map((t) => (idx.roots.includes(t.id) ? t.id : ''))
+    }
+
+    // A list ordered by hand: only the card that arrives gets a position, between its neighbours.
+    const ranked = { ...base, tasks: { x: card('x', 'a0'), y: card('y', 'a1'), z: card('z', 'a2') } }
+    const mid = planMove(source, ranked, 'B1', { status: 'todo', order: { ids: ['x', 'y', 'z'], at: 1 } }, ctx)
+    if ('error' in mid) throw new Error(mid.error)
+    expect(mid.target.map((c) => c.id)).toEqual([mid.ids.get('B1')])
+    expect(order(applyChanges(ranked, mid.target), 'todo')).toEqual(['x', mid.ids.get('B1'), 'y', 'z'])
+    // First, last, and a place past the end (or cards that have since gone): as near as it can be.
+    for (const [at, want] of [
+      [0, 0],
+      [3, 3],
+      [99, 3],
+    ]) {
+      const p = planMove(source, ranked, 'B1', { status: 'todo', order: { ids: ['x', 'gone', 'y', 'z'], at: at === 0 ? 0 : at + 1 } }, ctx)
+      if ('error' in p) throw new Error(p.error)
+      expect(order(applyChanges(ranked, p.target), 'todo').indexOf(p.ids.get('B1')!)).toBe(want)
+    }
+
+    // A list nobody ordered yet: all of it gets positions, in the order it was showing.
+    const plain = { ...base, tasks: { x: card('x'), y: card('y') } }
+    const first = planMove(source, plain, 'B1', { status: 'todo', order: { ids: ['y', 'x'], at: 1 } }, ctx)
+    if ('error' in first) throw new Error(first.error)
+    expect(order(applyChanges(plain, first.target), 'todo')).toEqual(['y', first.ids.get('B1'), 'x'])
+    expect(applyChanges(plain, first.target).tasks.x.version).toBe(source.tasks.B1.version + 1)
+
+    // A done card goes to the list it was dropped on (its done subtasks stay done); without a place, to a done list.
+    const done = { ...source, tasks: { ...source.tasks, A: { ...source.tasks.A, status: 'done' } } }
+    const dropped = planMove(done, ranked, 'A', { status: 'todo', order: { ids: ['x', 'y', 'z'], at: 3 } }, ctx)
+    if ('error' in dropped) throw new Error(dropped.error)
+    const after = applyChanges(ranked, dropped.target)
+    expect(after.tasks[dropped.ids.get('A')!]).toMatchObject({ status: 'todo' })
+    expect(after.tasks[dropped.ids.get('A')!].doneAt).toBeUndefined()
+    expect(after.tasks[dropped.ids.get('A1')!].status).toBe('done')
+    const chosen = planMove(done, ranked, 'A', { status: 'todo' }, ctx)
+    if ('error' in chosen) throw new Error(chosen.error)
+    expect(applyChanges(ranked, chosen.target).tasks[chosen.ids.get('A')!]).toMatchObject({ status: 'done' })
+    expect(applyChanges(ranked, chosen.target).tasks[chosen.ids.get('A')!].rank).toBeUndefined()
+  })
 })
