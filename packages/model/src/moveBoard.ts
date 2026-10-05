@@ -1,5 +1,5 @@
 import { execute } from './commands'
-import { carryCustom, matchFields } from './fields'
+import { carryCustom, linkRef, matchFields, parseRef } from './fields'
 import { descendantsOf, indexFor } from './indexer'
 import { positionBetween } from './position'
 import type { Change } from './records'
@@ -32,6 +32,8 @@ export interface MovePlan {
     droppedLinks: number
     /** Fields whose values can't come along: the other board doesn't use them (or not that option). */
     droppedFields: string[]
+    /** Links to it from other cards that couldn't follow it (the board it went to is outside their space). Only known once it has moved. */
+    linksRemoved?: number
   }
 }
 
@@ -95,15 +97,20 @@ export function planMove(
   const onTarget = new Set(target.members.map((m) => m.id))
   const unassigned = new Set<string>()
   let droppedLinks = 0
-  // Values go along where the other board uses the same field, or one with the same name and type.
+  // Values go along where the other board uses the same field, or one with the same name and type. A link to a card
+  // that moves along (the card itself, a subtask) points at it under its new id there.
   const { map: fieldMap } = matchFields(source.fields, target.fields)
+  const relink = (ref: string) => {
+    const to = parseRef(ref)
+    return to && to.boardId === source.board.id && ids.has(to.taskId) ? linkRef(target.board.id, ids.get(to.taskId)!) : ref
+  }
   const droppedFields = new Set<string>()
   const parent = to.parentId ?? null
   const lastSibling = (parent ? tIdx.childrenOf.get(parent) : tIdx.roots)?.at(-1)
   for (const id of moving) {
     const t = source.tasks[id]
     const { rank: _rank, assigneeId, doneAt, custom: held, ...rest } = t
-    const custom = carryCustom(held, fieldMap)
+    const custom = carryCustom(held, fieldMap, relink)
     for (const f of source.fields)
       if (held?.[f.id] !== undefined && (!fieldMap.has(f.id) || custom?.[fieldMap.get(f.id)!.id] === undefined)) droppedFields.add(f.name)
     const status = listFor(t)

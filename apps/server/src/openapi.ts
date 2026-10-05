@@ -1,4 +1,5 @@
 import scalar from '@scalar/fastify-api-reference'
+import { FIELD_TYPES } from '@kanbanto/model/fields'
 import { PlanCommandSchema } from '@kanbanto/model/planningSchema'
 import { CommandSchema } from '@kanbanto/model/schema'
 import type { FastifyPluginAsync } from 'fastify'
@@ -45,7 +46,7 @@ const schemas = {
         type: 'object',
         additionalProperties: {},
         description:
-          'Its values for the board’s own fields (see Fields), by field id: text, a number, a day or moment, `true` for a ticked checkbox, or a list with the id of a choice’s option. No value: no key. Set with `task.update`, `fields: { custom: { "<field id>": value } }` (null clears one).',
+          'Its values for the board’s own fields (see Fields), by field id: text, a number, a day or moment, `true` for a ticked checkbox, a list with the id of a choice’s option, or for a card link a list of links (`"<board id>:<task id>"`). No value: no key. Set with `task.update`, `fields: { custom: { "<field id>": value } }` (null clears one).',
       },
       createdAt: { ...str, format: 'date-time' },
       updatedAt: { ...str, format: 'date-time' },
@@ -57,7 +58,7 @@ const schemas = {
     {
       id: str,
       name: str,
-      type: { enum: ['text', 'number', 'date', 'choice', 'checkbox'], description: 'Chosen once: it can’t be changed.' },
+      type: { enum: [...FIELD_TYPES], description: 'Chosen once: it can’t be changed.' },
       format: { enum: ['plain', 'link', 'email', 'phone'], description: 'Text: how it’s shown.' },
       unit: { ...str, description: 'Number: ฿, h, %…' },
       decimals: { type: 'integer', description: 'Number: how many are shown.' },
@@ -67,6 +68,13 @@ const schemas = {
         description: 'Choice: what can be picked, in order. An archived option stays on the cards that have it.',
         items: obj({ id: str, name: str, color: str, archived: { type: 'boolean' } }, ['id', 'name', 'color']),
       },
+      linkTo: {
+        enum: ['board', 'space', 'same'],
+        description: 'Card link: where its cards come from. One board (`board`), any board of the field’s space, or the board that uses the field.',
+      },
+      board: { ...str, description: 'Card link, `linkTo: board`: that board’s id.' },
+      many: { type: 'boolean', description: 'Card link: it holds several cards, not one.' },
+      back: { ...str, description: 'Card link: what the linked card calls the list of cards pointing at it.' },
       front: { type: 'boolean', description: 'On a board: shown on the card front too.' },
       total: { type: 'boolean', description: 'On a board: a number that adds up, totalled under each list’s name.' },
     },
@@ -494,6 +502,49 @@ The answer lists the records that changed.
           responses: { 200: json(obj({ comment: ref('Comment') })) },
         },
       },
+      '/api/boards/{id}/linked': {
+        get: {
+          tags: ['Fields'],
+          summary: 'What links point at, for you',
+          description:
+            'For links held by this board’s cards (card link fields): each card’s title, board and list, `gone` for a deleted card, or `hidden` for one on a board you can’t open (which says nothing about whether it exists). A board’s own answer carries the first 2,000 as `linked`; this is for the rest.',
+          parameters: [
+            id('id'),
+            {
+              name: 'refs',
+              in: 'query',
+              required: true,
+              schema: { ...str, description: 'Links, with commas (each written for an address). Up to 60.' },
+            },
+          ],
+          responses: { 200: json(obj({ linked: { type: 'object', additionalProperties: { type: 'object' } } })) },
+        },
+      },
+      '/api/boards/{id}/fields/{fieldId}/cards': {
+        get: {
+          tags: ['Fields'],
+          summary: 'Cards a link field can link',
+          description:
+            'For one of the board’s card link fields: cards by words in their titles (the latest ones, without `q`), from the board the field names, this board, or the boards of its space, as far as you can open them. Up to 30. Each comes with `ref`, the link to store. For editors.',
+          parameters: [
+            id('id'),
+            id('fieldId'),
+            { name: 'q', in: 'query', schema: str },
+            { name: 'task', in: 'query', schema: { ...str, description: 'The card being edited: it isn’t offered to itself.' } },
+          ],
+          responses: { 200: json(obj({ cards: { type: 'array', items: { type: 'object' } }, problem: str })) },
+        },
+      },
+      '/api/boards/{id}/tasks/{taskId}/linked-from': {
+        get: {
+          tags: ['Fields'],
+          summary: 'The cards that link to a card',
+          description:
+            'Grouped by the board and field they link from, each group with what its cards’ numbers add up to. Cards on boards you can’t open are only counted (`hidden`). `subtasks=1`: links to the card or to any card under it.',
+          parameters: [id('id'), id('taskId'), { name: 'subtasks', in: 'query', schema: { enum: ['1'] } }],
+          responses: { 200: json(obj({ groups: { type: 'array', items: { type: 'object' } }, hidden: { type: 'integer' } })) },
+        },
+      },
       '/api/boards/{id}/fields': {
         get: {
           tags: ['Fields'],
@@ -579,7 +630,7 @@ The answer lists the records that changed.
                   requestBody: {
                     content: {
                       'application/json': {
-                        schema: obj({ name: str, type: { enum: ['text', 'number', 'date', 'choice', 'checkbox'] }, ...settings }, ['name', 'type']),
+                        schema: obj({ name: str, type: { enum: [...FIELD_TYPES] }, ...settings }, ['name', 'type']),
                       },
                     },
                   },

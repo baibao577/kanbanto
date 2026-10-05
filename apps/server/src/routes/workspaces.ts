@@ -7,6 +7,7 @@ import { requireAccess } from '../boards/access'
 import { newLinkToken } from '../boards/invites'
 import { announceSharingChange, announceWorkspaceChange } from '../boards/announce'
 import { moveBoardFields } from '../boards/fields'
+import { factOf, unlinkBoard } from '../boards/links'
 import { addToWorkspace, adminCount, leaveWorkspace, moveBoard, requireWorkspace } from '../boards/workspaces'
 import { boards, users, WORKSPACE_ROLES, workspaceInvites, workspaceMembers, workspaces } from '../db/schema'
 import { env } from '../env'
@@ -278,13 +279,17 @@ export const workspaceRoutes: FastifyPluginAsync = async (app) => {
     const { workspaceId, confirm } = parse(z.object({ workspaceId: z.uuid().nullable(), confirm: z.boolean().optional() }), req.body)
     // Its fields belong to the space it leaves: what moving them would add or lose is asked first (see moveBoardFields).
     let touched: string[] = []
+    const leaving = board.workspaceId !== workspaceId
+    // (As it was: where its cards' links to and from other boards have to be taken out, once it has gone.)
+    const was = leaving ? await factOf(app.db, id) : undefined
     const visibility = await app.db.transaction(async (tx) => {
       const shown = await moveBoard(tx, board, me.id, workspaceId)
-      if (board.workspaceId !== workspaceId) touched = await moveBoardFields(app, tx, board, me.id, workspaceId, !!confirm)
+      if (leaving) touched = await moveBoardFields(app, tx, board, me.id, workspaceId, !!confirm)
       return shown
     })
     await announceSharingChange(app, id)
     app.engine.reloaded(touched)
+    if (was) await unlinkBoard({ db: app.db, engine: app.engine }, was).catch((e) => app.log.error(e))
     return { workspaceId, visibility }
   })
 }

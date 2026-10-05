@@ -1,6 +1,18 @@
 import { isPast, sortTime, todayDay, toDay } from './dates'
 import { idleDays, lastActivity } from './age'
-import { compareValues, fieldIdOf, fieldMatches, filterText, isFieldKey, optionsOf, type FieldDef, type FieldFilter, type FieldKey } from './fields'
+import {
+  compareValues,
+  fieldIdOf,
+  fieldMatches,
+  filterText,
+  isFieldKey,
+  optionsOf,
+  type FieldDef,
+  type FieldFilter,
+  type FieldKey,
+  linksOf,
+  type TitleOf,
+} from './fields'
 import type { TaskIndex } from './indexer'
 import { subtreeSums } from './totals'
 import { PRIORITIES, PRIORITY_LABEL, type LabelDef, type Member, type Priority, type StatusColumn } from './types'
@@ -89,13 +101,27 @@ export function matchesFilter(idx: TaskIndex, id: string, f: TableFilter, lastCo
   return true
 }
 
-/** A comparator for sorting siblings by a column. Empty values always go last, whichever the direction. */
-export function sortComparator(idx: TaskIndex, sort: Sort, labelById: Map<string, LabelDef>) {
+/**
+ * A comparator for sorting siblings by a column. Empty values always go last, whichever the direction. A card link
+ * goes by its first card's title (`titleOf`), and one whose title isn't known counts as empty.
+ */
+export function sortComparator(idx: TaskIndex, sort: Sort, labelById: Map<string, LabelDef>, titleOf?: TitleOf) {
   const sign = sort.dir === 'asc' ? 1 : -1
   if (isFieldKey(sort.key)) {
     const def = idx.fields.get(fieldIdOf(sort.key))
     // (Sorted by a field the board no longer uses: everything stays where it is.)
     if (!def) return () => 0
+    if (def.type === 'link') {
+      const title = (id: string) => {
+        const [first] = linksOf(idx.tasks[id].custom?.[def.id])
+        return first === undefined ? undefined : titleOf?.(first)?.toLowerCase()
+      }
+      return (a: string, b: string) => {
+        const [ta, tb] = [title(a), title(b)]
+        if (ta === undefined || tb === undefined) return ta === tb ? 0 : ta === undefined ? 1 : -1
+        return sign * ta.localeCompare(tb)
+      }
+    }
     // A checkbox has two real values: ticked ones first, or last.
     if (def.type === 'checkbox') {
       const ticked = (id: string) => (idx.tasks[id].custom?.[def.id] === true ? 0 : 1)
@@ -160,7 +186,14 @@ export function sortComparator(idx: TaskIndex, sort: Sort, labelById: Map<string
  * The active filters in words, for chips: "Status: To Do, Doing". A filter by one of the board's fields is a chip
  * of its own (`field`: its id), so each can be taken away by itself.
  */
-export function filterChips(f: TableFilter, columns: StatusColumn[], labels: LabelDef[], members: Member[], fields: FieldDef[] = []) {
+export function filterChips(
+  f: TableFilter,
+  columns: StatusColumn[],
+  labels: LabelDef[],
+  members: Member[],
+  fields: FieldDef[] = [],
+  titleOf?: TitleOf,
+) {
   const chips: { key: keyof TableFilter; field?: string; label: string; value: string }[] = []
   const names = (ids: string[], name: (id: string) => string | undefined) => ids.map(name).filter(Boolean).join(', ')
   if (f.statuses?.length) chips.push({ key: 'statuses', label: 'Status:', value: names(f.statuses, (id) => columns.find((c) => c.id === id)?.name) })
@@ -175,7 +208,7 @@ export function filterChips(f: TableFilter, columns: StatusColumn[], labels: Lab
   if (f.idle) chips.push({ key: 'idle', label: 'No activity for', value: `${f.idle}+ ${f.idle === 1 ? 'day' : 'days'}` })
   for (const [fieldId, wanted] of Object.entries(f.fields ?? {})) {
     const def = fields.find((x) => x.id === fieldId)
-    if (def) chips.push({ key: 'fields', field: fieldId, label: `${def.name}:`, value: filterText(def, wanted) })
+    if (def) chips.push({ key: 'fields', field: fieldId, label: `${def.name}:`, value: filterText(def, wanted, titleOf) })
   }
   return chips
 }

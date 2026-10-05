@@ -8,12 +8,14 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Switch } from '@/components/ui/switch'
 import { formatDay } from '@/lib/format'
 import { cn } from '@/lib/utils'
+import { LinkFront, LinkValueEditor, LinkValueText } from './LinkValue'
 import { linkOf } from './values'
 
 const CHIP = 'inline-flex h-5 max-w-full items-center gap-1 rounded px-1.5 text-[11px] font-medium'
 
 /** A card's value for one of the board's fields, as a small chip on the card front. */
 export function FieldChip({ field, value }: { field: BoardField; value: FieldValue }) {
+  if (field.type === 'link') return <LinkFront field={field} value={value} />
   if (field.type === 'choice') {
     const [option] = optionsOf(field, value)
     return option ? <LabelChip label={option} className={cn('min-w-0', option.archived && 'opacity-60')} /> : null
@@ -46,13 +48,17 @@ export function FieldValueEditor({
   onChange,
   cell,
   placeholder,
+  taskId,
 }: {
   field: BoardField
   value: FieldValue | undefined
   onChange: (v: FieldValue | null) => void
   cell?: boolean
   placeholder?: string
+  /** The card being edited (a card link doesn't offer the card itself). */
+  taskId?: string
 }) {
+  if (field.type === 'link') return <LinkValueEditor field={field} value={value} onChange={onChange} cell={cell} taskId={taskId} />
   if (field.type === 'date')
     return (
       <DateField
@@ -98,6 +104,7 @@ export function FieldValueEditor({
 /** A card's value for a field, just shown (a viewer's Outline): nothing when there's none. */
 export function FieldValueText({ field, value }: { field: BoardField; value: FieldValue | undefined }) {
   if (value === undefined) return null
+  if (field.type === 'link') return <LinkValueText value={value} cell />
   if (field.type === 'choice') {
     const [option] = optionsOf(field, value)
     return option ? <LabelChip label={option} className={cn('min-w-0', option.archived && 'opacity-60')} /> : null

@@ -1,5 +1,5 @@
 import type { Command } from './commands'
-import { sameValue, valueText } from './fields'
+import { linksOf, parseRef, sameValue, valueText, type FieldValue } from './fields'
 import type { Change } from './records'
 import type { BoardData, Task } from './types'
 
@@ -81,6 +81,10 @@ export function describeChanges(before: BoardData, changes: Change[], command?: 
         for (const f of before.fields) {
           const value = b.custom?.[f.id]
           if (sameValue(a.custom?.[f.id], value)) continue
+          if (f.type === 'link' && value !== undefined) {
+            items.push({ taskId: b.id, text: `set ${f.name} of ${t} to ${short(linkedText(before, value))}` })
+            continue
+          }
           items.push({
             taskId: b.id,
             text: value === undefined ? `cleared ${f.name} of ${t}` : `set ${f.name} of ${t} to ${short(valueText(f, value))}`,
@@ -102,4 +106,19 @@ export function describeChanges(before: BoardData, changes: Change[], command?: 
   }
   if (items.length <= MAX_ITEMS) return items
   return [...items.slice(0, MAX_ITEMS - 1), { text: `and made ${items.length - MAX_ITEMS + 1} more changes` }]
+}
+
+/**
+ * A card link's cards, as the log says them: by title when they're all on this board, and without a name otherwise
+ * ("a card on another board", "3 cards"). People who read this board's log may not be able to open the other one.
+ */
+function linkedText(board: BoardData, value: FieldValue): string {
+  const refs = linksOf(value)
+  const titles = refs.flatMap((ref) => {
+    const to = parseRef(ref)
+    const card = to && to.boardId === board.board.id ? (board.tasks[to.taskId] ?? board.archived?.[to.taskId]) : undefined
+    return card ? [`“${card.title}”`] : []
+  })
+  if (titles.length === refs.length) return titles.join(', ')
+  return refs.length === 1 ? 'a card on another board' : `${refs.length} cards`
 }

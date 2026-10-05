@@ -1145,6 +1145,71 @@ await shot('fields-6-filter', async () => {
   return { clip: { x: whole.x - 24, y: top.y - 24, width: whole.width + 48, height: whole.y + whole.height - top.y + 48 } }
 })
 
+// ── Links between cards: a Companies board, and a field on the client work board that points at its cards ────────
+let linkedUp = null
+/** Adds the Companies board and a "Company" card link to the client work board (made last: the pictures above don't have it). */
+async function companies() {
+  if (linkedUp) return linkedUp
+  const { id } = await clientWork()
+  const { id: firms } = await api(ann, 'POST', '/boards', { name: 'Companies', background: 'blue' })
+  const add = (boardId, cardId, title) =>
+    api(ann, 'POST', `/boards/${boardId}/mutations`, {
+      mutationId: `g${stamp}-l-${n++}`,
+      command: { type: 'task.create', id: cardId, parentId: null, fields: { title, status: 'todo' } },
+    })
+  for (const [cardId, title] of [
+    ['northwind', 'Northwind'],
+    ['acme', 'Acme'],
+    ['hooli', 'Hooli'],
+    ['globex', 'Globex'],
+  ])
+    await add(firms, cardId, title)
+  const company = (await api(ann, 'POST', '/fields', { name: 'Company', type: 'link', linkTo: 'board', board: firms, back: 'Deals' })).id
+  const now = (await api(ann, 'GET', `/boards/${id}/fields`)).fields
+  await api(ann, 'PUT', `/boards/${id}/fields`, {
+    fields: [{ id: company }, ...now.map((f) => ({ id: f.id, ...(f.front && { front: true }), ...(f.total && { total: true }) }))],
+  })
+  const link = (cardId, to) =>
+    api(ann, 'POST', `/boards/${id}/mutations`, {
+      mutationId: `g${stamp}-l-${n++}`,
+      command: { type: 'task.update', id: cardId, fields: { custom: { [company]: [`${firms}:${to}`] } } },
+    })
+  await link('brand', 'acme')
+  await link('report', 'acme')
+  await link('redesign', 'northwind')
+  return (linkedUp = { id, firms })
+}
+await shot('fields-7-link', async () => {
+  const { id } = await companies()
+  await page.goto(`${SITE}/#/b/${id}/board?task=shop`)
+  await page.reload()
+  const card = page.getByRole('dialog').first()
+  await card.getByRole('button', { name: 'Add a card to Company' }).click()
+  await page.getByLabel('Find a card for Company').fill('o')
+  await page.getByRole('option', { name: /Hooli/ }).waitFor()
+  await page.waitForTimeout(500)
+  const { clip } = await around(
+    [
+      card.locator('section').filter({ has: page.getByRole('heading', { name: 'Fields', exact: true }) }),
+      page.getByRole('listbox', { name: 'Cards' }),
+    ],
+    20,
+  )
+  return { clip }
+})
+await shot('fields-8-linked-from', async () => {
+  const { firms } = await companies()
+  await page.goto(`${SITE}/#/b/${firms}/board?task=acme`)
+  await page.reload()
+  const card = page.getByRole('dialog').first()
+  const section = card.locator('section').filter({ has: page.getByRole('heading', { name: 'Linked from', exact: true }) })
+  await section.getByText('Brand refresh').waitFor()
+  await page.waitForTimeout(500)
+  const { clip } = await around([section], 20)
+  // (From the section's own heading: the line above it belongs to the one before.)
+  return { clip: { ...clip, y: clip.y + 14, height: clip.height - 14 } }
+})
+
 await browser.close()
 console.log(`made ${made.length}: ${made.join(', ')}`)
 if (failed.length) console.log(`\nnot made (${failed.length}):\n  ${failed.join('\n  ')}`)

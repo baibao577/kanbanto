@@ -79,7 +79,8 @@ export async function createBoard(
  * `lost`: what couldn't come along.
  */
 export async function importBoard(app: FastifyInstance, ownerId: string, data: BoardData): Promise<{ id: string; lost: string[] }> {
-  const id = newId()
+  // (The id the file was read under: its cards' links to each other already name it. See `readBoardFile`.)
+  const id = data.board.id
   // (The same goes for who set a reminder, which is who it goes to on an unassigned card: the importer now.)
   const mine = (t: Task): Task => {
     const { assigneeId, ...rest } = t
@@ -91,7 +92,7 @@ export async function importBoard(app: FastifyInstance, ownerId: string, data: B
   let touched: string[] = []
   const lost = await app.db.transaction(async (tx) => {
     const lib = { ownerId }
-    const plan = await adoptFields(tx, lib, data.fields, true)
+    const plan = await adoptFields(tx, lib, data.fields, true, id)
     touched = await applyAdoption(app, tx, lib, plan)
     const all = (tasks: Record<string, Task>) =>
       Object.fromEntries(

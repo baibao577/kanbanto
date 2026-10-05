@@ -7,10 +7,12 @@ import type { BoardAccess } from '@kanbanto/model/api'
 import { backgroundOf, boardGradient } from '@kanbanto/model/colors'
 import type { Command } from '@kanbanto/model/commands'
 import { newId } from '@kanbanto/model/ids'
+import { parseRef } from '@kanbanto/model/fields'
 import { indexFor } from '@kanbanto/model/indexer'
 import type { PrefsAction } from '@kanbanto/model/prefs'
 import type { BoardData, Layout } from '@kanbanto/model/types'
 import { BoardContext, type BoardContextValue } from '@/app/board-context'
+import { LinksContext } from '@/app/links-context'
 import { setTabIcon } from '@/app/tabIcon'
 import { closeTask, currentRoute, hrefFor, navigate, openTask, parseRoute, useRoute, type BoardRoute, type Route } from '@/app/router'
 import { useAuth } from '@/app/use-auth'
@@ -32,6 +34,7 @@ const StatsDialog = lazy(() => import('@/components/shell/StatsDialog').then((m)
 const TaskDialog = lazy(() => import('@/components/task/TaskDialog').then((m) => ({ default: m.TaskDialog })))
 const LogBox = lazy(() => import('@/components/time/LogBox'))
 const MyWeek = lazy(() => import('@/components/time/MyWeek'))
+const CardPeek = lazy(() => import('@/components/cards/CardPeek').then((m) => ({ default: m.CardPeek })))
 const MoveToBoardDialog = lazy(() => import('@/components/task/MoveToBoardDialog').then((m) => ({ default: m.MoveToBoardDialog })))
 const CardsView = lazy(() => import('@/components/cards/CardsView').then((m) => ({ default: m.CardsView })))
 const ShareDialog = lazy(() => import('@/components/share/ShareDialog').then((m) => ({ default: m.ShareDialog })))
@@ -369,6 +372,21 @@ function Workspace({ store }: { store: Store }) {
     [run, prefs.focusId],
   )
 
+  // A linked card: one of this board opens like any card; one of another board opens over this one, to look.
+  const links = store.links!
+  const [peek, setPeek] = useState<{ boardId: string; taskId: string } | null>(null)
+  const boardId = data.board.id
+  const openLinked = useCallback(
+    (ref: string) => {
+      const to = parseRef(ref)
+      if (!to) return
+      if (to.boardId === boardId) openTask(to.taskId)
+      else setPeek(to)
+    },
+    [boardId],
+  )
+  const linksCtx = useMemo(() => ({ store: links, open: openLinked }), [links, openLinked])
+
   const ctx: BoardContextValue = {
     data,
     prefs,
@@ -389,6 +407,8 @@ function Workspace({ store }: { store: Store }) {
     canComment: store.canComment,
     onActivity: store.onActivity,
     logTime: readOnly ? undefined : logTime,
+    links,
+    canBeLinked: store.canBeLinked,
   }
 
   const newTask = useCallback(() => createTask(undefined, { title: 'New task' }, { open: true }), [createTask])
@@ -425,60 +445,74 @@ function Workspace({ store }: { store: Store }) {
 
   return (
     <BoardContext.Provider value={ctx}>
-      <div className="flex h-full flex-col">
-        <TopBar
-          search={search}
-          onSearch={setSearch}
-          onNewTask={newTask}
-          connection={store.connection}
-          unsaved={store.unsaved}
-          onOpenSettings={() => setSettingsOpen(true)}
-          onOpenStats={() => setStatsOpen(true)}
-          onExport={() => void exportBoard(data).catch((e) => toast.error(errorMessage(e)))}
-        />
-        {access.archivedAt && <ArchivedBanner boardId={data.board.id} owner={access.role === 'owner'} />}
-        <ViewBar search={search} style={prefs.layout === 'board' ? canvasStyle(data.board.background) : undefined}>
-          <main className="min-h-0 flex-1">
-            <Suspense fallback={null}>
-              <View key={viewKey} search={search} />
-            </Suspense>
-          </main>
-        </ViewBar>
-      </div>
-
-      {openId && (
-        <Suspense fallback={null}>
-          <TaskDialog id={openId} onClose={closeTask} editTitle={openId === justMade} />
-        </Suspense>
-      )}
-      {logging && (
-        <Suspense fallback={null}>
-          <LogBox initialTask={logging.taskId} onClose={() => setLogging(null)} />
-        </Suspense>
-      )}
-      {shareOpen && (
-        <Suspense fallback={null}>
-          <ShareDialog open onOpenChange={setShareOpen} />
-        </Suspense>
-      )}
-      <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
-      {statsOpen && (
-        <Suspense fallback={null}>
-          <StatsDialog open onOpenChange={setStatsOpen} />
-        </Suspense>
-      )}
-      {movingId && (
-        <Suspense fallback={null}>
-          <MoveToBoardDialog
-            taskId={movingId}
-            onClose={() => setMovingId(null)}
-            onMoved={() => {
-              setMovingId(null)
-              if (openId) closeTask()
-            }}
+      <LinksContext.Provider value={linksCtx}>
+        <div className="flex h-full flex-col">
+          <TopBar
+            search={search}
+            onSearch={setSearch}
+            onNewTask={newTask}
+            connection={store.connection}
+            unsaved={store.unsaved}
+            onOpenSettings={() => setSettingsOpen(true)}
+            onOpenStats={() => setStatsOpen(true)}
+            onExport={() => void exportBoard(data).catch((e) => toast.error(errorMessage(e)))}
           />
-        </Suspense>
-      )}
+          {access.archivedAt && <ArchivedBanner boardId={data.board.id} owner={access.role === 'owner'} />}
+          <ViewBar search={search} style={prefs.layout === 'board' ? canvasStyle(data.board.background) : undefined}>
+            <main className="min-h-0 flex-1">
+              <Suspense fallback={null}>
+                <View key={viewKey} search={search} />
+              </Suspense>
+            </main>
+          </ViewBar>
+        </div>
+
+        {openId && (
+          <Suspense fallback={null}>
+            <TaskDialog id={openId} onClose={closeTask} editTitle={openId === justMade} />
+          </Suspense>
+        )}
+        {logging && (
+          <Suspense fallback={null}>
+            <LogBox initialTask={logging.taskId} onClose={() => setLogging(null)} />
+          </Suspense>
+        )}
+        {shareOpen && (
+          <Suspense fallback={null}>
+            <ShareDialog open onOpenChange={setShareOpen} />
+          </Suspense>
+        )}
+        <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
+        {statsOpen && (
+          <Suspense fallback={null}>
+            <StatsDialog open onOpenChange={setStatsOpen} />
+          </Suspense>
+        )}
+        {movingId && (
+          <Suspense fallback={null}>
+            <MoveToBoardDialog
+              taskId={movingId}
+              onClose={() => setMovingId(null)}
+              onMoved={() => {
+                setMovingId(null)
+                if (openId) closeTask()
+              }}
+            />
+          </Suspense>
+        )}
+        {peek && (
+          <Suspense fallback={null}>
+            <CardPeek
+              key={`${peek.boardId}:${peek.taskId}`}
+              boardId={peek.boardId}
+              taskId={peek.taskId}
+              viewOnly
+              onClose={() => setPeek(null)}
+              onOpenLinked={setPeek}
+            />
+          </Suspense>
+        )}
+      </LinksContext.Provider>
     </BoardContext.Provider>
   )
 }

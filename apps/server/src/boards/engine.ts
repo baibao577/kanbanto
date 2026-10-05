@@ -6,12 +6,13 @@ import { newId } from '@kanbanto/model/ids'
 import { indexFor } from '@kanbanto/model/indexer'
 import type { Change } from '@kanbanto/model/records'
 import type { BoardData } from '@kanbanto/model/types'
-import { and, eq, lt, sql } from 'drizzle-orm'
+import { and, eq, inArray, lt, sql } from 'drizzle-orm'
 import type { Db, Tx } from '../db'
 import { attachments, boardActivity, boards, comments, notifications, taskFollowers, timeEntries } from '../db/schema'
 import { HttpError } from '../http'
 import type { LiveHub } from '../live'
 import { ACTIVITY_DAYS } from './activityLog'
+import { checkLinks, followMoved, gainedLinks, withoutLinks } from './links'
 import { loadBoard, writeChanges } from './store'
 
 export interface MutationResult {
@@ -70,6 +71,26 @@ export class BoardEngine {
     return loaded
   }
 
+  /** Several boards as they are now, with one look at all their change counters (boards that are gone are left out). */
+  async snapshots(boardIds: string[]): Promise<Map<string, BoardData>> {
+    const ids = [...new Set(boardIds)]
+    const out = new Map<string, BoardData>()
+    if (!ids.length) return out
+    const rows = await this.db.select({ id: boards.id, seq: boards.seq }).from(boards).where(inArray(boards.id, ids))
+    for (const row of rows) {
+      const hit = this.cache.get(row.id)
+      if (hit && hit.seq === row.seq) {
+        out.set(row.id, hit.data)
+        continue
+      }
+      const loaded = await loadBoard(this.db, row.id)
+      if (!loaded) continue
+      this.remember(row.id, loaded)
+      out.set(row.id, loaded.data)
+    }
+    return out
+  }
+
   /**
    * Runs `command` for `userId`. A retry (same mutation id from the same person) gets the first answer back. A command
    * that trips over something unexpected is refused like any other (422), so the app doesn't retry it forever.
@@ -92,20 +113,33 @@ export class BoardEngine {
         throw Object.assign(new HttpError(422, 'That change couldn’t be applied to this board.'), { cause: e })
       }
       if ('error' in r) throw new HttpError(422, r.error)
-      if (!r.changes.length) return { seq: row.seq, changes: [], data }
+      if (!r.changes.length) return { seq: row.seq, changes: [], data, stripped: false }
+      // Links to cards on other boards: what this board can't check by itself (see links.ts). A new link that fails
+      // is refused. An undo that would bring one back goes through without it: the rest of it is still wanted.
+      let changes = r.changes
+      let stripped = false
+      const gained = gainedLinks(data.fields, changes)
+      if (gained.length) {
+        const bad = await checkLinks(tx, boardId, userId, data.fields, gained)
+        if (bad.length && command.type !== 'records.restore') throw new HttpError(422, bad[0].error)
+        if (bad.length) {
+          changes = withoutLinks(changes, bad)
+          stripped = true
+        }
+      }
       await writeChanges(
         tx,
         boardId,
-        r.changes,
+        changes,
         data.fields.map((f) => f.id),
       )
       // The activity log: what this change did, in words (reordering alone isn't logged).
-      const items = describeChanges(data, r.changes, command)
+      const items = describeChanges(data, changes, command)
       if (items.length)
         await tx.insert(boardActivity).values({ id: newId(), boardId, actorId: userId, command: command.type, items, via: via ?? null })
       const seq = row.seq + 1
       await tx.update(boards).set({ seq, activityAt: new Date() }).where(eq(boards.id, boardId))
-      return { seq, changes: r.changes, data: applyChanges(data, r.changes) }
+      return { seq, changes, data: applyChanges(data, changes), stripped }
     })
 
     this.remember(boardId, { seq: result.seq, data: result.data })
@@ -114,6 +148,8 @@ export class BoardEngine {
     if (this.done.size > REMEMBERED_MUTATIONS) this.done.delete(this.done.keys().next().value!)
     if (out.changes.length) {
       this.hub.broadcast(boardId, { type: 'changes', ...out, mutationId })
+      // (What was written isn't quite what the person's own copy did: it fetches the board again.)
+      if (result.stripped) this.hub.broadcast(boardId, { type: 'reload' })
       const board = { id: boardId, name: result.data.board.name }
       this.onChanged?.(boardId, { board, userId, command: command.type, seq: out.seq, changes: out.changes })
       await this.afterChange?.(boardId, { userId, command: command.type, changes: out.changes, data: result.data })
@@ -200,7 +236,9 @@ export class BoardEngine {
     }
     // The other board's comment and file counts changed too.
     this.hub.broadcast(toId, { type: 'reload' })
-    return { id: plan.ids.get(taskId)!, summary: plan.summary, board: { id: toId, name: dest.data.board.name } }
+    // Links to the cards that moved follow them (or go, where they can't): once the move itself is done and settled.
+    const linksRemoved = await followMoved({ db: this.db, engine: this }, fromId, toId, plan.ids).catch(() => 0)
+    return { id: plan.ids.get(taskId)!, summary: { ...plan.summary, linksRemoved }, board: { id: toId, name: dest.data.board.name } }
   }
 
   /**

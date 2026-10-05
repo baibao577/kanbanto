@@ -473,7 +473,12 @@ function cleanFields(data: BoardData, id: string, f: TaskFields): Partial<Task> 
   }
   if (f.color !== undefined) out.color = f.color ?? undefined
   if (f.custom) {
-    const r = patchCustom(data.fields, data.tasks[id]?.custom, f.custom)
+    // (A card link is checked with what this board knows: see `checkValue`.)
+    const r = patchCustom(data.fields, data.tasks[id]?.custom, f.custom, {
+      boardId: data.board.id,
+      taskId: id,
+      exists: (other) => other in data.tasks || !!data.archived?.[other],
+    })
     out.custom = 'error' in r ? reject(r.error) : r.custom
   }
   return out

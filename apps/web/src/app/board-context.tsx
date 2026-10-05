@@ -3,6 +3,7 @@ import type { Command, TaskFields } from '@kanbanto/model/commands'
 import type { TaskIndex } from '@kanbanto/model/indexer'
 import type { PrefsAction, ViewPrefs } from '@kanbanto/model/prefs'
 import type { BoardAccess, TaskCounts } from '@kanbanto/model/api'
+import type { LinkStore } from '@/data/links'
 import type { TaskActivity } from '@/data/sync'
 import type { BoardData } from '@kanbanto/model/types'
 
@@ -46,6 +47,10 @@ export interface BoardContextValue {
   focus: (id?: string) => void
   /** A member's name ('' if unknown). */
   memberName: (id: string | undefined) => string
+  /** What the cards' links point at, for you (see LinkStore). The same object for as long as the board is open. */
+  links: LinkStore
+  /** Some card link is in use in this board's space: a card here may have cards linking to it. */
+  canBeLinked: boolean
   /** Opens the log box (with a card already picked). Missing when you can't log time here. */
   logTime?: (taskId?: string) => void
 }

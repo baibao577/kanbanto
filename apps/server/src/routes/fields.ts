@@ -1,6 +1,6 @@
 import type { FieldLibraryView } from '@kanbanto/model/api'
 import { COLORS, type ColorName } from '@kanbanto/model/colors'
-import { FIELD_TYPES, TEXT_FORMATS } from '@kanbanto/model/fields'
+import { FIELD_TYPES, LINK_SCOPES, TEXT_FORMATS } from '@kanbanto/model/fields'
 import type { FastifyPluginAsync, FastifyRequest } from 'fastify'
 import { z } from 'zod'
 import { requireAccess } from '../boards/access'
@@ -24,6 +24,10 @@ const Settings = z
     decimals: z.number().int().min(0).max(6).nullable(),
     sum: z.boolean(),
     options: z.array(Option).max(200),
+    linkTo: z.enum(LINK_SCOPES),
+    board: z.string().min(1).max(100),
+    many: z.boolean(),
+    back: z.string().max(200),
   })
   .partial()
 const Create = Settings.extend({ name: z.string().max(200), type: z.enum(FIELD_TYPES) }).strict()
@@ -46,7 +50,7 @@ export const fieldRoutes: FastifyPluginAsync = async (app) => {
     /** Adds a field. Its type is chosen once: it can't be changed later. */
     app.post(base, async (req) => {
       const { lib } = await space(req, true)
-      const id = await createField(app, lib, parse(Create, req.body))
+      const id = await createField(app, lib, parse(Create, req.body), requireUser(req.user).id)
       return { id, ...(await view(lib, true)) }
     })
 
@@ -57,7 +61,7 @@ export const fieldRoutes: FastifyPluginAsync = async (app) => {
     app.patch(`${base}/:fieldId`, async (req) => {
       const { lib } = await space(req, true)
       const { fieldId } = parse(FieldParams, req.params)
-      await updateField(app, lib, fieldId, parse(Change, req.body))
+      await updateField(app, lib, fieldId, parse(Change, req.body), requireUser(req.user).id)
       return view(lib, true)
     })
 

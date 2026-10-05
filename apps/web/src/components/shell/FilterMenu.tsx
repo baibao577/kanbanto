@@ -1,7 +1,8 @@
 import { FunnelSimple, Plus, X } from '@phosphor-icons/react'
-import { useState, type ReactNode } from 'react'
+import { useState, useSyncExternalStore, type ReactNode } from 'react'
 import { useBoard } from '@/app/board-context'
 import { Avatar, LabelChip, PriorityIcon, StatusDot } from '@/components/common/bits'
+import { LinkChip } from '@/components/fields/LinkValue'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
@@ -10,7 +11,7 @@ import { Separator } from '@/components/ui/separator'
 import { Switch } from '@/components/ui/switch'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { AGE_SHOWN } from '@kanbanto/model/age'
-import { tidyFilter, type BoardField, type FieldFilter, type FieldType } from '@kanbanto/model/fields'
+import { linksOf, tidyFilter, type BoardField, type FieldFilter, type FieldType } from '@kanbanto/model/fields'
 import { filterCount, type TableFilter } from '@kanbanto/model/table'
 import { PRIORITIES, PRIORITY_LABEL } from '@kanbanto/model/types'
 
@@ -267,8 +268,34 @@ function OneOf({ label, value, options, onChange }: { label: string; value: stri
 
 type FilterControl = (p: { field: BoardField; value: FieldFilter; onChange: (next: FieldFilter | undefined) => void }) => ReactNode
 
+/** Cards a filter by a card link offers at once. */
+const MAX_LINKED = 50
+
+/** A card link: tick from the cards the board's cards link to in this field (and the ones already ticked), or none. */
+function LinkFilter({ field, value, onChange }: Parameters<FilterControl>[0]) {
+  const { data, links } = useBoard()
+  // (Named by title, so in the order they're found until titles arrive.)
+  useSyncExternalStore(links.subscribeAll, links.getVersion)
+  const refs = [...new Set([...(value.in ?? []).filter(Boolean), ...Object.values(data.tasks).flatMap((t) => linksOf(t.custom?.[field.id]))])]
+    .sort((a, b) => (links.titleOf(a) ?? '~').localeCompare(links.titleOf(b) ?? '~'))
+    .slice(0, MAX_LINKED)
+  return (
+    <>
+      {refs.map((ref) => (
+        <CheckRow key={ref} checked={!!value.in?.includes(ref)} onChange={() => onChange({ in: toggleIn(value.in, ref) })}>
+          <LinkChip link={ref} plain />
+        </CheckRow>
+      ))}
+      <CheckRow checked={!!value.in?.includes('')} onChange={() => onChange({ in: toggleIn(value.in, '') })}>
+        <span className="text-muted-foreground">None linked</span>
+      </CheckRow>
+    </>
+  )
+}
+
 /** What each kind of field can be filtered by (the rules themselves are in model/fields.ts). */
 const FIELD_FILTER: Record<FieldType, FilterControl> = {
+  link: (p) => <LinkFilter {...p} />,
   choice: ({ field, value, onChange }) => (
     <>
       {(field.options ?? [])

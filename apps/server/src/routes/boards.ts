@@ -9,6 +9,7 @@ import type { FastifyPluginAsync } from 'fastify'
 import { z } from 'zod'
 import { accessFor, accessOf, requireAccess, type BoardRow } from '../boards/access'
 import { parseMoment, readActivity } from '../boards/activityLog'
+import { canBeLinked, factOf, linksToResolve, resolveLinks, unlinkBoard } from '../boards/links'
 import { createBoard, importBoard } from '../boards/service'
 import { requireWorkspace } from '../boards/workspaces'
 import type { Db } from '../db'
@@ -180,7 +181,21 @@ export const boardRoutes: FastifyPluginAsync = async (app) => {
       workspace: workspace ?? null,
       archivedAt: board.archivedAt?.toISOString() ?? null,
     }
-    return { data, seq, access: shown, counts, canComment: access.via !== 'public' }
+    // What the cards' links point at, for this person (a visitor with the public link: cards of this board only).
+    const viewer = access.via === 'public' ? undefined : req.user?.id
+    const env = { db: app.db, engine: app.engine }
+    const refs = linksToResolve(whole)
+    const linked = refs.length ? await resolveLinks(env, viewer, board, whole, refs) : undefined
+    const linkable = !!viewer && (await canBeLinked(app.db, board))
+    return {
+      data,
+      seq,
+      access: shown,
+      counts,
+      canComment: access.via !== 'public',
+      ...(linked && { linked }),
+      ...(linkable && { canBeLinked: true }),
+    }
   })
 
   /**
@@ -240,10 +255,13 @@ export const boardRoutes: FastifyPluginAsync = async (app) => {
   app.delete('/boards/:id', async (req) => {
     const { id } = parse(Params, req.params)
     await requireAccess(app.db, requireUser(req.user), id, 'owner', { archived: true })
+    // (As it was: other boards' links to its cards are taken out once it's gone.)
+    const was = await factOf(app.db, id)
     await deleteBoardFiles(app.db, id)
     await app.db.delete(boards).where(eq(boards.id, id))
     app.engine.forget(id)
     app.hub.closeBoard(id)
+    if (was) await unlinkBoard({ db: app.db, engine: app.engine }, was).catch((e) => app.log.error(e))
     return { ok: true }
   })
 

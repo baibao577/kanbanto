@@ -43,7 +43,7 @@ export function CustomFields({
               <p className="truncate px-2 text-xs font-medium" title={f.name}>
                 {f.name}
               </p>
-              <FieldValueEditor field={f} value={task.custom?.[f.id]} onChange={(v) => onChange({ [f.id]: v })} />
+              <FieldValueEditor field={f} value={task.custom?.[f.id]} taskId={task.id} onChange={(v) => onChange({ [f.id]: v })} />
               {all !== undefined && all !== task.custom?.[f.id] && (
                 <p className="truncate px-2 pb-0.5 text-[11px] text-muted-foreground">{numberText(f, all)} with subtasks</p>
               )}

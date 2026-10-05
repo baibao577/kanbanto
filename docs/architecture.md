@@ -225,6 +225,17 @@ The app uses hash routing, so any static host or proxy works without rewrite rul
   field off a board (its row is kept, marked removed) or archiving it leaves the values in `tasks.custom`, and saving
   a card merges with what the row holds, so they're back when the field is. They are never sent to browsers,
   assistants, webhooks or exports. Deleting an archived field for good removes them from every card, then the field.
+- **Links between cards** (the `link` type; `boards/links.ts`). A link is `"<board id>:<card id>"` in the value's
+  list, so `FieldValue` is unchanged. One board can only half check one (shape, how many, the field's board, a card of
+  its own): `checkValue` does that in the browser and on the server, and never refuses a link the card already held.
+  The rest needs other boards, so it's the server's: inside `mutate`, on the open transaction, a link being added is
+  checked for its card existing, being in the field's space and on a board the person can open (`checkLinks`); an
+  undo that would bring back one that fails goes through without it. The same rules are applied again whenever
+  links are read, so one that slips past a clean-up only reads "A card you can't open". Titles are never stored:
+  each board answer carries `linked`, resolved for the viewer (`resolveLinks`), and the browser keeps them in a
+  small store that chips subscribe to one link at a time. When a card moves to another board, or a board is deleted
+  or leaves its space, `relink` rewrites or removes the links to it in a transaction of its own, after the change,
+  locking the boards in id order. The activity log names a linked card only when it's on the same board.
 - **Columns, filters and totals.** The index carries the board's definitions (`TaskIndex.fields`), so sorting and
   filtering need nothing else. A field's column and sort key is `f:<field id>` (`model/table.ts`); a filter by a field
   is a `FieldFilter` in `TableFilter.fields`, with one rule per kind (`fieldMatches`, `tidyFilter` in

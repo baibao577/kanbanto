@@ -1,3 +1,4 @@
+import { linkRef, mapLinks, parseRef } from './fields'
 import { newId } from './ids'
 import { repairData, upgradeSave } from './migrate'
 import { BoardDataSchema } from './schema'
@@ -19,8 +20,7 @@ export function readBoardFile(raw: unknown, boardId: string): BoardData {
   if (file && typeof file === 'object' && file.format === EXPORT_FORMAT) {
     const parsed = BoardDataSchema.safeParse(file.data)
     if (!parsed.success) throw new Error('The file looks damaged: some of its data is missing or malformed.')
-    const data = repairData(parsed.data as BoardData)
-    return { ...data, board: { ...data.board, id: boardId } }
+    return rehomed(repairData(parsed.data as BoardData), boardId)
   }
   // Older exports: a bare task list, or { boardName, columns, labels, tasks }.
   const legacy = Array.isArray(raw) ? { tasks: raw } : raw
@@ -31,6 +31,36 @@ export function readBoardFile(raw: unknown, boardId: string): BoardData {
   if (!checked.success) throw new Error('The file looks damaged: some of its data is missing or malformed.')
   const data = repairData(checked.data as BoardData)
   return { ...data, board: { ...data.board, id: boardId } }
+}
+
+/**
+ * A board read from a file, under the id it gets here. Its card links to its own cards follow it; links to cards on
+ * other boards don't travel with a file, and a link field that pointed at this board points at it still.
+ */
+function rehomed(data: BoardData, boardId: string): BoardData {
+  const was = data.board.id
+  const links = new Set(data.fields.filter((f) => f.type === 'link').map((f) => f.id))
+  if (!links.size) return { ...data, board: { ...data.board, id: boardId } }
+  const own = (ref: string) => {
+    const to = parseRef(ref)
+    return to && to.boardId === was ? linkRef(boardId, to.taskId) : null
+  }
+  const moved = (tasks: BoardData['tasks']) =>
+    Object.fromEntries(
+      Object.entries(tasks).map(([id, t]) => {
+        const custom = mapLinks(t.custom, links, own)
+        if (custom === t.custom) return [id, t]
+        const { custom: _held, ...rest } = t
+        return [id, custom ? { ...rest, custom } : rest]
+      }),
+    )
+  return {
+    ...data,
+    board: { ...data.board, id: boardId },
+    fields: data.fields.map((f) => (f.type === 'link' && f.board === was ? { ...f, board: boardId } : f)),
+    tasks: moved(data.tasks),
+    ...(data.archived && { archived: moved(data.archived) }),
+  }
 }
 
 /** Same as `readBoardFile`, from the file's text. */

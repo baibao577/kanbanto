@@ -3,7 +3,7 @@ import { useState } from 'react'
 import { toast } from 'sonner'
 import type { FieldLibraryView, FieldView } from '@kanbanto/model/api'
 import { LABEL_COLOR_CYCLE, tone, type ColorName } from '@kanbanto/model/colors'
-import { FIELD_LIMITS, FIELD_TYPE_HINT, FIELD_TYPE_LABEL, FIELD_TYPES, type FieldType, type TextFormat } from '@kanbanto/model/fields'
+import { FIELD_LIMITS, FIELD_TYPE_HINT, FIELD_TYPE_LABEL, FIELD_TYPES, type FieldType, type LinkScope, type TextFormat } from '@kanbanto/model/fields'
 import { api, errorMessage } from '@/api/client'
 import { ColorSwatches } from '@/components/common/bits'
 import { Button } from '@/components/ui/button'
@@ -12,6 +12,8 @@ import { Input } from '@/components/ui/input'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
+import { useBoards } from '@/data/useBoards'
 import { cn } from '@/lib/utils'
 import { FIELD_ICON, FORMAT_LABEL } from './meta'
 
@@ -44,6 +46,15 @@ export function FieldEditor({
   const [options, setOptions] = useState<Option[]>(() => (field?.options ?? []).map((o) => ({ key: ++keys, ...o })))
   const [deleted, setDeleted] = useState(0)
   const [busy, setBusy] = useState(false)
+  // A card link: where its cards come from ("board:<id>" for one board), one or several, its name on the other card.
+  const [from, setFrom] = useState<string>(field?.linkTo === 'board' ? `board:${field.board ?? ''}` : (field?.linkTo ?? 'space'))
+  const [many, setMany] = useState(!!field?.many)
+  const [back, setBack] = useState(field?.back ?? '')
+  // The boards of this library's space: a workspace's, or your own.
+  const workspace = base.match(/^\/workspaces\/([^/]+)\//)?.[1]
+  const { boards } = useBoards()
+  const near = (boards ?? []).filter((b) => !b.archivedAt && (workspace ? b.workspaceId === workspace : !b.workspaceId && b.role === 'owner'))
+  const gone = from.startsWith('board:') && !near.some((b) => `board:${b.id}` === from)
 
   const settings =
     type === 'text'
@@ -52,7 +63,14 @@ export function FieldEditor({
         ? { unit: unit.trim(), decimals: decimals === 'any' ? null : Number(decimals), sum }
         : type === 'choice'
           ? { options: options.filter((o) => o.name.trim()).map(({ key: _key, ...o }) => ({ ...o, name: o.name.trim() })) }
-          : {}
+          : type === 'link'
+            ? {
+                linkTo: (from.startsWith('board:') ? 'board' : from) as LinkScope,
+                ...(from.startsWith('board:') && from.length > 6 && { board: from.slice(6) }),
+                many,
+                back: back.trim(),
+              }
+            : {}
   const save = async () => {
     setBusy(true)
     try {
@@ -207,6 +225,68 @@ export function FieldEditor({
                 </span>
                 <Switch checked={sum} onCheckedChange={setSum} aria-label="It adds up" />
               </label>
+            </>
+          )}
+
+          {type === 'link' && (
+            <>
+              <div className="space-y-1.5">
+                <label htmlFor="field-from" className="text-sm font-medium">
+                  Its cards come from
+                </label>
+                <Select value={from} onValueChange={setFrom}>
+                  <SelectTrigger id="field-from" className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {near.map((b) => (
+                      <SelectItem key={b.id} value={`board:${b.id}`}>
+                        {b.name}
+                      </SelectItem>
+                    ))}
+                    {gone && <SelectItem value={from}>A board that’s gone</SelectItem>}
+                    <SelectItem value="space">{workspace ? 'Any board of this workspace' : 'Any of your own boards'}</SelectItem>
+                    <SelectItem value="same">The board that uses this field</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  {gone
+                    ? 'The board its cards came from is gone, or you can’t open it: pick another.'
+                    : from === 'same'
+                      ? 'Each board that uses it links its own cards to each other: “Related to”, “Duplicate of”.'
+                      : from === 'space'
+                        ? 'Any card you can open there can be linked.'
+                        : 'A deal’s Company, picked from the cards of your Companies board.'}
+                </p>
+              </div>
+              <div className="space-y-1.5">
+                <p className="text-sm font-medium">A card links to</p>
+                <ToggleGroup
+                  type="single"
+                  variant="outline"
+                  size="sm"
+                  value={many ? 'many' : 'one'}
+                  onValueChange={(v) => v && setMany(v === 'many')}
+                  className="w-full"
+                  aria-label="A card links to"
+                >
+                  <ToggleGroupItem value="one" className="flex-1 text-xs">
+                    One card
+                  </ToggleGroupItem>
+                  <ToggleGroupItem value="many" className="flex-1 text-xs">
+                    Several cards
+                  </ToggleGroupItem>
+                </ToggleGroup>
+              </div>
+              <div className="space-y-1.5">
+                <label htmlFor="field-back" className="text-sm font-medium">
+                  On the other card, call the list
+                </label>
+                <Input id="field-back" value={back} maxLength={FIELD_LIMITS.name} placeholder="Deals" onChange={(e) => setBack(e.target.value)} />
+                <p className="text-xs text-muted-foreground">
+                  The linked card lists the cards that point at it, under this name. Left empty, under the field’s name.
+                </p>
+              </div>
             </>
           )}
 

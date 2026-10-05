@@ -181,6 +181,13 @@ export interface BoardSnapshot {
   counts: TaskCounts
   /** You can comment (members, including viewers; not anonymous visitors of public boards). */
   canComment: boolean
+  /**
+   * What the cards' links point at, for you (see LinkedCard), by link: cards on other boards, and ones no longer
+   * among this board's active cards. Up to 2,000; the rest are asked for from `/boards/:id/linked`.
+   */
+  linked?: Record<string, LinkedCard>
+  /** Some card link in this board's space is in use, so a card here may have cards linking to it. */
+  canBeLinked?: boolean
 }
 
 /** GET /api/boards/:id/archived: archived cards as the board keeps them, newest first by the date asked about. */
@@ -525,6 +532,48 @@ export interface SharingMember {
   /** Owners see everyone's; others only their own. */
   email?: string
   role: Role
+}
+
+/**
+ * What a link points at, as one person may see it: the card (its list as it reads on its board; an archived one has
+ * the list it was archived from, if known, and no kind), `gone` when it was deleted, or `hidden` when it's on a board
+ * they can't open. `hidden` says nothing about whether the card exists.
+ */
+export type LinkedCard =
+  | { title: string; board: { id: string; name: string }; list: string | null; kind: Category | null; done: boolean; archived?: true }
+  | { gone: true }
+  | { hidden: true }
+
+/** A card offered by a link field's picker (GET /api/boards/:id/fields/:fieldId/cards). */
+export interface LinkPick {
+  /** The link to store (see `linkRef`). */
+  ref: string
+  title: string
+  board: { id: string; name: string }
+  list: string
+  kind: Category
+  done: boolean
+  /** Its parents' titles, top first. */
+  path: string[]
+}
+
+/** The cards on one board that link to a card through one field. */
+export interface LinkedFromGroup {
+  board: { id: string; name: string; background: string | null }
+  /** The field they link through; `back` is what its owner called this list ("Deals"). */
+  field: { id: string; name: string; back?: string }
+  /** The first 50, in their board's outline order. */
+  cards: { id: string; title: string; list: string; kind: Category; done: boolean }[]
+  count: number
+  /** What those cards add up to, for that board's numbers that add up ("Deal value", "$34,500"). */
+  totals: { name: string; text: string }[]
+}
+
+/** Who links to a card (GET /api/boards/:id/tasks/:taskId/linked-from). */
+export interface LinkedFrom {
+  groups: LinkedFromGroup[]
+  /** Cards that link to it from boards you can't open: only how many. */
+  hidden: number
 }
 
 /** A named set of filters and display settings on a board, shared with everyone on it (GET /api/boards/:id/presets). */

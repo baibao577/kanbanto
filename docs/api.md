@@ -42,10 +42,21 @@ curl -X POST https://kanbanto.example.com/api/boards/<board id>/mutations \
   task's values are in `custom`, by field id. Set them with `task.update`:
   `{"type":"task.update","id":"<task id>","fields":{"custom":{"<field id>":"Acme","<another>":null}}}` sets the
   ones named (`null` clears one) and leaves the others. A value is text, a number, a day or moment (like `due`),
-  `true` for a ticked checkbox, or `["<option id>"]` for a choice. `tasks.clearField` clears one field on every
-  card of the board. The fields themselves are managed elsewhere: a library per workspace
+  `true` for a ticked checkbox, `["<option id>"]` for a choice, or for a card link a list of links, each
+  `"<board id>:<task id>"` (always with the board: a task's id is only unique on its board, and changes when it
+  moves to another). `tasks.clearField` clears one field on every card of the board. The fields themselves are managed elsewhere: a library per workspace
   (`/api/workspaces/<id>/fields`, its admins) and your own for Personal boards (`/api/fields`); a board's owners
   choose which ones it uses with `PUT /api/boards/<id>/fields`. See **Fields** in `/api/docs`.
+- **Links between cards.** A card link field (`type: "link"`) says where its cards come from: `linkTo` is `board`
+  (with `board`, a board of the field's own space), `space` (any board there) or `same` (the board that uses it);
+  `many` lets it hold several. A link is refused (422) unless its card exists, is in the same workspace (or, for
+  your own fields, on a board you own) and on a board you can open. `GET /api/boards/<id>` answers with `linked`:
+  what each link points at **for you** (title, board, list; `gone` for a deleted card; `hidden` for one on a board
+  you can't open), since titles are never stored with the link. `GET /api/boards/<id>/linked?refs=` answers for
+  more of them, `GET /api/boards/<id>/fields/<field id>/cards?q=` finds cards to link by title, and
+  `GET /api/boards/<id>/tasks/<task id>/linked-from` lists the cards that link to one. When a linked card moves to
+  another board of the same space its links are rewritten to follow it; when it leaves the space, or its board is
+  deleted, they are removed.
 - **Archiving** (`task.archive`) puts a task and its subtasks away: they're out of the board and its counts, kept (with
   comments and files), and come back with `task.restore`. `task.delete` on an archived task deletes it for good.
   `tasks.archiveDone` tidies a done list in one go: `{"type":"tasks.archiveDone","status":"<list id>","before":"2026-09-01T00:00:00Z"}`

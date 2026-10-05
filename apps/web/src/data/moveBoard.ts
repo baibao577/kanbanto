@@ -18,18 +18,20 @@ export async function moveBoardTo(boardId: string, to: { id: string; name: strin
     return await put()
   } catch (e) {
     if (!(e instanceof ApiError) || e.code !== 'fields') throw e
-    const { add = [], lose = [] } = (e.details ?? {}) as { add?: string[]; lose?: string[] }
+    const { add = [], lose = [], links = 0 } = (e.details ?? {}) as { add?: string[]; lose?: string[]; links?: number }
     const where = to ? `${to.name}’s fields` : 'your own fields'
     const added = add.length ? `${add.length === 1 ? 'This will be added' : 'These will be added'} to ${where}: ${list(add)}. ` : ''
     const lost = lose.length
       ? `${list(lose)} ${lose.length === 1 ? 'isn’t' : 'aren’t'} among ${where}${to ? ', and only its admins can add to them' : ''}: ${lose.length === 1 ? 'its values' : 'their values'} on this board will be lost. `
       : ''
+    // Links between cards never leave a space: the ones between this board's cards and the boards it leaves go.
+    const unlinked = links ? `${links === 1 ? '1 link' : `${links} links`} between its cards and cards on the boards it leaves will be removed. ` : ''
     return new Promise<{ visibility: string }>((resolve, reject) =>
       ask({
-        title: 'Move the board with its fields?',
-        description: `${added}${lost}`.trim(),
-        confirmLabel: lose.length ? 'Move anyway' : 'Move',
-        destructive: lose.length > 0,
+        title: add.length || lose.length ? 'Move the board with its fields?' : 'Move the board?',
+        description: `${added}${lost}${unlinked}`.trim(),
+        confirmLabel: lose.length || links ? 'Move anyway' : 'Move',
+        destructive: lose.length > 0 || links > 0,
         onConfirm: () => void put(true).then(resolve, reject),
       }),
     )

@@ -2,7 +2,8 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
 import { doneBefore, type Command, type TaskFields } from '@kanbanto/model/commands'
 import { BOARD_DESIGNS, COLORS, isBackground, LABEL_COLOR_CYCLE, type BoardBackground, type ColorName } from '@kanbanto/model/colors'
-import { nameKey, parseValue, saidFilter, valuePlain } from '@kanbanto/model/fields'
+import type { LinkedCard } from '@kanbanto/model/api'
+import { linksOf, nameKey, parseRef, parseValue, saidFilter, valuePlain, type BoardField, type FieldValue } from '@kanbanto/model/fields'
 import { newId } from '@kanbanto/model/ids'
 import { idleDays, lastActivity } from '@kanbanto/model/age'
 import { fromDay, isPast, mondayOf, sortTime, toDay } from '@kanbanto/model/dates'
@@ -18,7 +19,8 @@ import type { FastifyInstance, FastifyPluginAsync } from 'fastify'
 import { z } from 'zod'
 import type { SessionUser } from './auth/sessions'
 import type { TokenAccess } from './auth/apiTokens'
-import { requireAccess } from './boards/access'
+import { requireAccess, type Access, type BoardRow } from './boards/access'
+import { linksToResolve, pickCards, resolveLinks } from './boards/links'
 import { ACTIVITY_DAYS, parseMoment, readActivity, workSigns } from './boards/activityLog'
 import { comments, notifications, reminderSends, tasks, users, workspaceMembers, workspaces } from './db/schema'
 import { HttpError } from './http'
@@ -64,14 +66,38 @@ const WHEN =
   'A whole day, YYYY-MM-DD; or with a time, an ISO date-time with its time zone (2026-10-15T14:30:00+07:00), which is stored in UTC. null clears it.'
 const text = (value: unknown) => ({ content: [{ type: 'text' as const, text: JSON.stringify(value) }] })
 
-/** A task's values for the board's own fields, by the field's name (a choice by its option's name). */
-const fieldsOf = (data: BoardData, t: Task) =>
+/** What the links of a board's cards point at, for the person asking (see `resolveLinks`). */
+type Linked = Record<string, LinkedCard>
+
+/**
+ * A card link's cards, for an assistant: each with its title and where to find it. A card of this board is read
+ * from the board; one on another board from `linked`, and without it (or when it isn't theirs to see) it has no name.
+ */
+function linkedCards(data: BoardData, value: FieldValue, linked?: Linked) {
+  return linksOf(value).map((ref) => {
+    const to = parseRef(ref)
+    const here = to && to.boardId === data.board.id ? data.tasks[to.taskId] : undefined
+    if (here) return { title: here.title, task_id: here.id }
+    const card = linked?.[ref]
+    if (card && 'title' in card)
+      return { title: card.title, board: card.board.name, board_id: card.board.id, task_id: to!.taskId, ...(card.archived && { archived: true }) }
+    return card && 'gone' in card ? '(a deleted card)' : '(a card you can’t open)'
+  })
+}
+
+/** A task's values for the board's own fields, by the field's name (a choice by its option's name, a card link by its cards). */
+const fieldsOf = (data: BoardData, t: Task, linked?: Linked) =>
   t.custom && {
-    fields: Object.fromEntries(data.fields.flatMap((f) => (t.custom![f.id] === undefined ? [] : [[f.name, valuePlain(f, t.custom![f.id])]]))),
+    fields: Object.fromEntries(
+      data.fields.flatMap((f) => {
+        const v = t.custom![f.id]
+        return v === undefined ? [] : [[f.name, f.type === 'link' ? linkedCards(data, v, linked) : valuePlain(f, v)]]
+      }),
+    ),
   }
 
-/** A task, briefly, as the tools show it. */
-function brief(data: BoardData, idx: TaskIndex, t: Task) {
+/** A task, briefly, as the tools show it. `linked`: what its links to cards of other boards point at, when it's been looked up. */
+function brief(data: BoardData, idx: TaskIndex, t: Task, linked?: Linked) {
   const col = statusCol(idx, t.id)
   const labels = t.labels.map((l) => data.labels.find((x) => x.id === l)?.name).filter(Boolean)
   const kids = idx.childrenOf.get(t.id)?.length ?? 0
@@ -89,7 +115,7 @@ function brief(data: BoardData, idx: TaskIndex, t: Task) {
     ...(labels.length && { labels }),
     ...(isBlocked(idx, t.id) && { blocked: true }),
     ...(kids && { subtasks: kids, subtasks_done: idx.subDone.get(t.id) }),
-    ...fieldsOf(data, t),
+    ...fieldsOf(data, t, linked),
   }
 }
 
@@ -121,7 +147,7 @@ function reminderView(r: Reminder, t: Pick<Task, 'due'>) {
 }
 
 /** An archived task, briefly (it isn't in the index: no rolled-up status or progress). */
-function archivedBrief(data: BoardData, t: Task) {
+function archivedBrief(data: BoardData, t: Task, linked?: Linked) {
   const labels = t.labels.map((l) => data.labels.find((x) => x.id === l)?.name).filter(Boolean)
   return {
     id: t.id,
@@ -135,7 +161,7 @@ function archivedBrief(data: BoardData, t: Task) {
     ...(t.due && { due: t.due }),
     ...(t.priority && { priority: t.priority }),
     ...(labels.length && { labels }),
-    ...fieldsOf(data, t),
+    ...fieldsOf(data, t, linked),
   }
 }
 
@@ -168,6 +194,49 @@ function buildServer(app: FastifyInstance, me: SessionUser, token: TokenAccess) 
     const { board, access } = await requireAccess(app.db, me, boardId, needed, opts)
     const { data } = await app.engine.snapshot(boardId)
     return { board, access, data, idx: indexFor(data) }
+  }
+  const env = { db: app.db, engine: app.engine }
+  /** What the links of a board's cards point at, for this person: looked up once per board a tool shows tasks of. */
+  const linkedOn = async (board: BoardRow, access: Access, data: BoardData): Promise<Linked | undefined> => {
+    const refs = linksToResolve(data)
+    return refs.length ? resolveLinks(env, access.via === 'public' ? undefined : me.id, board, data, refs) : undefined
+  }
+  /**
+   * The cards a link field should hold, as an assistant says them: by title (it has to be exactly one card the field
+   * may link, among the ones this person can open) or as links. Looked up before anything is changed.
+   */
+  const linksFor = async (board: BoardRow, def: BoardField, said: string[], taskId?: string): Promise<string[]> => {
+    const refs: string[] = []
+    for (const s of said) {
+      if (parseRef(s)) {
+        refs.push(s)
+        continue
+      }
+      const { cards, problem } = await pickCards(env, me.id, board, def, s, taskId)
+      const exact = cards.filter((c) => nameKey(c.title) === nameKey(s))
+      if (exact.length === 1) refs.push(exact[0].ref)
+      else if (exact.length)
+        throw new HttpError(
+          400,
+          `${def.name}: more than one card is called “${s}”. Say which by its link: ${exact.map((c) => `${c.ref} (on ${c.board.name}${c.path.length ? `, under “${c.path.at(-1)}”` : ''})`).join('; ')}.`,
+        )
+      else
+        throw new HttpError(
+          400,
+          `${def.name}: ${
+            problem ??
+            `there’s no card called “${s}” to link${
+              cards.length
+                ? ` (close: ${cards
+                    .slice(0, 5)
+                    .map((c) => `“${c.title}”`)
+                    .join(', ')})`
+                : ''
+            }.`
+          }`,
+        )
+    }
+    return refs
   }
   const person = (data: BoardData, ref: string | null | undefined) =>
     ref == null ? ref : ref.trim().toLowerCase() === 'me' ? me.id : pick(data.members, ref, 'person').id
@@ -281,7 +350,8 @@ function buildServer(app: FastifyInstance, me: SessionUser, token: TokenAccess) 
         tasks?: boolean
         order?: 'board' | 'outline'
       }) => {
-        const { data, idx, access } = await open(a.board_id, 'viewer')
+        const { board, data, idx, access } = await open(a.board_id, 'viewer')
+        const linked = await linkedOn(board, access, data)
         const [where] = await choose({ board_id: a.board_id })
         if (a.parent_id && !data.tasks[a.parent_id]) throw new HttpError(404, 'There’s no such task on this board.')
         const top = a.parent_id ? idx.depth.get(a.parent_id)! + 1 : 0
@@ -312,12 +382,22 @@ function buildServer(app: FastifyInstance, me: SessionUser, token: TokenAccess) 
               type: f.type,
               ...(f.type === 'choice' && { options: (f.options ?? []).filter((o) => !o.archived).map((o) => o.name) }),
               ...(f.unit && { unit: f.unit }),
+              // A card link: set by a card's title, or its link ("<board id>:<task id>").
+              ...(f.type === 'link' && {
+                cards_from:
+                  (f.linkTo ?? 'space') === 'same'
+                    ? 'this board'
+                    : f.linkTo === 'board'
+                      ? { board_id: f.board }
+                      : 'any board of the same workspace (or of the same person)',
+                several: !!f.many,
+              }),
             })),
           }),
           people: data.members.map((m) => ({ id: m.id, name: m.name, ...(m.id === me.id && { you: true }) })),
           totals: { tasks: all, open: all - done, done },
           ...(a.tasks !== false && {
-            tasks: shown.slice(0, 300).map((id) => ({ depth: idx.depth.get(id)! - top, ...brief(data, idx, data.tasks[id]) })),
+            tasks: shown.slice(0, 300).map((id) => ({ depth: idx.depth.get(id)! - top, ...brief(data, idx, data.tasks[id], linked) })),
             ...(shown.length > 300 && { more: shown.length - 300 }),
           }),
         }
@@ -511,11 +591,25 @@ function buildServer(app: FastifyInstance, me: SessionUser, token: TokenAccess) 
         let fieldProblem: string | undefined
         for (const b of chosen) {
           const boardId = b.id
-          const { data, idx } = await open(boardId, 'viewer')
+          const { board, access, data, idx } = await open(boardId, 'viewer')
           for (const f of data.fields) fieldNames.add(f.name)
           const defs = asked.map(([name]) => data.fields.find((f) => f.id === name) ?? data.fields.find((f) => nameKey(f.name) === nameKey(name)))
           if (defs.some((d) => !d)) continue
-          const read = asked.map(([, said], i) => ({ id: defs[i]!.id, ...saidFilter(defs[i]!, said) }))
+          const read: ({ id: string } & ReturnType<typeof saidFilter>)[] = []
+          for (const [i, [, said]] of asked.entries()) {
+            const def = defs[i]!
+            // A card link said by a card's title: every card of that title the field may link counts.
+            if (def.type === 'link' && typeof said === 'string' && said && !parseRef(said)) {
+              const { cards } = await pickCards(env, me.id, board, def, said)
+              const refs = new Set(cards.filter((c) => nameKey(c.title) === nameKey(said)).map((c) => c.ref))
+              read.push(
+                refs.size
+                  ? { id: def.id, test: (v) => linksOf(v).some((r) => refs.has(r)) }
+                  : { id: def.id, error: `${def.name}: there’s no card called “${said}” that it links.` },
+              )
+            } else read.push({ id: def.id, ...saidFilter(def, said) })
+          }
+          const linked = await linkedOn(board, access, data)
           const unread = read.find((r) => 'error' in r)
           if (unread && 'error' in unread) {
             fieldProblem ??= unread.error
@@ -569,7 +663,7 @@ function buildServer(app: FastifyInstance, me: SessionUser, token: TokenAccess) 
                 board_id: boardId,
                 board: data.board.name,
                 workspace: b.place,
-                ...brief(data, idx, t),
+                ...brief(data, idx, t, linked),
                 ...(aging && { idle_days: idleDays(active!) }),
                 ...(work && { worked: work }),
               },
@@ -601,7 +695,13 @@ function buildServer(app: FastifyInstance, me: SessionUser, token: TokenAccess) 
               if (!hasWords(words, `${t.title} ${t.description ?? ''}`.toLowerCase())) continue
               found.push({
                 task: t,
-                row: { board_id: boardId, board: data.board.name, workspace: b.place, ...archivedBrief(data, t), ...(work && { worked: work }) },
+                row: {
+                  board_id: boardId,
+                  board: data.board.name,
+                  workspace: b.place,
+                  ...archivedBrief(data, t, linked),
+                  ...(work && { worked: work }),
+                },
               })
             }
         }
@@ -943,9 +1043,10 @@ function buildServer(app: FastifyInstance, me: SessionUser, token: TokenAccess) 
       }
       const t = data.tasks[task_id]
       const gone = data.archived?.[task_id]
+      const linked = await linkedOn(board, access, data)
       if (!t && gone)
         return {
-          ...archivedBrief(data, gone),
+          ...archivedBrief(data, gone, linked),
           ...(gone.description && { description: gone.description }),
           subtasks: Object.values(data.archived ?? {})
             .filter((x) => x.parentId === gone.id)
@@ -960,11 +1061,11 @@ function buildServer(app: FastifyInstance, me: SessionUser, token: TokenAccess) 
         .orderBy(desc(comments.createdAt))
         .limit(20)
       return {
-        ...brief(data, idx, t),
+        ...brief(data, idx, t, linked),
         path: ancestorsOf(data.tasks, task_id).map((id) => data.tasks[id].title),
         ...(t.description && { description: t.description }),
         ...(t.blockedBy.length && { waiting_on: t.blockedBy.map((id) => ({ id, title: data.tasks[id]?.title })) }),
-        subtasks: (idx.childrenOf.get(task_id) ?? []).map((id) => brief(data, idx, data.tasks[id])),
+        subtasks: (idx.childrenOf.get(task_id) ?? []).map((id) => brief(data, idx, data.tasks[id], linked)),
         ...(t.reminders?.length && { reminders: t.reminders.map((r) => reminderView(r, t)) }),
         ...(access.via !== 'public' && { you_follow_it: await isFollowing(app.db, board_id, t, me.id) }),
         comments: recent.reverse().map((c) => ({ author: c.author ?? 'Someone', text: c.body, at: c.at.toISOString() })),
@@ -1167,10 +1268,10 @@ function buildServer(app: FastifyInstance, me: SessionUser, token: TokenAccess) 
       labels: z.array(z.string()).optional().describe('Label names or ids (replaces the task’s labels).'),
       list: z.string().optional().describe('The list (status) to put it in, by name or id.'),
       fields: z
-        .record(z.string().max(100), z.union([z.string().max(2000), z.number(), z.boolean(), z.null()]))
+        .record(z.string().max(100), z.union([z.string().max(2000), z.number(), z.boolean(), z.null(), z.array(z.string().max(500)).max(20)]))
         .optional()
         .describe(
-          'The board’s own fields, by name (get_board lists them, with a choice’s options): {"Stage": "Won", "Value": 12000, "Signed": true}. A choice takes an option’s name, a date looks like due, null clears one. Fields left out stay as they are.',
+          'The board’s own fields, by name (get_board lists them, with a choice’s options): {"Stage": "Won", "Value": 12000, "Signed": true, "Company": "Acme"}. A choice takes an option’s name, a date looks like due, a card link the title of the card to link (or a list of titles, for one that holds several), null clears one. Fields left out stay as they are.',
         ),
     }
     type FieldArgs = {
@@ -1181,20 +1282,27 @@ function buildServer(app: FastifyInstance, me: SessionUser, token: TokenAccess) 
       priority?: Priority | null
       labels?: string[]
       list?: string
-      fields?: Record<string, string | number | boolean | null>
+      fields?: Record<string, string | number | boolean | null | string[]>
     }
     /** Values for the board's fields, as an assistant gives them (by name), checked before anything is changed. */
-    const customFrom = (data: BoardData, given: NonNullable<FieldArgs['fields']>) =>
-      Object.fromEntries(
-        Object.entries(given).map(([name, value]) => {
-          const def = pick(data.fields, name, 'field')
-          const r = parseValue(def, value)
-          if ('error' in r) throw new HttpError(400, `${def.name}: ${r.error}`)
-          return [def.id, r.value ?? null]
-        }),
-      )
+    const customFrom = async (board: BoardRow, data: BoardData, given: NonNullable<FieldArgs['fields']>, taskId?: string) => {
+      const out: Record<string, FieldValue | null> = {}
+      for (const [name, value] of Object.entries(given)) {
+        const def = pick(data.fields, name, 'field')
+        if (def.type === 'link' && value !== null && value !== '') {
+          const refs = await linksFor(board, def, Array.isArray(value) ? value : [String(value)], taskId)
+          out[def.id] = refs.length ? refs : null
+          continue
+        }
+        if (Array.isArray(value)) throw new HttpError(400, `${def.name}: that takes one value, not a list.`)
+        const r = parseValue(def, value)
+        if ('error' in r) throw new HttpError(400, `${def.name}: ${r.error}`)
+        out[def.id] = r.value ?? null
+      }
+      return out
+    }
     type NewTask = FieldArgs & { title: string }
-    const fieldsFrom = (data: BoardData, idx: TaskIndex, a: FieldArgs): TaskFields => ({
+    const fieldsFrom = async (board: BoardRow, data: BoardData, idx: TaskIndex, a: FieldArgs, taskId?: string): Promise<TaskFields> => ({
       ...(a.description !== undefined && { description: a.description }),
       ...(a.start !== undefined && { start: a.start ?? undefined }),
       ...(a.due !== undefined && { due: a.due ?? undefined }),
@@ -1202,7 +1310,7 @@ function buildServer(app: FastifyInstance, me: SessionUser, token: TokenAccess) 
       ...(a.priority !== undefined && { priority: a.priority }),
       ...(a.labels && { labels: a.labels.map((l) => pick(data.labels, l, 'label').id) }),
       ...(a.list && { status: pick(idx.columns, a.list, 'list').id }),
-      ...(a.fields && Object.keys(a.fields).length > 0 && { custom: customFrom(data, a.fields) }),
+      ...(a.fields && Object.keys(a.fields).length > 0 && { custom: await customFrom(board, data, a.fields, taskId) }),
     })
 
     server.registerTool(
@@ -1238,7 +1346,7 @@ function buildServer(app: FastifyInstance, me: SessionUser, token: TokenAccess) 
             400,
             'Say which board (list_boards shows them). They have no Inbox yet: one can be chosen in a board’s settings (“Use as my Inbox”).',
           )
-        const { data, idx } = await open(boardId, 'editor').catch((e: unknown) => {
+        const { board, data, idx } = await open(boardId, 'editor').catch((e: unknown) => {
           if (a.board_id || !(e instanceof HttpError)) throw e
           throw new HttpError(
             400,
@@ -1247,12 +1355,12 @@ function buildServer(app: FastifyInstance, me: SessionUser, token: TokenAccess) 
         })
         if (a.parent_id && !data.tasks[a.parent_id]) throw new HttpError(404, 'There’s no such parent task on this board.')
         // Every list, label and person is looked up before anything is added, so a wrong name adds nothing.
-        const plan = a.tasks.map((t) => ({
-          id: newId(),
-          title: t.title,
-          fields: fieldsFrom(data, idx, t),
-          subtasks: (t.subtasks ?? []).map((k) => ({ id: newId(), title: k.title, fields: fieldsFrom(data, idx, k) })),
-        }))
+        const plan: { id: string; title: string; fields: TaskFields; subtasks: { id: string; title: string; fields: TaskFields }[] }[] = []
+        for (const t of a.tasks) {
+          const subtasks = []
+          for (const k of t.subtasks ?? []) subtasks.push({ id: newId(), title: k.title, fields: await fieldsFrom(board, data, idx, k) })
+          plan.push({ id: newId(), title: t.title, fields: await fieldsFrom(board, data, idx, t), subtasks })
+        }
         const made: { id: string; title: string; subtasks?: { id: string; title: string }[] }[] = []
         try {
           for (const t of plan) {
@@ -1311,10 +1419,10 @@ function buildServer(app: FastifyInstance, me: SessionUser, token: TokenAccess) 
             after_task_id?: string
           },
         ) => {
-          const { data, idx } = await open(a.board_id, 'editor')
+          const { board, data, idx } = await open(a.board_id, 'editor')
           const t = data.tasks[a.task_id]
           if (!t) throw new HttpError(404, 'There’s no such task on this board.')
-          const { status, ...fields } = { ...(a.title && { title: a.title }), ...fieldsFrom(data, idx, a) }
+          const { status, ...fields } = { ...(a.title && { title: a.title }), ...(await fieldsFrom(board, data, idx, a, a.task_id)) }
           if (a.waiting_on) {
             for (const id of a.waiting_on) {
               if (id === t.id || !data.tasks[id]) throw new HttpError(400, `waiting_on: there’s no other task ${id} on this board.`)
@@ -1352,7 +1460,7 @@ function buildServer(app: FastifyInstance, me: SessionUser, token: TokenAccess) 
           if (Object.keys(fields).length) await run(a.board_id, { type: 'task.update', id: t.id, fields })
           if (order) await run(a.board_id, { type: 'task.move', id: t.id, ...(moves && { status }), list: order })
           const after = await open(a.board_id, 'viewer')
-          return brief(after.data, after.idx, after.data.tasks[a.task_id])
+          return brief(after.data, after.idx, after.data.tasks[a.task_id], await linkedOn(after.board, after.access, after.data))
         },
       ),
     )

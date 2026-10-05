@@ -72,7 +72,11 @@ Without MCP, use the REST API (see "REST fallback" below).
   option's name, a date looks like `due`, `null` clears one; fields left out stay as they are). Use only fields the
   board has: adding or changing the fields themselves is done by people in the app. `find_tasks` finds by them too:
   `fields: {"Stage": "Won"}` (`null`: tasks with nothing for the field), across every board that has the field. For a
-  range ("deals over 10,000"), find without it and compare the values in the results.
+  range ("deals over 10,000"), find without it and compare the values in the results. A **card link** field holds
+  other cards (a deal's Company): it reads as the linked cards' titles, is set by a card's title
+  (`fields: {"Company": "Acme"}`, or a list for one that holds several) and found the same way. If two cards share
+  the title the tool says so and gives their links: pass the right one instead. A linked card you can't open has no
+  title.
 - **Comments:** `add_comment`; write `@Name` to notify someone on the board. Use comments to explain changes you made
   on the user's behalf when that helps their team.
 - **Setting up a board:** `create_board` (with `about`, in Personal or a workspace), then `manage_lists` for its

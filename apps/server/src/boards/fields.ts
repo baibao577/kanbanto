@@ -6,6 +6,7 @@ import {
   FIELD_LIMITS,
   nameKey,
   nameProblem,
+  parseRef,
   planAdoption,
   type Adoption,
   type BoardField,
@@ -14,6 +15,7 @@ import {
   type FieldSettings,
   type FieldType,
   type LibraryField,
+  type LinkScope,
   type TextFormat,
 } from '@kanbanto/model/fields'
 import { newId } from '@kanbanto/model/ids'
@@ -24,6 +26,7 @@ import { boardActivity, boardFieldRows, libraryFields, tasks, users, workspaces 
 import { dbErrorCode } from '../errors'
 import { HttpError } from '../http'
 import { workspaceRole, type Access, type BoardRow } from './access'
+import { canLinkTo, linksAround } from './links'
 import { fieldFromRow } from './records'
 import { loadBoard } from './store'
 
@@ -110,6 +113,11 @@ export interface FieldInput {
   sum?: boolean
   /** The whole list, in order. An option left out is deleted for good, which is only for archived ones. */
   options?: OptionInput[]
+  /** A card link: where its cards come from, the board (for `linkTo: 'board'`), one card or several, its name on the other card. */
+  linkTo?: LinkScope
+  board?: string
+  many?: boolean
+  back?: string
   archived?: boolean
 }
 
@@ -154,7 +162,26 @@ function settingsFor(type: FieldType, before: FieldSettings, input: FieldInput):
     const { options, removed } = tidyOptions(before.options ?? [], input.options)
     return { settings: { options }, removed }
   }
+  if (type === 'link') {
+    const linkTo = input.linkTo ?? before.linkTo ?? 'space'
+    const board = linkTo === 'board' ? (input.board ?? before.board) : undefined
+    if (linkTo === 'board' && !board) throw new HttpError(400, 'Choose the board its cards come from.')
+    const many = input.many ?? before.many
+    const back = (input.back ?? before.back ?? '').trim().normalize('NFC')
+    if (back.length > FIELD_LIMITS.name) throw new HttpError(400, `That name is too long (${FIELD_LIMITS.name} characters at most).`)
+    return { settings: { linkTo, ...(board && { board }), ...(many && { many }), ...(back && { back }) }, removed: [] }
+  }
   return { settings: {}, removed: [] }
+}
+
+/**
+ * A card link's board has to be one of the field's own space, and one the person setting it can open. Only checked
+ * when it's chosen: a board that goes afterwards leaves the field as it was, with nothing to pick from.
+ */
+async function linkBoardOk(tx: Tx, lib: Library, settings: FieldSettings, before: FieldSettings, me: string | undefined) {
+  if (!settings.board || settings.board === before.board) return
+  if (!me || !(await canLinkTo(tx, lib, settings.board, me)))
+    throw new HttpError(400, 'workspaceId' in lib ? 'Pick one of this workspace’s boards that you can open.' : 'Pick one of your own boards.')
 }
 
 /** A library's fields, oldest first, each with how many boards use it. */
@@ -178,12 +205,18 @@ export async function listLibrary(db: Db | Tx, lib: Library): Promise<FieldView[
   return rows.map((r) => ({ ...fieldFromRow(r), archivedAt: r.archivedAt?.toISOString() ?? null, boards: boards.get(r.id) ?? 0 }))
 }
 
-export async function createField(app: FastifyInstance, lib: Library, input: FieldInput & { name: string; type: FieldType }): Promise<string> {
+export async function createField(
+  app: FastifyInstance,
+  lib: Library,
+  input: FieldInput & { name: string; type: FieldType },
+  me?: string,
+): Promise<string> {
   const name = cleanName(input.name)
   const { settings } = settingsFor(input.type, {}, input)
   return unique(() =>
     app.db.transaction(async (tx) => {
       await lockLibrary(tx, lib)
+      await linkBoardOk(tx, lib, settings, {}, me)
       const all = await rowsOf(tx, lib)
       if (all.filter((r) => !r.archivedAt).length >= FIELD_LIMITS.perSpace)
         throw new HttpError(400, `There can be ${FIELD_LIMITS.perSpace} fields at most. Archive one that’s no longer used.`)
@@ -206,7 +239,7 @@ export async function createField(app: FastifyInstance, lib: Library, input: Fie
  * Changes a field: its name, what its type lets you set, its options, or whether it's archived. Every board that
  * shows it gets the change. An option that's taken out (archived ones only) is cleared from the cards that had it.
  */
-export async function updateField(app: FastifyInstance, lib: Library, fieldId: string, input: FieldInput) {
+export async function updateField(app: FastifyInstance, lib: Library, fieldId: string, input: FieldInput, me?: string) {
   let showing: string[] = []
   await unique(() =>
     app.db.transaction(async (tx) => {
@@ -220,6 +253,7 @@ export async function updateField(app: FastifyInstance, lib: Library, fieldId: s
         nameFree(all, set.name, fieldId)
       }
       const { settings, removed } = settingsFor(row.type, row.settings, input)
+      await linkBoardOk(tx, lib, settings, row.settings, me)
       set.settings = settings
       if (input.archived !== undefined && input.archived !== !!row.archivedAt) {
         if (input.archived && all.filter((r) => r.archivedAt).length >= FIELD_LIMITS.archived)
@@ -384,12 +418,18 @@ export async function setBoardFields(
  * What bringing these fields into a library would do (a board moving to another space, a file being imported):
  * nothing is changed yet. `canAdd`: the person manages that library.
  */
-export async function adoptFields(tx: Tx, lib: Library, incoming: BoardField[], canAdd: boolean): Promise<Adoption> {
+export async function adoptFields(tx: Tx, lib: Library, incoming: BoardField[], canAdd: boolean, boardId?: string): Promise<Adoption> {
   await lockLibrary(tx, lib)
   const all = await rowsOf(tx, lib)
   const library: LibraryField[] = all.map((r) => ({ ...fieldFromRow(r), ...(r.archivedAt && { archived: true }) }))
-  const defs = incoming.map(({ front: _front, ...def }): FieldDef => def)
-  return planAdoption(library, defs, { canAdd, room: FIELD_LIMITS.perSpace - all.filter((r) => !r.archivedAt).length, newId })
+  const defs = incoming.map(({ front: _front, total: _total, ...def }): FieldDef => def)
+  return planAdoption(library, defs, {
+    canAdd,
+    room: FIELD_LIMITS.perSpace - all.filter((r) => !r.archivedAt).length,
+    newId,
+    // (A card link that named the board arriving keeps naming it; any other board stays behind.)
+    ...(boardId && { self: { was: boardId, is: boardId } }),
+  })
 }
 
 /** Makes an adoption's additions to the library. Returns the boards that show a field it changed (to reload). */
@@ -454,20 +494,23 @@ export async function moveBoardFields(app: FastifyInstance, tx: Tx, board: Board
   const { data } = (await loadBoard(tx, board.id))!
   const lib: Library = to ? { workspaceId: to } : { ownerId: userId }
   const canAdd = to ? (await workspaceRole(tx, to, userId)) === 'admin' : true
-  const plan = await adoptFields(tx, lib, data.fields, canAdd)
+  const plan = await adoptFields(tx, lib, data.fields, canAdd, board.id)
   const add = [
     ...plan.add.map((f) => f.name),
     ...[...plan.addOptions].flatMap(([id, options]) => options.map((o) => `${nameOf(data.fields, plan, id)}: ${o.name}`)),
   ]
-  if (!confirmed && (add.length || plan.lose.length))
-    throw new HttpError(409, 'Moving this board changes its fields.', 'fields', { add, lose: plan.lose })
+  // Links never cross spaces: the ones between this board's cards and the boards it leaves go (see `unlinkBoard`).
+  const links = await linksAround(tx, board)
+  if (!confirmed && (add.length || plan.lose.length || links))
+    throw new HttpError(409, 'Moving this board changes its fields.', 'fields', { add, lose: plan.lose, links })
   const touched = await applyAdoption(app, tx, lib, plan)
   await tx
     .update(tasks)
     .set({ custom: null })
     .where(and(eq(tasks.boardId, board.id), isNotNull(tasks.custom)))
+  const own = (ref: string) => (parseRef(ref)?.boardId === board.id ? ref : null)
   for (const t of [...Object.values(data.tasks), ...Object.values(data.archived ?? {})]) {
-    const custom = carryCustom(t.custom, plan.map)
+    const custom = carryCustom(t.custom, plan.map, own)
     if (custom)
       await tx
         .update(tasks)

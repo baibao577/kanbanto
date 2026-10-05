@@ -1,4 +1,4 @@
-import { ArrowRight, Check, Eraser, Info, Tag, UserMinus, LinkBreak, ChatCircle } from '@phosphor-icons/react'
+import { ArrowRight, Check, Eraser, Info, LinkSimpleBreak, Tag, UserMinus, LinkBreak, ChatCircle } from '@phosphor-icons/react'
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { toast } from 'sonner'
 import { api, errorMessage } from '@/api/client'
@@ -12,7 +12,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { useBoards } from '@/data/useBoards'
 import { useWorkspaces } from '@/data/useWorkspaces'
-import type { BoardSnapshot, BoardSummary } from '@kanbanto/model/api'
+import type { BoardSnapshot, BoardSummary, LinkedFrom } from '@kanbanto/model/api'
 import { descendantsOf } from '@kanbanto/model/indexer'
 import { planMove } from '@kanbanto/model/moveBoard'
 import { EPOCH } from '@kanbanto/model/types'
@@ -24,7 +24,7 @@ const SAME = '__same'
  * it does: what comes along, and what doesn't fit on the other board.
  */
 export function MoveToBoardDialog({ taskId, onClose, onMoved }: { taskId: string; onClose: () => void; onMoved: () => void }) {
-  const { data, idx, counts } = useBoard()
+  const { data, idx, counts, access, canBeLinked } = useBoard()
   const { user } = useAuth()
   const { boards } = useBoards()
   const { workspaces } = useWorkspaces()
@@ -33,6 +33,21 @@ export function MoveToBoardDialog({ taskId, onClose, onMoved }: { taskId: string
   const [list, setList] = useState(SAME)
   const [busy, setBusy] = useState(false)
   const task = data.tasks[taskId]
+  // Cards that link to it, or to a card under it: those links follow it within its space, and can't leave it.
+  const [linkedBy, setLinkedBy] = useState(0)
+  useEffect(() => {
+    if (!canBeLinked) return
+    let alive = true
+    api<LinkedFrom>('GET', `/boards/${encodeURIComponent(data.board.id)}/tasks/${encodeURIComponent(taskId)}/linked-from?subtasks=1`).then(
+      (r) => alive && setLinkedBy(r.groups.reduce((n, g) => n + g.count, 0) + r.hidden),
+      () => {},
+    )
+    return () => {
+      alive = false
+    }
+  }, [canBeLinked, data.board.id, taskId])
+  // (The same space: the same workspace, or two of your own boards.)
+  const leaves = !!to && (to.workspaceId ?? null) !== (access.workspace?.id ?? null)
 
   // Boards you can add to, grouped by where they live.
   const groups = useMemo(() => {
@@ -180,6 +195,12 @@ export function MoveToBoardDialog({ taskId, onClose, onMoved }: { taskId: string
             {plan.droppedLinks > 0 && (
               <Note icon={<LinkBreak />} warn>
                 {plan.droppedLinks === 1 ? 'A “waiting on” link' : `${plan.droppedLinks} “waiting on” links`} to tasks that stay here will be removed.
+              </Note>
+            )}
+            {leaves && linkedBy > 0 && (
+              <Note icon={<LinkSimpleBreak />} warn>
+                {linkedBy === 1 ? '1 card links' : `${linkedBy} cards link`} to it: links don’t reach “{to.name}”, so{' '}
+                {linkedBy === 1 ? 'that link' : 'those links'} will be removed.
               </Note>
             )}
             {comments > 0 && <Note icon={<ChatCircle />}>People on “{to.name}” will see its comments.</Note>}

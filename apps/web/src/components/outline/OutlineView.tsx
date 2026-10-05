@@ -12,7 +12,7 @@ import {
   Prohibit,
   X,
 } from '@phosphor-icons/react'
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { useBoard } from '@/app/board-context'
 import { Avatar, DueChip, LabelChip, PriorityIcon, ProgressBar, StatusDot } from '@/components/common/bits'
 import { FieldChip } from '@/components/fields/FieldValue'
@@ -65,7 +65,7 @@ const COLUMNS: (Column & { key: BuiltInSortKey })[] = [
 ]
 const COLUMN_LABEL = Object.fromEntries(COLUMNS.map((c) => [c.key, c.label])) as Record<BuiltInSortKey, string>
 /** How wide a field's column is, by its kind (in rem): wider for a long name, up to a point, so the heading reads. */
-const FIELD_WIDTH: Record<FieldType, number> = { text: 11, number: 8, date: 8.5, choice: 9.5, checkbox: 6 }
+const FIELD_WIDTH: Record<FieldType, number> = { text: 11, number: 8, date: 8.5, choice: 9.5, checkbox: 6, link: 12 }
 const fieldWidth = (f: BoardField) => Math.max(FIELD_WIDTH[f.type], Math.min(14, 2.5 + f.name.length * 0.42))
 const INDENT = 20
 /** Width of the drag handle before the indent. */
@@ -76,7 +76,7 @@ const HANDLE = 28
  * Sort by clicking a header, filter from "Filter", add subtasks inline, and drag rows to reorder or move them.
  */
 export function OutlineView({ search }: { search: string }) {
-  const { data, prefs, setPrefs, idx, run, openTask, createTask, focus, memberName, readOnly } = useBoard()
+  const { data, prefs, setPrefs, idx, run, openTask, createTask, focus, memberName, readOnly, links } = useBoard()
   const cfg = prefs.outline
   const setSort = (sort?: Sort) => setPrefs({ type: 'setOutline', config: { ...cfg, sort } })
 
@@ -91,11 +91,16 @@ export function OutlineView({ search }: { search: string }) {
   // Search and filters show the matching tasks plus their parents (muted) for context.
   const { keep, matched, counted, filtering, hiddenDone } = useTreeFilter(search)
 
+  // Sorted by a card link, rows go by their linked card's title: sorted again when one of those is learned.
+  const byLink = !!cfg.sort && isFieldKey(cfg.sort.key) && idx.fields.get(fieldIdOf(cfg.sort.key))?.type === 'link'
+  const titles = useSyncExternalStore(links.subscribeAll, () => (byLink ? links.getVersion() : 0))
   const order = useMemo(() => {
     if (!cfg.sort) return undefined
-    const cmp = sortComparator(idx, cfg.sort, labelById)
+    const cmp = sortComparator(idx, cfg.sort, labelById, links.titleOf)
     return (ids: string[]) => [...ids].sort(cmp)
-  }, [idx, cfg.sort, labelById])
+    // (`titles` is here to sort again, not to be read.)
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
+  }, [idx, cfg.sort, labelById, links, titles])
 
   const { rows, truncated } = flattenTree(idx, top, expanded, limit, keep, order)
 

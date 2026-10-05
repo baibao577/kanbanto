@@ -1,11 +1,14 @@
 import { X } from '@phosphor-icons/react'
+import { useSyncExternalStore } from 'react'
 import { useBoard } from '@/app/board-context'
 import { filterChips, type TableFilter } from '@kanbanto/model/table'
 
 /** The active filters as removable chips; shown in the view bar on every tab. */
 export function FilterChips() {
-  const { data, prefs, setPrefs } = useBoard()
-  const chips = filterChips(prefs.filter, data.columns, data.labels, data.members, data.fields)
+  const { data, prefs, setPrefs, links } = useBoard()
+  // (A filter by linked cards names them by title: said again when a title is learned.)
+  useSyncExternalStore(links.subscribeAll, links.getVersion)
+  const chips = filterChips(prefs.filter, data.columns, data.labels, data.members, data.fields, links.titleOf)
   if (!chips.length) return null
   // A filter by one of the board's fields goes by itself; the rest of them stay.
   const remove = (key: keyof TableFilter, field?: string) => {

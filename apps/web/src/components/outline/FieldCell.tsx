@@ -43,7 +43,7 @@ export const FieldCell = memo(function FieldCell({
         )
       ) : (
         <div className="min-w-0 flex-1">
-          <FieldValueEditor field={field} value={value} cell placeholder={total} onChange={(v) => onSet(taskId, field.id, v)} />
+          <FieldValueEditor field={field} value={value} cell placeholder={total} taskId={taskId} onChange={(v) => onSet(taskId, field.id, v)} />
         </div>
       )}
     </div>

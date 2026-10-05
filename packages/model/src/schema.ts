@@ -2,7 +2,7 @@ import { normalizeTaskDate } from './dates'
 import { z } from 'zod'
 import { COLORS, isBackground, type BoardBackground, type ColorName } from './colors'
 import type { Command } from './commands'
-import { FIELD_LIMITS, FIELD_TYPES, TEXT_FORMATS } from './fields'
+import { FIELD_LIMITS, FIELD_TYPES, TEXT_FORMATS, LINK_SCOPES, type FieldSettings } from './fields'
 import { isPosition } from './position'
 import { BUILT_IN_SORT_KEYS, OUTLINE_COLUMNS } from './table'
 import { CATEGORIES, LAYOUTS, LIST_ORDERS, PRIORITIES } from './types'
@@ -67,7 +67,13 @@ const reminders = z.array(reminder).max(20)
  * A card's values for the board's fields. Only their shape and size are checked here: whether a value fits its
  * field needs the board (see `patchCustom` and `tidyCustom` in fields.ts).
  */
-const fieldValue = z.union([plain(FIELD_LIMITS.link), z.number(), z.boolean(), z.array(recordId).max(20)])
+// (A list holds a choice's option ids, or a card link's links: a board's id, a colon and a card's, so longer than an id.)
+const listed = z
+  .string()
+  .min(1)
+  .max(FIELD_LIMITS.ref)
+  .refine((s) => !CONTROL.test(s), 'Not a valid id.')
+const fieldValue = z.union([plain(FIELD_LIMITS.link), z.number(), z.boolean(), z.array(listed).max(FIELD_LIMITS.links)])
 const tooMany = 'That’s more values than one card can hold.'
 const custom = z.record(recordId, fieldValue).refine((v) => Object.keys(v).length <= FIELD_LIMITS.values, tooMany)
 const meta = {
@@ -111,7 +117,15 @@ export const FieldSettingsSchema = z.object({
     .array(z.object({ id: recordId, name: plain(FIELD_LIMITS.name), color, archived: z.boolean().optional() }))
     .max(FIELD_LIMITS.options * 2)
     .optional(),
+  linkTo: z.enum(LINK_SCOPES).optional(),
+  board: recordId.optional(),
+  many: z.boolean().optional(),
+  back: plain(FIELD_LIMITS.name).optional(),
 })
+// (This schema drops what it doesn't list: a setting added to FieldSettings and not here would be lost from every
+// imported board. So the two are kept the same, like commands below.)
+type SameAs<A, B> = [A] extends [B] ? ([B] extends [A] ? true : never) : never
+export const fieldSettingsSchemaMatchesType: SameAs<z.infer<typeof FieldSettingsSchema>, FieldSettings> = true
 /** A field as a board uses it (see BoardField). */
 export const BoardFieldSchema = FieldSettingsSchema.extend({
   id: recordId,
@@ -260,7 +274,7 @@ const fieldKey = z.templateLiteral(['f:', z.string()]).refine((k) => k.length > 
 /** What a field's value has to be to pass a filter (see FieldFilter). */
 const fieldFilter = z.object({
   in: z
-    .array(z.string().max(100))
+    .array(z.string().max(FIELD_LIMITS.ref))
     .max(FIELD_LIMITS.options * 2 + 1)
     .optional(),
   checked: z.boolean().optional(),

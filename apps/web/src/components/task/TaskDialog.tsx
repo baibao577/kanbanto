@@ -48,6 +48,7 @@ import { AttachmentsSection } from './Attachments'
 import { TimeField, TimeSection } from './CardTime'
 import { CommentsSection } from './Comments'
 import { CustomFields } from './CustomFields'
+import { LinkedFromSection } from './LinkedFrom'
 import { Description } from './Description'
 import { useCardFiles } from '@/data/cardFiles'
 import { LabelPicker } from './LabelPicker'
@@ -308,6 +309,8 @@ function TaskDetail({ id, onClose }: { id: string; onClose: () => void }) {
               />
             )}
           </Section>
+
+          <LinkedFromSection key={id} taskId={id} />
 
           <TimeSection taskId={id} />
 

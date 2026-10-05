@@ -131,6 +131,9 @@ export function useBoardStore(boardId: string, prefsStore: PrefsStore, onEvent: 
     access: state?.access ?? null,
     counts: state?.counts ?? NO_COUNTS,
     canComment: state?.canComment ?? false,
+    canBeLinked: state?.canBeLinked ?? false,
+    /** What the cards' links point at (null until the board has loaded). */
+    links: sync?.links ?? null,
     /** Comments and files changing on any card (live). */
     onActivity: useCallback((l: (m: TaskActivity) => void) => sync?.onActivity(l) ?? (() => {}), [sync]),
     connection: state?.connection ?? 'connecting',

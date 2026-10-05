@@ -313,6 +313,47 @@ describe('MCP', () => {
       /This board has no field “Stage”. There are no fields there/,
     )
 
+    // Links to other cards: listed with the board, read as the cards' titles, set and found by title.
+    const firms = await ann.ok('POST', '/api/boards', { name: 'Companies' })
+    const firm = (cardId: string, title: string) =>
+      ann.ok('POST', `/api/boards/${firms.id}/mutations`, {
+        mutationId: mid(),
+        command: { type: 'task.create', id: cardId, parentId: null, fields: { title } },
+      })
+    await firm('c1', 'Acme')
+    await firm('c2', 'Globex')
+    await firm('c3', 'Globex')
+    const { id: companyField } = await ann.ok('POST', '/api/fields', { name: 'Client', type: 'link', linkTo: 'board', board: firms.id })
+    const { id: alsoField } = await ann.ok('POST', '/api/fields', { name: 'See also', type: 'link', linkTo: 'same', many: true })
+    await ann.ok('PUT', `/api/boards/${id}/fields`, { fields: [{ id: stage }, { id: value }, { id: companyField }, { id: alsoField }] })
+    expect((await tool('get_board', { board_id: id, tasks: false })).fields.slice(2)).toEqual([
+      { id: companyField, name: 'Client', type: 'link', cards_from: { board_id: firms.id }, several: false },
+      { id: alsoField, name: 'See also', type: 'link', cards_from: 'this board', several: true },
+    ])
+    const linkedTo = await tool('update_task', { board_id: id, task_id: logo, fields: { client: 'acme', 'See also': ['Homepage', 'Deploy'] } })
+    expect(linkedTo.fields.Client).toEqual([{ title: 'Acme', board: 'Companies', board_id: firms.id, task_id: 'c1' }])
+    expect(linkedTo.fields['See also'].map((c: { title: string }) => c.title)).toEqual(['Homepage', 'Deploy'])
+    expect((await tool('get_task', { board_id: id, task_id: logo })).fields.Client[0].title).toBe('Acme')
+    expect(titles(await tool('find_tasks', { fields: { Client: 'ACME' } }))).toEqual(['Logo'])
+    expect(titles(await tool('find_tasks', { board_id: id, fields: { 'See also': 'Deploy' } }))).toEqual(['Logo'])
+    expect((await tool('find_tasks', { board_id: id, fields: { Client: 'Nobody' } })).error).toMatch(/Client: there’s no card called “Nobody”/)
+    // A title two cards share has to be said by its link; one that isn't there names what's close.
+    const twice = await tool('update_task', { board_id: id, task_id: logo, fields: { Client: 'Globex' } })
+    expect(twice.error).toMatch(
+      new RegExp(`Client: more than one card is called “Globex”. Say which by its link: ${firms.id}:c2 \\(on Companies\\); ${firms.id}:c3`),
+    )
+    expect((await tool('update_task', { board_id: id, task_id: logo, fields: { Client: `${firms.id}:c3` } })).fields.Client[0]).toMatchObject({
+      task_id: 'c3',
+    })
+    expect((await tool('update_task', { board_id: id, task_id: logo, fields: { Client: 'Glob' } })).error).toMatch(
+      /there’s no card called “Glob” to link \(close: “Globex”, “Globex”\)/,
+    )
+    expect((await tool('update_task', { board_id: id, task_id: logo, fields: { 'See also': 'Logo' } })).error).toMatch(/no card called “Logo”/)
+    expect((await tool('update_task', { board_id: id, task_id: logo, fields: { Client: null } })).fields.Client).toBeUndefined()
+    // (Back to the fields the rest of this test expects.)
+    await ann.ok('PUT', `/api/boards/${id}/fields`, { fields: [{ id: stage }, { id: value }] })
+    await ann.ok('DELETE', `/api/boards/${firms.id}`)
+
     const found = toolResult(await rpc(mcp, 'tools/call', { name: 'find_tasks', arguments: { text: 'logo' } }))
     expect(found.tasks.map((x: { title: string }) => x.title)).toEqual(['Logo'])
     const made = toolResult(

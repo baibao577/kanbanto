@@ -28,6 +28,7 @@ Give it a name and pick its kind:
 | **Date** | A day, with a time if it matters | Close date |
 | **Choice** | One of the options you list, each with a colour | Stage: Lead, Proposal sent, Won |
 | **Checkbox** | Yes or no | Contract signed |
+| **Card link** | One or several other cards | Company, picked from your Companies board |
 
 A field's kind can't be changed afterwards, so pick the one that fits. Its name, and a choice's options, can be
 changed whenever you like.
@@ -102,6 +103,43 @@ A number field can be one that **adds up** (an amount, hours). Switch that on wh
 Each number is counted once, on the card it's written on. So write an amount on a task *or* on its subtasks, not on
 both: the task's total would count it twice.
 
+## Link cards together
+
+A **Card link** field points at other cards. A deal points at its company; a ticket at the customer who sent it. It
+is what lets separate boards work as one: keep companies on one board and deals on another, and join them.
+
+![A deal linked to a company, and the picker that finds cards by title](/images/fields-7-link.webp){.medium}
+
+When you make the field, say:
+
+| Setting | What it means |
+|---|---|
+| **Its cards come from** | One board (Company picks from Companies), any board of the workspace (or any of your own boards), or **the board that uses this field** (cards of the same board: "Related to", "Duplicate of"). |
+| **A card links to** | One card, or several. |
+| **On the other card, call the list** | The name the linked card uses for the cards that point at it, such as "Deals". |
+
+On a card, click **Add a card** in the field and type part of a title. Click the linked card's chip to open it. A
+card on the same board opens as usual. A card on another board opens on top, to look at, with **Open on board** to go
+and change it.
+
+The linked card shows who points at it, under **Linked from**, with what their numbers add up to:
+
+![A company card listing the deals linked to it, with their total](/images/fields-8-linked-from.webp){.medium}
+
+What to expect:
+
+- **You see a linked card's title only if you can open its board.** Otherwise it reads "A card you can't open". You
+  can only link cards you can open.
+- **Links stay inside one workspace**, or between your own boards. They never reach another workspace.
+- **The linked card is archived:** the link stays, greyed.
+- **It moves to another board** of the same workspace: the link follows it. Out of the workspace: the link is
+  removed, and the move tells you first.
+- **It is deleted:** the link reads "A deleted card", and goes the next time someone changes that field. Undo the
+  delete and the link is back.
+- **Its whole board is deleted:** the links to its cards are removed.
+- In the Outline a link is a column like any other: sort by it, change it in the cell, and **Filter** by the cards
+  linked.
+
 ## Stop using a field
 
 There are three steps, each stronger than the last. The first two lose nothing.
@@ -124,7 +162,8 @@ any more. Delete an archived option and it is cleared from those cards.
   name and kind). The move tells you which values won't come along before you confirm.
 - **Moving a board** to a workspace, or back to your own boards, brings its fields with it. Fields the other side
   doesn't have are added there if you manage its fields; otherwise the move lists what would be lost and asks first.
-- **An exported board** carries its fields. Importing it adds them to your own fields.
+- **An exported board** carries its fields. Importing it adds them to your own fields. Links between its own cards
+  come along; links to cards on other boards don't.
 - A name can be used once among your fields (or a workspace's), and can't be something every card already has, like
   Due or Status.
 - There can be 50 fields in one place, plus archived ones.
@@ -132,7 +171,7 @@ any more. Delete an archived option and it is cleared from those cards.
   heading, not a card, so a number written on it isn't in a list's total. The Outline counts it. To count it on the
   Board too, choose **Display → Show → Only projects**: each card then counts with its subtasks.
 - Your assistant can read and fill in fields, and find cards by them: "Set the stage of Website redesign to Won",
-  "Which cards are at the proposal stage?"
+  "Which cards are at the proposal stage?", "Link the Online shop deal to Hooli", "Which deals are Acme's?"
 
 ## Next
 

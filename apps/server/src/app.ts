@@ -31,6 +31,7 @@ import { providerTransport, type Transport } from './mail/transport'
 import { adminRoutes } from './routes/admin'
 import { authRoutes } from './routes/auth'
 import { fieldRoutes } from './routes/fields'
+import { linkRoutes } from './routes/links'
 import { boardRoutes } from './routes/boards'
 import { cardRoutes } from './cards'
 import { commentRoutes } from './routes/comments'
@@ -263,6 +264,7 @@ export async function buildApp(
   await app.register(pushRoutes, { prefix: '/api' })
   await app.register(presetRoutes, { prefix: '/api' })
   await app.register(fieldRoutes, { prefix: '/api' })
+  await app.register(linkRoutes, { prefix: '/api' })
   await app.register(sharingRoutes, { prefix: '/api' })
   await app.register(workspaceRoutes, { prefix: '/api' })
   await app.register(planningRoutes, { prefix: '/api' })

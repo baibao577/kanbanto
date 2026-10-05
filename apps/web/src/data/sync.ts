@@ -6,6 +6,7 @@ import { indexFor } from '@kanbanto/model/indexer'
 import type { Change } from '@kanbanto/model/records'
 import type { BoardData, Task } from '@kanbanto/model/types'
 import { api, ApiError } from '@/api/client'
+import { LinkStore } from './links'
 
 export type Connection = 'connecting' | 'live' | 'offline'
 
@@ -28,6 +29,8 @@ export interface SyncState {
   /** Comments and files per card. */
   counts: TaskCounts
   canComment: boolean
+  /** A card here may have cards linking to it (some card link is in use in the board's space). */
+  canBeLinked: boolean
   connection: Connection
   /** Changes made here that the server hasn't confirmed yet. */
   unsaved: number
@@ -84,6 +87,8 @@ function withId(cmd: Command): Command {
  */
 export class BoardSync {
   readonly boardId: string
+  /** What the cards' links point at (see LinkStore). */
+  readonly links: LinkStore
   private confirmed: BoardData
   private seq: number
   private pending: Pending[] = []
@@ -105,7 +110,18 @@ export class BoardSync {
     this.boardId = boardId
     this.confirmed = snap.data
     this.seq = snap.seq
-    this.state = { data: snap.data, access: snap.access, counts: snap.counts, canComment: snap.canComment, connection: 'connecting', unsaved: 0 }
+    this.links = new LinkStore(boardId)
+    this.links.learn(snap.linked ?? {})
+    this.links.see(snap.data)
+    this.state = {
+      data: snap.data,
+      access: snap.access,
+      counts: snap.counts,
+      canComment: snap.canComment,
+      canBeLinked: !!snap.canBeLinked,
+      connection: 'connecting',
+      unsaved: 0,
+    }
     // Changes made before a sign-out in this tab: replayed on the current board and sent now.
     this.pending = takeSavedPending(boardId)
     if (this.pending.length) {
@@ -260,7 +276,8 @@ export class BoardSync {
         const learned = Object.entries(this.confirmed.archived ?? {}).filter(([id]) => !snap.data.tasks[id])
         this.confirmed = learned.length ? { ...snap.data, archived: Object.fromEntries(learned) } : snap.data
         this.seq = snap.seq
-        this.set({ access: snap.access, counts: snap.counts, canComment: snap.canComment })
+        this.links.learn(snap.linked ?? {})
+        this.set({ access: snap.access, counts: snap.counts, canComment: snap.canComment, canBeLinked: !!snap.canBeLinked })
         this.replay()
       } catch (e) {
         if (e instanceof ApiError && (e.status === 401 || e.status === 404)) this.emit({ type: 'gone', reason: 'access-lost' })
@@ -339,6 +356,7 @@ export class BoardSync {
 
   private set(patch: Partial<SyncState>) {
     this.state = { ...this.state, ...patch }
+    if (patch.data) this.links.see(patch.data)
     this.listeners.forEach((l) => l())
   }
 

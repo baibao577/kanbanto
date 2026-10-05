@@ -1,6 +1,6 @@
 import type { CardRow, CardsPage, CardsQuery } from '@kanbanto/model/api'
 import { toDay } from '@kanbanto/model/dates'
-import { fieldMatches, filterFromText, valueText, type FieldDef, type FieldType } from '@kanbanto/model/fields'
+import { fieldMatches, filterFromText, linksOf, valueText, type FieldDef, type FieldType } from '@kanbanto/model/fields'
 import { indexFor, isLeaf, statusCol } from '@kanbanto/model/indexer'
 import {
   CARD_DATES,
@@ -22,6 +22,8 @@ import { HttpError, parse } from './http'
 import { dayIn } from './mail/digest'
 import { requireUser } from './routes/auth'
 import { boardsFor, withPlaces } from './routes/boards'
+import type { BoardRow } from './boards/access'
+import { resolveLinks } from './boards/links'
 import { followedBy } from './boards/follows'
 import { commentsWith, lastCommentsFor } from './routes/comments'
 
@@ -39,6 +41,7 @@ const FV_HINT: Record<FieldType, string> = {
   text: '“any” (has a value) or “none”',
   date: '“any” (has a date), “none”, “past” or “week” (in the next 7 days)',
   number: '“any” (has a number), “none”, or a range like “10..200”, “10..” or “..200”',
+  link: '“any” (has a link) or “none”',
 }
 
 /** Boards searched at once (each is read from memory or the database). */
@@ -105,6 +108,17 @@ export async function searchCards(app: FastifyInstance, me: SessionUser, q: Card
     if (q.field && q.fv && !asked) continue
     const want = asked && q.fv ? filterFromText(asked, q.fv) : undefined
     if (asked && q.fv && !want) throw new HttpError(400, `“fv” can’t be read for ${asked.name}: give ${FV_HINT[asked.type]}.`)
+    // A card link reads as its cards' titles, as far as this person may see them.
+    const linked =
+      asked?.type === 'link'
+        ? await resolveLinks({ db: app.db, engine: app.engine }, me.id, { id: b.id } as BoardRow, data, [
+            ...new Set([...Object.values(data.tasks), ...Object.values(archived)].flatMap((t) => linksOf(t.custom?.[asked.id]))),
+          ])
+        : undefined
+    const titleOf = (ref: string) => {
+      const card = linked?.[ref]
+      return card && 'title' in card ? card.title : undefined
+    }
     const canEdit = b.role !== 'viewer' && !b.archivedAt
     const under = archivedUnder(archived)
     const lastComment = commented.get(b.id) ?? {}
@@ -135,7 +149,7 @@ export async function searchCards(app: FastifyInstance, me: SessionUser, q: Card
       if (!matchesCard(facts, filter)) return
       const held = asked && t.custom?.[asked.id]
       if (want && !fieldMatches(asked!, held, want, filter.today!)) return
-      const said = asked && held !== undefined ? valueText(asked, held) : ''
+      const said = asked && held !== undefined ? valueText(asked, held, titleOf) : ''
       const at = cardMoment(facts, filter)!
       const assignee = t.assigneeId ? (data.members.find((m) => m.id === t.assigneeId)?.name ?? null) : null
       rows.push({
