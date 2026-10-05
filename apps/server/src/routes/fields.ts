@@ -94,7 +94,10 @@ export const fieldRoutes: FastifyPluginAsync = async (app) => {
     const { id } = parse(BoardParams, req.params)
     const me = requireUser(req.user)
     const { board, access } = await requireAccess(app.db, me, id, 'owner')
-    const { fields } = parse(z.object({ fields: z.array(z.object({ id: z.uuid(), front: z.boolean().optional() })).max(100) }).strict(), req.body)
+    const { fields } = parse(
+      z.object({ fields: z.array(z.object({ id: z.uuid(), front: z.boolean().optional(), total: z.boolean().optional() })).max(100) }).strict(),
+      req.body,
+    )
     await setBoardFields(app, board, me, fields, req.apiToken?.app)
     return boardFieldsView(app, board, access, me.id)
   })

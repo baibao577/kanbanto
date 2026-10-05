@@ -232,6 +232,13 @@
       "when": 1791192938705,
       "tag": "0032_custom_fields",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1791197565829,
+      "tag": "0033_field_totals",
+      "breakpoints": true
     }
   ]
 }

@@ -2,6 +2,7 @@ import { ArrowLeft, MagnifyingGlass, X } from '@phosphor-icons/react'
 import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import type { CardRow, CardsPage } from '@kanbanto/model/api'
+import type { FieldDef } from '@kanbanto/model/fields'
 import { newId } from '@kanbanto/model/ids'
 import { CARD_SORTS, CARD_SORT_LABEL, periodOf, type CardSort } from '@kanbanto/model/search'
 import { api, errorMessage } from '@/api/client'
@@ -32,6 +33,8 @@ export function CardsView({ route }: { route: CardsRoute }) {
   const { workspaces } = useWorkspaces()
   const [page, setPage] = useState<CardsPage | null>(null)
   const [more, setMore] = useState<CardRow[]>([])
+  // Every field seen so far: the one picked keeps its name and options when the boards searched no longer have it.
+  const [knownFields, setKnownFields] = useState<Record<string, FieldDef>>({})
   const [words, setWords] = useState(route.q ?? '')
   const [reload, setReload] = useState(0)
   // The card open in place (its board is loaded while it's open).
@@ -60,6 +63,7 @@ export function CardsView({ route }: { route: CardsRoute }) {
         if (!alive) return
         setPage(r)
         setMore([])
+        if (r.fields?.length) setKnownFields((known) => ({ ...known, ...Object.fromEntries(r.fields!.map((f) => [f.id, f])) }))
       },
       (e) => alive && toast.error(errorMessage(e)),
     )
@@ -191,6 +195,8 @@ export function CardsView({ route }: { route: CardsRoute }) {
             workspaces={workspaces ?? []}
             people={page?.people ?? []}
             labels={page?.labels ?? []}
+            fields={page?.fields ?? []}
+            field={route.field ? knownFields[route.field] : undefined}
             meId={user?.id ?? ''}
           />
 

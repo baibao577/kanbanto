@@ -1,3 +1,4 @@
+import { fieldIdOf, isFieldKey, tidyFilter } from './fields'
 import type { OutlineConfig, TableFilter } from './table'
 import type { BoardData, Layout, ViewConfig } from './types'
 
@@ -135,7 +136,23 @@ export function cleanPrefs(p: ViewPrefs, data: BoardData): ViewPrefs {
   const kept = gone ? Object.fromEntries(Object.entries(order).filter(([id]) => cols.has(id))) : order
   const nextOrder = kept && !Object.keys(kept).length ? undefined : kept
   const focusId = p.focusId && data.tasks[p.focusId] ? p.focusId : undefined
+  // The board's own fields: filters keep what their field can still use, and a column or a sort by a field that
+  // left the board goes.
+  const defs = new Map(data.fields.map((x) => [x.id, x]))
+  const wanted = Object.entries(f.fields ?? {}).flatMap(([id, one]) => {
+    const tidy = defs.has(id) ? tidyFilter(defs.get(id)!, one) : undefined
+    return tidy ? [[id, tidy] as const] : []
+  })
+  const sameFields = !!f.fields && wanted.length === Object.keys(f.fields).length && wanted.every(([id, one]) => f.fields![id] === one)
+  filter.fields = sameFields || !f.fields ? f.fields : wanted.length ? Object.fromEntries(wanted) : undefined
+  const o = p.outline
+  const sort = o.sort && isFieldKey(o.sort.key) && !defs.has(fieldIdOf(o.sort.key)) ? undefined : o.sort
+  const shownOff = o.hidden?.filter((k) => !isFieldKey(k) || defs.has(fieldIdOf(k)))
+  const outlineHidden = !o.hidden || shownOff!.length === o.hidden.length ? o.hidden : shownOff!.length ? shownOff : undefined
   const changed =
+    filter.fields !== f.fields ||
+    sort !== o.sort ||
+    outlineHidden !== o.hidden ||
     filter.statuses !== f.statuses ||
     filter.labels !== f.labels ||
     filter.assignees !== f.assignees ||
@@ -147,6 +164,7 @@ export function cleanPrefs(p: ViewPrefs, data: BoardData): ViewPrefs {
   return {
     ...p,
     filter,
+    outline: sort !== o.sort || outlineHidden !== o.hidden ? { ...o, sort, hidden: outlineHidden } : o,
     focusId,
     display: { ...p.display, board: { ...p.display.board, hiddenColumns: nextHidden, collapsedColumns: nextFolded, listOrder: nextOrder } },
   }

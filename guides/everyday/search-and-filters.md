@@ -30,6 +30,7 @@ cards *that are* urgent).
 | **Assignee** | One or more people's cards, or **No one assigned**. |
 | **Priority** | Urgent, High, Medium, Low, or **No priority**. |
 | **Labels** | Cards with a label. |
+| **Fields** | Cards by one of the board's [own fields](/everyday/fields#filter-by-a-field): a stage, an amount, a yes or no. |
 
 Filters apply to all three views: Board, Timeline and Outline. Small tags under the bar show which filters are on;
 click the ✕ on one to drop that filter.
@@ -57,8 +58,8 @@ It can:
 
 - search **words** in titles, descriptions and comments,
 - show cards **on their boards**, **archived** ones, or both,
-- narrow by **board** or workspace, **person**, **priority**, **label** and **due date** (some of these are under
-  **More**),
+- narrow by **board** or workspace, **person**, **priority**, **label**, **due date** and one of your
+  [own fields](/everyday/fields) (some of these are under **More**),
 - start from a ready-made search: **My tasks**, **Following** (the cards you are
   [told about](/people/notifications#cards-you-follow)), **Done this week**, **Recently changed**, **Archived**,
 - and look at a **stretch of time**: cards done, made, changed or archived today, this week, last month, or between

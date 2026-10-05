@@ -1,5 +1,6 @@
 import type { CardRow, CardsPage, CardsQuery } from '@kanbanto/model/api'
 import { toDay } from '@kanbanto/model/dates'
+import { fieldMatches, filterFromText, valueText, type FieldDef, type FieldType } from '@kanbanto/model/fields'
 import { indexFor, isLeaf, statusCol } from '@kanbanto/model/indexer'
 import {
   CARD_DATES,
@@ -27,9 +28,18 @@ import { commentsWith, lastCommentsFor } from './routes/comments'
 /**
  * Cards across the boards someone can open, as one searchable list: the Search cards page's source. The cards on
  * their boards, the archived ones, or both; filtered by where, who, what kind of list, words (comments too) and
- * dates (see model/search.ts for the rules). Boards are read as the server holds them (from memory, mostly); only
- * comments are looked up in the database.
+ * dates (see model/search.ts for the rules), and by one of the boards' own fields (model/fields.ts). Boards are read
+ * as the server holds them (from memory, mostly); only comments are looked up in the database.
  */
+
+/** What `fv` can say, for each kind of field (see `filterFromText`). */
+const FV_HINT: Record<FieldType, string> = {
+  choice: 'the ids of its options, with commas (“-” for none picked)',
+  checkbox: '“yes” or “no”',
+  text: '“any” (has a value) or “none”',
+  date: '“any” (has a date), “none”, “past” or “week” (in the next 7 days)',
+  number: '“any” (has a number), “none”, or a range like “10..200”, “10..” or “..200”',
+}
 
 /** Boards searched at once (each is read from memory or the database). */
 const MAX_BOARDS = 100
@@ -81,6 +91,7 @@ export async function searchCards(app: FastifyInstance, me: SessionUser, q: Card
   const rows: { row: CardRow; at: number; createdAt: number; due?: string; priority?: Task['priority'] }[] = []
   const labels = new Set<string>()
   const people = new Map<string, string>()
+  const fields = new Map<string, FieldDef>()
   for (const b of boards) {
     const { data } = await app.engine.snapshot(b.id)
     const idx = indexFor(data)
@@ -88,6 +99,12 @@ export async function searchCards(app: FastifyInstance, me: SessionUser, q: Card
     const labelById = new Map(data.labels.map((l) => [l.id, l]))
     for (const l of data.labels) if (l.name.trim()) labels.add(l.name.trim())
     for (const m of data.members) people.set(m.id, m.name)
+    for (const { front: _front, total: _total, ...def } of data.fields) fields.set(def.id, def)
+    // Asked about a field: each card says what it has for it, and a test of it leaves out the boards without it.
+    const asked = q.field ? data.fields.find((f) => f.id === q.field) : undefined
+    if (q.field && q.fv && !asked) continue
+    const want = asked && q.fv ? filterFromText(asked, q.fv) : undefined
+    if (asked && q.fv && !want) throw new HttpError(400, `“fv” can’t be read for ${asked.name}: give ${FV_HINT[asked.type]}.`)
     const canEdit = b.role !== 'viewer' && !b.archivedAt
     const under = archivedUnder(archived)
     const lastComment = commented.get(b.id) ?? {}
@@ -116,6 +133,9 @@ export async function searchCards(app: FastifyInstance, me: SessionUser, q: Card
         archivedAt: t.archivedAt ? Date.parse(t.archivedAt) : null,
       }
       if (!matchesCard(facts, filter)) return
+      const held = asked && t.custom?.[asked.id]
+      if (want && !fieldMatches(asked!, held, want, filter.today!)) return
+      const said = asked && held !== undefined ? valueText(asked, held) : ''
       const at = cardMoment(facts, filter)!
       const assignee = t.assigneeId ? (data.members.find((m) => m.id === t.assigneeId)?.name ?? null) : null
       rows.push({
@@ -148,6 +168,7 @@ export async function searchCards(app: FastifyInstance, me: SessionUser, q: Card
           at: new Date(at.at).toISOString(),
           atKind: at.kind,
           ...(!hasWords(words, own) && { snippet: snippetOf(bodies, words, own) }),
+          ...(said && { field: { name: asked!.name, text: said } }),
           canEdit,
         },
       })
@@ -174,6 +195,7 @@ export async function searchCards(app: FastifyInstance, me: SessionUser, q: Card
     ...(offset === 0 && {
       labels: [...labels].sort((a, b) => a.localeCompare(b)),
       people: [...people].map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name)),
+      fields: [...fields.values()].sort((a, b) => a.name.localeCompare(b.name)),
     }),
   }
 }
@@ -282,6 +304,9 @@ const Query = z
       .enum(['true'])
       .transform(() => true)
       .optional(),
+    field: z.string().max(100).optional(),
+    // (Longer than the other lists: a choice can be asked for many of its options, each a long id.)
+    fv: z.string().max(2000).optional(),
     sort: z.enum(CARD_SORTS).optional(),
     offset: z.coerce.number().int().min(0).optional(),
     limit: z.coerce.number().int().min(1).max(100).optional(),

@@ -17,7 +17,8 @@ import { FIELD_ICON, fieldSummary } from './meta'
 
 /**
  * Which fields this board uses (Board settings → Fields). Its owners pick them from the board's library (its
- * workspace's, or their own for a Personal board), put them in order, and choose up to three for the card front.
+ * workspace's, or their own for a Personal board), put them in order, choose up to three for the card front, and
+ * switch on a total under each list's name for numbers that add up.
  * Taking one off keeps its values: they're back if it's added again. Anyone who can edit the board can clear a field
  * on all its cards. The fields themselves are made and changed in the library, by whoever manages it.
  */
@@ -33,10 +34,11 @@ export function BoardFields({ onLeave }: { onLeave: () => void }) {
   const { fields, canPick, canManage, workspace } = view
   const base = workspace ? `/workspaces/${workspace.id}/fields` : '/fields'
   const library = hrefFor(workspace ? { page: 'workspace', id: workspace.id, section: 'fields' } : { page: 'account', section: 'fields' })
-  const list = fields.map((f) => ({ id: f.id, front: !!f.front }))
+  const list = fields.map((f) => ({ id: f.id, front: !!f.front, total: !!f.total }))
   const onFront = list.filter((f) => f.front).length
+  const totalled = list.filter((f) => f.total).length
 
-  const save = (next: { id: string; front?: boolean }[], done?: string) =>
+  const save = (next: { id: string; front?: boolean; total?: boolean }[], done?: string) =>
     api('PUT', `/boards/${encodeURIComponent(boardId)}/fields`, { fields: next }).then(
       () => {
         if (done) toast(done)
@@ -112,6 +114,27 @@ export function BoardFields({ onLeave }: { onLeave: () => void }) {
                   ) : (
                     f.front && <span className="mr-1 text-xs text-muted-foreground">On cards</span>
                   )}
+                  {/* A number that adds up can show its total under each list's name. */}
+                  {f.type === 'number' && f.sum && canPick && (
+                    <label
+                      className="mr-1 flex items-center gap-2 text-xs text-muted-foreground"
+                      title={
+                        !f.total && totalled >= FIELD_LIMITS.totals
+                          ? `Up to ${FIELD_LIMITS.totals} fields can have a total in lists`
+                          : 'Show its total under each list’s name, on the board'
+                      }
+                    >
+                      Total in lists
+                      <Switch
+                        size="sm"
+                        checked={!!f.total}
+                        disabled={!f.total && totalled >= FIELD_LIMITS.totals}
+                        onCheckedChange={(on) => void save(list.map((x) => (x.id === f.id ? { ...x, total: on } : x)))}
+                        aria-label={`Total of ${f.name} in lists`}
+                      />
+                    </label>
+                  )}
+                  {f.total && !canPick && <span className="mr-1 text-xs text-muted-foreground">Total in lists</span>}
                   {canPick && (
                     <>
                       <Button variant="ghost" size="icon-xs" title="Move up" disabled={i === 0} onClick={() => move(i, -1)}>

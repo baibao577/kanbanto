@@ -1,3 +1,4 @@
+import type { BoardField } from './fields'
 import { comparePositions } from './position'
 import { CATEGORIES, DEFAULT_COLUMNS, type BoardData, type Category, type Member, type StatusColumn, type StatusMode, type TaskMap } from './types'
 
@@ -10,6 +11,8 @@ export interface TaskIndex {
   mode: StatusMode
   /** Board members by id (for names). */
   members: Map<string, Member>
+  /** The board's own fields by id, in the board's order (for sorting, filtering and totals: see fields.ts). */
+  fields: Map<string, BoardField>
   /** The status columns, in board order. */
   columns: StatusColumn[]
   colById: Map<string, StatusColumn>
@@ -46,8 +49,15 @@ export interface TaskIndex {
 // Siblings by outline position; the id breaks ties so the order is always the same.
 const byOrder = (tasks: TaskMap) => (a: string, b: string) => comparePositions(tasks[a].order, tasks[b].order) || comparePositions(a, b)
 
-export function buildIndex(tasks: TaskMap, mode: StatusMode, columns: StatusColumn[] = DEFAULT_COLUMNS, memberList: Member[] = []): TaskIndex {
+export function buildIndex(
+  tasks: TaskMap,
+  mode: StatusMode,
+  columns: StatusColumn[] = DEFAULT_COLUMNS,
+  memberList: Member[] = [],
+  fieldList: BoardField[] = [],
+): TaskIndex {
   const members = new Map(memberList.map((m) => [m.id, m]))
+  const fields = new Map(fieldList.map((f) => [f.id, f]))
   const colById = new Map(columns.map((c) => [c.id, c]))
   const firstOf = {} as Record<Category, string>
   for (const c of columns) firstOf[c.category] ??= c.id
@@ -178,6 +188,7 @@ export function buildIndex(tasks: TaskMap, mode: StatusMode, columns: StatusColu
     tasks,
     mode,
     members,
+    fields,
     columns,
     colById,
     firstOf,
@@ -247,7 +258,7 @@ const indexes = new WeakMap<BoardData, TaskIndex>()
 export function indexFor(data: BoardData): TaskIndex {
   let idx = indexes.get(data)
   if (!idx) {
-    idx = buildIndex(data.tasks, data.board.mode, data.columns, data.members)
+    idx = buildIndex(data.tasks, data.board.mode, data.columns, data.members, data.fields)
     indexes.set(data, idx)
   }
   return idx

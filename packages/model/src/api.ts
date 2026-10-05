@@ -454,6 +454,14 @@ export interface CardsQuery {
   parents?: 'hide'
   /** Only the cards you follow (you're told about their comments and changes). */
   following?: boolean
+  /**
+   * One of the boards' own fields, by id: each card then says what it has for it (`field`). With `fv`, only the cards
+   * whose value passes, on the boards that use the field: a choice's option ids with commas (`-`: none picked), `yes`
+   * or `no` for a checkbox, `any` or `none` (has a value or not) for the rest, a date also `past` or `week`, a number
+   * also a range, `10..200` (see `filterFromText`).
+   */
+  field?: string
+  fv?: string
   sort?: CardSort
   offset?: number
   limit?: number
@@ -494,6 +502,8 @@ export interface CardRow {
   atKind: CardMomentKind
   /** Part of the comment the words were found in, when they weren't all in the title or description. */
   snippet?: string
+  /** Asked about a field (`CardsQuery.field`): what this card has for it, in words. Left out when it has nothing. */
+  field?: { name: string; text: string }
   /** You can restore or delete it (an editor, on a board that isn't archived). */
   canEdit: boolean
 }
@@ -503,9 +513,10 @@ export interface CardsPage {
   total: number
   /** Pass back as `offset` for the next page; null at the end. */
   nextOffset: number | null
-  /** On the first page: the labels and people of the boards searched, to filter by. */
+  /** On the first page: the labels, people and fields of the boards searched, to filter by. */
   labels?: string[]
   people?: { id: string; name: string }[]
+  fields?: FieldDef[]
 }
 
 export interface SharingMember {

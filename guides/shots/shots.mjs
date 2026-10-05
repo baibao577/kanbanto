@@ -1033,7 +1033,7 @@ async function clientWork() {
   const [lead, sent, won] = (await api(ann, 'GET', '/fields')).fields.find((f) => f.id === stage).options.map((o) => o.id)
   const { id } = await api(ann, 'POST', '/boards', { name: 'Client work', background: 'teal' })
   await api(ann, 'PUT', `/boards/${id}/fields`, {
-    fields: [{ id: stage, front: true }, { id: client }, { id: amount, front: true }, { id: website }, { id: signed }],
+    fields: [{ id: stage, front: true }, { id: client }, { id: amount, front: true, total: true }, { id: website }, { id: signed }],
   })
   const card = (cardId, title, status, custom) =>
     api(ann, 'POST', `/boards/${id}/mutations`, {
@@ -1103,6 +1103,41 @@ await shot('fields-4-front', async () => {
     [page.getByText('To Do', { exact: true }), page.getByText('Online shop', { exact: true }), page.getByText('Annual report', { exact: true })],
     36,
   )
+})
+await shot('fields-5-outline', async () => {
+  const { id } = await clientWork()
+  await page.goto(`${SITE}/#/b/${id}/outline`)
+  await page.reload()
+  await page.getByRole('table', { name: 'Tasks' }).waitFor()
+  // (Fewer of the usual columns, so the board's own fit in the picture.)
+  await page.getByRole('button', { name: 'Display' }).click()
+  for (const name of ['Progress', 'Priority', 'Start', 'Due', 'Labels']) {
+    const box = page.getByRole('dialog').getByLabel(name, { exact: true })
+    if (await box.isChecked()) await box.click()
+  }
+  await page.keyboard.press('Escape')
+  await page.waitForTimeout(500)
+  const { clip } = await around([page.getByRole('table', { name: 'Tasks' })], 24)
+  // (Down to the table's own edge: what's under it isn't the point.)
+  return { clip: { ...clip, height: clip.height - 14 } }
+})
+await shot('fields-6-filter', async () => {
+  const { id } = await clientWork()
+  await page.goto(`${SITE}/#/b/${id}/board`)
+  await page.reload()
+  await page.getByText('Website redesign', { exact: true }).first().waitFor()
+  await page.getByRole('button', { name: 'Filter', exact: true }).click()
+  const menu = page.getByRole('dialog')
+  await menu.getByRole('button', { name: 'Filter by Stage' }).click()
+  await menu.getByText('Won', { exact: true }).click()
+  await menu.getByRole('button', { name: 'Filter by Amount' }).click()
+  await menu.getByLabel('Amount, at least').fill('5000')
+  // (The menu scrolls: the fields are at its end.)
+  await menu.getByRole('button', { name: 'Clear filters' }).scrollIntoViewIfNeeded()
+  await page.waitForTimeout(500)
+  const whole = await menu.boundingBox()
+  const top = await menu.getByText('Fields', { exact: true }).boundingBox()
+  return { clip: { x: whole.x - 24, y: top.y - 24, width: whole.width + 48, height: whole.y + whole.height - top.y + 48 } }
 })
 
 await browser.close()

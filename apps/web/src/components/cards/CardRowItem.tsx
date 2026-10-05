@@ -60,6 +60,16 @@ export function CardRowItem({
             <LabelChip key={i} label={l} />
           ))}
           {c.due && <DueChip due={c.due} done={c.done} />}
+          {/* The field the search asks about (More → Field). */}
+          {c.field && (
+            <span
+              className="inline-flex h-5 max-w-56 items-center gap-1 rounded bg-muted px-1.5 text-[11px] font-medium"
+              title={`${c.field.name}: ${c.field.text}`}
+            >
+              <span className="shrink-0 opacity-70">{c.field.name}</span>
+              <span className="truncate text-foreground/85 tabular-nums">{c.field.text}</span>
+            </span>
+          )}
           {c.subtasks > 0 && (
             <span className="inline-flex items-center gap-1 tabular-nums" title="Subtasks done">
               <ListChecks className="size-3.5" />

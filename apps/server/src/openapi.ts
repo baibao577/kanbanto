@@ -68,6 +68,7 @@ const schemas = {
         items: obj({ id: str, name: str, color: str, archived: { type: 'boolean' } }, ['id', 'name', 'color']),
       },
       front: { type: 'boolean', description: 'On a board: shown on the card front too.' },
+      total: { type: 'boolean', description: 'On a board: a number that adds up, totalled under each list’s name.' },
     },
     ['id', 'name', 'type'],
   ),
@@ -359,6 +360,24 @@ The answer lists the records that changed.
             { name: 'from', in: 'query', schema: { ...str, description: 'A moment (ISO): on or after this.' } },
             { name: 'to', in: 'query', schema: { ...str, description: 'A moment (ISO): before this.' } },
             { name: 'parents', in: 'query', schema: { enum: ['hide'], description: 'Only cards without subtasks.' } },
+            {
+              name: 'field',
+              in: 'query',
+              schema: {
+                ...str,
+                description:
+                  'One of the boards’ own fields, by id: each card then says what it has for it (`field`: its name and the value in words).',
+              },
+            },
+            {
+              name: 'fv',
+              in: 'query',
+              schema: {
+                ...str,
+                description:
+                  'With `field`: only cards whose value passes, on the boards that use the field. A choice: its options’ ids with commas (`-` for none picked). A checkbox: `yes` or `no`. The rest: `any` (has a value) or `none`; a date also `past` or `week` (in the next 7 days); a number also a range, `10..200`, `10..` or `..200`.',
+              },
+            },
             { name: 'sort', in: 'query', schema: { enum: ['recent', 'created', 'due', 'priority'], default: 'recent' } },
             { name: 'offset', in: 'query', schema: { type: 'integer', minimum: 0 } },
             { name: 'limit', in: 'query', schema: { type: 'integer', minimum: 1, maximum: 100, default: 50 } },
@@ -497,12 +516,14 @@ The answer lists the records that changed.
           tags: ['Fields'],
           summary: 'Choose a board’s fields (its owners)',
           description:
-            'The whole list, in order: up to 20, up to 3 with `front`. From the board’s library: its workspace’s, or for a Personal board your own. A field left out is taken off the board: its values are kept, unseen, and are back if it’s added again.',
+            'The whole list, in order: up to 20, up to 3 with `front`, up to 3 with `total` (numbers that add up only). From the board’s library: its workspace’s, or for a Personal board your own. A field left out is taken off the board: its values are kept, unseen, and are back if it’s added again.',
           parameters: [id('id')],
           requestBody: {
             content: {
               'application/json': {
-                schema: obj({ fields: { type: 'array', items: obj({ id: str, front: { type: 'boolean' } }, ['id']) } }, ['fields']),
+                schema: obj({ fields: { type: 'array', items: obj({ id: str, front: { type: 'boolean' }, total: { type: 'boolean' } }, ['id']) } }, [
+                  'fields',
+                ]),
               },
             },
           },

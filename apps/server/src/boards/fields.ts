@@ -305,7 +305,8 @@ export async function boardFieldsView(app: FastifyInstance, board: BoardRow, acc
 }
 
 /**
- * Sets which fields a board uses, in order, and which show on the card front (its owners). A field taken off keeps
+ * Sets which fields a board uses, in order, which show on the card front, and which numbers are totalled under each
+ * list's name (its owners). A field taken off keeps
  * its row, marked removed: its values stay on the cards, unseen, until it's added again or deleted for good. Fields
  * come from the board's library: its workspace's, or for a Personal board the owner's own (ones another owner put
  * there stay).
@@ -314,12 +315,14 @@ export async function setBoardFields(
   app: FastifyInstance,
   board: BoardRow,
   me: { id: string },
-  list: { id: string; front?: boolean }[],
+  list: { id: string; front?: boolean; total?: boolean }[],
   via?: string,
 ): Promise<void> {
   if (list.length > FIELD_LIMITS.perBoard) throw new HttpError(400, `A board can use ${FIELD_LIMITS.perBoard} fields at most.`)
   if (list.filter((x) => x.front).length > FIELD_LIMITS.front)
     throw new HttpError(400, `Up to ${FIELD_LIMITS.front} fields can show on the card front.`)
+  if (list.filter((x) => x.total).length > FIELD_LIMITS.totals)
+    throw new HttpError(400, `Up to ${FIELD_LIMITS.totals} fields can have a total in lists.`)
   if (new Set(list.map((x) => x.id)).size !== list.length) throw new HttpError(400, 'A field can only be on a board once.')
   const lib = libraryOf(board, me.id)
   await app.db.transaction(async (tx) => {
@@ -349,18 +352,23 @@ export async function setBoardFields(
       if (!f || f.archivedAt || !(isIn(lib, f) || shown.has(f.id))) throw new HttpError(400, 'One of those fields is no longer available.')
       if (names.has(nameKey(f.name))) throw new HttpError(400, `This board already has a field called “${f.name}”.`)
       names.add(nameKey(f.name))
+      if (x.total && !(f.type === 'number' && f.settings.sum))
+        throw new HttpError(400, `“${f.name}” isn’t a number that adds up, so it has no total.`)
     }
     for (const [position, x] of list.entries())
       await tx
         .insert(boardFieldRows)
-        .values({ boardId: board.id, fieldId: x.id, position, front: !!x.front })
-        .onConflictDoUpdate({ target: [boardFieldRows.boardId, boardFieldRows.fieldId], set: { position, front: !!x.front, removedAt: null } })
+        .values({ boardId: board.id, fieldId: x.id, position, front: !!x.front, total: !!x.total })
+        .onConflictDoUpdate({
+          target: [boardFieldRows.boardId, boardFieldRows.fieldId],
+          set: { position, front: !!x.front, total: !!x.total, removedAt: null },
+        })
     const kept = new Set(list.map((x) => x.id))
     const gone = [...shown.keys()].filter((id) => !kept.has(id))
     if (gone.length)
       await tx
         .update(boardFieldRows)
-        .set({ removedAt: new Date(), front: false })
+        .set({ removedAt: new Date(), front: false, total: false })
         .where(and(eq(boardFieldRows.boardId, board.id), inArray(boardFieldRows.fieldId, gone)))
     const items: ActivityItem[] = [
       ...list.filter((x) => !shown.has(x.id)).map((x) => ({ text: `added the field “${byId.get(x.id)!.name}”` })),
@@ -415,14 +423,21 @@ export async function applyAdoption(app: FastifyInstance, tx: Tx, lib: Library, 
 }
 
 /** A board's field rows, replaced by this list (a new board, or one that moved to another space). */
-export async function replaceBoardFields(tx: Tx, boardId: string, list: { id: string; front?: boolean }[]) {
+export async function replaceBoardFields(tx: Tx, boardId: string, list: { id: string; front?: boolean; total?: boolean }[]) {
   await tx.delete(boardFieldRows).where(eq(boardFieldRows.boardId, boardId))
   const rows = list.slice(0, FIELD_LIMITS.perBoard)
   let front = 0
+  let total = 0
   if (rows.length)
-    await tx
-      .insert(boardFieldRows)
-      .values(rows.map((x, position) => ({ boardId, fieldId: x.id, position, front: !!x.front && ++front <= FIELD_LIMITS.front })))
+    await tx.insert(boardFieldRows).values(
+      rows.map((x, position) => ({
+        boardId,
+        fieldId: x.id,
+        position,
+        front: !!x.front && ++front <= FIELD_LIMITS.front,
+        total: !!x.total && ++total <= FIELD_LIMITS.totals,
+      })),
+    )
 }
 
 /**
@@ -462,7 +477,7 @@ export async function moveBoardFields(app: FastifyInstance, tx: Tx, board: Board
   await replaceBoardFields(
     tx,
     board.id,
-    data.fields.flatMap((f) => (plan.map.has(f.id) ? [{ id: plan.map.get(f.id)!.id, front: f.front }] : [])),
+    data.fields.flatMap((f) => (plan.map.has(f.id) ? [{ id: plan.map.get(f.id)!.id, front: f.front, total: f.total }] : [])),
   )
   return touched
 }

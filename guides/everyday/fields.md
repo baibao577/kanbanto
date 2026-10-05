@@ -43,6 +43,7 @@ Here the board's owners also:
 
 - put the fields in order, with the arrows,
 - switch **On cards** on for up to three of them, so their values show on the board,
+- switch **Total in lists** on for up to three numbers that add up, so each list says what its cards come to,
 - take a field off the board again, under **⋯**.
 
 A board can use up to 20 fields. Every card on it gets them, subtasks too.
@@ -51,11 +52,54 @@ A board can use up to 20 fields. Every card on it gets them, subtasks too.
 
 Open a card. The board's fields are in the side column, under the dates. Click one and type, pick, or switch it on.
 
-Fields switched **On cards** show on the board once a card has a value:
+Fields switched **On cards** show on the board once a card has a value. A number with **Total in lists** on is
+added up under each list's name:
 
-![Cards showing a stage and an amount](/images/fields-4-front.webp)
+![Cards showing a stage and an amount, and each list's total](/images/fields-4-front.webp)
 
 Anyone who can edit the board can fill fields in. Viewers see them.
+
+## Work on many cards at once: the Outline
+
+In the [Outline](/views/outline), every field of the board is a column.
+
+![The Outline with a column for each field, and a row of totals](/images/fields-5-outline.webp)
+
+- **Change a value** right in the table: click the cell and type, pick, or tick. No need to open the card.
+- **Sort** by a field: click its heading. Click again for the other way round. Cards without a value come last.
+- **Hide** columns you don't need: **Display**, then untick them, or switch **Fields** off to hide them all.
+
+## Filter by a field
+
+Click **Filter**, go down to **Fields**, and pick the field.
+
+![Filtering by a stage and an amount](/images/fields-6-filter.webp){.medium}
+
+| Kind | You can ask for |
+|---|---|
+| **Choice** | Any of the options you tick, or **None picked** |
+| **Checkbox** | **Yes** or **No** |
+| **Number** | **From** an amount, **to** an amount, or both. Or **No number** |
+| **Date** | In the **past**, in the **next 7 days**, or **No date** |
+| **Text** | **Filled in** or **Empty** |
+
+Filters work in all three views, and a [preset](/everyday/search-and-filters#presets-save-a-combination) remembers
+them, along with the Outline's columns.
+
+To look through **every board** at once, open [Search cards](/everyday/search-and-filters#search-cards-every-board-at-once),
+then **More → Field**. Each card then shows its value, and you can narrow the list to the ones you want.
+
+## Totals
+
+A number field can be one that **adds up** (an amount, hours). Switch that on when you make the field.
+
+- **In the Outline**, the bottom row adds up everything shown. A filter or a search changes it with the rows.
+- **A task with subtasks** shows what they come to together, marked **Σ**. Its card says the same: "$12,000 with
+  subtasks".
+- **On the Board**, with **Total in lists** on (Board settings → Fields), each list says what its cards come to.
+
+Each number is counted once, on the card it's written on. So write an amount on a task *or* on its subtasks, not on
+both: the task's total would count it twice.
 
 ## Stop using a field
 
@@ -83,7 +127,11 @@ any more. Delete an archived option and it is cleared from those cards.
 - A name can be used once among your fields (or a workspace's), and can't be something every card already has, like
   Due or Status.
 - There can be 50 fields in one place, plus archived ones.
-- Your assistant can read and fill in fields: "Set the stage of Website redesign to Won."
+- **A list's total counts its cards.** When subtasks are grouped under their parent on the Board, the parent is a
+  heading, not a card, so a number written on it isn't in a list's total. The Outline counts it. To count it on the
+  Board too, choose **Display → Show → Only projects**: each card then counts with its subtasks.
+- Your assistant can read and fill in fields, and find cards by them: "Set the stage of Website redesign to Won",
+  "Which cards are at the proposal stage?"
 
 ## Next
 

@@ -15,6 +15,9 @@ describe('the Search cards page', () => {
     expect(picked.get('to')).toBe(new Date(2026, 7, 1).toISOString())
     expect([picked.get('completed'), picked.get('parents'), picked.get('offset')]).toEqual(['false', 'hide', '50'])
     expect(cardsQuery({ state: 'active' })).toBe('state=active')
+    // One of the boards' own fields, and what it has to be.
+    expect(cardsQuery({ state: 'active', field: 'f1', fv: '10..200' })).toBe('state=active&field=f1&fv=10..200')
+    expect(cardsQuery({ state: 'active', fv: 'yes' })).toBe('state=active')
   })
 
   it('knows a quick search whatever board or words it has, and when anything is narrowing it', () => {
@@ -25,6 +28,8 @@ describe('the Search cards page', () => {
     expect(quickOf({ state: 'active', assignee: 'me' })).toBeUndefined()
     expect(isFiltered({ state: 'active', board: 'b1', q: 'logo' })).toBe(false)
     expect(isFiltered({ state: 'all' })).toBe(true)
+    expect(isFiltered({ state: 'active', field: 'f1', fv: 'yes' })).toBe(true)
+    expect(quickOf({ state: 'active', assignee: 'me', completed: false, field: 'f1' })).toBeUndefined()
   })
 
   it('status is one choice over done-or-not and kinds of list', () => {

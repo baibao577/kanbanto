@@ -70,7 +70,9 @@ Without MCP, use the REST API (see "REST fallback" below).
   lists them with their types and a choice's options; tasks show their values under `fields`, by name. Set them with
   `create_tasks` or `update_task`: `fields: {"Stage": "Won", "Value": 12000, "Signed": true}` (a choice takes an
   option's name, a date looks like `due`, `null` clears one; fields left out stay as they are). Use only fields the
-  board has: adding or changing the fields themselves is done by people in the app.
+  board has: adding or changing the fields themselves is done by people in the app. `find_tasks` finds by them too:
+  `fields: {"Stage": "Won"}` (`null`: tasks with nothing for the field), across every board that has the field. For a
+  range ("deals over 10,000"), find without it and compare the values in the results.
 - **Comments:** `add_comment`; write `@Name` to notify someone on the board. Use comments to explain changes you made
   on the user's behalf when that helps their team.
 - **Setting up a board:** `create_board` (with `about`, in Personal or a workspace), then `manage_lists` for its

@@ -35,33 +35,98 @@ export function FieldChip({ field, value }: { field: BoardField; value: FieldVal
 }
 
 /**
- * A card's value for one of the board's fields, edited in place in the card's side column. `onChange(null)` clears
- * it. Inside a disabled fieldset (a viewer's card) everything here is read-only without being told.
+ * A card's value for one of the board's fields, edited in place: in the card's side column, or (`cell`) in a cell of
+ * the Outline, where an empty value is simply blank. `onChange(null)` clears it. `placeholder`: what an empty text or
+ * number box says instead (a parent's total, in the Outline). Inside a disabled fieldset (a viewer's card) everything
+ * here is read-only without being told.
  */
 export function FieldValueEditor({
   field,
   value,
   onChange,
+  cell,
+  placeholder,
 }: {
   field: BoardField
   value: FieldValue | undefined
   onChange: (v: FieldValue | null) => void
+  cell?: boolean
+  placeholder?: string
 }) {
   if (field.type === 'date')
-    return <DateField value={typeof value === 'string' ? value : undefined} placeholder="Add a date" onChange={(v) => onChange(v ?? null)} />
-  if (field.type === 'checkbox')
     return (
+      <DateField
+        value={typeof value === 'string' ? value : undefined}
+        placeholder={cell ? '' : 'Add a date'}
+        bare={cell}
+        onChange={(v) => onChange(v ?? null)}
+      />
+    )
+  if (field.type === 'checkbox')
+    return cell ? (
+      // (A plain button that looks like the app's checkbox: a table has thousands of these, and that one is heavy.)
+      <button
+        type="button"
+        role="checkbox"
+        aria-checked={!!value}
+        aria-label={field.name}
+        onClick={() => onChange(value ? null : true)}
+        className={cn(
+          'mx-2 grid size-4 shrink-0 place-content-center rounded-[4px] border border-input shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 dark:bg-input/30',
+          !!value && 'border-primary bg-primary text-primary-foreground dark:bg-primary',
+        )}
+      >
+        {!!value && <Check className="size-3.5" />}
+      </button>
+    ) : (
       <label className="flex h-8 items-center justify-between gap-2 px-2 text-sm">
         <span className={cn(!value && 'text-muted-foreground')}>{value ? 'Yes' : 'No'}</span>
         <Switch checked={!!value} onCheckedChange={(on) => onChange(on || null)} aria-label={field.name} />
       </label>
     )
-  if (field.type === 'choice') return <ChoiceValue field={field} value={value} onChange={onChange} />
-  return <TypedValue field={field} value={typeof value === 'string' || typeof value === 'number' ? value : undefined} onChange={onChange} />
+  if (field.type === 'choice') return <ChoiceValue field={field} value={value} onChange={onChange} cell={cell} />
+  return (
+    <TypedValue
+      field={field}
+      value={typeof value === 'string' || typeof value === 'number' ? value : undefined}
+      onChange={onChange}
+      placeholder={placeholder ?? (cell ? '' : undefined)}
+    />
+  )
+}
+
+/** A card's value for a field, just shown (a viewer's Outline): nothing when there's none. */
+export function FieldValueText({ field, value }: { field: BoardField; value: FieldValue | undefined }) {
+  if (value === undefined) return null
+  if (field.type === 'choice') {
+    const [option] = optionsOf(field, value)
+    return option ? <LabelChip label={option} className={cn('min-w-0', option.archived && 'opacity-60')} /> : null
+  }
+  if (field.type === 'checkbox') return <CheckSquare weight="fill" className="mx-2 size-4 text-status-done" aria-label="Yes" />
+  const text = field.type === 'number' ? numberText(field, value as number) : field.type === 'date' ? formatDay(String(value)) : String(value)
+  const href = field.type === 'text' ? linkOf(field, text) : null
+  return href ? (
+    <a href={href} target="_blank" rel="noreferrer noopener" className="truncate px-2 text-sm text-primary hover:underline">
+      {text}
+    </a>
+  ) : (
+    <span className={cn('truncate px-2 text-sm', field.type === 'number' && 'tabular-nums')}>{text}</span>
+  )
 }
 
 /** Text or a number: typed in place, saved on leaving the box or Enter. A number shows with its unit until you edit it. */
-function TypedValue({ field, value, onChange }: { field: BoardField; value: string | number | undefined; onChange: (v: FieldValue | null) => void }) {
+function TypedValue({
+  field,
+  value,
+  onChange,
+  placeholder,
+}: {
+  field: BoardField
+  value: string | number | undefined
+  onChange: (v: FieldValue | null) => void
+  /** Instead of "Add text…": '' in a table cell, or a parent's total. */
+  placeholder?: string
+}) {
   const number = field.type === 'number'
   const raw = value === undefined ? '' : String(value)
   const shown = value === undefined ? '' : number ? numberText(field, value as number) : raw
@@ -97,7 +162,8 @@ function TypedValue({ field, value, onChange }: { field: BoardField; value: stri
           number ? 'decimal' : field.format === 'email' ? 'email' : field.format === 'phone' ? 'tel' : field.format === 'link' ? 'url' : undefined
         }
         placeholder={
-          number
+          placeholder ??
+          (number
             ? 'Add a number'
             : field.format === 'link'
               ? 'Add a link'
@@ -105,7 +171,7 @@ function TypedValue({ field, value, onChange }: { field: BoardField; value: stri
                 ? 'Add an email'
                 : field.format === 'phone'
                   ? 'Add a number'
-                  : 'Add text'
+                  : 'Add text')
         }
         onFocus={(e) => {
           setEditing(true)
@@ -137,19 +203,48 @@ function TypedValue({ field, value, onChange }: { field: BoardField; value: stri
 }
 
 /** One of a choice field's options. An option that's been archived shows on the card that has it, and can't be picked. */
-function ChoiceValue({ field, value, onChange }: { field: BoardField; value: FieldValue | undefined; onChange: (v: FieldValue | null) => void }) {
+function ChoiceValue({
+  field,
+  value,
+  onChange,
+  cell,
+}: {
+  field: BoardField
+  value: FieldValue | undefined
+  onChange: (v: FieldValue | null) => void
+  cell?: boolean
+}) {
   const [open, setOpen] = useState(false)
+  // In a table cell, the menu is only built once it's first opened: a table has thousands of these.
+  const [built, setBuilt] = useState(!cell)
   const [current] = optionsOf(field, value)
   const options = (field.options ?? []).filter((o) => !o.archived)
   const choose = (id: string | null) => {
     setOpen(false)
     if ((current?.id ?? null) !== id) onChange(id ? [id] : null)
   }
+  const label = `${field.name}: ${current?.name ?? 'none'}`
+  const shown = current ? <LabelChip label={current} className={cn('min-w-0', current.archived && 'opacity-60')} /> : cell ? '' : 'None'
+  if (!built)
+    return (
+      <FieldButton
+        empty={!current}
+        type="button"
+        aria-haspopup="dialog"
+        aria-label={label}
+        onClick={() => {
+          setBuilt(true)
+          setOpen(true)
+        }}
+      >
+        {shown}
+      </FieldButton>
+    )
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <FieldButton empty={!current} type="button" aria-label={`${field.name}: ${current?.name ?? 'none'}`}>
-          {current ? <LabelChip label={current} className={cn(current.archived && 'opacity-60')} /> : 'None'}
+        <FieldButton empty={!current} type="button" aria-label={label}>
+          {shown}
         </FieldButton>
       </PopoverTrigger>
       <PopoverContent align="start" className="w-60 p-1">

@@ -23,7 +23,10 @@ then `git pull` (or download the new release) and `docker compose up -d --build`
   (its admins) or your own for Personal boards, and each board's owners pick the ones it uses, their order, and up to
   three that show on the card front. Taking a field off a board, or archiving it, keeps its values; deleting an
   archived field for good removes them. Values go along when a card or a board moves, where the other side has a
-  field for them, and with an exported board. Assistants read and set them by name.
+  field for them, and with an exported board. In the Outline each field is a column: sort by it, change values in
+  place, hide the ones you don't need. Filter by a field in every view (saved presets keep it), and in Search cards
+  across boards. Numbers that add up are totalled: in the Outline's bottom row and for a task with its subtasks, and
+  under each list on the Board for the fields its owners choose. Assistants read, set and find by them, by name.
 - **Following cards:** you're told about new comments and what happens to the cards you're part of (moved to another
   list, assigned, due date, description, archived or deleted): the ones you made, are assigned, commented on or were
   mentioned on, which includes being told when a card is given to you. Follow or unfollow any card from its side

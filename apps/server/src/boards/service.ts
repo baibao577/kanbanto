@@ -107,7 +107,7 @@ export async function importBoard(app: FastifyInstance, ownerId: string, data: B
     await replaceBoardFields(
       tx,
       id,
-      data.fields.flatMap((f) => (plan.map.has(f.id) ? [{ id: plan.map.get(f.id)!.id, front: f.front }] : [])),
+      data.fields.flatMap((f) => (plan.map.has(f.id) ? [{ id: plan.map.get(f.id)!.id, front: f.front, total: f.total }] : [])),
     )
     return plan.lose
   })

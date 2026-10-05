@@ -1,5 +1,5 @@
 import type { ColorName } from './colors'
-import { normalizeTaskDate, sortTime } from './dates'
+import { normalizeTaskDate, sortTime, toDay } from './dates'
 
 /**
  * Custom fields: what a space's library defines, what a board uses, and what a card holds.
@@ -48,10 +48,20 @@ export interface FieldDef extends FieldSettings {
   type: FieldType
 }
 
-/** A field a board uses, in the board's order. `front`: shown on the card front too. */
+/**
+ * A field a board uses, in the board's order. `front`: shown on the card front too. `total`: a number that adds up,
+ * whose total shows under each list's name on the Board.
+ */
 export interface BoardField extends FieldDef {
   front?: boolean
+  total?: boolean
 }
+
+/** A field's column in the Outline, and what it's sorted by: "f:" and the field's id. */
+export type FieldKey = `f:${string}`
+export const fieldKey = (id: string): FieldKey => `f:${id}`
+export const isFieldKey = (key: string): key is FieldKey => key.startsWith('f:')
+export const fieldIdOf = (key: FieldKey) => key.slice(2)
 
 /**
  * What a card holds for a field: text, a number, a date (a day or a moment, like `due`), true for a ticked checkbox,
@@ -66,6 +76,8 @@ export const FIELD_LIMITS = {
   archived: 100,
   perBoard: 20,
   front: 3,
+  /** Fields whose total shows under a list's name. */
+  totals: 3,
   options: 50,
   name: 60,
   unit: 8,
@@ -235,8 +247,11 @@ export function compareValues(def: FieldDef, a: FieldValue | undefined, b: Field
     case 'date':
       return sortTime(a as string) - sortTime(b as string)
     case 'choice': {
+      // By the options' order. An option that's gone is like no option at all: last.
       const at = (v: FieldValue) => (def.options ?? []).findIndex((o) => Array.isArray(v) && v.includes(o.id))
-      return at(a) - at(b)
+      const [ia, ib] = [at(a), at(b)]
+      if (ia < 0 || ib < 0) return ia === ib ? 0 : ia < 0 ? 1 : -1
+      return ia - ib
     }
     case 'checkbox':
       return 0
@@ -405,4 +420,165 @@ export function planAdoption(library: LibraryField[], incoming: FieldDef[], opts
     plan.map.set(f.id, { id: added.id })
   }
   return plan
+}
+
+// ── Filtering by a field ───────────────────────────────────────────────────────
+
+/**
+ * What a card's value for a field has to be to pass a filter. Each kind of field uses the parts that mean something
+ * for it (see `tidyFilter`): a choice `in`, a checkbox `checked`, a number `min` / `max` / `has`, a date `date` /
+ * `has`, text `has`.
+ */
+export interface FieldFilter {
+  /** Any of these options; '' is "none picked". */
+  in?: string[]
+  /** Ticked, or not. */
+  checked?: boolean
+  /** At least, and at most. */
+  min?: number
+  max?: number
+  /** In the past, in the next 7 days, or no date. */
+  date?: 'past' | 'week' | 'none'
+  /** Has a value, or doesn't. */
+  has?: boolean
+}
+
+/** The parts of a filter each kind of field uses. */
+const FILTER_PARTS: Record<FieldType, (keyof FieldFilter)[]> = {
+  text: ['has'],
+  number: ['min', 'max', 'has'],
+  date: ['date', 'has'],
+  choice: ['in'],
+  checkbox: ['checked'],
+}
+
+/** Does a card's value for a field pass? `today`: the day it is, as a day number (see dates.ts), for date filters. */
+export function fieldMatches(def: FieldDef, value: FieldValue | undefined, f: FieldFilter, today: number): boolean {
+  const asks = (part: keyof FieldFilter) => FILTER_PARTS[def.type].includes(part) && f[part] !== undefined
+  if (asks('has') && (value !== undefined) !== f.has) return false
+  if (asks('checked') && (value === true) !== f.checked) return false
+  if (asks('in')) {
+    const picked = optionsOf(def, value).map((o) => o.id)
+    if (!(picked.length ? picked.some((id) => f.in!.includes(id)) : f.in!.includes(''))) return false
+  }
+  if (asks('min') && !(typeof value === 'number' && value >= f.min!)) return false
+  if (asks('max') && !(typeof value === 'number' && value <= f.max!)) return false
+  if (asks('date')) {
+    if (f.date === 'none') return value === undefined
+    const days = typeof value === 'string' ? toDay(value) - today : NaN
+    if (f.date === 'past' && !(days < 0)) return false
+    if (f.date === 'week' && !(days >= 0 && days <= 7)) return false
+  }
+  return true
+}
+
+/**
+ * A filter kept to what its field can use now: the parts for its kind, and options that still exist. Undefined when
+ * nothing is left. The same object comes back when nothing had to go.
+ */
+export function tidyFilter(def: FieldDef, f: FieldFilter): FieldFilter | undefined {
+  const out: FieldFilter = {}
+  for (const part of FILTER_PARTS[def.type]) {
+    if (f[part] === undefined) continue
+    if (part === 'in') {
+      const known = f.in!.filter((id) => id === '' || (def.options ?? []).some((o) => o.id === id))
+      if (known.length) out.in = known.length === f.in!.length ? f.in : known
+    } else Object.assign(out, { [part]: f[part] })
+  }
+  const keys = Object.keys(out) as (keyof FieldFilter)[]
+  if (!keys.length) return undefined
+  return keys.length === Object.keys(f).filter((k) => f[k as keyof FieldFilter] !== undefined).length && keys.every((k) => out[k] === f[k]) ? f : out
+}
+
+/** A filter in words, to follow the field's name: "Won, Lead", "yes", "from 1,000 to 5,000", "in the past". */
+export function filterText(def: FieldDef, f: FieldFilter): string {
+  const parts: string[] = []
+  if (f.in)
+    parts.push(
+      f.in
+        .map((id) => (id ? (def.options ?? []).find((o) => o.id === id)?.name : 'none'))
+        .filter(Boolean)
+        .join(', '),
+    )
+  if (f.checked !== undefined) parts.push(f.checked ? 'yes' : 'no')
+  const n = (x: number) => numberText(def, x)
+  if (f.min !== undefined && f.max !== undefined) parts.push(`${n(f.min)} to ${n(f.max)}`)
+  else if (f.min !== undefined) parts.push(`${n(f.min)} or more`)
+  else if (f.max !== undefined) parts.push(`${n(f.max)} or less`)
+  if (f.date) parts.push({ past: 'in the past', week: 'in the next 7 days', none: 'no date' }[f.date])
+  if (f.has !== undefined) parts.push(f.has ? 'has a value' : 'empty')
+  return parts.join(', ')
+}
+
+/**
+ * A filter as text, for an address (the Search cards page): option ids with commas ("-" for none picked), "yes" or
+ * "no", "any" or "none" (has a value or not), "past" or "week", and for numbers "10..200", "10.." or "..200".
+ */
+export function filterToText(def: FieldDef, f: FieldFilter): string {
+  if (def.type === 'choice') return (f.in ?? []).map((id) => id || '-').join(',')
+  if (def.type === 'checkbox') return f.checked === undefined ? '' : f.checked ? 'yes' : 'no'
+  if (f.has !== undefined) return f.has ? 'any' : 'none'
+  if (def.type === 'date') return f.date ?? ''
+  if (f.min !== undefined || f.max !== undefined) return `${f.min ?? ''}..${f.max ?? ''}`
+  return ''
+}
+
+/** Reads `filterToText` back. Undefined when the text says nothing this kind of field understands. */
+export function filterFromText(def: FieldDef, text: string): FieldFilter | undefined {
+  const t = text.trim()
+  if (!t) return undefined
+  let f: FieldFilter = {}
+  if (def.type === 'choice') f = { in: [...new Set(t.split(',').map((id) => (id === '-' ? '' : id)))] }
+  else if (def.type === 'checkbox') f = t === 'yes' ? { checked: true } : t === 'no' ? { checked: false } : {}
+  else if (t === 'any' || t === 'none') f = { has: t === 'any' }
+  else if (def.type === 'date') f = t === 'past' || t === 'week' ? { date: t } : {}
+  else if (def.type === 'number' && t.includes('..')) {
+    const [min, max] = t.split('..').map((x) => (x === '' ? undefined : Number(x)))
+    f = { ...(min !== undefined && Number.isFinite(min) && { min }), ...(max !== undefined && Number.isFinite(max) && { max }) }
+  }
+  return tidyFilter(def, f)
+}
+
+/**
+ * What an assistant says a field should be, when looking for cards: a value as people write it (an option's name,
+ * "yes", a number as text), or null for "empty". Unlike setting a value, finding one is forgiving: text in any case,
+ * an archived option by its name, a day for a date that has a time. Returns the test, or why it can't be read.
+ */
+export function saidFilter(
+  def: FieldDef,
+  said: string | number | boolean | null,
+): { test: (value: FieldValue | undefined) => boolean } | { error: string } {
+  if (said === null || said === '') return { test: (v) => v === undefined }
+  switch (def.type) {
+    case 'text': {
+      const key = String(said).trim().toLowerCase()
+      return { test: (v) => typeof v === 'string' && v.trim().toLowerCase() === key }
+    }
+    case 'number': {
+      const n = typeof said === 'number' ? said : Number(String(said).replace(/[,\s]/g, ''))
+      if (!Number.isFinite(n)) return { error: `${def.name}: that isn’t a number.` }
+      return { test: (v) => v === n }
+    }
+    case 'date': {
+      const day = normalizeTaskDate(String(said))
+      if (!day) return { error: `${def.name}: ${DATE_HINT}` }
+      // A whole day finds what falls on it, with or without a time.
+      return { test: (v) => typeof v === 'string' && (v === day || (day.length === 10 && v.slice(0, 10) === day)) }
+    }
+    case 'choice': {
+      const key = nameKey(String(said))
+      const hit = (def.options ?? []).find((o) => o.id === said) ?? (def.options ?? []).find((o) => nameKey(o.name) === key)
+      if (!hit)
+        return {
+          error: `There’s no option “${said}” for ${def.name}. The options are: ${(def.options ?? []).map((o) => o.name).join(', ') || 'none yet'}.`,
+        }
+      return { test: (v) => Array.isArray(v) && v.includes(hit.id) }
+    }
+    case 'checkbox': {
+      const key = typeof said === 'boolean' ? (said ? 'yes' : 'no') : String(said).trim().toLowerCase()
+      if (['yes', 'true', 'on', '1'].includes(key)) return { test: (v) => v === true }
+      if (['no', 'false', 'off', '0'].includes(key)) return { test: (v) => v === undefined }
+      return { error: `${def.name}: that’s either yes or no.` }
+    }
+  }
 }

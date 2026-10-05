@@ -4,6 +4,7 @@ import { COLORS, isBackground, type BoardBackground, type ColorName } from './co
 import type { Command } from './commands'
 import { FIELD_LIMITS, FIELD_TYPES, TEXT_FORMATS } from './fields'
 import { isPosition } from './position'
+import { BUILT_IN_SORT_KEYS, OUTLINE_COLUMNS } from './table'
 import { CATEGORIES, LAYOUTS, LIST_ORDERS, PRIORITIES } from './types'
 
 /**
@@ -117,6 +118,7 @@ export const BoardFieldSchema = FieldSettingsSchema.extend({
   name: plain(FIELD_LIMITS.name),
   type: z.enum(FIELD_TYPES),
   front: z.boolean().optional(),
+  total: z.boolean().optional(),
 })
 
 export const BoardSchema = z.object({
@@ -250,14 +252,34 @@ const viewConfig = z.object({
   listOrder: z.record(z.string(), z.enum(LIST_ORDERS)).optional().catch(undefined),
 })
 
+/**
+ * One of the board's own fields as a column or a sort key: "f:" and its id. Only the shape is checked: whether the
+ * field is still on the board is for `cleanPrefs`, like a filter by a list that's gone.
+ */
+const fieldKey = z.templateLiteral(['f:', z.string()]).refine((k) => k.length > 2 && k.length <= 110, 'Not a field.')
+/** What a field's value has to be to pass a filter (see FieldFilter). */
+const fieldFilter = z.object({
+  in: z
+    .array(z.string().max(100))
+    .max(FIELD_LIMITS.options * 2 + 1)
+    .optional(),
+  checked: z.boolean().optional(),
+  min: z.number().optional(),
+  max: z.number().optional(),
+  date: z.enum(['past', 'week', 'none']).optional(),
+  has: z.boolean().optional(),
+})
+
 /** A board preset's settings (see PresetSettings): filters, and how the Board and Outline look. */
 export const PresetSettingsSchema = z.object({
   display: z.object({ board: viewConfig }),
   outline: z.object({
-    sort: z
-      .object({ key: z.enum(['title', 'status', 'progress', 'assignee', 'priority', 'start', 'due', 'labels']), dir: z.enum(['asc', 'desc']) })
+    sort: z.object({ key: z.union([z.enum(BUILT_IN_SORT_KEYS), fieldKey]), dir: z.enum(['asc', 'desc']) }).optional(),
+    hidden: z
+      .array(z.union([z.enum(OUTLINE_COLUMNS), fieldKey]))
+      .max(100)
       .optional(),
-    hidden: z.array(z.enum(['status', 'progress', 'assignee', 'priority', 'start', 'due', 'labels'])).optional(),
+    hideFields: z.boolean().optional(),
     density: z.enum(['comfortable', 'compact']).optional(),
     hideDone: z.boolean().optional(),
   }),
@@ -269,6 +291,7 @@ export const PresetSettingsSchema = z.object({
     due: z.enum(['overdue', 'week', 'none']).optional(),
     changed: z.number().int().min(1).max(3650).optional(),
     idle: z.number().int().min(1).max(3650).optional(),
+    fields: z.record(recordId, fieldFilter).optional(),
   }),
 })
 

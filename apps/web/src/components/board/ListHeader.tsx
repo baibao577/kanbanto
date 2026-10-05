@@ -256,16 +256,18 @@ export function ListHeader({ col, count, editing, setEditing, onArchiveOlder, cl
 
 /**
  * A folded list: a narrow strip with what it counts as, how many cards and (given the height, `tall`) its name. Click
- * to open it again; it can still be dragged to another place, and cards can be dropped on it (`dropping`).
+ * to open it again; it can still be dragged to another place, and cards can be dropped on it (`dropping`). `totals`:
+ * what its cards add up to, a line per field, said with the count when you point at it.
  */
 export function CollapsedList({
   col,
   count,
+  totals,
   tall,
   dropping,
   className,
   ...rest
-}: { col: StatusColumn; count: number; tall?: boolean; dropping?: 'ok' | 'blocked' } & React.ComponentProps<'button'>) {
+}: { col: StatusColumn; count: number; totals?: string; tall?: boolean; dropping?: 'ok' | 'blocked' } & React.ComponentProps<'button'>) {
   const { prefs, setPrefs, readOnly } = useBoard()
   return (
     <button
@@ -274,7 +276,7 @@ export function CollapsedList({
       data-drag={readOnly ? undefined : 'list'}
       aria-label={`Expand ${col.name}`}
       aria-expanded={false}
-      title={`${col.name} · ${count} ${count === 1 ? 'card' : 'cards'}\nClick to expand`}
+      title={`${col.name} · ${count} ${count === 1 ? 'card' : 'cards'}${totals ? `\n${totals}` : ''}\nClick to expand`}
       onClick={() => setPrefs({ type: 'setDisplay', config: withListCollapsed(prefs.display.board, col.id, false) })}
       className={cn(
         'drag-handle flex w-10 shrink-0 cursor-pointer items-center rounded-xl bg-lane text-sm font-semibold transition-[opacity,box-shadow] hover:bg-lane-hover',

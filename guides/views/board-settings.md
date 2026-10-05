@@ -20,7 +20,8 @@ Changes are saved as you make them.
     one of them starts.
   - **Is set by you:** it stays wherever you put it.
 
-**Fields.** The board's own fields: which ones it uses, their order, and which show on cards. See
+**Fields.** The board's own fields: which ones it uses, their order, which show on cards, and which are added up
+under each list. See
 [your own fields](/everyday/fields).
 
 **Background.** One of 12 colors, 12 designs, or your own: pick any hue and a light, medium or deep shade.

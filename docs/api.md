@@ -66,6 +66,10 @@ curl -X POST https://kanbanto.example.com/api/boards/<board id>/mutations \
   `kind`, `priority`, `label`, `due`, and a time range (`from`, `to`) about one of a card's dates (`when=done`,
   `created`, `changed` or `archived`). What I finished this week: `?state=all&assignee=me&when=done&from=2026-09-28`.
   Without `state`, only archived cards are searched. A task's `doneAt` is when it entered a done list.
+  By one of your own fields: `field=<field id>` makes each card say what it has for it, and `fv` keeps the cards whose
+  value passes, on the boards that use the field: a choice's option ids with commas (`-` for none picked), `yes` or
+  `no` for a checkbox, `any` or `none` (has a value or not) for the rest, a date also `past` or `week`, a number also
+  a range like `1000..5000`. The first page lists the `fields` of the boards searched.
 
 `GET /api/boards/<id>` returns the whole board: its lists, labels, people and the tasks on it (a task's `status` is
 its list's id; `parentId` makes the tree; `priority` is `urgent`, `high`, `medium` or `low`). Its archived tasks come
@@ -169,7 +173,7 @@ claude mcp add --transport http kanbanto https://kanbanto.example.com/api/mcp --
 |---|---|
 | `list_boards` | Who you act as (name, time zone, today's date there) and the boards you can open: where each lives (a workspace, "Personal" or "Shared with you"), what it's for, and which is your Inbox |
 | `get_board` | A board's lists, labels, people and its open tasks: the top levels (subtasks under their task), the part under one task, or one list's cards (`tasks: false` for just the lists, labels and people), and its own fields with their types and options. Top-level tasks come list by list, each list in the order made by hand (`order: outline` for the outline's order) |
-| `find_tasks` | Search one board, one workspace or everything: text, list, kind of list (`counts_as: doing`: in progress on every board, whatever the list is called), label, assignee (`me`, `nobody`), priority, blocked, due, created, last worked on, done or archived between two times; sorted and paged. Without a `sort`, results come list by list, each list in the order its cards were put in by hand, so one list reads top to bottom as on the board. Asking by when tasks got done also finds the ones archived since. `worked_after` / `worked_before`: what was worked on in a stretch of time (made or changed then), each result saying what happened |
+| `find_tasks` | Search one board, one workspace or everything: text, list, kind of list (`counts_as: doing`: in progress on every board, whatever the list is called), label, assignee (`me`, `nobody`), priority, blocked, the board's own fields by name (`fields: {"Stage": "Won", "Client": null}`; boards without the field are skipped), due, created, last worked on, done or archived between two times; sorted and paged. Without a `sort`, results come list by list, each list in the order its cards were put in by hand, so one list reads top to bottom as on the board. Asking by when tasks got done also finds the ones archived since. `worked_after` / `worked_before`: what was worked on in a stretch of time (made or changed then), each result saying what happened |
 | `team_overview` | How a board or workspace is doing: tasks per list, each person's open, overdue and blocked work, what needs attention, and the time each person logged on it this week |
 | `reminders` | Your reminders coming up in the next days, and the ones that went off in the last 24 hours |
 | `my_day` | What needs your attention across your boards, in one answer: your overdue tasks and the ones due today, what you have in progress, your tasks waiting on others, today's reminders, and comments that mention you and you haven't seen |

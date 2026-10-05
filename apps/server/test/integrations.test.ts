@@ -283,6 +283,36 @@ describe('MCP', () => {
     const deal = await tool('create_tasks', { board_id: id, tasks: [{ title: 'New deal', fields: { Stage: 'Lead' } }] })
     expect((await tool('get_task', { board_id: id, task_id: deal.created[0].id })).fields).toEqual({ Stage: 'Lead' })
 
+    // Finding tasks by a field, by name: on the boards that have it, the others are skipped.
+    const titles = (r: { tasks: { title: string }[] }) => r.tasks.map((x) => x.title).sort()
+    expect(titles(await tool('find_tasks', { fields: { stage: 'WON' } }))).toEqual(['Logo'])
+    expect(titles(await tool('find_tasks', { board_id: id, fields: { Stage: 'Lead' } }))).toEqual(['New deal'])
+    await tool('update_task', { board_id: id, task_id: logo, fields: { Value: 12000 } })
+    expect(titles(await tool('find_tasks', { fields: { Stage: 'Won', Value: '12,000' } }))).toEqual(['Logo'])
+    expect((await tool('find_tasks', { fields: { Stage: 'Won', Value: 5 } })).tasks).toEqual([])
+    // null: nothing for the field. Only this board is looked at, since only it has the field.
+    const other = await ann.ok('POST', '/api/boards', { name: 'No fields here' })
+    await ann.ok('POST', `/api/boards/${other.id}/mutations`, {
+      mutationId: mid(),
+      command: { type: 'task.create', id: 'n1', parentId: null, fields: { title: 'Elsewhere' } },
+    })
+    const empty = await tool('find_tasks', { fields: { Stage: null } })
+    expect(empty.tasks.length).toBeGreaterThan(0)
+    expect(empty.tasks.every((x: { board_id: string; fields?: object }) => x.board_id === id && !(x.fields && 'Stage' in x.fields))).toBe(true)
+    // An archived task keeps its fields, and is found by them.
+    await tool('archive_task', { board_id: id, task_id: deal.created[0].id })
+    const put = await tool('find_tasks', { fields: { Stage: 'Lead' }, include_archived: true })
+    expect(put.tasks).toMatchObject([{ title: 'New deal', fields: { Stage: 'Lead' } }])
+    expect(put.tasks[0].archived).toBeTruthy()
+    // A value that can't be read, and a field no board has, say what there is.
+    expect((await tool('find_tasks', { fields: { Stage: 'Lost' } })).error).toMatch(/no option “Lost” for Stage. The options are: Lead, Won/)
+    expect((await tool('find_tasks', { fields: { Budget: 1 } })).error).toMatch(
+      /None of these boards has a field “Budget”. The fields there are: Stage, Value/,
+    )
+    expect((await tool('find_tasks', { board_id: other.id, fields: { Stage: 'Won' } })).error).toMatch(
+      /This board has no field “Stage”. There are no fields there/,
+    )
+
     const found = toolResult(await rpc(mcp, 'tools/call', { name: 'find_tasks', arguments: { text: 'logo' } }))
     expect(found.tasks.map((x: { title: string }) => x.title)).toEqual(['Logo'])
     const made = toolResult(

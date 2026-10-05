@@ -214,7 +214,7 @@ function run(data: BoardData, cmd: Command, ctx: Context): Change[] {
         for (const id of ids)
           if (ctx.idx.category.get(id) !== 'done' && (data.board.mode === 'manual' || isLeaf(ctx.idx, id)))
             tasks[id] = { ...tasks[id], status: ctx.idx.firstOf.done }
-        idx = buildIndex(tasks, data.board.mode, data.columns, data.members)
+        idx = buildIndex(tasks, data.board.mode, data.columns, data.members, data.fields)
       }
       for (const id of ids) putAway(id, tasks[id], statusCol(idx, id))
       break

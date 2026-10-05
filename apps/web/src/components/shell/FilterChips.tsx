@@ -5,18 +5,26 @@ import { filterChips, type TableFilter } from '@kanbanto/model/table'
 /** The active filters as removable chips; shown in the view bar on every tab. */
 export function FilterChips() {
   const { data, prefs, setPrefs } = useBoard()
-  const chips = filterChips(prefs.filter, data.columns, data.labels, data.members)
+  const chips = filterChips(prefs.filter, data.columns, data.labels, data.members, data.fields)
   if (!chips.length) return null
-  const remove = (key: keyof TableFilter) => setPrefs({ type: 'setFilter', filter: { ...prefs.filter, [key]: undefined } })
+  // A filter by one of the board's fields goes by itself; the rest of them stay.
+  const remove = (key: keyof TableFilter, field?: string) => {
+    const { [field ?? '']: _gone, ...left } = prefs.filter.fields ?? {}
+    const next = field && Object.keys(left).length ? left : undefined
+    setPrefs({ type: 'setFilter', filter: { ...prefs.filter, [key]: next } })
+  }
   return (
     <div className="flex flex-wrap items-center gap-1.5">
       {chips.map((c) => (
-        <span key={c.key} className="inline-flex h-7 items-center gap-1 rounded-full border bg-card pr-1 pl-3 text-xs">
+        <span
+          key={c.field ? `${c.key}:${c.field}` : c.key}
+          className="inline-flex h-7 items-center gap-1 rounded-full border bg-card pr-1 pl-3 text-xs"
+        >
           <span className="text-muted-foreground">{c.label}</span>
           <span className="font-medium">{c.value}</span>
           <button
             aria-label={`Remove “${c.label} ${c.value}”`}
-            onClick={() => remove(c.key)}
+            onClick={() => remove(c.key, c.field)}
             className="grid size-5 place-items-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground"
           >
             <X className="size-3" />

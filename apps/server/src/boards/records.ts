@@ -63,12 +63,14 @@ export const labelToRow = (boardId: string, l: LabelDef): Row<typeof labels> => 
 })
 
 /** A field as a board uses it: its definition, with what its type lets you set spread in. */
-export const fieldFromRow = (r: Row<typeof libraryFields>, front = false): BoardField => ({
+export const fieldFromRow = (r: Row<typeof libraryFields>, front = false, total = false): BoardField => ({
   id: r.id,
   name: r.name,
   type: r.type,
   ...r.settings,
   ...(front && { front }),
+  // (Only a number that still adds up: the library may have changed its mind since the board asked for a total.)
+  ...(total && r.type === 'number' && r.settings.sum && { total }),
 })
 
 /**

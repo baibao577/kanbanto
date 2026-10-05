@@ -46,6 +46,8 @@ describe('router', () => {
           sort: 'due',
         },
       ],
+      ['#/cards?field=f1&fv=o1%2C-', { page: 'cards', state: 'active', field: 'f1', fv: 'o1,-' }],
+      ['#/cards?field=f1', { page: 'cards', state: 'active', field: 'f1' }],
       ['#/verify/v_tok', { page: 'verify', token: 'v_tok' }],
       ['#/reset/r-tok', { page: 'reset', token: 'r-tok' }],
     ]
@@ -61,6 +63,8 @@ describe('router', () => {
       state: 'active',
       kinds: ['doing'],
     })
+    // What a field has to be means nothing without the field.
+    expect(parseRoute('#/cards?fv=yes')).toEqual({ page: 'cards', state: 'active' })
     // A named range wins over days.
     expect(parseRoute('#/cards?range=7d&from=2026-07-01')).toEqual({ page: 'cards', state: 'active', range: '7d' })
   })

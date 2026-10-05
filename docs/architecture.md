@@ -225,6 +225,13 @@ The app uses hash routing, so any static host or proxy works without rewrite rul
   field off a board (its row is kept, marked removed) or archiving it leaves the values in `tasks.custom`, and saving
   a card merges with what the row holds, so they're back when the field is. They are never sent to browsers,
   assistants, webhooks or exports. Deleting an archived field for good removes them from every card, then the field.
+- **Columns, filters and totals.** The index carries the board's definitions (`TaskIndex.fields`), so sorting and
+  filtering need nothing else. A field's column and sort key is `f:<field id>` (`model/table.ts`); a filter by a field
+  is a `FieldFilter` in `TableFilter.fields`, with one rule per kind (`fieldMatches`, `tidyFilter` in
+  `model/fields.ts`). View settings that point at a field that left the board are dropped by `cleanPrefs`, which gives
+  the same object back when nothing changed (it runs on every change). Totals have one rule (`model/totals.ts`): a
+  number counts once, on the card that holds it, and a card's total is its own plus its subtasks'. The Outline's cells
+  are memoised and build their menus only when opened, so a table of thousands stays quick.
 - **Fields travel by name and type.** A card moved to another board keeps a value where that board uses the same
   field, or one with the same name and type; the rest are dropped, and the move says which. A board moved to another
   space, or imported from a file, has its fields matched in the library it arrives in; the rest are added there if

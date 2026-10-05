@@ -1,9 +1,10 @@
 import { CalendarBlank, CaretDown, FunnelSimple } from '@phosphor-icons/react'
 import { lazy, Suspense, useState, type ReactNode } from 'react'
 import type { BoardSummary, WorkspaceSummary } from '@kanbanto/model/api'
+import { filterFromText, filterToText, type FieldDef, type FieldFilter } from '@kanbanto/model/fields'
 import { CARD_DATES, CARD_DATE_LABEL, CARD_RANGES, CARD_RANGE_LABEL, type CardState } from '@kanbanto/model/search'
 import { PRIORITIES, PRIORITY_LABEL, type Priority } from '@kanbanto/model/types'
-import { BoardDot, PriorityIcon } from '@/components/common/bits'
+import { BoardDot, LabelChip, PriorityIcon } from '@/components/common/bits'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
@@ -33,15 +34,20 @@ export function CardsFilters({
   workspaces,
   people,
   labels,
+  fields,
+  field,
   meId,
 }: {
   search: Search
   set: (patch: Partial<Search>) => void
   boards: BoardSummary[]
   workspaces: WorkspaceSummary[]
-  /** The people and label names of the boards searched (from the results). */
+  /** The people, label names and fields of the boards searched (from the results). */
   people: { id: string; name: string }[]
   labels: string[]
+  fields: FieldDef[]
+  /** The field picked, when it's known: it may not be on the boards searched now. */
+  field?: FieldDef
   meId: string
 }) {
   const open = boards.filter((b) => !b.archivedAt || b.id === search.board)
@@ -117,7 +123,7 @@ export function CardsFilters({
       </Select>
 
       <WhenMenu search={search} set={set} />
-      <MoreMenu search={search} set={set} labels={labels} />
+      <MoreMenu search={search} set={set} labels={labels} fields={fields} field={field} />
     </div>
   )
 }
@@ -201,9 +207,28 @@ const ARCHIVED: { state: CardState; label: string }[] = [
   { state: 'archived', label: 'Only' },
 ]
 
-/** The filters used less: archived cards, priority, label, due, leaving parents out, and only the cards you follow. */
-function MoreMenu({ search, set, labels }: { search: Search; set: (patch: Partial<Search>) => void; labels: string[] }) {
+/**
+ * The filters used less: archived cards, priority, label, due, one of the boards' own fields, leaving parents out,
+ * and only the cards you follow.
+ */
+function MoreMenu({
+  search,
+  set,
+  labels,
+  fields,
+  field,
+}: {
+  search: Search
+  set: (patch: Partial<Search>) => void
+  labels: string[]
+  fields: FieldDef[]
+  field?: FieldDef
+}) {
+  // A field picked on other boards than the ones now searched still shows as picked.
+  const picked = search.field ? (fields.find((f) => f.id === search.field) ?? field) : undefined
+  const choices = picked && !fields.includes(picked) ? [picked, ...fields] : fields
   const n =
+    (search.field ? 1 : 0) +
     (search.state !== 'active' ? 1 : 0) +
     (search.priorities?.length ? 1 : 0) +
     (search.label ? 1 : 0) +
@@ -300,6 +325,38 @@ function MoreMenu({ search, set, labels }: { search: Search; set: (patch: Partia
             </ToggleGroupItem>
           </ToggleGroup>
         </Part>
+        {(choices.length > 0 || search.field) && (
+          <Part title="Field">
+            <Select value={search.field ?? ANY} onValueChange={(v) => set({ field: v === ANY ? undefined : v, fv: undefined })}>
+              <SelectTrigger size="sm" className="w-full" aria-label="Field">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={ANY}>No field</SelectItem>
+                {choices.map((f) => (
+                  <SelectItem key={f.id} value={f.id}>
+                    {f.name}
+                  </SelectItem>
+                ))}
+                {search.field && !picked && <SelectItem value={search.field}>A field of other boards</SelectItem>}
+              </SelectContent>
+            </Select>
+            {picked && (
+              <>
+                <FieldTest
+                  field={picked}
+                  value={filterFromText(picked, search.fv ?? '') ?? {}}
+                  onChange={(f) => set({ fv: (f && filterToText(picked, f)) || undefined })}
+                />
+                <p className="pt-1 text-xs text-muted-foreground">
+                  {search.fv
+                    ? `Only on the boards that use ${picked.name}.`
+                    : `Each card says its ${picked.name}. Choose what it has to be to narrow the list.`}
+                </p>
+              </>
+            )}
+          </Part>
+        )}
         <div className="flex items-center justify-between gap-3 p-4">
           <label htmlFor="cards-leaves" className="cursor-pointer">
             <span className="block text-sm">Hide cards that have subtasks</span>
@@ -318,6 +375,56 @@ function MoreMenu({ search, set, labels }: { search: Search; set: (patch: Partia
         </div>
       </PopoverContent>
     </Popover>
+  )
+}
+
+/**
+ * What the picked field has to be: any of a choice's options (or none picked), yes or no for a checkbox, and for the
+ * other kinds whether it's filled in.
+ */
+function FieldTest({ field, value, onChange }: { field: FieldDef; value: FieldFilter; onChange: (next: FieldFilter | undefined) => void }) {
+  if (field.type === 'choice') {
+    const toggle = (id: string) => {
+      const next = value.in?.includes(id) ? value.in.filter((x) => x !== id) : [...(value.in ?? []), id]
+      onChange(next.length ? { in: next } : undefined)
+    }
+    return (
+      <div className="pt-1">
+        {(field.options ?? [])
+          .filter((o) => !o.archived || value.in?.includes(o.id))
+          .map((o) => (
+            <CheckRow key={o.id} checked={!!value.in?.includes(o.id)} onChange={() => toggle(o.id)}>
+              <LabelChip label={o} />
+            </CheckRow>
+          ))}
+        <CheckRow checked={!!value.in?.includes('')} onChange={() => toggle('')}>
+          <span className="text-muted-foreground">None picked</span>
+        </CheckRow>
+      </div>
+    )
+  }
+  const yesNo = field.type === 'checkbox'
+  const now = yesNo ? value.checked : value.has
+  return (
+    <ToggleGroup
+      type="single"
+      variant="outline"
+      size="sm"
+      value={now === undefined ? 'any' : now ? 'yes' : 'no'}
+      onValueChange={(v) => v && onChange(v === 'any' ? undefined : yesNo ? { checked: v === 'yes' } : { has: v === 'yes' })}
+      className="w-full pt-1"
+      aria-label={field.name}
+    >
+      <ToggleGroupItem value="any" className="flex-1 text-xs">
+        Any
+      </ToggleGroupItem>
+      <ToggleGroupItem value="yes" className="flex-1 text-xs">
+        {yesNo ? 'Yes' : 'Filled in'}
+      </ToggleGroupItem>
+      <ToggleGroupItem value="no" className="flex-1 text-xs">
+        {yesNo ? 'No' : 'Empty'}
+      </ToggleGroupItem>
+    </ToggleGroup>
   )
 }
 

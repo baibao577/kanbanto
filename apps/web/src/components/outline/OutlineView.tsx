@@ -12,10 +12,12 @@ import {
   Prohibit,
   X,
 } from '@phosphor-icons/react'
-import { useMemo, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useBoard } from '@/app/board-context'
 import { Avatar, DueChip, LabelChip, PriorityIcon, ProgressBar, StatusDot } from '@/components/common/bits'
+import { FieldChip } from '@/components/fields/FieldValue'
 import { useMediaQuery } from '@/lib/useMediaQuery'
+import { FieldCell } from './FieldCell'
 import { OutlineDisplayMenu } from './OutlineDisplayMenu'
 import { PRIORITY_LABEL } from '@kanbanto/model/types'
 import { Empty } from '@/components/common/Empty'
@@ -26,8 +28,10 @@ import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { formatDay } from '@/lib/format'
 import { cn } from '@/lib/utils'
+import { fieldIdOf, fieldKey, isFieldKey, numberText, type BoardField, type FieldType, type FieldValue } from '@kanbanto/model/fields'
 import { isBlocked, statusCol } from '@kanbanto/model/indexer'
-import { sortComparator, type OutlineColumn, type Sort, type SortKey } from '@kanbanto/model/table'
+import { sortComparator, type BuiltInSortKey, type Sort, type SortKey } from '@kanbanto/model/table'
+import { subtreeSums, sumOf } from '@kanbanto/model/totals'
 import { afterSubtree, defaultExpanded, flattenTree, treeTop } from '@kanbanto/model/tree'
 import { FilterMenu } from '@/components/shell/FilterMenu'
 import { PresetMenu } from '@/components/shell/PresetMenu'
@@ -40,9 +44,16 @@ const ROWS_STEP = 500
 
 /**
  * The table's columns. The task column takes the room that's left; the rest are fixed (in rem) so values line up for
- * scanning. Property columns can be switched off in Display.
+ * scanning. Property columns can be switched off in Display. After these come the board's own fields, one each.
  */
-const COLUMNS: { key: SortKey; label: string; width: number }[] = [
+interface Column {
+  key: SortKey
+  label: string
+  width: number
+  /** One of the board's fields. */
+  field?: BoardField
+}
+const COLUMNS: (Column & { key: BuiltInSortKey })[] = [
   { key: 'title', label: 'Task', width: 18 },
   { key: 'status', label: 'Status', width: 8.5 },
   { key: 'progress', label: 'Progress', width: 9.5 },
@@ -52,7 +63,10 @@ const COLUMNS: { key: SortKey; label: string; width: number }[] = [
   { key: 'due', label: 'Due', width: 6.5 },
   { key: 'labels', label: 'Labels', width: 11 },
 ]
-const COLUMN_LABEL = Object.fromEntries(COLUMNS.map((c) => [c.key, c.label])) as Record<SortKey, string>
+const COLUMN_LABEL = Object.fromEntries(COLUMNS.map((c) => [c.key, c.label])) as Record<BuiltInSortKey, string>
+/** How wide a field's column is, by its kind (in rem): wider for a long name, up to a point, so the heading reads. */
+const FIELD_WIDTH: Record<FieldType, number> = { text: 11, number: 8, date: 8.5, choice: 9.5, checkbox: 6 }
+const fieldWidth = (f: BoardField) => Math.max(FIELD_WIDTH[f.type], Math.min(14, 2.5 + f.name.length * 0.42))
 const INDENT = 20
 /** Width of the drag handle before the indent. */
 const HANDLE = 28
@@ -62,7 +76,7 @@ const HANDLE = 28
  * Sort by clicking a header, filter from "Filter", add subtasks inline, and drag rows to reorder or move them.
  */
 export function OutlineView({ search }: { search: string }) {
-  const { data, prefs, setPrefs, idx, openTask, createTask, focus, memberName, readOnly } = useBoard()
+  const { data, prefs, setPrefs, idx, run, openTask, createTask, focus, memberName, readOnly } = useBoard()
   const cfg = prefs.outline
   const setSort = (sort?: Sort) => setPrefs({ type: 'setOutline', config: { ...cfg, sort } })
 
@@ -75,7 +89,7 @@ export function OutlineView({ search }: { search: string }) {
   const { top, baseDepth } = treeTop(idx, focusId)
 
   // Search and filters show the matching tasks plus their parents (muted) for context.
-  const { keep, matched, filtering, hiddenDone } = useTreeFilter(search)
+  const { keep, matched, counted, filtering, hiddenDone } = useTreeFilter(search)
 
   const order = useMemo(() => {
     if (!cfg.sort) return undefined
@@ -104,8 +118,33 @@ export function OutlineView({ search }: { search: string }) {
 
   // Phones get a nested list instead of the table (no sideways scrolling).
   const narrow = useMediaQuery('(max-width: 767px)')
-  const hidden = new Set(cfg.hidden ?? [])
-  const columns = COLUMNS.filter((c) => c.key === 'title' || !hidden.has(c.key as OutlineColumn))
+  const hidden = new Set<string>(cfg.hidden ?? [])
+  const fieldColumns = useMemo(
+    () => (cfg.hideFields ? [] : data.fields.map((f): Column => ({ key: fieldKey(f.id), label: f.name, width: fieldWidth(f), field: f }))),
+    [data.fields, cfg.hideFields],
+  )
+  const columns = [...COLUMNS, ...fieldColumns].filter((c) => c.key === 'title' || !hidden.has(c.key))
+  const sortLabel = !cfg.sort
+    ? ''
+    : isFieldKey(cfg.sort.key)
+      ? (idx.fields.get(fieldIdOf(cfg.sort.key))?.name ?? 'a field')
+      : COLUMN_LABEL[cfg.sort.key].toLowerCase()
+
+  // Numbers that add up: every card's total with its subtasks, counting the cards that are shown for their own sake
+  // (so a parent's total and the bottom line always agree with what's on screen).
+  const addingUp = useMemo(() => fieldColumns.flatMap((c) => (c.field?.type === 'number' && c.field.sum ? [c.field] : [])), [fieldColumns])
+  const sums = useMemo(() => new Map(addingUp.map((f) => [f.id, subtreeSums(idx, f, counted)])), [idx, addingUp, counted])
+  const totalled = columns.some((c) => c.field && sums.has(c.field.id))
+  const shownTop = keep ? top.filter((id) => keep.has(id)) : top
+
+  // Cells keep one function for good, whatever else changes around them (see FieldCell).
+  const runRef = useRef(run)
+  useEffect(() => {
+    runRef.current = run
+  })
+  const setValue = useCallback((id: string, fieldId: string, value: FieldValue | null) => {
+    runRef.current({ type: 'task.update', id, fields: { custom: { [fieldId]: value } } })
+  }, [])
   const grid = {
     display: 'grid',
     gridTemplateColumns: `minmax(18rem, 1fr) ${columns
@@ -145,7 +184,7 @@ export function OutlineView({ search }: { search: string }) {
                 <span className="inline-flex h-7 items-center gap-1 rounded-full border bg-card pr-1 pl-3 text-xs">
                   <span className="text-muted-foreground">Sorted by</span>
                   <span className="font-medium">
-                    {COLUMN_LABEL[cfg.sort.key].toLowerCase()} {cfg.sort.dir === 'asc' ? '↑' : '↓'}
+                    {sortLabel} {cfg.sort.dir === 'asc' ? '↑' : '↓'}
                   </span>
                   <button
                     aria-label="Stop sorting"
@@ -223,6 +262,11 @@ export function OutlineView({ search }: { search: string }) {
                         )}
                         {t.due && <DueChip due={t.due} done={done} />}
                         {isBlocked(idx, id) && <Prohibit weight="bold" className="size-3.5 text-warning" aria-label="Waiting on another task" />}
+                        {/* No columns here: the fields the board shows on its cards. */}
+                        {t.custom &&
+                          data.fields.map(
+                            (f) => f.front && t.custom![f.id] !== undefined && <FieldChip key={f.id} field={f} value={t.custom![f.id]} />,
+                          )}
                       </div>
                     </div>
                     {kids && (
@@ -259,19 +303,19 @@ export function OutlineView({ search }: { search: string }) {
                       >
                         <button
                           onClick={() => setSort(!on ? { key: c.key, dir: 'asc' } : on === 'asc' ? { key: c.key, dir: 'desc' } : undefined)}
-                          title={!on ? `Sort by ${c.label.toLowerCase()}` : on === 'asc' ? 'Sort the other way' : 'Stop sorting'}
+                          title={!on ? `Sort by ${c.field ? c.label : c.label.toLowerCase()}` : on === 'asc' ? 'Sort the other way' : 'Stop sorting'}
                           className={cn(
-                            'group/sort flex h-full w-full items-center gap-1 px-3 text-left text-xs font-medium hover:text-foreground',
+                            'group/sort flex h-full w-full min-w-0 items-center gap-1 px-3 text-left text-xs font-medium hover:text-foreground',
                             on ? 'text-foreground' : 'text-muted-foreground',
                           )}
                         >
-                          {c.label}
+                          <span className="truncate">{c.label}</span>
                           {on === 'asc' ? (
-                            <ArrowUp weight="bold" className="size-3" />
+                            <ArrowUp weight="bold" className="size-3 shrink-0" />
                           ) : on === 'desc' ? (
-                            <ArrowDown weight="bold" className="size-3" />
+                            <ArrowDown weight="bold" className="size-3 shrink-0" />
                           ) : (
-                            <ArrowsDownUp className="size-3 opacity-0 group-hover/sort:opacity-60" />
+                            <ArrowsDownUp className="size-3 shrink-0 opacity-0 group-hover/sort:opacity-60" />
                           )}
                         </button>
                       </div>
@@ -300,7 +344,7 @@ export function OutlineView({ search }: { search: string }) {
                         // The row's color is a variable, so the pinned Task cell can match it (hover included).
                         'group drag-handle relative border-b bg-(--row) [--row:var(--card)] hover:[--row:color-mix(in_oklab,var(--accent)_45%,var(--card))]',
                         !depth && kids && '[--row:color-mix(in_oklab,var(--muted)_55%,var(--card))]',
-                        i === rows.length - 1 && addAfter !== i && 'border-b-0',
+                        i === rows.length - 1 && addAfter !== i && !totalled && 'border-b-0',
                         dragId === id && 'opacity-40',
                         zone === 'inside' && '[--row:color-mix(in_oklab,var(--primary)_8%,var(--card))]',
                       )}
@@ -363,40 +407,54 @@ export function OutlineView({ search }: { search: string }) {
                         </span>
                       </div>
 
-                      {columns.slice(1).map((c, n) => (
-                        <Cell key={c.key} first={n === 0} height={height}>
-                          {c.key === 'status' ? (
-                            <StatusMenu id={id} />
-                          ) : c.key === 'progress' ? (
-                            kids && <ProgressBar done={idx.subDone.get(id)!} total={idx.subTotal.get(id)!} className="w-full" />
-                          ) : c.key === 'assignee' ? (
-                            t.assigneeId && (
-                              <span className="flex min-w-0 items-center gap-2">
-                                <Avatar name={memberName(t.assigneeId)} className="size-5 text-[9px]" />
-                                <span className="truncate text-sm">{memberName(t.assigneeId)}</span>
-                              </span>
-                            )
-                          ) : c.key === 'priority' ? (
-                            t.priority && (
-                              <span className="flex items-center gap-1.5 text-xs">
-                                <PriorityIcon priority={t.priority} /> {PRIORITY_LABEL[t.priority]}
-                              </span>
-                            )
-                          ) : c.key === 'start' ? (
-                            t.start && <span className="text-xs text-muted-foreground tabular-nums">{formatDay(t.start)}</span>
-                          ) : c.key === 'due' ? (
-                            t.due && <DueChip due={t.due} done={done} />
-                          ) : (
-                            labels.length > 0 && (
-                              <span className="flex min-w-0 gap-1 overflow-hidden">
-                                {labels.map((l) => (
-                                  <LabelChip key={l.id} label={l} className="shrink-0" />
-                                ))}
-                              </span>
-                            )
-                          )}
-                        </Cell>
-                      ))}
+                      {columns.slice(1).map((c, n) =>
+                        c.field ? (
+                          <FieldCell
+                            key={c.key}
+                            taskId={id}
+                            field={c.field}
+                            value={t.custom?.[c.field.id]}
+                            total={totalText(c.field, sums.get(c.field.id)?.get(id), kids && !context)}
+                            readOnly={readOnly}
+                            first={n === 0}
+                            height={height}
+                            onSet={setValue}
+                          />
+                        ) : (
+                          <Cell key={c.key} first={n === 0} height={height}>
+                            {c.key === 'status' ? (
+                              <StatusMenu id={id} />
+                            ) : c.key === 'progress' ? (
+                              kids && <ProgressBar done={idx.subDone.get(id)!} total={idx.subTotal.get(id)!} className="w-full" />
+                            ) : c.key === 'assignee' ? (
+                              t.assigneeId && (
+                                <span className="flex min-w-0 items-center gap-2">
+                                  <Avatar name={memberName(t.assigneeId)} className="size-5 text-[9px]" />
+                                  <span className="truncate text-sm">{memberName(t.assigneeId)}</span>
+                                </span>
+                              )
+                            ) : c.key === 'priority' ? (
+                              t.priority && (
+                                <span className="flex items-center gap-1.5 text-xs">
+                                  <PriorityIcon priority={t.priority} /> {PRIORITY_LABEL[t.priority]}
+                                </span>
+                              )
+                            ) : c.key === 'start' ? (
+                              t.start && <span className="text-xs text-muted-foreground tabular-nums">{formatDay(t.start)}</span>
+                            ) : c.key === 'due' ? (
+                              t.due && <DueChip due={t.due} done={done} />
+                            ) : (
+                              labels.length > 0 && (
+                                <span className="flex min-w-0 gap-1 overflow-hidden">
+                                  {labels.map((l) => (
+                                    <LabelChip key={l.id} label={l} className="shrink-0" />
+                                  ))}
+                                </span>
+                              )
+                            )}
+                          </Cell>
+                        ),
+                      )}
 
                       <DropLine zone={zone} left={HANDLE + depth * INDENT} />
                     </div>
@@ -414,6 +472,32 @@ export function OutlineView({ search }: { search: string }) {
                     />,
                   ]
                 })}
+
+                {/* Numbers that add up, for everything the table shows: stays in sight at the bottom. */}
+                {totalled && (
+                  <div role="row" className="sticky bottom-0 z-20 border-t bg-muted" style={grid}>
+                    <div
+                      role="cell"
+                      className="sticky left-0 z-10 flex h-9 items-center bg-muted text-xs font-medium text-muted-foreground shadow-[inset_-1px_0_0_var(--border)]"
+                      style={{ paddingLeft: HANDLE + 12 }}
+                    >
+                      Total
+                    </div>
+                    {columns.slice(1).map((c, n) => {
+                      // (Nothing for a column without a single number in it.)
+                      const numbers = c.field ? shownTop.flatMap((id) => sums.get(c.field!.id)?.get(id) ?? []) : []
+                      return (
+                        <div key={c.key} role="cell" className={cn('flex h-9 min-w-0 items-center px-3', n > 0 && 'border-l')}>
+                          {numbers.length > 0 && (
+                            <span className="truncate text-sm font-medium tabular-nums" aria-label={`${c.label}, total`}>
+                              {numberText(c.field!, sumOf(c.field!, numbers))}
+                            </span>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -439,6 +523,11 @@ export function OutlineView({ search }: { search: string }) {
       </div>
     </>
   )
+}
+
+/** What a card and its subtasks add up to, for its cell: only for a card that has subtasks, and a number at or under it. */
+function totalText(field: BoardField, total: number | undefined, parent: boolean | undefined) {
+  return parent && total !== undefined ? `Σ ${numberText(field, total)}` : undefined
 }
 
 function RowAction({ label, onClick, children }: { label: string; onClick: () => void; children: ReactNode }) {

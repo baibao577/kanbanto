@@ -218,64 +218,94 @@ export function DateField({
   onChange,
   placeholder,
   defaultTime = '09:00',
+  bare,
 }: {
   value?: string
   onChange: (iso: string | undefined) => void
   placeholder: string
   defaultTime?: string
+  /** In a table cell: nothing at all while there's no date (still clickable), and the short form of one. */
+  bare?: boolean
 }) {
   const [open, setOpen] = useState(false)
+  // In a table cell, the calendar is only built once it's first opened: a table has thousands of these.
+  const [built, setBuilt] = useState(!bare)
   const day = value ? localDayOf(value) : undefined
   const time = value ? localTimeOf(value) : null
   const at = (d: string, t: string | null) => (t ? momentAt(d, t) : d)
+  const label = bare && !value ? 'Add a date' : undefined
+  const shown = (
+    <>
+      {!bare && <CalendarBlank className="size-4" />}
+      {value ? formatDay(value, !bare) : placeholder}
+    </>
+  )
   return (
-    <div className="flex items-center gap-1">
-      <Popover open={open} onOpenChange={setOpen}>
-        <PopoverTrigger asChild>
-          <FieldButton empty={!value} className="flex-1">
-            <CalendarBlank className="size-4" />
-            {value ? formatDay(value, true) : placeholder}
-          </FieldButton>
-        </PopoverTrigger>
-        <PopoverContent align="start" className="w-auto p-0">
-          <TypedDate
-            onPick={(iso) => {
-              onChange(iso)
-              setOpen(false)
-            }}
-          />
-          <Suspense fallback={<div className="size-72" />}>
-            <Calendar
-              mode="single"
-              selected={day ? parseISO(day) : undefined}
-              defaultMonth={day ? parseISO(day) : undefined}
-              onSelect={(d) => {
-                if (!d) return
-                // Calendar dates are local midnight; keep the calendar day (and the time, if there is one).
-                onChange(at(fromDay(toDay(`${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`)), time))
-                if (!time) setOpen(false)
+    <div className="group/date flex items-center gap-1">
+      {!built && (
+        <FieldButton
+          empty={!value}
+          className="flex-1"
+          aria-haspopup="dialog"
+          aria-label={label}
+          onClick={() => {
+            setBuilt(true)
+            setOpen(true)
+          }}
+        >
+          {shown}
+        </FieldButton>
+      )}
+      {built && (
+        <Popover open={open} onOpenChange={setOpen}>
+          <PopoverTrigger asChild>
+            <FieldButton empty={!value} className="flex-1" aria-label={label}>
+              {shown}
+            </FieldButton>
+          </PopoverTrigger>
+          <PopoverContent align="start" className="w-auto p-0">
+            <TypedDate
+              onPick={(iso) => {
+                onChange(iso)
+                setOpen(false)
               }}
             />
-          </Suspense>
-          <div className="border-t px-3 py-2">
-            {time ? (
-              <TimeField value={time} onChange={(t) => onChange(momentAt(day ?? today(), t))} onRemove={() => day && onChange(day)} />
-            ) : (
-              <button
-                onClick={() => onChange(momentAt(day ?? today(), defaultTime))}
-                className="flex h-8 items-center gap-1.5 rounded-md px-1.5 text-sm text-muted-foreground hover:bg-accent hover:text-foreground"
-              >
-                <Clock className="size-4" /> Add time
-              </button>
-            )}
-          </div>
-        </PopoverContent>
-      </Popover>
+            <Suspense fallback={<div className="size-72" />}>
+              <Calendar
+                mode="single"
+                selected={day ? parseISO(day) : undefined}
+                defaultMonth={day ? parseISO(day) : undefined}
+                onSelect={(d) => {
+                  if (!d) return
+                  // Calendar dates are local midnight; keep the calendar day (and the time, if there is one).
+                  onChange(at(fromDay(toDay(`${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`)), time))
+                  if (!time) setOpen(false)
+                }}
+              />
+            </Suspense>
+            <div className="border-t px-3 py-2">
+              {time ? (
+                <TimeField value={time} onChange={(t) => onChange(momentAt(day ?? today(), t))} onRemove={() => day && onChange(day)} />
+              ) : (
+                <button
+                  onClick={() => onChange(momentAt(day ?? today(), defaultTime))}
+                  className="flex h-8 items-center gap-1.5 rounded-md px-1.5 text-sm text-muted-foreground hover:bg-accent hover:text-foreground"
+                >
+                  <Clock className="size-4" /> Add time
+                </button>
+              )}
+            </div>
+          </PopoverContent>
+        </Popover>
+      )}
       {value && (
         <button
           onClick={() => onChange(undefined)}
           aria-label="Clear date"
-          className="grid size-7 place-items-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
+          className={cn(
+            'grid size-7 shrink-0 place-items-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground',
+            bare && 'opacity-0 group-hover/date:opacity-100 focus-visible:opacity-100',
+          )}
         >
           <X className="size-3.5" />
         </button>

@@ -61,12 +61,12 @@ export async function loadMembers(tx: Db | Tx, board: BoardRow): Promise<Member[
 /** The fields a board uses, in its order (not the ones taken off it, or archived in their library). */
 export async function boardFieldsOf(tx: Db | Tx, boardId: string): Promise<BoardField[]> {
   const rows = await tx
-    .select({ f: libraryFields, front: boardFieldRows.front })
+    .select({ f: libraryFields, front: boardFieldRows.front, total: boardFieldRows.total })
     .from(boardFieldRows)
     .innerJoin(libraryFields, eq(libraryFields.id, boardFieldRows.fieldId))
     .where(and(eq(boardFieldRows.boardId, boardId), isNull(boardFieldRows.removedAt), isNull(libraryFields.archivedAt)))
     .orderBy(asc(boardFieldRows.position))
-  return rows.map((r) => fieldFromRow(r.f, r.front))
+  return rows.map((r) => fieldFromRow(r.f, r.front, r.total))
 }
 
 /** The whole board as the model sees it, plus its change counter. Null if there's no such board. */

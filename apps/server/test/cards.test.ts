@@ -141,6 +141,67 @@ describe('searching cards across boards', () => {
     expect((await search(ann, { state: 'all' })).total).toBe(13)
   })
 
+  it('by one of the boards’ own fields: what each card has for it, and only the ones that pass, on the boards that use it', async () => {
+    const { ann, id } = await start()
+    const add = async (body: object) => (await ann.ok('POST', '/api/fields', body)).id as string
+    const value = await add({ name: 'Value', type: 'number', unit: '$', decimals: 0, sum: true })
+    const signed = await add({ name: 'Signed', type: 'checkbox' })
+    const stage = await add({
+      name: 'Stage',
+      type: 'choice',
+      options: [
+        { name: 'Lead', color: 'gray' },
+        { name: 'Won', color: 'green' },
+      ],
+    })
+    const library = (await ann.ok('GET', '/api/fields')).fields as { id: string; options?: { id: string }[] }[]
+    const [lead, won] = library.find((f) => f.id === stage)!.options!.map((o) => o.id)
+    await ann.ok('PUT', `/api/boards/${id}/fields`, { fields: [{ id: stage }, { id: value }, { id: signed }] })
+    // A board that doesn't use the fields: none of its cards can pass a test of one.
+    const { id: other } = await ann.ok('POST', '/api/boards', { name: 'Home' })
+    await run(ann, other, { type: 'task.create', id: 'h1', parentId: null, fields: { title: 'Fix the tap' } })
+    await run(ann, id, { type: 'task.update', id: 'A1', fields: { custom: { [stage]: [won], [value]: 1200, [signed]: true } } })
+    await run(ann, id, { type: 'task.update', id: 'A3', fields: { custom: { [stage]: [lead], [value]: 300 } } })
+    await run(ann, id, { type: 'task.update', id: 'B1', fields: { custom: { [value]: 0 } } })
+
+    // What can be asked about comes with the first page, as the library defines it.
+    const all = await search(ann, { state: 'active' })
+    expect(all.fields?.map((f) => f.name)).toEqual(['Signed', 'Stage', 'Value'])
+    expect(all.fields?.find((f) => f.id === stage)).not.toHaveProperty('front')
+    expect(all.cards.every((c) => c.field === undefined)).toBe(true)
+
+    // Asked about a field: each card says what it has; nothing is left out until a test is given.
+    const told = await search(ann, { state: 'active', field: stage })
+    expect(told.total).toBe(all.total)
+    expect(told.cards.find((c) => c.id === 'A1')?.field).toEqual({ name: 'Stage', text: 'Won' })
+    expect(told.cards.find((c) => c.id === 'A2')?.field).toBeUndefined()
+
+    const by = (field: string, fv: string, more: Record<string, string> = {}) => search(ann, { state: 'active', field, fv, ...more })
+    expect(ids(await by(stage, won))).toEqual(['A1'])
+    expect(ids(await by(stage, `${won},${lead}`))).toEqual(['A1', 'A3'])
+    // "None picked" is about the boards that use the field: the other board's card isn't one of them.
+    const none = await by(stage, '-')
+    expect(none.total).toBe(11)
+    expect(ids(none)).not.toContain('h1')
+    expect(ids(await by(signed, 'yes'))).toEqual(['A1'])
+    expect((await by(signed, 'no')).total).toBe(12)
+    expect(ids(await by(value, 'any'))).toEqual(['A1', 'A3', 'B1'])
+    expect(ids(await by(value, '0..500'))).toEqual(['A3', 'B1'])
+    expect(ids(await by(value, '1000..'))).toEqual(['A1'])
+    expect((await by(value, '1000..')).cards[0].field).toEqual({ name: 'Value', text: '$1,200' })
+    expect((await by(value, 'none')).total).toBe(10)
+    // With the other filters; and an archived card keeps what it had.
+    expect(ids(await by(value, 'any', { completed: 'true' }))).toEqual(['A1'])
+    await run(ann, id, { type: 'task.archive', id: 'A3' })
+    expect(ids(await search(ann, { state: 'archived', field: stage, fv: lead }))).toEqual(['A3'])
+
+    // Something this kind of field can't be asked says what can; a field no board has finds nothing.
+    const bad = await ann.request('GET', `/api/cards?state=active&field=${signed}&fv=maybe`)
+    expect(bad.status).toBe(400)
+    expect(bad.body.error).toMatch(/Signed.*yes.*no/)
+    expect((await by('nope', 'any')).total).toBe(0)
+  })
+
   it('only boards you can open; a viewer’s rows can’t be changed; archived boards only with archived cards', async () => {
     const { ann, id } = await start()
     const bob = await Person.signUp(t.app, 'Bob')

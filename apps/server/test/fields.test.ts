@@ -152,6 +152,33 @@ describe('a board’s fields', () => {
   })
 })
 
+describe('a total in lists', () => {
+  it('is switched on per board, for numbers that add up, three at most', async () => {
+    const { ann, id, company, value } = await crm()
+    const { id: score } = await ann.ok('POST', '/api/fields', { name: 'Score', type: 'number' })
+    const sums = []
+    for (const name of ['Hours', 'Cost', 'Tax']) sums.push((await ann.ok('POST', '/api/fields', { name, type: 'number', sum: true })).id as string)
+    const put = (fields: object[]) => ann.request('PUT', `/api/boards/${id}/fields`, { fields })
+
+    expect((await put([{ id: value, total: true }, { id: company }])).body.fields).toMatchObject([
+      { name: 'Value', total: true },
+      { name: 'Company' },
+    ])
+    expect((await load(ann, id)).data.fields[0]).toMatchObject({ name: 'Value', total: true })
+    expect((await put([{ id: company, total: true }])).body.error).toMatch(/isn’t a number that adds up/)
+    expect((await put([{ id: score, total: true }])).body.error).toMatch(/isn’t a number that adds up/)
+    expect((await put([value, ...sums].map((f) => ({ id: f, total: true })))).body.error).toMatch(/Up to 3 fields can have a total/)
+    // If the library later says the number doesn't add up after all, the board's total goes quiet (and comes back).
+    await ann.ok('PATCH', `/api/fields/${value}`, { sum: false })
+    expect((await load(ann, id)).data.fields[0]).not.toHaveProperty('total')
+    await ann.ok('PATCH', `/api/fields/${value}`, { sum: true })
+    expect((await load(ann, id)).data.fields[0]).toMatchObject({ total: true })
+    // Taken off the board and added again, it starts without one.
+    await put([{ id: company }])
+    expect((await put([{ id: value }, { id: company }])).body.fields[0]).not.toHaveProperty('total')
+  })
+})
+
 describe('values on cards', () => {
   it('are checked against the field, saved, and logged', async () => {
     const { ann, id, company, value, stage, won } = await crm()

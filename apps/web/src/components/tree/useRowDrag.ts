@@ -53,6 +53,9 @@ export function useRowDrag(onExpand: (id: string) => void) {
         ? {}
         : {
             onPointerDown: (e: React.PointerEvent<HTMLElement>) => {
+              // Something opened from the row (a menu, a date picker) is drawn elsewhere on the page, but its presses
+              // still arrive here: they're not a grab of the row.
+              if (!e.currentTarget.contains(e.target as Node)) return
               const row = e.currentTarget.closest<HTMLElement>('[data-drop-row]') ?? e.currentTarget
               pointerDrag(e, {
                 ghost: row,

@@ -2,7 +2,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
 import { doneBefore, type Command, type TaskFields } from '@kanbanto/model/commands'
 import { BOARD_DESIGNS, COLORS, isBackground, LABEL_COLOR_CYCLE, type BoardBackground, type ColorName } from '@kanbanto/model/colors'
-import { parseValue, valuePlain } from '@kanbanto/model/fields'
+import { nameKey, parseValue, saidFilter, valuePlain } from '@kanbanto/model/fields'
 import { newId } from '@kanbanto/model/ids'
 import { idleDays, lastActivity } from '@kanbanto/model/age'
 import { fromDay, isPast, mondayOf, sortTime, toDay } from '@kanbanto/model/dates'
@@ -64,6 +64,12 @@ const WHEN =
   'A whole day, YYYY-MM-DD; or with a time, an ISO date-time with its time zone (2026-10-15T14:30:00+07:00), which is stored in UTC. null clears it.'
 const text = (value: unknown) => ({ content: [{ type: 'text' as const, text: JSON.stringify(value) }] })
 
+/** A task's values for the board's own fields, by the field's name (a choice by its option's name). */
+const fieldsOf = (data: BoardData, t: Task) =>
+  t.custom && {
+    fields: Object.fromEntries(data.fields.flatMap((f) => (t.custom![f.id] === undefined ? [] : [[f.name, valuePlain(f, t.custom![f.id])]]))),
+  }
+
 /** A task, briefly, as the tools show it. */
 function brief(data: BoardData, idx: TaskIndex, t: Task) {
   const col = statusCol(idx, t.id)
@@ -83,10 +89,7 @@ function brief(data: BoardData, idx: TaskIndex, t: Task) {
     ...(labels.length && { labels }),
     ...(isBlocked(idx, t.id) && { blocked: true }),
     ...(kids && { subtasks: kids, subtasks_done: idx.subDone.get(t.id) }),
-    // Its values for the board's own fields, by the field's name (a choice by its option's name).
-    ...(t.custom && {
-      fields: Object.fromEntries(data.fields.flatMap((f) => (t.custom![f.id] === undefined ? [] : [[f.name, valuePlain(f, t.custom![f.id])]]))),
-    }),
+    ...fieldsOf(data, t),
   }
 }
 
@@ -132,6 +135,7 @@ function archivedBrief(data: BoardData, t: Task) {
     ...(t.due && { due: t.due }),
     ...(t.priority && { priority: t.priority }),
     ...(labels.length && { labels }),
+    ...fieldsOf(data, t),
   }
 }
 
@@ -342,6 +346,12 @@ function buildServer(app: FastifyInstance, me: SessionUser, token: TokenAccess) 
         label: z.string().optional().describe('A label’s name or id.'),
         assignee: z.string().optional().describe('A person’s name or id, "me", or "nobody" for unassigned tasks.'),
         following: z.boolean().optional().describe('true: only tasks you follow (you’re told about their comments and changes).'),
+        fields: z
+          .record(z.string().max(100), z.union([z.string().max(2000), z.number(), z.boolean(), z.null()]))
+          .optional()
+          .describe(
+            'By the boards’ own fields, by name (get_board lists them): {"Stage": "Won", "Signed": true, "Client": null}. A choice takes an option’s name, a checkbox true or false, text and numbers the value itself (text in any case), a date its day; null finds tasks with nothing for the field. Boards without one of the fields are skipped. For a range, ask without it: every result carries its fields.',
+          ),
         priority: z.enum(PRIORITIES).optional().describe('This priority or more important: "high" finds urgent and high.'),
         blocked: z.boolean().optional().describe('true: only tasks waiting on unfinished tasks; false: only ones that aren’t.'),
         due_before: z.string().optional().describe('YYYY-MM-DD: tasks due on or before this day.'),
@@ -411,6 +421,7 @@ function buildServer(app: FastifyInstance, me: SessionUser, token: TokenAccess) 
         label?: string
         assignee?: string
         following?: boolean
+        fields?: Record<string, string | number | boolean | null>
         priority?: Priority
         blocked?: boolean
         due_before?: string
@@ -492,9 +503,26 @@ function buildServer(app: FastifyInstance, me: SessionUser, token: TokenAccess) 
           : null
         const aging = !!a.idle_days || a.sort === 'idle'
         const found: { task: Task; row: Record<string, unknown>; active?: number }[] = []
+        // By the boards' own fields: a board is searched when it has every field named and the values can be read
+        // there. When none is, the answer says why.
+        const asked = Object.entries(a.fields ?? {})
+        const fieldNames = new Set<string>()
+        let fieldBoards = 0
+        let fieldProblem: string | undefined
         for (const b of chosen) {
           const boardId = b.id
           const { data, idx } = await open(boardId, 'viewer')
+          for (const f of data.fields) fieldNames.add(f.name)
+          const defs = asked.map(([name]) => data.fields.find((f) => f.id === name) ?? data.fields.find((f) => nameKey(f.name) === nameKey(name)))
+          if (defs.some((d) => !d)) continue
+          const read = asked.map(([, said], i) => ({ id: defs[i]!.id, ...saidFilter(defs[i]!, said) }))
+          const unread = read.find((r) => 'error' in r)
+          if (unread && 'error' in unread) {
+            fieldProblem ??= unread.error
+            continue
+          }
+          const passes = (t: Task) => read.every((r) => 'test' in r && r.test(t.custom?.[r.id]))
+          fieldBoards++
           // Searching several boards, one without that list, label or person just has nothing to show.
           const soft = <T>(f: () => T) => {
             try {
@@ -524,6 +552,7 @@ function buildServer(app: FastifyInstance, me: SessionUser, token: TokenAccess) 
             if (who && t.assigneeId !== who) continue
             if (iFollow && !iFollow(boardId, t)) continue
             if (nobody && t.assigneeId) continue
+            if (!passes(t)) continue
             if (a.priority && !(t.priority && PRIORITIES.indexOf(t.priority) <= rank)) continue
             if (a.blocked !== undefined && isBlocked(idx, id) !== a.blocked) continue
             // (A due time counts by its day in UTC.)
@@ -563,6 +592,7 @@ function buildServer(app: FastifyInstance, me: SessionUser, token: TokenAccess) 
               if (label && !t.labels.includes(label)) continue
               if (who && t.assigneeId !== who) continue
               if (nobody && t.assigneeId) continue
+              if (!passes(t)) continue
               if (a.priority && !(t.priority && PRIORITIES.indexOf(t.priority) <= rank)) continue
               if (a.due_before && (!t.due || t.due.slice(0, 10) > a.due_before)) continue
               if (a.due_after && (!t.due || t.due.slice(0, 10) < a.due_after)) continue
@@ -574,6 +604,15 @@ function buildServer(app: FastifyInstance, me: SessionUser, token: TokenAccess) 
                 row: { board_id: boardId, board: data.board.name, workspace: b.place, ...archivedBrief(data, t), ...(work && { worked: work }) },
               })
             }
+        }
+        if (asked.length && !fieldBoards) {
+          const names = asked.map(([name]) => `“${name}”`).join(', ')
+          const there = [...fieldNames].sort().join(', ')
+          throw new HttpError(
+            400,
+            fieldProblem ??
+              `${chosen.length === 1 ? 'This board has no' : 'None of these boards has a'} field ${names}${asked.length > 1 ? ' (all of them)' : ''}. ${there ? `The fields there are: ${there}.` : 'There are no fields there.'}`,
+          )
         }
         // Sorting is stable: ties keep outline order. Tasks without the value go last.
         const last = Number.MAX_SAFE_INTEGER

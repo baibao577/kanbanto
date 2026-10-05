@@ -530,7 +530,7 @@ export const libraryFields = pgTable(
 )
 
 /**
- * The fields a board uses, in its order; `front`: shown on the card front too. A field taken off the board keeps
+ * The fields a board uses, in its order; `front`: shown on the card front too; `total`: totalled per list. A field taken off the board keeps
  * its row (`removedAt`): its values stay on the cards, unseen, and are back if it's added again. That row is also
  * how deleting the field for good finds them.
  */
@@ -545,6 +545,8 @@ export const boardFieldRows = pgTable(
       .references(() => libraryFields.id, { onDelete: 'cascade' }),
     position: integer('position').notNull(),
     front: boolean('front').notNull().default(false),
+    /** A number that adds up: its total shows under each list's name on the Board. */
+    total: boolean('total').notNull().default(false),
     removedAt: at('removed_at'),
   },
   (t) => [primaryKey({ columns: [t.boardId, t.fieldId] }), index('board_fields_field_idx').on(t.fieldId)],

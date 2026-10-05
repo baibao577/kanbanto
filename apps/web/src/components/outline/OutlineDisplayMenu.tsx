@@ -6,6 +6,8 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Separator } from '@/components/ui/separator'
 import { Switch } from '@/components/ui/switch'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
+import { cn } from '@/lib/utils'
+import { fieldKey, type FieldKey } from '@kanbanto/model/fields'
 import { OUTLINE_COLUMNS, type OutlineColumn } from '@kanbanto/model/table'
 
 const LABEL: Record<OutlineColumn, string> = {
@@ -20,12 +22,14 @@ const LABEL: Record<OutlineColumn, string> = {
 
 /** The Outline's "Display": which columns show, and how tall rows are. Saved per board, like the board's display. */
 export function OutlineDisplayMenu() {
-  const { prefs, setPrefs } = useBoard()
+  const { data, prefs, setPrefs } = useBoard()
   const cfg = prefs.outline
-  const hidden = new Set(cfg.hidden ?? [])
-  const changed = hidden.size > 0 || cfg.density === 'comfortable' || !!cfg.hideDone
-  const toggle = (c: OutlineColumn, on: boolean) => {
-    const next = OUTLINE_COLUMNS.filter((x) => (x === c ? !on : hidden.has(x)))
+  const hidden = new Set<string>(cfg.hidden ?? [])
+  const changed = hidden.size > 0 || !!cfg.hideFields || cfg.density === 'comfortable' || !!cfg.hideDone
+  // Always written in the same order (built-in columns, then fields by key), so a saved view compares equal to itself.
+  const toggle = (c: OutlineColumn | FieldKey, on: boolean) => {
+    const all: (OutlineColumn | FieldKey)[] = [...OUTLINE_COLUMNS, ...data.fields.map((f) => fieldKey(f.id)).sort()]
+    const next = all.filter((x) => (x === c ? !on : hidden.has(x)))
     setPrefs({ type: 'setOutline', config: { ...cfg, hidden: next.length ? next : undefined } })
   }
   return (
@@ -37,7 +41,7 @@ export function OutlineDisplayMenu() {
           {changed && <span className="absolute -top-0.5 -right-0.5 size-2 rounded-full bg-primary" aria-label="Changed" />}
         </Button>
       </PopoverTrigger>
-      <PopoverContent align="end" className="w-64 p-0">
+      <PopoverContent align="end" className="max-h-(--radix-popover-content-available-height) w-64 overflow-y-auto p-0">
         <div className="space-y-1.5 p-4">
           <p className="mb-2 text-xs font-medium text-muted-foreground">Columns</p>
           {OUTLINE_COLUMNS.map((c) => (
@@ -50,6 +54,31 @@ export function OutlineDisplayMenu() {
             On a phone, the Outline is a list: columns show as details under each task.
           </p>
         </div>
+        {data.fields.length > 0 && (
+          <>
+            <Separator />
+            <div className="space-y-1.5 p-4">
+              <label className="mb-2 flex cursor-pointer items-center justify-between gap-3">
+                <span className="text-xs font-medium text-muted-foreground">Fields</span>
+                <Switch
+                  checked={!cfg.hideFields}
+                  onCheckedChange={(on) => setPrefs({ type: 'setOutline', config: { ...cfg, hideFields: on ? undefined : true } })}
+                  aria-label="Show the board’s fields as columns"
+                />
+              </label>
+              {data.fields.map((f) => (
+                <label key={f.id} className={cn('flex h-7 items-center gap-2.5 text-sm', cfg.hideFields ? 'opacity-50' : 'cursor-pointer')}>
+                  <Checkbox
+                    checked={!cfg.hideFields && !hidden.has(fieldKey(f.id))}
+                    disabled={!!cfg.hideFields}
+                    onCheckedChange={(on) => toggle(fieldKey(f.id), !!on)}
+                  />
+                  <span className="truncate">{f.name}</span>
+                </label>
+              ))}
+            </div>
+          </>
+        )}
         <Separator />
         <div className="space-y-2 p-4">
           <p className="text-xs font-medium text-muted-foreground">Rows</p>
@@ -88,7 +117,12 @@ export function OutlineDisplayMenu() {
                 variant="ghost"
                 size="sm"
                 className="text-muted-foreground"
-                onClick={() => setPrefs({ type: 'setOutline', config: { ...cfg, hidden: undefined, density: undefined, hideDone: undefined } })}
+                onClick={() =>
+                  setPrefs({
+                    type: 'setOutline',
+                    config: { ...cfg, hidden: undefined, hideFields: undefined, density: undefined, hideDone: undefined },
+                  })
+                }
               >
                 Reset
               </Button>

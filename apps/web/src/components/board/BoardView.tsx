@@ -34,6 +34,8 @@ import { ArchiveOlderDialog } from './ArchiveOlderDialog'
 import { cardIndexAt, cellAt, dragging, itemIndexAt, listIndexAt, type GroupDrag } from './dnd'
 import { BLOCKED, blockReason as blockReasonIn, dropCommand, dropGroupCommand, groupOf as groupOfIn, newCardIn, type DropContext } from './dropRules'
 import { GroupHeader } from './GroupHeader'
+import { numberText } from '@kanbanto/model/fields'
+import { numberOf, subtreeSums, sumOf } from '@kanbanto/model/totals'
 import { CollapsedList, ListHeader } from './ListHeader'
 import { ORDER_LABEL, withListOrder } from './listOrder'
 import { QuickAdd } from './QuickAdd'
@@ -106,6 +108,25 @@ function Board({ search }: { search: string }) {
   }, [idx, config, prefs.focusId, search, filter, counts.lastComment, now, showOlder])
   const labelById = useMemo(() => new Map(data.labels.map((l) => [l.id, l])), [data.labels])
   const frontFields = useMemo(() => data.fields.filter((f) => f.front), [data.fields])
+  // Numbers that add up, under each list's name (Board settings → Fields → "Total in lists"): the cards the list
+  // shows, the ones its count is of. A list with no number at all says nothing.
+  const totalFields = useMemo(() => data.fields.filter((f) => f.total), [data.fields])
+  const listTotals = useMemo(() => {
+    const out = new Map<string, { name: string; text: string }[]>()
+    if (!totalFields.length) return out
+    // Where subtasks stay on their parent's card, a card counts with its subtasks.
+    const deep = config.filter === 'topLevel' || config.filter === 'main'
+    const sums = totalFields.map((f) => (deep ? subtreeSums(idx, f) : undefined))
+    for (const c of view.columns) {
+      const ids = view.rows.flatMap((r) => view.cells.get(cellKey(r.key, c.key)) ?? [])
+      const lines = totalFields.flatMap((f, i) => {
+        const numbers = ids.flatMap((id) => (sums[i] ? sums[i].get(id) : numberOf(idx, id, f.id)) ?? [])
+        return numbers.length ? [{ name: f.name, text: numberText(f, sumOf(f, numbers)) }] : []
+      })
+      if (lines.length) out.set(c.key, lines)
+    }
+    return out
+  }, [totalFields, config.filter, idx, view])
 
   const [rowLimit, setRowLimit] = useState(ROWS_STEP)
   const [colLimit, setColLimit] = useState(COLS_STEP)
@@ -534,6 +555,25 @@ function Board({ search }: { search: string }) {
     if (showOlder.has(key)) return line('Showing older cards', 'Hide', () => setShowOlder(toggleIn(showOlder, key)))
     return null
   }
+  /** Under a list's header: what its cards add up to, for the fields the board totals. */
+  const totalsLine = (key: string) => {
+    const lines = listTotals.get(key)
+    if (!lines) return null
+    return (
+      <p className={cn('flex flex-wrap gap-x-3 px-3 pb-1.5 text-xs text-muted-foreground', idx.colById.get(key)?.color && 'pt-1.5')}>
+        {lines.map((l) => (
+          <span key={l.name} className="min-w-0 truncate">
+            {l.name} <span className="font-medium text-foreground/80 tabular-nums">{l.text}</span>
+          </span>
+        ))}
+      </p>
+    )
+  }
+  const totalsText = (key: string) =>
+    listTotals
+      .get(key)
+      ?.map((l) => `${l.name}: ${l.text}`)
+      .join('\n')
   const columnHead = (c: Lane, joined: boolean) =>
     statusLists ? (
       <div className={cn(!joined && 'rounded-xl bg-lane')}>
@@ -545,6 +585,7 @@ function Board({ search }: { search: string }) {
           onArchiveOlder={() => setArchivingList(c.key)}
           className={joined ? 'rounded-t-xl' : 'rounded-xl'}
         />
+        {totalsLine(c.key)}
         {doneLine(c.key)}
       </div>
     ) : (
@@ -618,6 +659,7 @@ function Board({ search }: { search: string }) {
                     key={c.key}
                     col={col}
                     count={colCount(c.key)}
+                    totals={totalsText(c.key)}
                     tall
                     dropping={dropping(cellKey(NO_ROW, c.key))}
                     style={laneTint(col)}
@@ -673,6 +715,7 @@ function Board({ search }: { search: string }) {
                       key={c.key}
                       col={idx.colById.get(c.key)!}
                       count={colCount(c.key)}
+                      totals={totalsText(c.key)}
                       style={laneTint(idx.colById.get(c.key))}
                       className={cn(listDrag?.id === c.key && 'opacity-40')}
                     />

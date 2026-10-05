@@ -29,6 +29,8 @@ export function cardsQuery(r: Search, opts: { offset?: number; now?: Date } = {}
   if (to) p.set('to', to.toISOString())
   if (r.leaves) p.set('parents', 'hide')
   if (r.following) p.set('following', 'true')
+  if (r.field) p.set('field', r.field)
+  if (r.field && r.fv) p.set('fv', r.fv)
   if (r.sort) p.set('sort', r.sort)
   if (opts.offset) p.set('offset', String(opts.offset))
   return p.toString()

@@ -1,10 +1,15 @@
 import { isPast, sortTime, todayDay, toDay } from './dates'
 import { idleDays, lastActivity } from './age'
+import { compareValues, fieldIdOf, fieldMatches, filterText, isFieldKey, optionsOf, type FieldDef, type FieldFilter, type FieldKey } from './fields'
 import type { TaskIndex } from './indexer'
+import { subtreeSums } from './totals'
 import { PRIORITIES, PRIORITY_LABEL, type LabelDef, type Member, type Priority, type StatusColumn } from './types'
 
-/** Columns the Outline table can sort by. */
-export type SortKey = 'title' | 'status' | 'progress' | 'assignee' | 'priority' | 'start' | 'due' | 'labels'
+/** What every card has that the Outline can sort by. */
+export const BUILT_IN_SORT_KEYS = ['title', 'status', 'progress', 'assignee', 'priority', 'start', 'due', 'labels'] as const
+export type BuiltInSortKey = (typeof BUILT_IN_SORT_KEYS)[number]
+/** Columns the Outline table can sort by: those, and each of the board's own fields ("f:" and its id). */
+export type SortKey = BuiltInSortKey | FieldKey
 export interface Sort {
   key: SortKey
   dir: 'asc' | 'desc'
@@ -25,6 +30,8 @@ export interface TableFilter {
   changed?: number
   /** Only cards not done with no activity for at least this many days (see age.ts). */
   idle?: number
+  /** By the board's own fields, by field id: what each value has to be (see FieldFilter). Unset when there are none. */
+  fields?: Record<string, FieldFilter>
 }
 
 /** The Outline's own settings (filters are shared by every tab; see State.filter). */
@@ -34,8 +41,10 @@ export type OutlineColumn = (typeof OUTLINE_COLUMNS)[number]
 
 export interface OutlineConfig {
   sort?: Sort
-  /** Property columns switched off (Display → Columns). */
-  hidden?: OutlineColumn[]
+  /** Property columns switched off (Display → Columns): built-in ones, and the board's fields by their key (kept sorted). */
+  hidden?: (OutlineColumn | FieldKey)[]
+  /** None of the board's own fields as columns. */
+  hideFields?: boolean
   /** Row height: compact (the default) or comfortable. */
   density?: 'comfortable' | 'compact'
   /** Leave finished tasks out (the Outline and the Timeline both follow this). */
@@ -50,7 +59,8 @@ export const filterCount = (f: TableFilter) =>
   (f.priorities?.length ? 1 : 0) +
   (f.due ? 1 : 0) +
   (f.changed ? 1 : 0) +
-  (f.idle ? 1 : 0)
+  (f.idle ? 1 : 0) +
+  Object.keys(f.fields ?? {}).length
 
 /** Does one task pass the filter (ignoring its parents and subtasks)? `lastComment`: per task, for card age. */
 export function matchesFilter(idx: TaskIndex, id: string, f: TableFilter, lastComment?: Record<string, string>): boolean {
@@ -70,11 +80,42 @@ export function matchesFilter(idx: TaskIndex, id: string, f: TableFilter, lastCo
   }
   if (f.changed && idleDays(lastActivity(idx, id, lastComment)) >= f.changed) return false
   if (f.idle && (idx.category.get(id) === 'done' || idleDays(lastActivity(idx, id, lastComment)) < f.idle)) return false
+  if (f.fields)
+    for (const [fieldId, wanted] of Object.entries(f.fields)) {
+      // (A filter for a field the board no longer uses says nothing: `cleanPrefs` takes it away.)
+      const def = idx.fields.get(fieldId)
+      if (def && !fieldMatches(def, t.custom?.[fieldId], wanted, todayDay())) return false
+    }
   return true
 }
 
 /** A comparator for sorting siblings by a column. Empty values always go last, whichever the direction. */
 export function sortComparator(idx: TaskIndex, sort: Sort, labelById: Map<string, LabelDef>) {
+  const sign = sort.dir === 'asc' ? 1 : -1
+  if (isFieldKey(sort.key)) {
+    const def = idx.fields.get(fieldIdOf(sort.key))
+    // (Sorted by a field the board no longer uses: everything stays where it is.)
+    if (!def) return () => 0
+    // A checkbox has two real values: ticked ones first, or last.
+    if (def.type === 'checkbox') {
+      const ticked = (id: string) => (idx.tasks[id].custom?.[def.id] === true ? 0 : 1)
+      return (a: string, b: string) => sign * (ticked(a) - ticked(b))
+    }
+    // A number that adds up sorts by what the row is worth: its own number plus its subtasks'.
+    const totals = def.type === 'number' && def.sum ? subtreeSums(idx, def) : null
+    const shown = (id: string) => {
+      if (totals) return totals.get(id)
+      const v = idx.tasks[id].custom?.[def.id]
+      // (An option that's gone is like no option: last, whichever way.)
+      return def.type === 'choice' && !optionsOf(def, v).length ? undefined : v
+    }
+    return (a: string, b: string) => {
+      const va = shown(a)
+      const vb = shown(b)
+      if (va === undefined || vb === undefined) return va === vb ? 0 : va === undefined ? 1 : -1
+      return sign * compareValues(def, va, vb)
+    }
+  }
   const colIndex = new Map(idx.columns.map((c, i) => [c.id, i]))
   const value = (id: string): string | number | undefined => {
     const t = idx.tasks[id]
@@ -105,7 +146,6 @@ export function sortComparator(idx: TaskIndex, sort: Sort, labelById: Map<string
       }
     }
   }
-  const sign = sort.dir === 'asc' ? 1 : -1
   return (a: string, b: string) => {
     const va = value(a)
     const vb = value(b)
@@ -116,9 +156,12 @@ export function sortComparator(idx: TaskIndex, sort: Sort, labelById: Map<string
   }
 }
 
-/** The active filters in words, for chips: "Status: To Do, Doing". */
-export function filterChips(f: TableFilter, columns: StatusColumn[], labels: LabelDef[], members: Member[]) {
-  const chips: { key: keyof TableFilter; label: string; value: string }[] = []
+/**
+ * The active filters in words, for chips: "Status: To Do, Doing". A filter by one of the board's fields is a chip
+ * of its own (`field`: its id), so each can be taken away by itself.
+ */
+export function filterChips(f: TableFilter, columns: StatusColumn[], labels: LabelDef[], members: Member[], fields: FieldDef[] = []) {
+  const chips: { key: keyof TableFilter; field?: string; label: string; value: string }[] = []
   const names = (ids: string[], name: (id: string) => string | undefined) => ids.map(name).filter(Boolean).join(', ')
   if (f.statuses?.length) chips.push({ key: 'statuses', label: 'Status:', value: names(f.statuses, (id) => columns.find((c) => c.id === id)?.name) })
   if (f.assignees?.length)
@@ -130,5 +173,9 @@ export function filterChips(f: TableFilter, columns: StatusColumn[], labels: Lab
   if (f.due) chips.push({ key: 'due', label: 'Due:', value: { overdue: 'overdue', week: 'this week', none: 'no date' }[f.due] })
   if (f.changed) chips.push({ key: 'changed', label: 'Changed in the last', value: f.changed === 1 ? 'day' : `${f.changed} days` })
   if (f.idle) chips.push({ key: 'idle', label: 'No activity for', value: `${f.idle}+ ${f.idle === 1 ? 'day' : 'days'}` })
+  for (const [fieldId, wanted] of Object.entries(f.fields ?? {})) {
+    const def = fields.find((x) => x.id === fieldId)
+    if (def) chips.push({ key: 'fields', field: fieldId, label: `${def.name}:`, value: filterText(def, wanted) })
+  }
   return chips
 }

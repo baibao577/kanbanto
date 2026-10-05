@@ -1,0 +1,1 @@
+ALTER TABLE "board_fields" ADD COLUMN "total" boolean DEFAULT false NOT NULL;
