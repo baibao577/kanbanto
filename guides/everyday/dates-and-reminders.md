@@ -50,8 +50,9 @@ There are two kinds:
 
 - **At a time:** whatever you type, or one of the suggestions (such as "In 1 hour" or "Tomorrow morning"; they change
   with the time of day).
-- **Before it's due:** 1 hour, 1 day or 2 days before. This kind moves with the due date. Change the date and the
-  reminder follows. It needs the card to have a due date.
+- **Before it's due:** when it's due, or 15 minutes, 30 minutes, 1 hour, 1 day, 2 days or 5 days before. This kind
+  moves with the due date. Change the date and the reminder follows. It needs the card to have a due date. (A due
+  date without a time counts as 9:00 that morning.)
 
 A card can have several reminders. To remove one, point at it and click the **✕** that appears.
 

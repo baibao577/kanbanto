@@ -14,6 +14,13 @@ export function fireTime(r: Reminder, task: Pick<Task, 'due'>): Date | null {
   return real(new Date(due.getTime() - r.beforeDue * 60_000))
 }
 
+/** How long before the due date, in words: "When it’s due", "15 minutes before", "2 hours before", "5 days before". */
+export function beforeDueWords(minutes: number): string {
+  if (minutes <= 0) return 'When it’s due'
+  const [n, unit] = minutes % 1440 === 0 ? [minutes / 1440, 'day'] : minutes % 60 === 0 ? [minutes / 60, 'hour'] : [minutes, 'minute']
+  return `${n} ${unit}${n === 1 ? '' : 's'} before`
+}
+
 /** A task's reminders that still have a moment, soonest first. */
 export function upcoming(task: Pick<Task, 'due' | 'reminders'>, after = new Date()): { reminder: Reminder; at: Date }[] {
   return (task.reminders ?? [])

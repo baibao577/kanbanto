@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { describeChanges } from './activity'
 import { execute } from './commands'
 import { indexFor } from './indexer'
-import { fireTime, upcoming, zoned } from './reminders'
+import { beforeDueWords, fireTime, upcoming, zoned } from './reminders'
 import { exampleData } from './sample'
 
 describe('when reminders fire', () => {
@@ -16,6 +16,20 @@ describe('when reminders fire', () => {
     expect(fireTime({ id: 'r', beforeDue: 24 * 60, tz: 'Asia/Bangkok' }, { due: '2026-10-05' })?.toISOString()).toBe('2026-10-04T02:00:00.000Z')
     expect(fireTime({ id: 'r', beforeDue: 60 }, {})).toBe(null)
     expect(zoned('2026-01-15', 9, 'America/New_York').toISOString()).toBe('2026-01-15T14:00:00.000Z')
+  })
+
+  it('says how long before the due date in the largest whole unit', () => {
+    expect([0, 15, 30, 60, 90, 120, 1440, 2880, 7200].map(beforeDueWords)).toEqual([
+      'When it’s due',
+      '15 minutes before',
+      '30 minutes before',
+      '1 hour before',
+      '90 minutes before',
+      '2 hours before',
+      '1 day before',
+      '2 days before',
+      '5 days before',
+    ])
   })
 
   it('lists what’s still to come, soonest first', () => {

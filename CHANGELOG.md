@@ -110,7 +110,7 @@ then `git pull` (or download the new release) and `docker compose up -d --build`
   write: it opens ready to type from an empty description or straight from the card's editor (same text, same
   cursor), looks like the page you'll read, keeps Contents beside you as headings appear, and counts your words.
 - **Reminders** on cards: at a time you type in plain words ("tmr 10:00", "fri 2pm") or pick, or before the due date
-  (following it). They go to whoever is assigned, under the bell and by email (which can be turned off), and to
+  (following it: when it's due, or from 15 minutes to 5 days before). They go to whoever is assigned, under the bell and by email (which can be turned off), and to
   webhooks as `reminder.due`. Assistants can set and list them.
 - **Desktop notifications** (Web Push, no app to install), turned on per computer in Account → Notifications:
   reminders, @mentions and news from the cards you follow pop up even when Kanbanto isn't open; clicking one opens

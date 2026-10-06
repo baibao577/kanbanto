@@ -8,18 +8,16 @@ import { useNow } from '@/lib/useNow'
 import { cn } from '@/lib/utils'
 import { parseWhen } from '@/lib/when'
 import { newId } from '@kanbanto/model/ids'
-import { fireTime } from '@kanbanto/model/reminders'
+import { beforeDueWords, fireTime } from '@kanbanto/model/reminders'
 import type { Reminder, Task } from '@kanbanto/model/types'
 
 /** A moment as a reminder's `at`: UTC, to the minute. */
 const moment = (d: Date) => new Date(Math.floor(d.getTime() / 60_000) * 60_000).toISOString().replace(/\.\d{3}Z$/, 'Z')
+/** The "before it's due" choices, in minutes: the ones within the day in one column, whole days in the other. */
 const BEFORE_DUE = [
-  { label: '1 hour before', minutes: 60 },
-  { label: '1 day before', minutes: 24 * 60 },
-  { label: '2 days before', minutes: 2 * 24 * 60 },
+  [0, 15, 30, 60],
+  [24 * 60, 2 * 24 * 60, 5 * 24 * 60],
 ]
-
-const beforeWords = (m: number) => BEFORE_DUE.find((b) => b.minutes === m)?.label ?? `${m} minutes before`
 
 /**
  * A card's reminders: each goes off once, for whoever is assigned then (or whoever set it, if nobody is), under the
@@ -49,7 +47,12 @@ export function Reminders({ task, readOnly, onChange }: { task: Task; readOnly: 
                 {at ? formatDay(at.toISOString(), true) : 'Needs a due date'}
                 {past && ' · went off'}
               </span>
-              {r.beforeDue !== undefined && <span className="block text-xs text-muted-foreground">{beforeWords(r.beforeDue)} it’s due</span>}
+              {r.beforeDue !== undefined && (
+                <span className="block text-xs text-muted-foreground">
+                  {beforeDueWords(r.beforeDue)}
+                  {r.beforeDue > 0 && ' it’s due'}
+                </span>
+              )}
             </span>
             {!readOnly && (
               <button
@@ -165,20 +168,26 @@ function AddReminder({ task, onAdd }: { task: Task; onAdd: (r: Omit<Reminder, 'i
           <p className="px-2 pt-1 pb-0.5 text-xs text-muted-foreground">
             {task.due ? 'Before it’s due (moves with the due date)' : 'Before it’s due: set a due date first'}
           </p>
-          {BEFORE_DUE.map((b) => (
-            <button
-              key={b.minutes}
-              type="button"
-              disabled={!task.due}
-              onClick={() => {
-                onAdd({ beforeDue: b.minutes, tz })
-                setOpen(false)
-              }}
-              className="flex w-full rounded px-2 py-1.5 text-left text-sm hover:bg-accent disabled:pointer-events-none disabled:opacity-40"
-            >
-              {b.label}
-            </button>
-          ))}
+          <div className="grid grid-cols-2">
+            {BEFORE_DUE.map((column, i) => (
+              <div key={i}>
+                {column.map((minutes) => (
+                  <button
+                    key={minutes}
+                    type="button"
+                    disabled={!task.due}
+                    onClick={() => {
+                      onAdd({ beforeDue: minutes, tz })
+                      setOpen(false)
+                    }}
+                    className="flex w-full rounded px-2 py-1.5 text-left text-sm hover:bg-accent disabled:pointer-events-none disabled:opacity-40"
+                  >
+                    {beforeDueWords(minutes)}
+                  </button>
+                ))}
+              </div>
+            ))}
+          </div>
         </div>
       </PopoverContent>
     </Popover>
