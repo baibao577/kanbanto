@@ -94,4 +94,5 @@ on the [Cards](/everyday/cards) page.
 ## Next
 
 - [Finding your way around](/start/finding-your-way)
+- [Bring your work in](/start/import): a board from Trello, or cards from a spreadsheet
 - [Cards in detail](/everyday/cards)

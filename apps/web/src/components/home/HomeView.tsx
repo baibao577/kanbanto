@@ -25,7 +25,8 @@ import { toast } from 'sonner'
 import type { BoardSummary, WorkspaceSummary } from '@kanbanto/model/api'
 import { backgroundOf, gradientCss } from '@kanbanto/model/colors'
 import { newId } from '@kanbanto/model/ids'
-import { parseBoard } from '@kanbanto/model/transfer'
+import { readBoardFile } from '@kanbanto/model/transfer'
+import { isTrelloExport } from '@kanbanto/model/trello'
 import { api, errorMessage } from '@/api/client'
 import { moveBoardTo } from '@/data/moveBoard'
 import { hrefFor, navigate } from '@/app/router'
@@ -60,6 +61,7 @@ import { cn } from '@/lib/utils'
 import { CreateBoardDialog } from './CreateBoardDialog'
 import { CreateWorkspaceDialog } from './CreateWorkspaceDialog'
 import { JoinCodeDialog } from './JoinCodeDialog'
+import { TrelloImportDialog } from './TrelloImportDialog'
 import { LogoMark } from '@/components/common/Logo'
 
 /**
@@ -77,6 +79,8 @@ export function HomeView() {
   const [renaming, setRenaming] = useState<BoardSummary | null>(null)
   const [confirm, setConfirm] = useState<ConfirmRequest | null>(null)
   const file = useRef<HTMLInputElement>(null)
+  // A Trello export that was picked: it's shown first (what comes over, what doesn't), then imported.
+  const [trello, setTrello] = useState<unknown>(null)
 
   useEffect(() => {
     document.title = 'Boards · Kanbanto'
@@ -84,9 +88,16 @@ export function HomeView() {
 
   const importAsNew = async (f: File) => {
     try {
+      let raw: unknown
+      try {
+        raw = JSON.parse(await f.text())
+      } catch {
+        throw new Error('The file isn’t valid JSON.')
+      }
+      if (isTrelloExport(raw)) return setTrello(raw)
       // Read and check it here first, for a clear message; the server checks it again.
-      const data = parseBoard(await f.text(), newId())
-      const { id, lost = [] } = await api<{ id: string; lost?: string[] }>('POST', '/boards/import', { file: JSON.parse(await f.text()) })
+      const data = readBoardFile(raw, newId())
+      const { id, lost = [] } = await api<{ id: string; lost?: string[] }>('POST', '/boards/import', { file: raw })
       // (Its fields became yours; ones there was no room for are named.)
       toast(`Imported “${data.board.name}”`, {
         description: lost.length ? `Without ${lost.map((n) => `“${n}”`).join(', ')}: you have as many fields as there can be.` : undefined,
@@ -339,6 +350,7 @@ export function HomeView() {
         }}
       />
       <JoinCodeDialog open={joining} onOpenChange={setJoining} />
+      {trello !== null && <TrelloImportDialog file={trello} onClose={() => setTrello(null)} />}
       <RenameBoardDialog key={renaming?.id} board={renaming} onClose={() => setRenaming(null)} onSaved={() => void reload()} />
       <ConfirmDialog request={confirm} onClose={() => setConfirm(null)} />
     </div>

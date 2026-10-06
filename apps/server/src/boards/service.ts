@@ -2,14 +2,14 @@ import type { BoardBackground } from '@kanbanto/model/colors'
 import { newId } from '@kanbanto/model/ids'
 import { emptyBoard, exampleData } from '@kanbanto/model/sample'
 import { isTimeZone } from '@kanbanto/model/dates'
-import { carryCustom, FIELD_LIMITS, linkRef, nameKey, type CustomValues } from '@kanbanto/model/fields'
+import { carryCustom, FIELD_LIMITS, linkRef, nameKey, valueText, type CustomValues } from '@kanbanto/model/fields'
 import { remapPreset } from '@kanbanto/model/prefs'
 import { CLIENT_FIELD, CLIENT_NAME, clientsBoard, EXAMPLE_CLIENTS, starterBoard, type Starter } from '@kanbanto/model/starters'
 import type { BoardData, Meta, Task } from '@kanbanto/model/types'
 import { and, eq, isNull } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import type { Db, Tx } from '../db'
-import { boardMembers, boardPresets, boards, tasks, workspaces, type Visibility } from '../db/schema'
+import { boardMembers, boardPresets, boards, comments, tasks, workspaces, type Visibility } from '../db/schema'
 import { HttpError } from '../http'
 import { accessOf, workspaceRole } from './access'
 import { adoptFields, applyAdoption, clientLink, fitStarter, replaceBoardFields, type Library } from './fields'
@@ -198,8 +198,18 @@ export async function createStarter(
  * (except to the person importing, if the file came from their own export). Its fields become fields of the
  * importer's own library: the ones it has (by name and type) are used, the rest are added while there's room.
  * `lost`: what couldn't come along.
+ *
+ * A board that comes from another app (Trello) brings two more things. `comments`: what was said on its cards, saved
+ * as the importer's with the dates they were written, telling nobody. `fieldText`: a field that can't come along is
+ * written on each card that had a value for it, under the description, since the file can't be imported again
+ * later to get it back.
  */
-export async function importBoard(app: FastifyInstance, ownerId: string, data: BoardData): Promise<{ id: string; lost: string[] }> {
+export async function importBoard(
+  app: FastifyInstance,
+  ownerId: string,
+  data: BoardData,
+  from: { comments?: { taskId: string; body: string; at: string }[]; fieldText?: boolean } = {},
+): Promise<{ id: string; lost: string[] }> {
   // (The id the file was read under: its cards' links to each other already name it. See `readBoardFile`.)
   const id = data.board.id
   // (The same goes for who set a reminder, which is who it goes to on an unassigned card: the importer now.)
@@ -218,9 +228,15 @@ export async function importBoard(app: FastifyInstance, ownerId: string, data: B
     const all = (tasks: Record<string, Task>) =>
       Object.fromEntries(
         Object.values(tasks).map((t) => {
-          const { custom: held, ...rest } = mine(t)
+          const { custom: held, ...kept } = mine(t)
           // (People in its person fields aren't accounts here either: only the importer is kept.)
           const custom = carryCustom(held, plan.map, { isMember: (u) => u === ownerId })
+          const said = from.fieldText
+            ? data.fields.flatMap((f) => (!plan.map.has(f.id) && held?.[f.id] !== undefined ? [`${f.name}: ${valueText(f, held[f.id])}`] : []))
+            : []
+          const rest = said.length
+            ? { ...kept, description: [kept.description, said.join('\n')].filter(Boolean).join('\n\n').slice(0, 50_000) }
+            : kept
           return [t.id, custom ? { ...rest, custom } : rest]
         }),
       )
@@ -232,6 +248,16 @@ export async function importBoard(app: FastifyInstance, ownerId: string, data: B
       id,
       data.fields.flatMap((f) => (plan.map.has(f.id) ? [{ id: plan.map.get(f.id)!.id, front: f.front, total: f.total }] : [])),
     )
+    // (Many rows to a statement: a board can arrive with thousands of comments.)
+    const said = (from.comments ?? []).filter((c) => tasks[c.taskId] || archived?.[c.taskId])
+    for (let i = 0; i < said.length; i += 500)
+      await tx
+        .insert(comments)
+        .values(
+          said
+            .slice(i, i + 500)
+            .map((c) => ({ id: newId(), boardId: id, taskId: c.taskId, authorId: ownerId, body: c.body, createdAt: new Date(c.at) })),
+        )
     return plan.lose
   })
   app.engine.reloaded(touched)

@@ -26,6 +26,7 @@ export default defineConfig({
           { text: 'What Kanbanto is', link: '/start/what-is-kanbanto' },
           { text: 'Your first board', link: '/start/first-board' },
           { text: 'Finding your way around', link: '/start/finding-your-way' },
+          { text: 'Bring your work in', link: '/start/import' },
         ],
       },
       {

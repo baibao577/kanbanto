@@ -169,6 +169,14 @@ export class BoardSync {
     this.replay()
   }
 
+  /**
+   * A change the server made for you outside the commands sent from here (cards added from a spreadsheet): taken in
+   * now, without waiting for the live connection to bring it (which then has nothing new to say).
+   */
+  learn(seq: number, changes: Change[]) {
+    this.receive(seq, changes)
+  }
+
   close() {
     this.closed = true
     this.socket?.close()

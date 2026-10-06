@@ -1309,7 +1309,7 @@ describe('API reference', () => {
   it('describes the API (with every command) and shows it at /api/docs', async () => {
     const spec = await new Person(t.app).ok('GET', '/api/openapi.json')
     expect(spec.openapi).toBe('3.1.0')
-    expect(spec.components.schemas.Command.oneOf).toHaveLength(18)
+    expect(spec.components.schemas.Command.oneOf).toHaveLength(19)
     expect(spec.components.schemas.PlanCommand.oneOf).toHaveLength(22)
     expect(Object.keys(spec.paths)).toEqual(
       expect.arrayContaining([
@@ -1318,6 +1318,8 @@ describe('API reference', () => {
         '/api/time/week',
         '/api/workspaces/{id}/planning/mutations',
         '/api/boards/{id}/plan',
+        '/api/boards/import',
+        '/api/boards/{id}/tasks/import',
       ]),
     )
     expect(Object.keys(spec.webhooks)).toEqual(['board.changed', 'reminder.due', 'comment.added', 'ping'])

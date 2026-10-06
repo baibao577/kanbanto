@@ -761,6 +761,58 @@ export async function applyAdoption(app: FastifyInstance, tx: Tx, lib: Library, 
   return touched
 }
 
+/**
+ * Which of these choice fields `userId` may add options to, from `board`: the ones of a library they manage (their
+ * own, for a Personal board; the workspace's, when they are one of its admins).
+ */
+export async function fieldsToExtend(db: Db | Tx, board: BoardRow, userId: string, fieldIds: string[]): Promise<Set<string>> {
+  if (!fieldIds.length) return new Set()
+  const rows = await db.select().from(libraryFields).where(inArray(libraryFields.id, fieldIds))
+  const admin = board.workspaceId ? (await workspaceRole(db, board.workspaceId, userId)) === 'admin' : false
+  return new Set(
+    rows
+      .filter((r) => r.type === 'choice' && !r.archivedAt && (r.workspaceId ? admin && r.workspaceId === board.workspaceId : r.ownerId === userId))
+      .map((r) => r.id),
+  )
+}
+
+/**
+ * Adds options to choice fields (values that arrive from a spreadsheet and aren't options yet), for someone who
+ * manages them (see `fieldsToExtend`). One that's there by now under the same name isn't added twice. The boards
+ * that show the fields load them again.
+ */
+export async function addOptions(app: FastifyInstance, board: BoardRow, userId: string, wanted: { fieldId: string; add: FieldOption[] }[]) {
+  if (!wanted.length) return
+  const touched: string[] = []
+  await app.db.transaction(async (tx) => {
+    const allowed = await fieldsToExtend(
+      tx,
+      board,
+      userId,
+      wanted.map((w) => w.fieldId),
+    )
+    for (const { fieldId, add } of wanted) {
+      if (!allowed.has(fieldId)) throw new HttpError(403, 'Only someone who manages a field can add options to it.')
+      const [first] = await tx.select().from(libraryFields).where(eq(libraryFields.id, fieldId))
+      await lockLibrary(tx, first.workspaceId ? { workspaceId: first.workspaceId } : { ownerId: first.ownerId! })
+      const [row] = await tx.select().from(libraryFields).where(eq(libraryFields.id, fieldId))
+      const has = row.settings.options ?? []
+      const fresh = add.filter((o) => !has.some((x) => x.id === o.id || nameKey(x.name) === nameKey(o.name)))
+      if (!fresh.length) continue
+      if (has.filter((o) => !o.archived).length + fresh.length > FIELD_LIMITS.options || has.length + fresh.length > FIELD_LIMITS.options * 2)
+        throw new HttpError(400, `“${row.name}” can’t hold that many options (${FIELD_LIMITS.options} at most).`)
+      const showing = await boardsWith(tx, fieldId)
+      await app.engine.bump(tx, showing)
+      touched.push(...showing)
+      await tx
+        .update(libraryFields)
+        .set({ settings: { ...row.settings, options: [...has, ...fresh] }, updatedAt: new Date() })
+        .where(eq(libraryFields.id, fieldId))
+    }
+  })
+  app.engine.reloaded(touched)
+}
+
 /** A board's field rows, replaced by this list (a new board, or one that moved to another space). */
 export async function replaceBoardFields(tx: Tx, boardId: string, list: { id: string; front?: boolean; total?: boolean }[]) {
   await tx.delete(boardFieldRows).where(eq(boardFieldRows.boardId, boardId))

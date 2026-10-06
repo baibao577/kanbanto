@@ -218,6 +218,8 @@ Every starter card has a **Client** field: a [card link](#link-cards-together) t
   amounts come to.
 - **Add a card on Clients for each of your own clients**, then pick it in the Client field. A later starter never
   adds cards to your Clients board: its example cards link only to the clients that are there by name.
+- **Have them in a spreadsheet already?** Open the Clients board, then **⋯ → Import cards…**, and paste the rows: a
+  *Name*, *Email* and *Phone* column are all it needs. See [Bring your work in](/start/import#cards-from-a-spreadsheet).
 - In a workspace, the Clients board belongs to the workspace like its other boards. Personal starters get one of
   your own.
 

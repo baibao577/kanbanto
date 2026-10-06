@@ -7,6 +7,7 @@ import { CommandSchema } from '@kanbanto/model/schema'
 import type { FastifyPluginAsync } from 'fastify'
 import { z } from 'zod'
 import { ACTIVITY_DAYS } from './boards/activityLog'
+import { ImportCardsBody } from './boards/importCards'
 import { NewCardBody } from './boards/newCards'
 import { siteUrl } from './http'
 
@@ -162,6 +163,45 @@ const schemas = {
   }),
   PlanCommand: { ...z.toJSONSchema(PlanCommandSchema, { unrepresentable: 'any' }), $schema: undefined },
   NewCard: { ...z.toJSONSchema(NewCardBody, { unrepresentable: 'any' }), $schema: undefined },
+  ImportCards: { ...z.toJSONSchema(ImportCardsBody, { unrepresentable: 'any' }), $schema: undefined },
+  ImportedCards: obj(
+    {
+      columns: { type: 'array', items: str, description: 'What each column was taken as.' },
+      report: obj(
+        {
+          cards: { type: 'integer', description: 'Cards added (or that would be).' },
+          subtasks: { type: 'integer', description: 'How many of them go under another card.' },
+          lists: { type: 'array', items: str, description: 'Lists made.' },
+          labels: { type: 'array', items: str, description: 'Labels made.' },
+          options: {
+            type: 'array',
+            items: obj({ field: str, names: { type: 'array', items: str } }),
+            description: 'Options added to choice fields.',
+          },
+          noTitle: {
+            type: 'array',
+            items: { type: 'integer' },
+            description: 'Rows left out: no title. (Rows are numbered as in the sheet, from 1.)',
+          },
+          duplicates: { type: 'array', items: { type: 'integer' }, description: 'Rows left out: their title is already a card on the board.' },
+          problems: {
+            type: 'array',
+            description: 'Cells that couldn’t be read: their cards are added without that value.',
+            items: obj({ column: str, kind: str, rows: { type: 'array', items: { type: 'integer' } }, samples: { type: 'array', items: str } }),
+          },
+          askDateOrder: {
+            ...obj({ column: str, sample: str }),
+            description: 'Dates that read two ways with nothing to say which: send `dateOrder`.',
+          },
+        },
+        ['cards', 'problems'],
+      ),
+      added: { type: 'integer', description: '0 for a check.' },
+      seq: { type: 'integer' },
+      changes: { type: 'array', items: { type: 'object' }, description: 'The records that changed.' },
+    },
+    ['columns', 'report', 'added'],
+  ),
   AddedCard: obj({
     board: obj({ id: str, name: str, inbox: { type: 'boolean', description: 'It went to your Inbox.' } }, ['id', 'name']),
     card: obj(
@@ -420,6 +460,54 @@ The answer lists the records that changed.
           parameters: [id('id')],
           requestBody: { content: { 'application/json': { schema: ref('NewCard') } } },
           responses: { 200: json(ref('AddedCard')) },
+        },
+      },
+      '/api/boards/import': {
+        post: {
+          tags: ['Boards'],
+          summary: 'Import a board from a file',
+          description:
+            'Makes a new board in Personal from a file: one of Kanbanto’s own exports, or the JSON Trello gives ("Export as JSON"). A Trello board brings its lists, cards, checklists (as subtasks), comments (with their dates, in your name) and custom fields; people and uploaded files stay behind, and the answer’s `trello` says what came over.',
+          requestBody: {
+            content: {
+              'application/json': {
+                schema: obj(
+                  {
+                    file: { description: 'The file’s contents, as JSON.' },
+                    lists: {
+                      type: 'object',
+                      additionalProperties: { enum: ['backlog', 'todo', 'doing', 'done'] },
+                      description: 'For a Trello board: what a list counts as, by its Trello id, where the guess from its name isn’t wanted.',
+                    },
+                  },
+                  ['file'],
+                ),
+              },
+            },
+          },
+          responses: {
+            200: json(
+              obj(
+                {
+                  id: { ...str, description: 'The new board.' },
+                  lost: { type: 'array', items: str, description: 'Fields that couldn’t come along (your library is full).' },
+                  trello: { type: 'object', description: 'For a Trello board: what came over, and what stayed behind.' },
+                },
+                ['id', 'lost'],
+              ),
+            ),
+          },
+        },
+      },
+      '/api/boards/{id}/tasks/import': {
+        post: {
+          tags: ['Boards'],
+          summary: 'Add cards from a spreadsheet',
+          description:
+            'Rows pasted from Excel or Google Sheets, or a .csv file’s text, as cards on a board you can edit. With `dryRun` nothing changes and the answer is the check: how many cards would be added, which lists and labels would be made, which rows are left out, which cells couldn’t be read. Without it the cards are added as one change (one line in the activity, one webhook event, each assignee told once).',
+          parameters: [id('id')],
+          requestBody: { content: { 'application/json': { schema: ref('ImportCards') } } },
+          responses: { 200: json(ref('ImportedCards')) },
         },
       },
       '/api/cards': {

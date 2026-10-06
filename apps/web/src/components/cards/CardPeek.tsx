@@ -82,6 +82,8 @@ export function CardPeek({
     setPrefs: store.setPrefs,
     idx,
     run,
+    // (Nothing here adds cards from a spreadsheet: that's on the board itself.)
+    adopt: (seq, changes) => store.adopt(seq, changes),
     undo: () => void store.undo(),
     reload: store.reload,
     access,

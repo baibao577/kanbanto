@@ -216,6 +216,15 @@ curl -X POST "$KANBANTO_URL/api/boards/<board id>/mutations" -H "Authorization: 
   -d '{"mutationId":"<unique>","command":{"type":"task.create","parentId":null,"fields":{"title":"Write the brief"}}}'
 ```
 
+Many cards from a spreadsheet (a .csv, or rows with tabs between the cells) go in one call. Run the check first
+(`dryRun`), tell the user what it says (cards to add, rows left out, cells that couldn't be read, and
+`askDateOrder` when dates could be day first or month first: ask them, then send `dateOrder`), and only then add:
+
+```bash
+jq -Rs '{text: ., dryRun: true}' rows.csv | curl -X POST "$KANBANTO_URL/api/boards/<board id>/tasks/import" \
+  -H "Authorization: Bearer $KANBANTO_TOKEN" -H "content-type: application/json" --data-binary @-
+```
+
 A file goes up as its bytes, with its name in a header (add `-H "X-Attach-To: comment"` to keep it for a comment,
 then post the comment with the file's id in `attachments`):
 

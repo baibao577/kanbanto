@@ -1572,6 +1572,124 @@ await shot('add-3-phone', async () => {
 })
 await page.setViewportSize({ width: 1360, height: 860 })
 
+// ── Bring your work in: a Trello board (a made-up export), and cards from pasted rows ─────────────────────────────
+const TRELLO = {
+  name: 'Shop opening',
+  desc: 'Everything before the doors open in November.',
+  prefs: { background: 'green' },
+  lists: [
+    ['tl1', 'Ideas'],
+    ['tl2', 'To do'],
+    ['tl3', 'Doing'],
+    ['tl4', 'With the printer'],
+    ['tl5', 'Done'],
+  ]
+    .map(([id, name], i) => ({ id, name, pos: i + 1, closed: false }))
+    .concat([{ id: 'tl6', name: 'Last year', pos: 9, closed: true }]),
+  labels: [
+    { id: 'tb1', name: 'Shopfront', color: 'orange' },
+    { id: 'tb2', name: 'Paperwork', color: 'purple' },
+  ],
+  members: [{ id: 'tm1', fullName: 'Dana Reyes', username: 'dana' }],
+  customFields: [],
+  checklists: [
+    {
+      id: 'tk1',
+      idCard: 'tc3',
+      name: 'Before opening day',
+      pos: 1,
+      checkItems: ['Measure the window', 'Choose the lettering', 'Send the artwork'].map((name, i) => ({
+        id: `ti${i}`,
+        name,
+        pos: i,
+        state: i < 2 ? 'complete' : 'incomplete',
+      })),
+    },
+  ],
+  cards: [
+    ['tc1', 'A loyalty card', 'tl1'],
+    ['tc2', 'Opening-week offer', 'tl1'],
+    ['tc3', 'Sign for the window', 'tl4'],
+    ['tc4', 'Order the till', 'tl2'],
+    ['tc5', 'Hire weekend staff', 'tl2'],
+    ['tc6', 'Paint the back wall', 'tl3'],
+    ['tc7', 'Register the business', 'tl5'],
+    ['tc8', 'Sign the lease', 'tl5'],
+    ['tc9', 'Christmas window 2025', 'tl6'],
+  ].map(([id, name, idList], i) => ({
+    id,
+    name,
+    idList,
+    pos: i,
+    desc: '',
+    idLabels: id === 'tc3' ? ['tb1'] : id === 'tc7' ? ['tb2'] : [],
+    idMembers: id === 'tc3' || id === 'tc5' ? ['tm1'] : [],
+    badges: { comments: id === 'tc3' ? 2 : id === 'tc7' ? 1 : 0 },
+    attachments:
+      id === 'tc3'
+        ? [{ name: 'window-sketch.pdf', url: 'https://trello.com/1/cards/tc3/attachments/a1/download/window-sketch.pdf', isUpload: true }]
+        : [],
+    dateLastActivity: new Date(Date.now() - (i + 1) * 86_400_000).toISOString(),
+  })),
+  actions: [
+    ['tc3', 'The printer needs the artwork by Friday.'],
+    ['tc3', 'Sent. They will call when it is ready.'],
+    ['tc7', 'Certificate arrived by post.'],
+  ].map(([id, text], i) => ({
+    type: 'commentCard',
+    date: new Date(Date.now() - (9 - i) * 86_400_000).toISOString(),
+    data: { text, card: { id } },
+    memberCreator: { fullName: 'Dana Reyes' },
+  })),
+}
+await shot('import-1-trello', async () => {
+  await page.goto(`${SITE}/#/`)
+  await page.reload()
+  await page.getByText('Website launch').first().waitFor()
+  await page.locator('input[type=file][accept*="json"]').setInputFiles({
+    name: 'shop-opening.json',
+    mimeType: 'application/json',
+    buffer: Buffer.from(JSON.stringify(TRELLO)),
+  })
+  const dialog = page.getByRole('dialog')
+  await dialog.getByText('What comes over').waitFor()
+  await page.waitForTimeout(500)
+  return dialog
+})
+await page.keyboard.press('Escape')
+// (Nothing is added: the pictures are of the screen before the button is pressed.)
+const ROWS = [
+  ['Task', 'Deadline', 'Tags', 'Owner', 'Status'],
+  ['Book the photographer', '3/11/2026', 'Marketing', 'Ben Ortiz', 'To Do'],
+  ['Write the press release', '5/11/2026', 'Marketing, Press', 'Ben Ortiz', 'To Do'],
+  ['Order printed flyers', 'next week', 'Print', 'Sam', 'Waiting on supplier'],
+  ['Update the price list', '10/11/2026', '', '', 'Doing'],
+]
+  .map((r) => r.join('\t'))
+  .join('\n')
+const openImport = async () => {
+  await openBoard()
+  await page.getByRole('button', { name: 'More' }).click()
+  await page.getByRole('menuitem', { name: 'Import cards…' }).click()
+  const dialog = page.getByRole('dialog')
+  await dialog.getByLabel('Rows pasted from a spreadsheet').fill(ROWS)
+  await dialog.getByText('Which way round are the dates?').waitFor()
+  return dialog
+}
+await shot('import-3-dates', async () => {
+  const dialog = await openImport()
+  return around([dialog.getByText('Which way round are the dates?'), dialog.getByRole('button', { name: /^Month first/ })], 28)
+})
+await page.keyboard.press('Escape')
+await shot('import-2-cards', async () => {
+  const dialog = await openImport()
+  await dialog.getByRole('button', { name: /^Day first/ }).click()
+  await dialog.getByText(/will be added/).waitFor()
+  await page.waitForTimeout(400)
+  return dialog
+})
+await page.keyboard.press('Escape')
+
 // ── Your Inbox: the panel beside the board (made last: it stays open from page to page, and files a card) ─────────
 const { boardId: inbox } = await api(ann, 'POST', '/inbox')
 let notes = 0

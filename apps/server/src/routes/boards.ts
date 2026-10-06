@@ -1,9 +1,12 @@
 import type { ArchivedPage, BoardAccess, BoardSummary, Role } from '@kanbanto/model/api'
 import { ARCHIVED_DATES, archivedFamily, archivedIn } from '@kanbanto/model/archived'
 import { isBackground, type BoardBackground } from '@kanbanto/model/colors'
-import { CommandSchema } from '@kanbanto/model/schema'
+import { BoardDataSchema, CommandSchema } from '@kanbanto/model/schema'
 import { isStarter, STARTERS } from '@kanbanto/model/starters'
 import { readBoardFile } from '@kanbanto/model/transfer'
+import { fromTrello, isTrelloExport, slimTrello, type TrelloSummary } from '@kanbanto/model/trello'
+import { CATEGORIES } from '@kanbanto/model/types'
+import { isTimeZone } from '@kanbanto/model/dates'
 import { newId } from '@kanbanto/model/ids'
 import { and, eq, inArray, sql } from 'drizzle-orm'
 import type { FastifyPluginAsync } from 'fastify'
@@ -17,6 +20,7 @@ import { requireWorkspace } from '../boards/workspaces'
 import type { Db } from '../db'
 import { boardFavorites, boards, workspaces } from '../db/schema'
 import { addCardSaid, NewCardBody } from '../boards/newCards'
+import { importCards, ImportCardsBody } from '../boards/importCards'
 import { HttpError, parse, siteUrl } from '../http'
 import { requireUser } from './auth'
 import { commentCounts, lastComments } from './comments'
@@ -146,9 +150,33 @@ export const boardRoutes: FastifyPluginAsync = async (app) => {
     return { id: await createBoard(app.db, user.id, { ...body, template: body.template }) }
   })
 
-  app.post('/boards/import', { bodyLimit: 20 * MB }, async (req) => {
+  /**
+   * A board from a file: one of Kanbanto's own exports, or a Trello board ("Export as JSON"; `lists` says what its
+   * lists count as, by their Trello ids, where the guess from their names isn't wanted). A Trello board answers with
+   * `trello` too: what came over and what stayed behind.
+   */
+  app.post('/boards/import', { bodyLimit: 20 * MB }, async (req): Promise<{ id: string; lost: string[]; trello?: TrelloSummary }> => {
     const user = requireUser(req.user)
-    const { file } = parse(z.object({ file: z.unknown() }), req.body)
+    const { file, lists } = parse(z.object({ file: z.unknown(), lists: z.record(z.string().max(100), z.enum(CATEGORIES)).optional() }), req.body)
+    if (isTrelloExport(file)) {
+      let made
+      try {
+        made = fromTrello(slimTrello(file), {
+          boardId: newId(),
+          now: new Date().toISOString(),
+          newId,
+          categories: lists,
+          zone: isTimeZone(user.timeZone) ? user.timeZone : 'UTC',
+        })
+      } catch (e) {
+        throw new HttpError(400, e instanceof Error ? e.message : 'That Trello export couldn’t be read.')
+      }
+      // (What's stored passes the same checks as any board file: sizes, dates, ids.)
+      const checked = BoardDataSchema.safeParse(made.data)
+      if (!checked.success) throw new HttpError(400, 'That Trello export couldn’t be read: some of it is in a shape Kanbanto doesn’t know.')
+      const done = await importBoard(app, user.id, made.data, { comments: made.comments, fieldText: true })
+      return { ...done, trello: made.summary }
+    }
     let data
     try {
       data = readBoardFile(file, newId())
@@ -294,6 +322,20 @@ export const boardRoutes: FastifyPluginAsync = async (app) => {
     const { id } = parse(Params, req.params)
     const me = requireUser(req.user)
     return addCardSaid(app, { me, via: req.apiToken?.app }, id, parse(NewCardBody, req.body), app.mail.siteUrl ?? siteUrl(req))
+  })
+
+  /**
+   * Adds cards from a spreadsheet to a board you can edit: `text` is what was pasted from Excel or Google Sheets, or
+   * a .csv file's text, and `columns` says what each column is (left out, the names in the first row say). With
+   * `dryRun` nothing is changed, and the answer is the check: how many cards would be added, which lists and labels
+   * would be made, which rows are left out and which cells couldn't be read. Without it the cards are added as one
+   * change: one line in the activity, one message to the board's webhooks, and each assignee told once.
+   */
+  app.post('/boards/:id/tasks/import', { bodyLimit: 6 * MB }, async (req) => {
+    const { id } = parse(Params, req.params)
+    const me = requireUser(req.user)
+    const { board } = await requireAccess(app.db, me, id, 'editor')
+    return importCards(app, { me, via: req.apiToken?.app }, board, parse(ImportCardsBody, req.body))
   })
 
   /**

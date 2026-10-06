@@ -33,6 +33,7 @@ import { exportBoard } from '@/data/transfer'
 import { useArchivedCard, useBoardStore } from '@/data/useBoardStore'
 
 // Dialogs load the first time they're opened.
+const ImportCardsDialog = lazy(() => import('@/components/shell/ImportCardsDialog').then((m) => ({ default: m.ImportCardsDialog })))
 const StatsDialog = lazy(() => import('@/components/shell/StatsDialog').then((m) => ({ default: m.StatsDialog })))
 const TaskDialog = lazy(() => import('@/components/task/TaskDialog').then((m) => ({ default: m.TaskDialog })))
 const LogBox = lazy(() => import('@/components/time/LogBox'))
@@ -380,6 +381,16 @@ function Workspace({ store }: { store: Store }) {
     [store, undo, say],
   )
 
+  const adopt = useCallback<BoardContextValue['adopt']>(
+    (seq, changes, done) => {
+      store.adopt(seq, changes)
+      lastRun.current = Date.now()
+      toast(done, { id: 'undo', action: { label: 'Undo', onClick: () => say(undo()) } })
+    },
+    [store, undo, say],
+  )
+  const [importing, setImporting] = useState(false)
+
   // The log box, open (with a card picked, from a card's menu or dialog).
   const [logging, setLogging] = useState<{ taskId?: string } | null>(null)
   const logTime = useCallback((taskId?: string) => setLogging({ taskId }), [])
@@ -421,6 +432,7 @@ function Workspace({ store }: { store: Store }) {
     setPrefs,
     idx,
     run,
+    adopt,
     undo: () => say(undo()),
     reload: store.reload,
     access,
@@ -508,6 +520,7 @@ function Workspace({ store }: { store: Store }) {
             onOpenSettings={() => setSettingsOpen(true)}
             onOpenStats={() => setStatsOpen(true)}
             onExport={() => void exportBoard(data).catch((e) => toast.error(errorMessage(e)))}
+            onImportCards={() => setImporting(true)}
           />
           {access.archivedAt && <ArchivedBanner boardId={data.board.id} owner={access.role === 'owner'} />}
           <div className="flex min-h-0 flex-1">
@@ -548,6 +561,11 @@ function Workspace({ store }: { store: Store }) {
         {statsOpen && (
           <Suspense fallback={null}>
             <StatsDialog open onOpenChange={setStatsOpen} />
+          </Suspense>
+        )}
+        {importing && (
+          <Suspense fallback={null}>
+            <ImportCardsDialog onClose={() => setImporting(false)} />
           </Suspense>
         )}
         {movingId && (

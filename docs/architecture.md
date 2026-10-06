@@ -203,6 +203,14 @@ The app uses hash routing, so any static host or proxy works without rewrite rul
   fields) is understood in one place, `boards/newCards.ts`: an assistant's `create_tasks` and `update_task` use it, and
   so do `POST /api/inbox/cards` and `POST /api/boards/:id/cards`, the one-call way in for scripts and automation tools.
   Every name is looked up before anything is added.
+- **Importing.** A Trello export becomes a board in the model (`trello.ts`: `slimTrello` keeps the parts that are
+  used and trusts none of their shapes, `fromTrello` makes the board, its comments and a summary), so the app shows
+  what will come over from the same code the server then runs; `importBoard` saves it like any imported board, plus
+  the comments with their own dates. Rows of a spreadsheet are read in the model too (`sheet.ts`, `sheetValues.ts`
+  for the dates and numbers people type, `importCards.ts` for the plan): the server adds what only it knows (people's
+  addresses, the cards a link field can reach, who may add an option) and the plan is both the check and the import.
+  The cards are added by one command, `tasks.import`, so the engine's rules, the activity log, webhooks and undo
+  all see one change; `afterBoardChange` tells each assignee once.
 - **Calendars** work from what should be there, not from what just happened. `calendarItems` (in the model) says
   which events a board gives a person; the calendar link renders them as an .ics file on request, and
   `CalendarSync` compares them with what it last sent to Google (`calendar_events`, by hash) and sends the

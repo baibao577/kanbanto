@@ -51,6 +51,17 @@ export type Command =
   | { type: 'task.restore'; id: string }
   /** Clears one of the board's fields on every card on the board (archived cards keep theirs). */
   | { type: 'tasks.clearField'; fieldId: string }
+  /**
+   * Adds many cards at once (rows of a spreadsheet): one change, so one line in the activity and one undo. `lists`
+   * and `labels` are made first: the ones its cards name that the board doesn't have. A card's parent is a card of
+   * the board or one earlier in `cards`; each goes at the end of where it lands, in the order given.
+   */
+  | {
+      type: 'tasks.import'
+      lists?: { id: string; name: string; category: Category }[]
+      labels?: { id: string; name: string; color: ColorName }[]
+      cards: { id: string; parentId: string | null; fields: TaskFields & { title: string } }[]
+    }
   | { type: 'column.create'; id?: string; name: string; category: Category }
   | { type: 'column.update'; id: string; fields: { name?: string; category?: Category; color?: ColorName | null } }
   | { type: 'column.move'; id: string; beforeId?: string }
@@ -80,6 +91,9 @@ export type TaskFields = Partial<
 
 /** Where to put a task among its siblings. */
 export type Place = { before: string } | { after: string } | { end: true }
+
+/** Cards one `tasks.import` can add. */
+export const IMPORT_MAX = 2000
 
 export interface Context {
   /** ISO timestamp for createdAt / updatedAt. */
@@ -111,8 +125,8 @@ function run(data: BoardData, cmd: Command, ctx: Context): Change[] {
   const out: Change[] = []
   const task = (id: string) => data.tasks[id] ?? reject('That task no longer exists.')
   // When it got done: set on entering a done list, kept while it stays in one, gone once it leaves.
-  const putTask = (before: Task | null, { doneAt, ...next }: Omit<Task, 'createdAt' | 'updatedAt' | 'version'>) => {
-    const done = data.columns.some((c) => c.id === next.status && c.category === 'done')
+  const putTask = (before: Task | null, { doneAt, ...next }: Omit<Task, 'createdAt' | 'updatedAt' | 'version'>, columns = data.columns) => {
+    const done = columns.some((c) => c.id === next.status && c.category === 'done')
     out.push({
       entity: 'task',
       id: next.id,
@@ -351,6 +365,51 @@ function run(data: BoardData, cmd: Command, ctx: Context): Change[] {
         const { custom: _held, ...rest } = t
         // (Not through putTask: clearing a field everywhere isn't work on each card, so their age stays as it was.)
         out.push({ entity: 'task', id: t.id, before: t, after: stamp(t, Object.keys(left).length ? { ...rest, custom: left } : rest, now) })
+      }
+      break
+    }
+
+    case 'tasks.import': {
+      if (cmd.cards.length > IMPORT_MAX) reject(`That’s more cards than can be added at once (${IMPORT_MAX.toLocaleString('en')} at most).`)
+      // The board as the cards will find it: with the lists and labels they name.
+      let last = data.columns.at(-1)?.position
+      const columns = [...data.columns]
+      for (const l of cmd.lists ?? []) {
+        if (columns.some((c) => c.id === l.id)) reject('A list with that id already exists.')
+        const col = stamp<StatusColumn>(
+          null,
+          { id: l.id, name: l.name.trim() || reject('A list needs a name.'), category: l.category, position: (last = positionBetween(last, null)) },
+          now,
+        )
+        columns.push(col)
+        out.push({ entity: 'column', id: l.id, before: null, after: col })
+      }
+      const labels = [...data.labels]
+      for (const l of cmd.labels ?? []) {
+        if (labels.some((x) => x.id === l.id)) reject('A label with that id already exists.')
+        const label = stamp<LabelDef>(null, { id: l.id, name: l.name.trim(), color: l.color }, now)
+        labels.push(label)
+        out.push({ entity: 'label', id: l.id, before: null, after: label })
+      }
+      const board: BoardData = { ...data, columns, labels }
+      const firstTodo = columns.find((c) => c.id === ctx.idx.firstOf.todo)?.id ?? columns[0].id
+      // Where each parent's children end, so every card goes after the one before it.
+      const ends = new Map<string | null, string | undefined>()
+      const made = new Set<string>()
+      for (const card of cmd.cards) {
+        if (data.tasks[card.id] || data.archived?.[card.id] || made.has(card.id)) reject('A task with that id already exists.')
+        if (card.parentId && !data.tasks[card.parentId] && !made.has(card.parentId)) reject('The parent task no longer exists.')
+        const fields = cleanFields(board, card.id, { status: firstTodo, ...card.fields })
+        if (!ends.has(card.parentId))
+          ends.set(card.parentId, card.parentId && made.has(card.parentId) ? undefined : lastSibling(data, card.parentId, card.id)?.order)
+        const order = positionBetween(ends.get(card.parentId), null)
+        ends.set(card.parentId, order)
+        made.add(card.id)
+        putTask(
+          null,
+          { id: card.id, parentId: card.parentId, order, labels: [], blockedBy: [], ...fields, title: fields.title!, status: fields.status! },
+          columns,
+        )
       }
       break
     }

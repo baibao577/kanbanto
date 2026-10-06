@@ -1,7 +1,7 @@
 import { DATE_WORDS, MAX_DATE_DAYS, normalizeTaskDate } from './dates'
 import { z } from 'zod'
 import { COLORS, isBackground, type BoardBackground, type ColorName } from './colors'
-import type { Command } from './commands'
+import { IMPORT_MAX, type Command } from './commands'
 import { FIELD_LIMITS, FIELD_TYPES, FILTER_TEXT_MAX, TEXT_FORMATS, TEXT_MATCHES, LINK_SCOPES, type FieldSettings } from './fields'
 import { isPosition } from './position'
 import { BUILT_IN_SORT_KEYS, OUTLINE_COLUMNS, type OutlineConfig, type TableFilter } from './table'
@@ -228,6 +228,18 @@ export const CommandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('tasks.archiveDone'), status: id, before: z.string().max(40) }),
   z.object({ type: z.literal('task.restore'), id }),
   z.object({ type: z.literal('tasks.clearField'), fieldId: id }),
+  z.object({
+    type: z.literal('tasks.import'),
+    lists: z
+      .array(z.object({ id, name: text(200), category }))
+      .max(200)
+      .optional(),
+    labels: z
+      .array(z.object({ id, name: text(200), color }))
+      .max(500)
+      .optional(),
+    cards: z.array(z.object({ id, parentId: id.nullable(), fields: taskFields.extend({ title: text(500) }) })).max(IMPORT_MAX),
+  }),
   z.object({ type: z.literal('column.create'), id: id.optional(), name: text(200), category }),
   z.object({
     type: z.literal('column.update'),

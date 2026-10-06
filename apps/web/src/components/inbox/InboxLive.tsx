@@ -157,6 +157,8 @@ export default function InboxLive({ boardId, cardId }: { boardId: string; cardId
     setPrefs: store.setPrefs,
     idx,
     run,
+    // (Nothing here adds cards from a spreadsheet: that's on the board itself.)
+    adopt: (seq, changes) => store.adopt(seq, changes),
     undo: () => void say(undo()),
     reload: store.reload,
     access,

@@ -37,7 +37,8 @@ curl -X POST https://kanbanto.example.com/api/boards/<board id>/mutations \
 - The answer lists the records that changed (`changes`: each with `before` and `after`).
 - A refused command answers 422 with the reason (for example, moving a task inside its own subtask).
 - `/api/docs` lists every command and its fields: `task.create`, `task.update`, `task.move`, `tasks.moveToList`,
-  `task.archive`, `tasks.archiveDone`, `task.restore`, `task.delete`, and the ones for lists, labels and the board.
+  `task.archive`, `tasks.archiveDone`, `task.restore`, `task.delete`, `tasks.import` (many cards in one change:
+  see "Many cards at once" below), and the ones for lists, labels and the board.
 - **Custom fields.** A board's own fields are in `data.fields` (id, name, type, and for a choice its options); a
   task's values are in `custom`, by field id. Set them with `task.update`:
   `{"type":"task.update","id":"<task id>","fields":{"custom":{"<field id>":"Acme","<another>":null}}}` sets the
@@ -195,6 +196,63 @@ In **n8n**, this is an HTTP Request node: method `POST`, the address above, "Sen
 `{ "title": "A card from n8n", "due": "tomorrow" }`. (Tried with n8n itself: the node's answer is the card, and the
 board's activity says it came through the API.) Zapier ("Webhooks by
 Zapier", POST), Make ("HTTP", Make a request) and an iPhone Shortcut ("Get Contents of URL") take the same four things.
+
+**Many cards at once, from a spreadsheet.** `POST /api/boards/<id>/tasks/import` takes rows as text, the way they
+are copied out of Excel or Google Sheets (tabs between the cells) or saved as a .csv (commas or semicolons), and
+adds a card for each. With `"dryRun": true` it changes nothing and answers with the check:
+
+```bash
+jq -Rs '{text: ., dryRun: true}' rows.csv | curl -X POST https://kanbanto.example.com/api/boards/<id>/tasks/import \
+  -H "Authorization: Bearer kbt_…" -H "Content-Type: application/json" --data-binary @-
+```
+
+For a file holding `Task,Deadline,Tags,Status`, then `Book the photographer,2026-11-03,Marketing,To Do`,
+`Order printed flyers,next week,Print,Waiting on supplier` and `,2026-11-10,,Doing`:
+
+```json
+{
+  "columns": ["title", "due", "labels", "list"],
+  "report": {
+    "cards": 2,
+    "subtasks": 0,
+    "lists": ["Waiting on supplier"],
+    "labels": ["Marketing", "Print"],
+    "options": [],
+    "noTitle": [4],
+    "duplicates": [],
+    "problems": [{ "column": "Deadline", "kind": "date", "rows": [3], "samples": ["next week"] }]
+  },
+  "added": 0
+}
+```
+
+Without `dryRun` the same call adds the cards and answers with `added`, the board's new `seq` and the `changes`. It is
+one change: one line in the activity ("imported 2 cards"), one `board.changed` to the board's webhooks, and each
+assignee told once. Lists and labels the rows name are made; a cell that can't be read (`problems`) leaves its card
+without that value; a row with no title, or whose title is already a card on the board, is left out (`noTitle`,
+`duplicates`; rows are numbered as in the sheet, the first being 1).
+
+| Field | What it takes |
+|---|---|
+| `text` | Needed. The rows, up to 2,000 of them and 40 columns. |
+| `columns` | What each column is, in order: `title`, `description`, `list`, `due`, `start`, `labels`, `assignee`, `priority`, `parent`, `skip`, or one of the board's fields by name (or `f:<field id>`). Left out: read from the names in the first row ("Task", "Deadline", "Tags", "Owner", and Thai ones), and the answer's `columns` says what was understood. |
+| `header` | `false` when the first row is a card, not column names (then say `columns`). |
+| `dateOrder` | `dmy` or `mdy`: how to read `3/4/2026` in a column where no date says. Each column settles itself when one of its dates only works one way; when none does, the check says so (`report.askDateOrder`) and adding is refused until this is given. |
+| `addAnyway` | `true`: also add rows whose title is already a card on the board. |
+| `timeZone` | The clock a time of day in a date cell is read on (`31/10/2026 14:30`). Else the account's, else UTC. |
+| `mutationId` | Yours to choose: with `addAnyway`, the same one sent again adds nothing twice. |
+
+Dates are read in the forms people type (`2026-10-15`, `15/10/2026`, `15 Oct 2026`, `15 ต.ค. 2569`), numbers with
+their separators and signs (`฿1,200`), an assignee by name or email address, a `parent` by the title of another
+row or of a card on the board, a card link by the linked card's title. A new option is added to a choice field only
+when the caller manages that field.
+
+**A whole board from Trello.** `POST /api/boards/import` takes `{"file": <the JSON Trello exports>}` as well as
+Kanbanto's own export files, and makes a new board in Personal: lists in order, cards, checklists as subtasks,
+comments with their dates (in your name, each saying who wrote it), custom fields as fields of yours. `"lists":
+{"<Trello list id>": "doing"}` says what a list counts as (`backlog`, `todo`, `doing`, `done`) where the guess from
+its name isn't wanted. The answer has `trello`: what came over and what stayed behind (people, uploaded files,
+comments Trello left out of the file).
 
 **Reminders** live on a task (`reminders`: each `{ id, at }` or `{ id, beforeDue, tz }`, in minutes before its due
 date), set with `task.update`. When one goes off, the task's assignee (or whoever set it, if nobody is assigned) gets

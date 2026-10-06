@@ -41,6 +41,15 @@ export function describeAllChanges(before: BoardData, changes: Change[], command
     const name = before.fields.find((f) => f.id === command.fieldId)?.name ?? 'a field'
     return n ? [{ text: `cleared ${name} on ${n} ${n === 1 ? 'card' : 'cards'}` }] : []
   }
+  // So is adding many cards from a spreadsheet: the log says how many, and the lists that came with them.
+  if (command?.type === 'tasks.import') {
+    const n = changes.filter((c) => c.entity === 'task' && !c.before).length
+    const lists = changes.flatMap((c) => (c.entity === 'column' && c.after ? [q((c.after as { name: string }).name)] : []))
+    return [
+      ...(n ? [{ text: `imported ${n.toLocaleString('en')} ${n === 1 ? 'card' : 'cards'}` }] : []),
+      ...(lists.length ? [{ text: `added the ${lists.length === 1 ? 'list' : 'lists'} ${lists.join(', ')}` }] : []),
+    ]
+  }
   const list = (id: string) => before.columns.find((c) => c.id === id)?.name ?? 'another list'
   const person = (id: string | undefined) => (id ? (before.members.find((m) => m.id === id)?.name ?? 'someone') : null)
   // A parent may be created in the same change (e.g. undo), so look in the change too.

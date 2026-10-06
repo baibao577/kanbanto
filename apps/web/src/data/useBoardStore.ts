@@ -105,6 +105,23 @@ export function useBoardStore(boardId: string, prefsStore: PrefsStore, onEvent: 
   )
 
   /**
+   * A change the server made for this person outside `run` (see `BoardSync.learn`): it's on the board at once, and
+   * it's their last change, so Undo takes it back.
+   */
+  const adopt = useCallback(
+    (seq: number, changes: Change[]) => {
+      if (!sync || !changes.length) return
+      sync.learn(seq, changes)
+      const h = history.current
+      h.undo.push(changes)
+      if (h.undo.length > HISTORY) h.undo.shift()
+      h.redo = []
+      touchHistory()
+    },
+    [sync],
+  )
+
+  /**
    * Undo or redo: puts the records back as a new command, which the server checks like any other. It's refused
    * if someone else has changed those records since. Returns null when done, or what to tell the person.
    */
@@ -155,6 +172,7 @@ export function useBoardStore(boardId: string, prefsStore: PrefsStore, onEvent: 
     prefs,
     setPrefs,
     run,
+    adopt,
     /** Fetches the board again (after changing something that isn't a command: its fields). */
     reload: useCallback(() => void sync?.resync(), [sync]),
     undo: useCallback(() => step('undo'), [step]),

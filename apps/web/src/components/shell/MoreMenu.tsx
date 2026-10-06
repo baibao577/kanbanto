@@ -8,6 +8,7 @@ import {
   GearSix,
   LockSimple,
   PaintBucket,
+  Table,
   UsersThree,
 } from '@phosphor-icons/react'
 import { useState } from 'react'
@@ -38,10 +39,11 @@ export interface MoreMenuProps {
   onOpenSettings: () => void
   onOpenStats: () => void
   onExport: () => void
+  onImportCards: () => void
 }
 
-/** The board's ⋯ menu: settings, background, stats, moving it (owners), export. */
-export function MoreMenu({ canShare, onOpenSettings, onOpenStats, onExport }: MoreMenuProps) {
+/** The board's ⋯ menu: settings, background, stats, moving it (owners), cards from a spreadsheet, export. */
+export function MoreMenu({ canShare, onOpenSettings, onOpenStats, onExport, onImportCards }: MoreMenuProps) {
   const { data, run, readOnly, access, openShare } = useBoard()
   const owner = access.role === 'owner'
   // How many archived cards it has: asked when the menu opens (they aren't sent with the board).
@@ -144,6 +146,11 @@ export function MoreMenu({ canShare, onOpenSettings, onOpenStats, onExport }: Mo
             <DropdownMenuItem onSelect={() => navigate({ page: 'cards', state: 'archived', board: data.board.id })}>
               <Archive /> Archived cards
               <span className="ml-auto text-xs text-muted-foreground tabular-nums">{archived}</span>
+            </DropdownMenuItem>
+          )}
+          {!readOnly && (
+            <DropdownMenuItem onSelect={onImportCards}>
+              <Table /> Import cards…
             </DropdownMenuItem>
           )}
           <DropdownMenuItem onSelect={onExport}>

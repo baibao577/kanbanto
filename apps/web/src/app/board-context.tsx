@@ -1,6 +1,7 @@
 import { createContext, useContext, type Dispatch } from 'react'
 import type { Command, TaskFields } from '@kanbanto/model/commands'
 import type { TaskIndex } from '@kanbanto/model/indexer'
+import type { Change } from '@kanbanto/model/records'
 import type { PrefsAction, ViewPrefs } from '@kanbanto/model/prefs'
 import type { BoardAccess, TaskCounts } from '@kanbanto/model/api'
 import type { LinkStore } from '@/data/links'
@@ -17,6 +18,11 @@ export interface BoardContextValue {
   idx: TaskIndex
   /** Runs a command. If it isn't allowed, shows why and returns false. */
   run: (cmd: Command) => boolean
+  /**
+   * Takes in a change the server made for you outside `run` (cards added from a spreadsheet): it shows at once, and
+   * `done` is said with an Undo button, which takes it back like any change of yours.
+   */
+  adopt: (seq: number, changes: Change[], done: string) => void
   /** Takes back your last change to the board, and says what it was. */
   undo: () => void
   /** Fetches the board again, after changing something about it that isn't a command (which fields it uses). */

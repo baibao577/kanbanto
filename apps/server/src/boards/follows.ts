@@ -162,6 +162,55 @@ function newsIn(data: BoardData, changes: Change[], mentioned: Map<string, strin
 }
 
 /**
+ * After cards were added from a spreadsheet. The people they're assigned to follow them, and each is told once,
+ * however many are theirs ("assigned “Call Acme” and 39 more cards to you"). Whoever imported them doesn't start
+ * following hundreds of cards, and nobody is told about names in their descriptions.
+ */
+async function afterImport(app: FastifyInstance, boardId: string, e: { userId: string; changes: Change[]; data: BoardData }, onBoard: Set<string>) {
+  const mine = new Map<string, Task[]>()
+  for (const c of e.changes) {
+    if (c.entity !== 'task' || c.before || !c.after?.assigneeId || !onBoard.has(c.after.assigneeId)) continue
+    const of = mine.get(c.after.assigneeId)
+    if (of) of.push(c.after)
+    else mine.set(c.after.assigneeId, [c.after])
+  }
+  if (!mine.size) return
+  const actor = e.data.members.find((m) => m.id === e.userId)?.name ?? 'Someone'
+  const told: { userId: string; taskId: string; text: string }[] = []
+  await app.db.transaction(async (tx) => {
+    for (const [userId, cards] of mine) {
+      // (Many rows to a statement: one person can be given hundreds of cards.)
+      for (let i = 0; i < cards.length; i += 500)
+        await follow(
+          tx,
+          boardId,
+          cards.slice(i, i + 500).map((t) => ({ taskId: t.id, userId })),
+          true,
+        )
+      if (userId === e.userId) continue
+      const more = cards.length - 1
+      const text = `assigned ${q(cards[0].title)}${more ? ` and ${more.toLocaleString('en')} more ${more === 1 ? 'card' : 'cards'}` : ''} to you`
+      await tx.insert(notifications).values({ id: newId(), userId, kind: 'change', boardId, taskId: cards[0].id, actorId: e.userId, changes: [text] })
+      told.push({ userId, taskId: cards[0].id, text })
+    }
+  })
+  for (const p of told)
+    void tellPerson(
+      app,
+      p.userId,
+      'follows',
+      {
+        title: `${actor} ${p.text}`,
+        body: e.data.board.name,
+        url: `/#/b/${encodeURIComponent(boardId)}?task=${encodeURIComponent(p.taskId)}`,
+        tag: `follows:${boardId}:${p.taskId}`,
+      },
+      24 * 3600,
+      { boardId, covered: 'board.changed' },
+    ).catch((err) => app.log.error({ err: err instanceof Error ? err.message : err }, 'push'))
+}
+
+/**
  * After a change to a board: the people it involves start following the cards (whoever made a card, whoever it's
  * assigned to, whoever is newly @mentioned in its description), the newly mentioned are told, and each card's
  * followers hear what happened to it. Never the person who made the change, and only people on the board.
@@ -173,6 +222,7 @@ export async function afterBoardChange(
 ) {
   const { data, changes, userId: actorId } = e
   const onBoard = new Set(data.members.map((m) => m.id))
+  if (e.command === 'tasks.import') return afterImport(app, boardId, e, onBoard)
   // Undo puts things back: nobody is mentioned again by it, and a card it brings back isn't one you made.
   const undo = e.command === 'records.restore'
 

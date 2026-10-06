@@ -1,5 +1,5 @@
 import type { LinkedCard, LinkedFrom, LinkedFromGroup, LinkPick } from '@kanbanto/model/api'
-import { FIELD_LIMITS, linkRef, linksOf, mapLinks, numberText, parseRef, type BoardField, type FieldDef } from '@kanbanto/model/fields'
+import { FIELD_LIMITS, linkRef, linksOf, mapLinks, nameKey, numberText, parseRef, type BoardField, type FieldDef } from '@kanbanto/model/fields'
 import { indexFor, statusCol } from '@kanbanto/model/indexer'
 import type { Change } from '@kanbanto/model/records'
 import { hasWords, wordsOf } from '@kanbanto/model/search'
@@ -366,6 +366,59 @@ const MAX_PICKS = 30
 const MAX_PICK_BOARDS = 50
 
 /**
+ * The boards a link field on `holder` takes its cards from, for this person: the board the field names, this board,
+ * or the boards of the field's space, kept to the ones they can open. This board first, then the others by name.
+ * `problem` says why there are none, when the field's board is gone or out of reach.
+ */
+async function boardsToPick(
+  env: { db: Db; engine: BoardEngine },
+  userId: string,
+  holder: BoardRow,
+  field: BoardField,
+): Promise<{ order: string[] } | { problem: string }> {
+  const space = (await spacesOf(env.db, [field.id])).get(field.id)
+  if (!space) return { problem: 'This field no longer exists.' }
+  const open = await openBoards(env.db, userId)
+  const scope = field.linkTo ?? 'space'
+  const ids =
+    scope === 'same' ? [holder.id] : scope === 'board' ? (field.board ? [field.board] : []) : open.filter((b) => !b.archivedAt).map((b) => b.id)
+  const facts = await boardFacts(env.db, [holder.id, ...ids])
+  const here = facts.get(holder.id)
+  const allowed = ids.filter(
+    (id) => here && facts.has(id) && inSpace(space, here, facts.get(id)!) && (id === holder.id || open.some((b) => b.id === id)),
+  )
+  if (scope === 'board' && !allowed.length)
+    return { problem: 'The board this field’s cards come from is gone, or you can’t open it. Its settings say which board that is.' }
+  const order = [...allowed].sort((a, b) => Number(b === holder.id) - Number(a === holder.id) || facts.get(a)!.name.localeCompare(facts.get(b)!.name))
+  return { order: order.slice(0, MAX_PICK_BOARDS) }
+}
+
+/**
+ * Every card a link field on `holder` could point at for this person, by title (as `nameKey` has it): for telling
+ * which card a title written somewhere else means (a column of a spreadsheet). A title several cards share lists
+ * them all: whoever asks decides what that means.
+ */
+export async function cardTitles(
+  env: { db: Db; engine: BoardEngine },
+  userId: string,
+  holder: BoardRow,
+  field: BoardField,
+): Promise<Map<string, string[]>> {
+  const out = new Map<string, string[]>()
+  const from = await boardsToPick(env, userId, holder, field)
+  if ('problem' in from) return out
+  const loaded = await env.engine.snapshots(from.order)
+  for (const boardId of from.order)
+    for (const t of Object.values(loaded.get(boardId)?.tasks ?? {})) {
+      const key = nameKey(t.title)
+      const has = out.get(key)
+      if (has) has.push(linkRef(boardId, t.id))
+      else out.set(key, [linkRef(boardId, t.id)])
+    }
+  return out
+}
+
+/**
  * Cards to pick for a link field on `holder`, by words in their titles (the latest ones, with no words): from the
  * board the field names, this board, or the boards of the field's space, kept to the ones the person can open.
  * `problem` says why there's nothing to pick from, when the field's board is gone or out of reach.
@@ -378,22 +431,10 @@ export async function pickCards(
   q: string,
   except?: string,
 ): Promise<{ cards: LinkPick[]; problem?: string }> {
-  const space = (await spacesOf(env.db, [field.id])).get(field.id)
-  if (!space) return { cards: [], problem: 'This field no longer exists.' }
-  const open = await openBoards(env.db, userId)
-  const scope = field.linkTo ?? 'space'
-  const ids =
-    scope === 'same' ? [holder.id] : scope === 'board' ? (field.board ? [field.board] : []) : open.filter((b) => !b.archivedAt).map((b) => b.id)
-  const facts = await boardFacts(env.db, [holder.id, ...ids])
-  const here = facts.get(holder.id)
-  const allowed = ids.filter(
-    (id) => here && facts.has(id) && inSpace(space, here, facts.get(id)!) && (id === holder.id || open.some((b) => b.id === id)),
-  )
-  if (scope === 'board' && !allowed.length)
-    return { cards: [], problem: 'The board this field’s cards come from is gone, or you can’t open it. Its settings say which board that is.' }
-  // This board first, then the others by name.
-  const order = [...allowed].sort((a, b) => Number(b === holder.id) - Number(a === holder.id) || facts.get(a)!.name.localeCompare(facts.get(b)!.name))
-  const loaded = await env.engine.snapshots(order.slice(0, MAX_PICK_BOARDS))
+  const from = await boardsToPick(env, userId, holder, field)
+  if ('problem' in from) return { cards: [], problem: from.problem }
+  const { order } = from
+  const loaded = await env.engine.snapshots(order)
   const words = wordsOf(q)
   const hits: (LinkPick & { at: number; starts: boolean })[] = []
   const needle = q.trim().toLowerCase()

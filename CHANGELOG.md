@@ -122,6 +122,19 @@ then `git pull` (or download the new release) and `docker compose up -d --build`
   a reminder if you like) and in the Due and Start pickers.
 - **Webhooks** live in Board settings: each can send only some events (card changes, comments, reminders), and has a
   delivery log showing what was sent and what came back, with "Send again".
+- **Bring your work in:** a board from Trello, and cards from a spreadsheet. "Import a board…" on the boards page
+  now takes the file Trello's "Export as JSON" gives: lists in their order, cards with their dates and labels,
+  checklists as subtasks, comments with the dates they were written (in your name, each saying who wrote it), custom
+  fields as fields of yours, archived cards as archived cards. Before anything is made, a screen says what will come
+  over, lets you say what each list counts as (read from its name where it says, in English or Thai), and names
+  what stays behind: people, uploaded files (each card links to its own in Trello) and comments older than what
+  Trello exports. On a board, ⋯ → "Import cards…" turns rows pasted from Excel or Google Sheets, or a .csv file, into
+  cards: say what each column is (guessed from its name: title, description, list, dates, labels, assignee,
+  priority, parent card, or one of the board's fields), read the check (how many cards, which lists and labels are
+  new, which rows are left out, which cells couldn't be read), then add them as one change with one undo. Dates are
+  read as people type them, Thai months and Buddhist-era years included, and a column that could be day first or
+  month first is settled from its own values or asked about once. Each assignee is told once. For scripts:
+  `POST /api/boards/<id>/tasks/import` (with `dryRun` for the check), and a new command, `tasks.import`.
 - **Add from anywhere:** put something in your Inbox without opening Kanbanto first. A button for your browser's
   bookmarks bar (Account settings → Add from anywhere) opens a small window with the page's title, its address and
   the words you had selected; press Add, and it closes. On Android, Kanbanto installed from Chrome is in the list of

@@ -66,6 +66,8 @@ not share it by itself; use **Share** for that.
   spreadsheet.
 - To bring one back, open the **⋯** menu on the boards page and choose **Import a board…**. It arrives as a new
   board.
+- The same button takes a board exported from **Trello**, and **⋯ → Import cards…** on a board adds cards from a
+  spreadsheet: see [Bring your work in](/start/import).
 
 Comments and attached files are not part of the export file.
 
