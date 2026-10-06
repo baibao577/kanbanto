@@ -66,6 +66,27 @@ The assistant searches before it adds, so it does not create a card you already 
 - "Comment on the announcement that the quotes are in, and mention Ann."
 :::
 
+## Files
+
+::: info Try
+- "Write up what we decided as notes.md and attach it to the offsite card."
+- "Attach the price list from https://example.com/prices.pdf to 'Pricing section', with a comment for Ben."
+- "Look at the screenshot on the sign-up bug. What's wrong in it?"
+- "Read the CSV on 'Q3 numbers' and tell me the three biggest."
+:::
+
+What to know:
+
+- **It can read** text files (notes, Markdown, CSV, logs) and look at pictures. A PDF, a spreadsheet or a zip it can
+  only see the name of: open those yourself.
+- **It can attach** a file it writes, or one at a public web address. Say "in a comment" and the file is posted with
+  a comment; otherwise it goes on the card. To point at a file in a description, it writes the paperclip mark, the
+  same one you get by typing **#**.
+- **A file from your computer** only works with an assistant that runs there, such as Claude Code: "attach
+  build.log to the deploy card". In a chat app, drop the file on the card yourself.
+- **It cannot remove files.** That stays with you.
+- Programs and scripts can't be attached, as in the app.
+
 ## Tidy up
 
 ::: info Try

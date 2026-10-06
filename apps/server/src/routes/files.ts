@@ -1,13 +1,14 @@
 import type { AccountStorage, AttachmentView, PlatformStorage } from '@kanbanto/model/api'
 import { newId } from '@kanbanto/model/ids'
-import { and, eq, inArray, isNotNull, isNull, lt, sql } from 'drizzle-orm'
-import type { FastifyInstance, FastifyPluginAsync, FastifyRequest } from 'fastify'
+import { and, eq, inArray, isNotNull, isNull, lt, or, sql } from 'drizzle-orm'
+import type { FastifyInstance, FastifyPluginAsync } from 'fastify'
 import { z } from 'zod'
 import type { SessionUser } from '../auth/sessions'
 import { requireAccess } from '../boards/access'
 import { encryptionReady } from '../crypto'
 import type { Db, Tx } from '../db'
-import { attachments, siteSettings, storageBackends, users } from '../db/schema'
+import type { ActivityItem } from '@kanbanto/model/activity'
+import { attachments, boardActivity, boards, siteSettings, storageBackends, users } from '../db/schema'
 import { serial } from '../serial'
 import { HttpError, parse } from '../http'
 import {
@@ -226,9 +227,245 @@ export async function trashCommentFiles(db: Db | Tx, commentId: string) {
     .where(and(eq(attachments.commentId, commentId), isNull(attachments.deletedAt)))
 }
 
+/** Who may put a file here: editors and owners on a card, anyone who can comment for a comment's (not a visitor with the public link). */
+export async function mayUpload(db: Db | Tx, user: SessionUser | null, boardId: string, forComment: boolean) {
+  const me = requireUser(user)
+  const { board, access } = await requireAccess(db, me, boardId, forComment ? 'viewer' : 'editor', { write: true })
+  if (forComment && access.via === 'public') throw new HttpError(403, 'Join this board to comment on it.')
+  return { board, me }
+}
+
+/** The size an upload says it has, refused when it's missing or over the largest file allowed: checked before a byte is read. */
+export async function declaredSize(db: Db | Tx, header: string | string[] | undefined) {
+  const { maxFileMb } = await storageSettings(db)
+  const size = Number(header)
+  if (!Number.isFinite(size) || size <= 0) throw new HttpError(411, 'Uploads need their size (a Content-Length header).')
+  if (size > maxFileMb * MB) throw new HttpError(413, `Files can be up to ${maxFileMb} MB.`)
+  return size
+}
+
+const NO_PROGRAMS = 'Programs and scripts can’t be attached. Zip it if you need to share it.'
+/** Why a file of this name can't be attached, to say before anything is sent (or null). */
+export const blockedName = (name: string) => (BLOCKED.test(cleanName(name)) ? NO_PROGRAMS : null)
+
+/** What a file is, going by the end of its name, for files that arrive without anyone saying. */
+const TYPES: Record<string, string> = {
+  txt: 'text/plain',
+  log: 'text/plain',
+  md: 'text/markdown',
+  markdown: 'text/markdown',
+  csv: 'text/csv',
+  tsv: 'text/tab-separated-values',
+  json: 'application/json',
+  xml: 'application/xml',
+  yaml: 'application/yaml',
+  yml: 'application/yaml',
+  html: 'text/html',
+  htm: 'text/html',
+  css: 'text/css',
+  ics: 'text/calendar',
+  svg: 'image/svg+xml',
+  pdf: 'application/pdf',
+  zip: 'application/zip',
+  doc: 'application/msword',
+  docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  xls: 'application/vnd.ms-excel',
+  xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  ppt: 'application/vnd.ms-powerpoint',
+  pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  mp3: 'audio/mpeg',
+  wav: 'audio/wav',
+  mp4: 'video/mp4',
+  mov: 'video/quicktime',
+  webm: 'video/webm',
+}
+
+/** The picture a file's first bytes say it is (the kinds shown in the app), whatever its name or its sender claims. */
+export function pictureType(bytes: Buffer): string | null {
+  const starts = (...sig: number[]) => sig.every((b, i) => bytes[i] === b)
+  if (starts(0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a)) return 'image/png'
+  if (starts(0xff, 0xd8, 0xff)) return 'image/jpeg'
+  const word = (from: number, to: number) => bytes.subarray(from, to).toString('latin1')
+  if (word(0, 4) === 'GIF8') return 'image/gif'
+  if (word(0, 4) === 'RIFF' && word(8, 12) === 'WEBP') return 'image/webp'
+  if (word(4, 8) === 'ftyp' && /^avi[fs]$/.test(word(8, 12))) return 'image/avif'
+  return null
+}
+
+/**
+ * The kind to keep for a file nobody vouched for (one an assistant wrote, downloaded, or sent through an upload
+ * link). A stored picture type is what makes a file show in the page instead of downloading, so it's a picture
+ * only when its bytes are one; anything else goes by its name.
+ */
+export function typeFor(name: string, bytes: Buffer): string {
+  const byName = TYPES[name.slice(name.lastIndexOf('.') + 1).toLowerCase()]
+  return pictureType(bytes) ?? (byName && !IMAGE_TYPES.has(byName) ? byName : 'application/octet-stream')
+}
+
+/**
+ * A name no other file of the card has: "report.pdf" becomes "report (2).pdf". Text points at a file by its name
+ * (📎report.pdf), so two of one name would make every such mark mean the newer one. Counted: the card's files, its
+ * comments' files, and the uploader's own unposted ones.
+ */
+async function freeName(db: Db | Tx, at: { boardId: string; taskId: string; uploaderId: string }, name: string) {
+  const rows = await db
+    .select({ name: attachments.name })
+    .from(attachments)
+    .where(
+      and(
+        eq(attachments.boardId, at.boardId),
+        eq(attachments.taskId, at.taskId),
+        isNull(attachments.deletedAt),
+        or(eq(attachments.draft, false), eq(attachments.uploaderId, at.uploaderId)),
+      ),
+    )
+  const taken = new Set(rows.map((r) => r.name.toLowerCase()))
+  if (!taken.has(name.toLowerCase())) return name
+  const dot = name.lastIndexOf('.')
+  const [stem, ext] = dot > 0 ? [name.slice(0, dot), name.slice(dot)] : [name, '']
+  for (let n = 2; ; n++) {
+    const next = `${stem.slice(0, 200 - ext.length - 8)} (${n})${ext}`
+    if (!taken.has(next.toLowerCase())) return next
+  }
+}
+
+/** A file to save, and for whom. */
+export interface Upload {
+  boardId: string
+  taskId: string
+  /** Who's sending it (nobody signed in: refused). */
+  me: SessionUser | null
+  bytes: Buffer
+  name: string
+  /** The kind its sender says it is. Left out: told from its name, and a picture only when its bytes are one. */
+  type?: string
+  /** For a comment being written: a draft, its uploader's only, until the comment is posted with it. */
+  forComment?: boolean
+  /** The app it came through ("Claude", "API"), for the board's activity. */
+  via?: string | null
+}
+
+/**
+ * Saves a file on a card: the one way in, for the app, an API token, an assistant's tools and an upload link. It
+ * checks who may (again, at the moment of saving), the size, the name and the space left, gives it a name of its
+ * own on the card, stores it (the board owner's own storage if they connected one, else the site's), and tells
+ * everyone with the card open. A card's own file is a line in the board's activity; a comment's is told with its
+ * comment. One at a time per board: each is counted before the next is checked against the space left. (So never
+ * call this from inside another `serial('files:…')` of the same board, and do anything slow, like a download, first.)
+ */
+export function saveUpload(app: FastifyInstance, u: Upload): Promise<AttachmentView> {
+  const { boardId: id, taskId, bytes: body } = u
+  const forComment = !!u.forComment
+  return serial(`files:${id}`, async () => {
+    const { board, me } = await mayUpload(app.db, u.me, id, forComment)
+    if (!Buffer.isBuffer(body) || !body.length) throw new HttpError(400, 'Choose a file to upload.')
+    const { maxFileMb, quotaMb } = await storageSettings(app.db)
+    if (body.length > maxFileMb * MB) throw new HttpError(413, `Files can be up to ${maxFileMb} MB.`)
+    const cleaned = cleanName(u.name)
+    if (BLOCKED.test(cleaned)) throw new HttpError(400, NO_PROGRAMS)
+    const { data } = await app.engine.snapshot(id)
+    const task = data.tasks[taskId]
+    if (!task)
+      throw new HttpError(404, data.archived?.[taskId] ? 'That task is archived. Restore it to add files to it.' : 'That task no longer exists.')
+
+    const workspaceId = board.workspaceId
+    const owner = workspaceId ? null : await boardOwner(app.db, id)
+    const own = owner ? await activeBackend(app.db, owner) : null
+    if (workspaceId) {
+      const used = await quotaUsed(app.db, { workspaceId })
+      if (used + body.length > quotaMb * MB)
+        throw new HttpError(413, `This would go over the workspace’s ${quotaMb} MB of file space (${formatMb(used)} used). Delete some files first.`)
+    } else if (!own && owner) {
+      const used = await quotaUsed(app.db, { ownerId: owner })
+      if (used + body.length > quotaMb * MB) {
+        const mine = owner === me.id
+        throw new HttpError(
+          413,
+          mine
+            ? `This would go over your ${quotaMb} MB of file space (${formatMb(used)} used). Delete some files, or connect your own storage in Account settings.`
+            : `The board’s owner is out of file space (${quotaMb} MB). Ask them to free some up or connect their own storage.`,
+        )
+      }
+    }
+    const name = await freeName(app.db, { boardId: id, taskId, uploaderId: me.id }, cleaned)
+    const platform = own ? null : await activeBackend(app.db, null)
+    const backendRow = own ?? platform
+    const attId = newId()
+    // (A name made only of dots would be a path step, not a file.)
+    const leaf = name.replace(/[^\w.-]+/g, '_').slice(0, 80)
+    const storageKey = `boards/${id}/${attId}/${/^\.*$/.test(leaf) ? 'file' : leaf}`
+    const mime = u.type ?? typeFor(name, body)
+    try {
+      await (backendRow ? s3For(backendRow) : disk).put(storageKey, body, mime)
+    } catch (e) {
+      if (backendRow)
+        await app.db
+          .update(storageBackends)
+          .set({ lastError: e instanceof Error ? e.message : 'Upload failed' })
+          .where(eq(storageBackends.id, backendRow.id))
+      app.log.warn({ err: e instanceof Error ? e.message : e }, 'upload failed')
+      throw new HttpError(502, `The file couldn’t be saved${e instanceof StorageError ? `: ${e.message}` : '.'}`)
+    }
+    await app.db.insert(attachments).values({
+      id: attId,
+      boardId: id,
+      taskId,
+      uploaderId: me.id,
+      ownerId: owner,
+      workspaceId,
+      backend: backendRow ? 's3' : 'disk',
+      backendId: backendRow?.id ?? null,
+      ownStorage: !!own,
+      storageKey,
+      name,
+      size: body.length,
+      mime,
+      draft: forComment,
+    })
+    const [attachment] = await views(app.db, and(eq(attachments.id, attId)))
+    // A comment's files are announced, and logged, with the comment.
+    if (!forComment) {
+      const items: ActivityItem[] = [{ taskId, text: `attached “${name}” to “${task.title}”` }]
+      await app.db.insert(boardActivity).values({ id: newId(), boardId: id, actorId: me.id, command: 'file.attach', items, via: u.via ?? null })
+      await app.db.update(boards).set({ activityAt: new Date() }).where(eq(boards.id, id))
+      app.hub.broadcast(id, { type: 'attachment', taskId, action: 'added', attachmentId: attId, attachment })
+    }
+    return attachment
+  })
+}
+
+/** A file that was saved for a comment which then couldn't be posted: removed for good (it was never visible). */
+export async function dropDraft(db: Db | Tx, attId: string) {
+  const [a] = await db
+    .delete(attachments)
+    .where(and(eq(attachments.id, attId), eq(attachments.draft, true)))
+    .returning()
+  if (a) await removeObject(db, a)
+}
+
+/**
+ * A card's files, its own and the ones in its comments (not unposted drafts). A card restored with undo gets back
+ * the files that went to the trash with it.
+ */
+export async function cardFiles(app: FastifyInstance, boardId: string, taskId: string): Promise<AttachmentView[]> {
+  const { data } = await app.engine.snapshot(boardId)
+  if (data.tasks[taskId])
+    await app.db
+      .update(attachments)
+      .set({ deletedAt: null, orphaned: false })
+      .where(and(eq(attachments.boardId, boardId), eq(attachments.taskId, taskId), eq(attachments.orphaned, true)))
+  return views(
+    app.db,
+    and(eq(attachments.boardId, boardId), eq(attachments.taskId, taskId), isNull(attachments.deletedAt), eq(attachments.draft, false)),
+  )
+}
+
 export const fileRoutes: FastifyPluginAsync = async (app) => {
   // Uploads arrive as raw bytes (not JSON), within this plugin only.
   app.addContentTypeParser('*', { parseAs: 'buffer', bodyLimit: HARD_MAX }, (_req, body, done) => done(null, body))
+  // (Fastify reads text/plain as words by itself: here a text file is a file like any other.)
+  app.removeContentTypeParser('text/plain')
+  app.addContentTypeParser('text/plain', { parseAs: 'buffer', bodyLimit: HARD_MAX }, (_req, body, done) => done(null, body))
   // Only the upload route takes raw bytes (after its own checks of who's asking and how big): on the other routes
   // here a body that isn't JSON is refused before any of it is read, signed in or not.
   app.addHook('onRequest', async (req) => {
@@ -243,20 +480,7 @@ export const fileRoutes: FastifyPluginAsync = async (app) => {
   app.get('/boards/:id/tasks/:taskId/attachments', async (req) => {
     const { id, taskId } = parse(TaskParams, req.params)
     await requireAccess(app.db, req.user, id, 'viewer')
-    // A card restored with undo gets back the files that went to the trash with it.
-    const { data } = await app.engine.snapshot(id)
-    if (data.tasks[taskId])
-      await app.db
-        .update(attachments)
-        .set({ deletedAt: null, orphaned: false })
-        .where(and(eq(attachments.boardId, id), eq(attachments.taskId, taskId), eq(attachments.orphaned, true)))
-    // The card's files and the files in its comments (for referencing them with #); not unposted drafts.
-    return {
-      attachments: await views(
-        app.db,
-        and(eq(attachments.boardId, id), eq(attachments.taskId, taskId), isNull(attachments.deletedAt), eq(attachments.draft, false)),
-      ),
-    }
+    return { attachments: await cardFiles(app, id, taskId) }
   })
 
   /**
@@ -266,28 +490,18 @@ export const fileRoutes: FastifyPluginAsync = async (app) => {
    * It goes to the board owner's own storage if they connected one, else the site's storage within their quota (or,
    * for a board in a workspace, the site's storage within the workspace's).
    */
-  /** Who may upload here (checked before the file is read, and again after). */
-  const uploader = async (req: FastifyRequest) => {
-    const { id, taskId } = parse(TaskParams, req.params)
-    const me = requireUser(req.user)
-    const forComment = req.headers['x-attach-to'] === 'comment'
-    const { board, access } = await requireAccess(app.db, me, id, forComment ? 'viewer' : 'editor', { write: true })
-    if (forComment && access.via === 'public') throw new HttpError(403, 'Join this board to comment on it.')
-    return { id, taskId, me, forComment, board }
-  }
-
   app.post(
     '/boards/:id/tasks/:taskId/attachments',
     {
       // Everything that can be checked before reading the file is, so nobody can make the server hold a big
       // upload in memory for nothing: who's asking, the declared size, and room for drafts.
       onRequest: async (req) => {
-        const { me, forComment } = await uploader(req)
-        const { maxFileMb } = await storageSettings(app.db)
-        const size = Number(req.headers['content-length'])
-        if (!Number.isFinite(size) || size <= 0) throw new HttpError(411, 'Uploads need their size (a Content-Length header).')
-        if (size > maxFileMb * MB) throw new HttpError(413, `Files can be up to ${maxFileMb} MB.`)
+        const { id } = parse(TaskParams, req.params)
+        const forComment = req.headers['x-attach-to'] === 'comment'
+        const { me } = await mayUpload(app.db, req.user, id, forComment)
+        const size = await declaredSize(app.db, req.headers['content-length'])
         if (forComment) {
+          const { maxFileMb } = await storageSettings(app.db)
           const [waiting] = await app.db
             .select({ n: sql<number>`count(*)::int`, bytes: sql<number>`coalesce(sum(${attachments.size}), 0)::bigint` })
             .from(attachments)
@@ -297,86 +511,27 @@ export const fileRoutes: FastifyPluginAsync = async (app) => {
         }
       },
     },
-    // (One upload to a board at a time: each is counted before the next is checked against the space left.)
-    (req) =>
-      serial(`files:${(req.params as { id: string }).id}`, async () => {
-        const { id, taskId, me, forComment, board } = await uploader(req)
-        const body = req.body
-        if (!Buffer.isBuffer(body) || !body.length) throw new HttpError(400, 'Choose a file to upload.')
-        const { maxFileMb, quotaMb } = await storageSettings(app.db)
-        if (body.length > maxFileMb * MB) throw new HttpError(413, `Files can be up to ${maxFileMb} MB.`)
-        let given: string
-        try {
-          given = decodeURIComponent(String(req.headers['x-file-name'] ?? 'file'))
-        } catch {
-          throw new HttpError(400, 'That file name can’t be read.')
-        }
-        const name = cleanName(given)
-        if (BLOCKED.test(name)) throw new HttpError(400, 'Programs and scripts can’t be attached. Zip it if you need to share it.')
-        const { data } = await app.engine.snapshot(id)
-        if (!data.tasks[taskId]) throw new HttpError(404, 'That task no longer exists.')
-
-        const workspaceId = board.workspaceId
-        const owner = workspaceId ? null : await boardOwner(app.db, id)
-        const own = owner ? await activeBackend(app.db, owner) : null
-        if (workspaceId) {
-          const used = await quotaUsed(app.db, { workspaceId })
-          if (used + body.length > quotaMb * MB)
-            throw new HttpError(
-              413,
-              `This would go over the workspace’s ${quotaMb} MB of file space (${formatMb(used)} used). Delete some files first.`,
-            )
-        } else if (!own && owner) {
-          const used = await quotaUsed(app.db, { ownerId: owner })
-          if (used + body.length > quotaMb * MB) {
-            const mine = owner === me.id
-            throw new HttpError(
-              413,
-              mine
-                ? `This would go over your ${quotaMb} MB of file space (${formatMb(used)} used). Delete some files, or connect your own storage in Account settings.`
-                : `The board’s owner is out of file space (${quotaMb} MB). Ask them to free some up or connect their own storage.`,
-            )
-          }
-        }
-        const platform = own ? null : await activeBackend(app.db, null)
-        const backendRow = own ?? platform
-        const attId = newId()
-        // (A name made only of dots would be a path step, not a file.)
-        const leaf = name.replace(/[^\w.-]+/g, '_').slice(0, 80)
-        const storageKey = `boards/${id}/${attId}/${/^\.*$/.test(leaf) ? 'file' : leaf}`
-        const mime = mimeOf(req.headers['x-file-type'] as string | undefined)
-        try {
-          await (backendRow ? s3For(backendRow) : disk).put(storageKey, body, mime)
-        } catch (e) {
-          if (backendRow)
-            await app.db
-              .update(storageBackends)
-              .set({ lastError: e instanceof Error ? e.message : 'Upload failed' })
-              .where(eq(storageBackends.id, backendRow.id))
-          req.log.warn({ err: e instanceof Error ? e.message : e }, 'upload failed')
-          throw new HttpError(502, `The file couldn’t be saved${e instanceof StorageError ? `: ${e.message}` : '.'}`)
-        }
-        await app.db.insert(attachments).values({
-          id: attId,
-          boardId: id,
-          taskId,
-          uploaderId: me.id,
-          ownerId: owner,
-          workspaceId,
-          backend: backendRow ? 's3' : 'disk',
-          backendId: backendRow?.id ?? null,
-          ownStorage: !!own,
-          storageKey,
-          name,
-          size: body.length,
-          mime,
-          draft: forComment,
-        })
-        const [attachment] = await views(app.db, and(eq(attachments.id, attId)))
-        // A comment's files are announced with the comment.
-        if (!forComment) app.hub.broadcast(id, { type: 'attachment', taskId, action: 'added', attachmentId: attId, attachment })
-        return { attachment }
-      }),
+    async (req) => {
+      const { id, taskId } = parse(TaskParams, req.params)
+      let given: string
+      try {
+        given = decodeURIComponent(String(req.headers['x-file-name'] ?? 'file'))
+      } catch {
+        throw new HttpError(400, 'That file name can’t be read.')
+      }
+      const attachment = await saveUpload(app, {
+        boardId: id,
+        taskId,
+        me: req.user,
+        bytes: req.body as Buffer,
+        name: given,
+        // (As the sender says, as it always was here: a browser knows what it's sending.)
+        type: mimeOf(req.headers['x-file-type'] as string | undefined),
+        forComment: req.headers['x-attach-to'] === 'comment',
+        via: req.apiToken?.app,
+      })
+      return { attachment }
+    },
   )
 
   /** Opens (pictures) or downloads (everything else) a file, for anyone who can view its board. */

@@ -72,11 +72,17 @@ the file when clicked. This is how you say "see the brief" and mean one exact fi
 
 A file attached to a comment stays with that comment, listed under it.
 
+### Two files with one name
+
+A card's files each have a name of their own. Attach a second `report.pdf` and it becomes `report (2).pdf`, so a
+tag in your writing always means one exact file.
+
 ## Good to know
 
 - A card on the board shows how many comments and files it has.
 - Pictures open in the browser; other files download.
 - Moving a card to another board takes its comments and files along.
+- An [assistant](/ai/what-to-ask#files) can read a card's text files and pictures, and attach files it writes.
 - Where files are kept, and how much room there is, is decided by whoever runs your Kanbanto site.
 
 ## Next

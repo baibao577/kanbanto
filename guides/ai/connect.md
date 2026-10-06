@@ -51,13 +51,20 @@ to one board only.
 | Read boards, cards, comments and recent activity | Share a board or invite people |
 | Add cards and break work into subtasks | Delete cards or boards |
 | Move cards, set dates, people, priorities and labels | See boards you cannot open |
-| | Open the files attached to a card, or attach one |
+| See a card's files, read text files and look at pictures | Read a PDF, a spreadsheet or a zip |
+| Attach a file it wrote, or one from a public web address, to a card or a comment | Attach a file you dropped into the chat (see below) |
+| | Remove a file |
 | Comment, set reminders, log time you tell it about | Change your account or the site's settings |
 | Archive cards (they can be restored) | |
 | Create a board (also from a starter) and set up its lists and labels | |
 | Add and change [fields](/everyday/fields), and put them on a board, where you could | Delete a field for good, or merge two fields |
 
 Sharing and deleting stay with people, in the app, on purpose.
+
+**About files.** A chat app does not hand a file you dropped into the chat on to Kanbanto: the assistant can pass on
+what it *read* in it (as a text file it writes), but not the file itself. Drop the file on the card in Kanbanto
+instead. An assistant that works on your computer, such as Claude Code, can send a file from there: it asks Kanbanto
+for a one-time upload link and uses it. More in [What to ask](/ai/what-to-ask#files).
 
 Kanbanto records which app made each change, so you can always ask "what did you change on this board today?" and
 get a true answer.

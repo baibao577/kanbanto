@@ -27,6 +27,12 @@ const Body = z.object({
   attachments: z.array(z.uuid()).max(20).default([]),
 })
 
+/** The people of a board whose name a text @mentions (for comments written where there's no picker: an assistant, an upload link). */
+export const mentionsIn = (members: { id: string; name: string }[], text: string) => {
+  const lower = text.toLowerCase()
+  return members.filter((m) => lower.includes(`@${m.name.toLowerCase()}`)).map((m) => m.id)
+}
+
 /** How much of a comment the bell and the daily email show. */
 export const excerpt = (body: string, n = 140) => (body.length > n ? `${body.slice(0, n - 1).trimEnd()}…` : body)
 
@@ -197,7 +203,13 @@ export async function postComment(
       board: { id, name: board.name },
       actor: { id: me.id, name: me.name },
       task: { id: taskId, title: data.tasks[taskId].title },
-      comment: { id: commentId, body: body.body, mentions },
+      comment: {
+        id: commentId,
+        body: body.body,
+        mentions,
+        // (The files posted with it: fetched with a token from /api/attachments/<id>.)
+        files: comment.attachments.map((f) => ({ id: f.id, name: f.name, size: f.size })),
+      },
     })
     .catch((e) => app.log.error({ err: e instanceof Error ? e.message : e }, 'queueing webhooks'))
   return comment

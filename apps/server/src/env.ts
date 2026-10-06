@@ -56,6 +56,11 @@ export const env = {
    * Development and tests may use a bucket on this machine (MinIO, a fake S3) with ALLOW_PRIVATE_BUCKETS=true.
    */
   allowPrivateBuckets: process.env.ALLOW_PRIVATE_BUCKETS === 'true',
+  /**
+   * FILES_FROM_URL=off: assistants can't have the server fetch a file from a web address (attach_file with `url`).
+   * On by default: only public https addresses are fetched, within the file size limit (see storage/download.ts).
+   */
+  filesFromUrl: process.env.FILES_FROM_URL?.trim().toLowerCase() !== 'off',
   /** 'json': one JSON object per line (for log collectors). Default: short readable lines. */
   logFormat: process.env.LOG_FORMAT === 'json' ? ('json' as const) : ('pretty' as const),
   /** Folder for attachments kept on the server's disk (a Docker volume in production). */

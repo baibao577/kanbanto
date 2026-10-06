@@ -69,6 +69,14 @@ then `git pull` (or download the new release) and `docker compose up -d --build`
   mentioned on, which includes being told when a card is given to you. Follow or unfollow any card from its side
   column, or unfollow from the bell. Several changes in a row are one line, and never your own. Search cards has a
   **Following** search for them, and assistants can follow a task for you (`follow_task`).
+- **Files for assistants and the API:** an assistant can put a file on a card: one it writes (a report, notes, a
+  CSV), one fetched from a public web address, or, when it works on a computer, a local file sent to a one-time
+  upload link (`attach_file`, `upload_link`); on the card itself, or posted in a comment. It sees a card's files
+  and can read text files and look at pictures (`read_file`). Uploading with an API token, files in comments and
+  pointing at a file in text (`📎name`) are documented, and `comment.added` webhooks list a comment's files. A
+  second file with a name the card already has is numbered (`report (2).pdf`), so a mark always means one file;
+  attaching a file to a card is a line in the board's activity. `FILES_FROM_URL=off` stops the server fetching
+  files from web addresses.
 - **Integrations:** personal API tokens (once a platform admin turns them on), webhooks per board with signed
   deliveries and retries, an MCP endpoint for AI assistants, a Skill for Claude Code, and an API reference at
   `/api/docs` on every site. Claude on the web and in Claude Desktop (and ChatGPT) can connect by signing in (OAuth),

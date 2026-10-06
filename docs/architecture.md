@@ -330,6 +330,22 @@ The app uses hash routing, so any static host or proxy works without rewrite rul
   their uploader's only, and count against the owner's space once posted.
   Disk files stream through the server; bucket files use 5-minute signed links.
 - Deleted files stay in a trash for 30 days. Files of a deleted card come back if the card is restored.
+- **One way in** (`saveUpload` in `routes/files.ts`): the app's upload, an API token's, an assistant's tools and an
+  upload link all end there, so who may (`mayUpload`: editors for a card's file, anyone who can comment for a
+  comment's), the size, the space left, blocked names and where it's stored have one implementation. It gives the
+  file a name no other file of the card has (text points at a file by name, `📎report.pdf`), and writes a line in
+  the board's activity for a card's own file. It runs one at a time per board (`serial`), so anything slow, like a
+  download, is done before it is called.
+- **Files from assistants** (`routes/uploads.ts`, the tools in `mcp.ts`). A tool's arguments are words, so there are
+  three ways. Text the assistant writes. A web address the server fetches (`storage/download.ts`): https, public
+  addresses only (checked on the address connected to), no redirects, a time and a size limit, one at a time per
+  person; `FILES_FROM_URL=off` removes it. And an **upload link**: a ticket kept in memory under the hash of 32
+  random bytes, for one file on one card under a fixed name, good once for ten minutes; the route that takes the
+  file checks the ticket and the declared size before reading anything, loads the person again and checks their
+  access again, answers the same for unknown, expired and used, and its address is redacted in the request log. A
+  file nobody vouched for is a picture only when its first bytes are one (`pictureType`): a stored picture type is
+  what makes a file show in the page instead of downloading. A file posted with a comment is saved as its sender's
+  draft and attached by `postComment`, as the app does, and removed again if the comment can't be posted.
 
 ## Planning
 

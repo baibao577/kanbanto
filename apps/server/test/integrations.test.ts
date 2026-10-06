@@ -218,6 +218,7 @@ describe('MCP', () => {
       'reminders',
       'my_day',
       'get_task',
+      'read_file',
       'my_week',
       'plan_overview',
       'create_tasks',
@@ -234,6 +235,8 @@ describe('MCP', () => {
       'manage_fields',
       'log_time',
       'follow_task',
+      'attach_file',
+      'upload_link',
       'add_comment',
     ])
     // Following: Logo isn't Ann's until she follows it; then it's among what she follows, until she stops.
@@ -1007,6 +1010,7 @@ describe('MCP', () => {
       'reminders',
       'my_day',
       'get_task',
+      'read_file',
       'my_week',
       'plan_overview',
     ])

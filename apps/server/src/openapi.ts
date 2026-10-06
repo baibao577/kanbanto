@@ -127,7 +127,23 @@ const schemas = {
     author: nullable(obj({ id: str, name: str })),
     body: str,
     mentions: { type: 'array', items: str },
+    attachments: { type: 'array', items: { $ref: '#/components/schemas/Attachment' }, description: 'The files posted with it.' },
     createdAt: str,
+  }),
+  Attachment: obj({
+    id: str,
+    taskId: str,
+    name: {
+      ...str,
+      description: 'Its name on the card, which no other file of the card has. `📎<name>` in a description or a comment points at it.',
+    },
+    size: { type: 'integer', description: 'In bytes.' },
+    mime: str,
+    uploader: nullable(str),
+    createdAt: str,
+    url: { ...str, description: 'Where it opens or downloads: `/api/attachments/<id>`.' },
+    image: { type: 'boolean', description: 'Shown as a picture (the rest download).' },
+    commentId: nullable({ ...str, description: 'The comment it was posted with; null: attached to the card itself.' }),
   }),
   TimeEntry: obj({
     id: str,
@@ -196,6 +212,11 @@ The answer lists the records that changed.
     tags: [
       { name: 'Boards' },
       { name: 'Comments' },
+      {
+        name: 'Files',
+        description:
+          'A card has files of its own, and a comment can carry files. A file is sent as its bytes, with its name in a header. Pictures open in the page; everything else downloads; programs and scripts are refused. Where files are kept, the largest file and the space each owner or workspace has are the site’s settings.',
+      },
       {
         name: 'Fields',
         description:
@@ -551,11 +572,82 @@ The answer lists the records that changed.
           requestBody: {
             content: {
               'application/json': {
-                schema: obj({ body: str, mentions: { type: 'array', items: str, description: 'Ids of people on the board to tell.' } }, ['body']),
+                schema: obj(
+                  {
+                    body: str,
+                    mentions: { type: 'array', items: str, description: 'Ids of people on the board to tell.' },
+                    attachments: {
+                      type: 'array',
+                      items: str,
+                      description: 'Ids of files you uploaded for this comment (with `X-Attach-To: comment`) to post with it.',
+                    },
+                  },
+                  ['body'],
+                ),
               },
             },
           },
           responses: { 200: json(obj({ comment: ref('Comment') })) },
+        },
+      },
+      '/api/boards/{id}/tasks/{taskId}/attachments': {
+        get: {
+          tags: ['Files'],
+          summary: 'A task’s files',
+          description: 'Its own and the ones in its comments (`commentId` says which).',
+          parameters: [id('id'), id('taskId')],
+          responses: { 200: json(obj({ attachments: { type: 'array', items: ref('Attachment') } })) },
+        },
+        post: {
+          tags: ['Files'],
+          summary: 'Upload a file to a task, or for a comment',
+          description:
+            'The body is the file’s bytes; its size has to be said (`Content-Length`, which `curl --data-binary @file` sends). Editors and owners attach to a task. With `X-Attach-To: comment` the file waits, yours only, for a comment you then post with its id in `attachments` (anyone who can comment). A name the task already has gets a number: use the `name` that comes back.',
+          parameters: [
+            id('id'),
+            id('taskId'),
+            {
+              name: 'X-File-Name',
+              in: 'header',
+              required: true,
+              schema: { ...str, description: 'The file’s name, percent-encoded if it has anything but plain letters.' },
+            },
+            { name: 'X-File-Type', in: 'header', schema: { ...str, description: 'Its kind, like `image/png`. Left out: a download.' } },
+            { name: 'X-Attach-To', in: 'header', schema: { enum: ['comment'], description: 'For a comment you’re about to post.' } },
+          ],
+          requestBody: { required: true, content: { 'application/octet-stream': { schema: { type: 'string', format: 'binary' } } } },
+          responses: {
+            200: json(obj({ attachment: ref('Attachment') })),
+            411: json(ref('Error'), 'The upload didn’t say its size.'),
+            413: json(ref('Error'), 'Bigger than the largest file allowed, or no file space left.'),
+          },
+        },
+      },
+      '/api/attachments/{attId}': {
+        get: {
+          tags: ['Files'],
+          summary: 'Open or download a file',
+          description:
+            'For anyone who can view its board. The bytes, or a redirect to a short-lived link when the file is kept in a bucket (follow it: `curl -L`).',
+          parameters: [id('attId')],
+          responses: { 200: { description: 'The file.' }, 302: { description: 'Where the file is, for five minutes.' } },
+        },
+      },
+      '/api/boards/{id}/attachments/{attId}': {
+        delete: {
+          tags: ['Files'],
+          summary: 'Delete a file',
+          description: 'Editors and owners. It goes to a trash for 30 days: `…/restore` brings it back.',
+          parameters: [id('id'), id('attId')],
+          responses: ok,
+        },
+      },
+      '/api/boards/{id}/attachments/{attId}/restore': {
+        post: {
+          tags: ['Files'],
+          summary: 'Bring a deleted file back',
+          parameters: [id('id'), id('attId')],
+          responses: { 200: json(obj({ attachment: ref('Attachment') })) },
         },
       },
       '/api/boards/{id}/linked': {
@@ -1015,7 +1107,12 @@ The answer lists the records that changed.
       'comment.added': event('comment.added', {
         actor: obj({ id: str, name: str }),
         task: obj({ id: str, title: str }),
-        comment: obj({ id: str, body: str, mentions: { type: 'array', items: str } }),
+        comment: obj({
+          id: str,
+          body: str,
+          mentions: { type: 'array', items: str },
+          files: { type: 'array', items: obj({ id: str, name: str, size: { type: 'integer' } }), description: 'The files posted with it.' },
+        }),
       }),
       ping: event('ping', {}),
     },

@@ -68,6 +68,31 @@ curl -X POST https://kanbanto.example.com/api/boards/<board id>/mutations \
   `GET /api/boards/<id>/tasks/<task id>/linked-from` lists the cards that link to one. When a linked card moves to
   another board of the same space its links are rewritten to follow it; when it leaves the space, or its board is
   deleted, they are removed.
+- **Files.** A card has files of its own, and a comment can carry files. A file is sent as its bytes, its name in a
+  header:
+
+  ```bash
+  curl -X POST "https://kanbanto.example.com/api/boards/<id>/tasks/<task id>/attachments" \
+    -H "Authorization: Bearer kbt_…" \
+    -H "Content-Type: application/octet-stream" \
+    -H "X-File-Name: report.pdf" -H "X-File-Type: application/pdf" \
+    --data-binary @report.pdf
+  ```
+
+  The answer is `{"attachment": {"id", "name", "size", "mime", "url", "image", "commentId", …}}`. Editors and owners
+  attach to a card. A name the card already has gets a number (`report (2).pdf`): use the `name` that comes back.
+  Percent-encode a name with anything but plain letters in it. The upload has to say its size (`curl` does).
+  - **In a comment:** upload with one more header, `X-Attach-To: comment` (anyone who can comment may; the file is
+    yours alone until it's posted), then post the comment with its id:
+    `POST …/tasks/<task id>/comments` with `{"body": "The screenshot", "attachments": ["<file id>"]}`.
+  - **In a description or a comment's words:** write `📎` and the file's name (`See 📎report.pdf`). It shows as a
+    link to that file of the card.
+  - `GET /api/boards/<id>/tasks/<task id>/attachments` lists a card's files, its comments' among them (`commentId`).
+    `GET /api/attachments/<file id>` opens one (`curl -L`: a file kept in a bucket answers with a redirect to a
+    five-minute link). `DELETE /api/boards/<id>/attachments/<file id>` puts one in a trash for 30 days, and
+    `POST …/attachments/<file id>/restore` brings it back.
+  - Pictures open in the page and everything else downloads. Programs and scripts (`.exe`, `.sh`, `.js`…) are
+    refused. The largest file and the space a person or a workspace has are set by the site (`413` when over).
 - **Archiving** (`task.archive`) puts a task and its subtasks away: they're out of the board and its counts, kept (with
   comments and files), and come back with `task.restore`. `task.delete` on an archived task deletes it for good.
   `tasks.archiveDone` tidies a done list in one go: `{"type":"tasks.archiveDone","status":"<list id>","before":"2026-09-01T00:00:00Z"}`
@@ -152,7 +177,7 @@ comment (`comment.added`) is POSTed to the address as JSON:
 
 (`before` and `after` are whole records; shortened here. A change with more than 200 records is cut there, with
 `"truncated": true`.) The other events: `comment.added` has `board`, `actor`, `task` (`id`, `title`) and `comment`
-(`id`, `body`, `mentions`); `reminder.due` has `board`, `task` (`id`, `title`, `due`, `list`), `reminder` (`id`, `at`)
+(`id`, `body`, `mentions`, and `files`: the `id`, `name` and `size` of each file posted with it); `reminder.due` has `board`, `task` (`id`, `title`, `due`, `list`), `reminder` (`id`, `at`)
 and `for` (who it's for); `ping` has `board` only.
 
 **Say you want them.** When a webhook is added (or its address changed), Kanbanto first sends the address
@@ -208,6 +233,15 @@ claude mcp add --transport http kanbanto https://kanbanto.example.com/api/mcp --
 { "mcpServers": { "kanbanto": { "url": "https://kanbanto.example.com/api/mcp", "headers": { "Authorization": "Bearer kbt_…" } } } }
 ```
 
+Files and assistants: a tool can only carry words, so there are three ways to hand a file over. The assistant
+writes it; the server fetches it from a public `https` address (never a private network; no redirects; at most
+25 MB or the site's largest file; `FILES_FROM_URL=off` turns this one way off); or the assistant asks for an
+**upload link** and sends a local file to it, which is how a screenshot or a log gets from the computer it works on
+to a card. The link (`POST /api/uploads/<token>`, the file's bytes as the body) needs no other sign-in, so it is
+built to be worth little: one file, on one card, under a name fixed in advance, once, within 10 minutes; it answers
+only that the file was saved; what the person who asked may do is checked again when it's used; and it is never
+written to the server's log. Assistants can't delete files.
+
 | Tool | What it does |
 |---|---|
 | `list_boards` | Who you act as (name, time zone, today's date there) and the boards you can open: where each lives (a workspace, "Personal" or "Shared with you"), what it's for, and which is your Inbox (a private board of your own, for cards that have no board yet) |
@@ -217,7 +251,8 @@ claude mcp add --transport http kanbanto https://kanbanto.example.com/api/mcp --
 | `reminders` | Your reminders coming up in the next days, and the ones that went off in the last 24 hours |
 | `my_day` | What needs your attention across your boards, in one answer: your overdue tasks and the ones due today, what you have in progress, your tasks waiting on others, today's reminders, and comments that mention you and you haven't seen |
 | `recent_activity` | What happened in a stretch of time (default: the last day), optionally by one person: changes, who made them and through which app, and comments, each with the board and task ids it's about |
-| `get_task` | A task with its parents, subtasks, what it waits on, latest comments, and the time logged on it |
+| `get_task` | A task with its parents, subtasks, what it waits on, latest comments, its files, and the time logged on it |
+| `read_file` | Open one of a task's files: a text file as text (80,000 characters at a time), a picture as a picture (up to 2 MB); other kinds are only described |
 | `my_week` | Your logged time for a week across your boards: each day against your hours a day (empty days stand out), each task's time per day, and tasks you worked on without logging time |
 | `plan_overview` | A workspace's resource plan, read only: each project's planned, scheduled and logged man-days, who's booked at what share; each person's load, when they go over 100% and when they're free |
 | `create_tasks` | Add tasks, each with its own `subtasks` if you like, or break one down into subtasks (`parent_id`); without a board they go to your Inbox, which everyone has. A wrong list, label or person adds nothing. Each can come with `fields` (the board's own, by name) |
@@ -233,7 +268,9 @@ claude mcp add --transport http kanbanto https://kanbanto.example.com/api/mcp --
 | `manage_labels` | Add, rename, recolor, or remove (unused) labels |
 | `manage_fields` | A library's fields (a workspace's, for its admins, or your own): list them, add one, change its name or settings, give a choice its options by name (one left out is archived, never deleted), rename an option, archive and restore. And a board's own choice (its owners): put a field on it, or take it off |
 | `log_time` | Log time you spent on a task ("1:30", "2h", "45m"), today, yesterday or another day, with a short note |
-| `add_comment` | Comment as you; `@Name` notifies people, and so are the task's followers |
+| `add_comment` | Comment as you; `@Name` notifies people, and so are the task's followers; `📎name` points at one of the task's files |
+| `attach_file` | Put a file on a task: one the assistant writes (`text`, up to 500 kB) or one fetched from a public https address (`url`); with `comment`, posted in a comment that says those words. The answer gives the mark (`📎name`) to point at it in a description or a comment |
+| `upload_link` | For an assistant that works on a computer: a web address that takes one local file for a task, once, within 10 minutes, and the `curl` command that sends it |
 | `follow_task` | Follow a task (you're told about its comments and changes), or stop with `follow: false` |
 
 Read-only tokens get the reading tools only (`list_boards` to `plan_overview`). Plans can be read but not changed

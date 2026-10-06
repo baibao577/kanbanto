@@ -39,6 +39,7 @@ import { commentRoutes } from './routes/comments'
 import { timeRoutes } from './routes/time'
 import { emailRoutes } from './routes/email'
 import { fileRoutes } from './routes/files'
+import { uploadRoutes } from './routes/uploads'
 import { sharingRoutes } from './routes/sharing'
 import { mcpRoutes } from './mcp'
 import { isOAuthToken, oauthRoutes, resourceMetadataUrl, userForOAuthToken } from './oauth'
@@ -77,6 +78,7 @@ export const redactUrl = (url: string) =>
   url
     .replace(/(\/api\/invites\/)[^/?#]+/, '$1[token]')
     .replace(/(\/api\/calendar\/feed\/)[^/?#]+/, '$1[token]')
+    .replace(/(\/api\/uploads\/)[^/?#]+/, '$1[token]')
     .replace(/(\/api\/account\/calendar\/google\/callback)\?.*/, '$1?[…]')
 
 /**
@@ -280,6 +282,7 @@ export async function buildApp(
   await app.register(commentRoutes, { prefix: '/api' })
   await app.register(timeRoutes, { prefix: '/api' })
   await app.register(fileRoutes, { prefix: '/api' })
+  await app.register(uploadRoutes, { prefix: '/api' })
   app.get('/api/health', async () => ({ ok: true }))
 
   // Every answer: no guessing a file's type, no address leaking to other sites, no other site putting the app in a

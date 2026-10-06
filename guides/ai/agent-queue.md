@@ -33,8 +33,9 @@ An agent only knows what the card says. A good card has:
 
 - a **title** that is one clear piece of work,
 - a **description** with what "finished" means, and anything it must not touch,
-- links to anything it needs. An assistant cannot open files attached to a card, so paste the text it needs into the
-  description, or give it the file in the chat.
+- links to anything it needs. It can read text files and look at pictures attached to the card (a brief as
+  Markdown, a screenshot). It cannot read a PDF or a spreadsheet: paste the text it needs into the description, or
+  give it the file in the chat.
 
 Put the cards in the order you want them done. The order of a list is your priority.
 
@@ -50,8 +51,9 @@ If your assistant has a place to keep instructions between chats, put it there a
 through my queue".
 
 **Where the work itself ends up.** The assistant writes on cards: a comment, or the card's description. A draft, a
-summary or a list of findings goes there. Anything it makes as a file (a document, a spreadsheet) stays in the chat
-with the assistant; it tells you so in its comment, and you download it from the chat.
+summary or a list of findings goes there, or, when it is long, in a text file it attaches to the card (ask for
+that in your rules: "attach the report as report.md"). A document or a spreadsheet it makes in the chat stays in the
+chat with the assistant; it tells you so in its comment, and you download it from there.
 
 To stop it, use the stop button in the chat. Cards it already moved stay where they are; the one it was working on
 is in **Doing**, with nothing lost.

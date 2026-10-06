@@ -49,6 +49,7 @@ the settings above.
 | `GUIDES_URL` | the guides at kanbanto.com | As above. |
 | `LOG_FORMAT` | readable lines | As above. |
 | `MAIL_TRANSPORT` | — | `log` prints emails to the terminal instead of sending them — for development only. |
+| `FILES_FROM_URL` | on | `off` stops assistants having the server fetch a file from a web address (the `attach_file` tool's `url`). When on, only public `https` addresses are fetched, without following redirects, up to 25 MB or the largest file allowed if that's less. Files an assistant writes itself, and upload links, are not affected. |
 | `ALLOW_PRIVATE_BUCKETS` | — | `true` lets people's own storage be on a private network address (development and tests only: it would let anyone make the server reach your network). |
 
 ### Your own pages
