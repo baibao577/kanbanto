@@ -103,7 +103,8 @@ Kanbanto blocks changes whose page address doesn't match the server's. Behind a 
 [HTTPS Option B](self-hosting.md#option-b-your-own-reverse-proxy-nginx-traefik-a-load-balancer).
 
 ### "Sign-up is closed"
-Open sign-up was turned off (Platform console → Accounts). New people need a share link, access code or email invite
+Sign-up is set to **Nobody without an invite** (Platform console → Accounts → Who can create an account), or to
+**Anyone, but only with Google** while signing in with Google is off. New people need a share link, access code or email invite
 from a board owner.
 
 ### "Confirm your email address first"

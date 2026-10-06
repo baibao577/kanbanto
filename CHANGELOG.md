@@ -97,7 +97,10 @@ then `git pull` (or download the new release) and `docker compose up -d --build`
   checked the address. Someone whose address already has an account gets that same account, and their password keeps
   working (for Gmail and Google Workspace addresses; an account that never confirmed its address is confirmed by it
   and loses its old password). An account made this way has no password until one is added in Account settings →
-  Password. Closed sign-up still needs an invite. See
+  Password. Closed sign-up still needs an invite. Sign-up can also be **Google only**: Platform console → Accounts →
+  "Who can create an account" has three choices now, anyone, anyone but only with Google, or nobody without an
+  invite. With Google only, the sign-up page shows just the Google button, someone with an invite can still use an
+  email address and a password, and people who have a password sign in as before. See
   [Signing in with Google](docs/self-hosting.md#signing-in-with-google).
 - **Your site's own pages:** a `pages` folder (an about page, a privacy policy, terms) is served next to the app,
   with links to them under the sign-in form. See [Your own pages](docs/configuration.md#your-own-pages).

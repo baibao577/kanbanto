@@ -92,6 +92,11 @@ export const sessions = pgTable(
 export const siteSettings = pgTable('site_settings', {
   id: integer('id').primaryKey().default(1),
   openSignup: boolean('open_signup').notNull().default(SETTING_DEFAULTS.openSignup),
+  /**
+   * While sign-up is open: someone without an invite can only sign up with Google, not with the form. If the site
+   * doesn't offer Google sign-in (any more), that leaves no way to sign up without an invite.
+   */
+  signupGoogleOnly: boolean('signup_google_only').notNull().default(SETTING_DEFAULTS.signupGoogleOnly),
   /** Emails sent with the platform's key, per day / per month (keeps under the provider's free tier). Null: no limit. */
   emailDailyBudget: integer('email_daily_budget').default(SETTING_DEFAULTS.emailDailyBudget!),
   emailMonthlyBudget: integer('email_monthly_budget').default(SETTING_DEFAULTS.emailMonthlyBudget!),

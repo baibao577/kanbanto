@@ -101,7 +101,7 @@ export const googleAuthRoutes: FastifyPluginAsync = async (app) => {
           .where(eq(users.id, same.id))
         return { userId: same.id, takenOver }
       }
-      await inviteForSignUp(tx, invite, email)
+      await inviteForSignUp(tx, invite, email, 'google')
       const { user, joined } = await insertAccount(tx, { email, name: nameFrom(who), passwordHash: null, googleSub: who.sub, verified: true, invite })
       return { userId: user.id, created: { joined } }
     })

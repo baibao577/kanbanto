@@ -135,7 +135,7 @@ docker compose up -d --build --wait
 
 **Use it from your phone or another computer** on the same Wi-Fi: open `http://<your-computer's-IP>:3000`
 (for example `http://192.168.1.20:3000`). Anyone on your network can then open it and create an account: once
-everyone you want has one, turn off **Anyone can create an account** in Platform console → Accounts.
+everyone you want has one, choose **Nobody without an invite** under **Who can create an account** in Platform console → Accounts.
 
 ### Keeping a copy of your boards
 

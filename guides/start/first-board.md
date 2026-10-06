@@ -11,7 +11,8 @@ Open your Kanbanto site's address in your browser (see [where Kanbanto lives](/s
   by themselves, you need an invite from someone already on it.
 - **Have an account?** Sign in.
 - **See "Continue with Google"?** Then your site lets you use your Google account instead, to create an account or
-  to sign in: one click, with no password to choose and no email to confirm.
+  to sign in: one click, with no password to choose and no email to confirm. If that button is all the page offers,
+  your site makes new accounts with Google only.
 
 ## 1. Click "Create board"
 

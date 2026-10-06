@@ -100,7 +100,7 @@ Open it from the menu under your initials (platform admins only). Each section h
 | Section | Setting | Default |
 |---|---|---|
 | **Overview** `#/admin` | Totals (accounts, boards, tasks) and a status card for sign-up, email and storage | — |
-| **Accounts** `#/admin/accounts` | **Anyone can create an account** — off: people join only through a share link, access code or email invite | On |
+| **Accounts** `#/admin/accounts` | **Who can create an account:** anyone; anyone, but only with Google (needs signing in with Google, under Integrations; an invite still allows an email address and a password); or nobody without an invite (a share link, access code or email invite) | Anyone |
 | | Per account: **password reset link** (one-time, 24 hours, for you to pass on; the person is told by email), **confirm email** (you vouch for their address), **turn account off / on** (off: signed out everywhere, and its API tokens, connected apps, calendar link and the invite links of its boards and workspaces are removed) | — |
 | **Email** `#/admin/email` | **Sending:** an **SMTP server** (server, port, encryption, username, password) or a **Resend** API key, and the sender address. Secrets are write-only and encrypted. See [Email](email.md). | Not set up |
 | | **Limits:** emails per day and per month the site sends; invite emails per person per month (people with their own key aren't limited). Empty: no limit. | 90 / 2,800 / 20; none with SMTP |

@@ -55,7 +55,7 @@ function GoogleMark() {
 
 /** Sign in, or create an account. `problem`: why coming back from Google didn't sign them in. */
 export function AuthView({ mode, next, problem }: { mode: Mode; next?: string; problem?: string }) {
-  const { signIn, signUp, openSignup, googleSignIn } = useAuth()
+  const { signIn, signUp, openSignup, signupGoogleOnly, googleSignIn } = useAuth()
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -65,6 +65,8 @@ export function AuthView({ mode, next, problem }: { mode: Mode; next?: string; p
   const invite = inviteIn(next)
   const signingUp = mode === 'signup'
   const closed = mode === 'signup' && !openSignup && !invite
+  // New accounts are only made with Google here: the form is for people with an invite.
+  const googleOnly = signingUp && signupGoogleOnly && !invite
 
   const done = (boardId?: string | null) => {
     if (boardId) navigate({ page: 'board', id: boardId }, { replace: true })
@@ -120,7 +122,7 @@ export function AuthView({ mode, next, problem }: { mode: Mode; next?: string; p
   return (
     <AuthLayout title={title} subtitle={subtitle}>
       {googleSignIn && (
-        <div className="mb-4 space-y-4">
+        <div className={googleOnly ? 'space-y-4' : 'mb-4 space-y-4'}>
           {problem && (
             <p role="alert" className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
               {GOOGLE_PROBLEMS[problem] ?? GOOGLE_PROBLEMS.failed}
@@ -136,65 +138,78 @@ export function AuthView({ mode, next, problem }: { mode: Mode; next?: string; p
           >
             <GoogleMark /> Continue with Google
           </Button>
-          <div className="flex items-center gap-3 text-xs text-muted-foreground before:h-px before:flex-1 before:bg-border after:h-px after:flex-1 after:bg-border">
-            or
-          </div>
+          {googleOnly ? (
+            <>
+              {error && (
+                <p role="alert" className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                  {error}
+                </p>
+              )}
+              <p className="text-center text-xs text-muted-foreground">New accounts here are made with a Google account.</p>
+            </>
+          ) : (
+            <div className="flex items-center gap-3 text-xs text-muted-foreground before:h-px before:flex-1 before:bg-border after:h-px after:flex-1 after:bg-border">
+              or
+            </div>
+          )}
         </div>
       )}
-      <form
-        className="space-y-4"
-        onSubmit={(e) => {
-          e.preventDefault()
-          void submit()
-        }}
-      >
-        {signingUp && (
+      {!googleOnly && (
+        <form
+          className="space-y-4"
+          onSubmit={(e) => {
+            e.preventDefault()
+            void submit()
+          }}
+        >
+          {signingUp && (
+            <div className="space-y-1.5">
+              <Label htmlFor="auth-name">Your name</Label>
+              <Input id="auth-name" autoFocus autoComplete="name" value={name} onChange={(e) => setName(e.target.value)} required />
+            </div>
+          )}
           <div className="space-y-1.5">
-            <Label htmlFor="auth-name">Your name</Label>
-            <Input id="auth-name" autoFocus autoComplete="name" value={name} onChange={(e) => setName(e.target.value)} required />
+            <Label htmlFor="auth-email">Email</Label>
+            <Input
+              id="auth-email"
+              type="email"
+              autoFocus={!signingUp}
+              autoComplete="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              required
+            />
           </div>
-        )}
-        <div className="space-y-1.5">
-          <Label htmlFor="auth-email">Email</Label>
-          <Input
-            id="auth-email"
-            type="email"
-            autoFocus={!signingUp}
-            autoComplete="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            required
-          />
-        </div>
-        <div className="space-y-1.5">
-          <div className="flex items-baseline justify-between">
-            <Label htmlFor="auth-password">Password</Label>
-            {!signingUp && (
-              <a href={hrefFor({ page: 'forgot' })} className="text-xs text-muted-foreground hover:text-foreground hover:underline">
-                Forgot password?
-              </a>
-            )}
+          <div className="space-y-1.5">
+            <div className="flex items-baseline justify-between">
+              <Label htmlFor="auth-password">Password</Label>
+              {!signingUp && (
+                <a href={hrefFor({ page: 'forgot' })} className="text-xs text-muted-foreground hover:text-foreground hover:underline">
+                  Forgot password?
+                </a>
+              )}
+            </div>
+            <Input
+              id="auth-password"
+              type="password"
+              autoComplete={signingUp ? 'new-password' : 'current-password'}
+              minLength={signingUp ? 8 : undefined}
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+            />
+            {signingUp && <p className="text-xs text-muted-foreground">At least 8 characters.</p>}
           </div>
-          <Input
-            id="auth-password"
-            type="password"
-            autoComplete={signingUp ? 'new-password' : 'current-password'}
-            minLength={signingUp ? 8 : undefined}
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
-          />
-          {signingUp && <p className="text-xs text-muted-foreground">At least 8 characters.</p>}
-        </div>
-        {error && (
-          <p role="alert" className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
-            {error}
-          </p>
-        )}
-        <Button type="submit" className="w-full" disabled={busy}>
-          {signingUp ? 'Create account' : 'Sign in'}
-        </Button>
-      </form>
+          {error && (
+            <p role="alert" className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
+              {error}
+            </p>
+          )}
+          <Button type="submit" className="w-full" disabled={busy}>
+            {signingUp ? 'Create account' : 'Sign in'}
+          </Button>
+        </form>
+      )}
       {
         <p className="mt-5 text-center text-sm text-muted-foreground">
           {signingUp ? (

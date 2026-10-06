@@ -53,7 +53,10 @@ export interface SiteLink {
 /** GET /api/auth/me */
 export interface Me {
   user: PublicUser | null
+  /** Someone without an invite can create an account (with the form, or only with Google: see `signupGoogleOnly`). */
   openSignup: boolean
+  /** …but only with Google: the sign-up form is for people with an invite. */
+  signupGoogleOnly: boolean
   /** The site can send email: password reset works, and new accounts must confirm their email. */
   emailEnabled: boolean
   /** People can sign in, and sign up, with Google here. */
@@ -922,6 +925,8 @@ export type OAuthMode = 'off' | 'known' | 'any'
 /** GET /api/admin/settings */
 export interface AdminSettings {
   openSignup: boolean
+  /** While sign-up is open: new accounts are only made with Google (needs `googleSignIn`). */
+  signupGoogleOnly: boolean
   apiTokens: boolean
   webhooks: WebhookMode
   oauthApps: OAuthMode

@@ -1,6 +1,6 @@
 import { CaretRight, EnvelopeSimple, HardDrives, UsersThree } from '@phosphor-icons/react'
 import { type ReactNode } from 'react'
-import type { PlatformEmail, PlatformStats, PlatformStorage } from '@kanbanto/model/api'
+import type { AdminSettings, PlatformEmail, PlatformStats, PlatformStorage } from '@kanbanto/model/api'
 import { api } from '@/api/client'
 import { hrefFor, type AdminSection } from '@/app/router'
 import { formatSize } from '@/lib/format'
@@ -8,14 +8,19 @@ import { cn } from '@/lib/utils'
 import { PageTitle } from '@/components/settings/SettingsCard'
 import { useLoaded } from '@/data/useLoaded'
 
-type Data = { stats: PlatformStats; openSignup: boolean; email: PlatformEmail; storage: PlatformStorage }
+type Data = { stats: PlatformStats; signup: string; email: PlatformEmail; storage: PlatformStorage }
 const fetchOverview = () =>
   Promise.all([
     api<PlatformStats>('GET', '/admin/stats'),
-    api<{ openSignup: boolean }>('GET', '/admin/settings'),
+    api<AdminSettings>('GET', '/admin/settings'),
     api<PlatformEmail>('GET', '/admin/email'),
     api<PlatformStorage>('GET', '/admin/storage'),
-  ]).then(([stats, s, email, storage]): Data => ({ stats, openSignup: s.openSignup, email, storage }))
+  ]).then(([stats, s, email, storage]): Data => ({
+    stats,
+    signup: !s.openSignup ? 'Invite only' : s.signupGoogleOnly ? 'Open, with Google only' : 'Open to anyone',
+    email,
+    storage,
+  }))
 
 /** Platform console → Overview: totals, and how each part is set up (with a link to change it). */
 export function OverviewSection() {
@@ -37,7 +42,7 @@ export function OverviewSection() {
         <Stat label="Tasks" value={stats.tasks} />
       </section>
       <section className="grid gap-3 md:grid-cols-3">
-        <StatusCard section="accounts" icon={<UsersThree />} title="Sign-up" state={d.openSignup ? 'Open to anyone' : 'Invite only'} tone="ok" />
+        <StatusCard section="accounts" icon={<UsersThree />} title="Sign-up" state={d.signup} tone="ok" />
         <StatusCard
           section="email"
           icon={<EnvelopeSimple />}

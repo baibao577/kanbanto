@@ -278,3 +278,62 @@ describe('an account without a password', () => {
     expect((await signIn('bob@gmail.com', 'picked by bob')).status).toBe(200)
   })
 })
+
+describe('sign-up only with Google', () => {
+  const form = (name: string, email: string) => new Person(t.app).request('POST', '/api/auth/signup', { name, email, password: 'correct horse' })
+
+  it('can’t be chosen before signing in with Google is on', async () => {
+    const ann = await Person.signUp(t.app, 'Ann')
+    await setPlatformAdmin(t.db, 'ann@example.com', true)
+    expect(await ann.request('PATCH', '/api/admin/settings', { signupGoogleOnly: true })).toMatchObject({
+      status: 400,
+      body: { error: expect.stringMatching(/sign in with Google” first/) },
+    })
+    expect((await ann.ok('GET', '/api/admin/settings')).signupGoogleOnly).toBe(false)
+  })
+
+  it('refuses the form, makes accounts through Google, and leaves the form to people with an invite', async () => {
+    const ann = await site()
+    await ann.ok('PATCH', '/api/admin/settings', { openSignup: true, signupGoogleOnly: true })
+    expect(await new Person(t.app).ok('GET', '/api/auth/me')).toMatchObject({ openSignup: true, signupGoogleOnly: true, googleSignIn: true })
+
+    const refused = await form('Bob', 'bob@example.com')
+    expect(refused.status).toBe(403)
+    expect(refused.body.error).toMatch(/made with Google/)
+    expect(await row('bob@example.com')).toBeUndefined()
+    // The same answer for an address that has an account.
+    expect((await form('Ann', 'ann@example.com')).body).toEqual(refused.body)
+
+    atGoogle({ sub: 'g-bob', email: 'bob@gmail.com', name: 'Bob' })
+    expect((await viaGoogle()).me).toMatchObject({ email: 'bob@gmail.com', hasPassword: false })
+
+    // An invite still lets someone sign up with an email address and a password.
+    const [board] = (await ann.ok('GET', '/api/boards')).boards
+    const { link } = await ann.ok('PUT', `/api/boards/${board.id}/invites/link`, { role: 'editor' })
+    await ann.ok('GET', `/api/boards/${board.id}`) // the server now has the board in memory
+    const cy = await Person.signUp(t.app, 'Cy', { invite: link.token })
+    expect(cy.joinedBoardId).toBe(board.id)
+    // And people who have a password sign in with it as before.
+    expect((await signIn('ann@example.com', 'correct horse')).status).toBe(200)
+  })
+
+  it('with signing in with Google turned off again, nobody signs up without an invite', async () => {
+    const ann = await site()
+    await ann.ok('PATCH', '/api/admin/settings', { openSignup: true, signupGoogleOnly: true })
+    await ann.ok('PATCH', '/api/admin/settings', { googleSignIn: false })
+    // The sign-up page is told it's closed, rather than the form quietly opening to everyone.
+    expect(await new Person(t.app).ok('GET', '/api/auth/me')).toMatchObject({ openSignup: false, signupGoogleOnly: false, googleSignIn: false })
+    expect((await form('Bob', 'bob@example.com')).status).toBe(403)
+    // The choice is kept for when it's turned on again.
+    expect(await ann.ok('GET', '/api/admin/settings')).toMatchObject({ openSignup: true, signupGoogleOnly: true, googleSignIn: false })
+  })
+
+  it('closed sign-up stays closed whatever this says', async () => {
+    const ann = await site()
+    await ann.ok('PATCH', '/api/admin/settings', { openSignup: false, signupGoogleOnly: true })
+    expect(await new Person(t.app).ok('GET', '/api/auth/me')).toMatchObject({ openSignup: false, signupGoogleOnly: false })
+    expect((await form('Bob', 'bob@example.com')).body.error).toMatch(/Sign-up is closed/)
+    atGoogle({ sub: 'g-bob', email: 'bob@gmail.com' })
+    expect((await viaGoogle()).land).toBe('/#/signin?problem=closed')
+  })
+})

@@ -133,11 +133,17 @@ export const setSessionCookie = (reply: FastifyReply, token: string, expires: Da
 
 /**
  * The invite someone signing up arrived with, or null without one. Refused: signing up without one while sign-up is
- * closed, and an invite that `email` can't use, whether or not the address has an account (so the answer doesn't tell).
+ * closed (or, with the form, while new accounts are only made with Google), and an invite that `email` can't use,
+ * whether or not the address has an account (so the answer doesn't tell).
  */
-export async function inviteForSignUp(tx: Tx, token: string | undefined, email: string) {
+export async function inviteForSignUp(tx: Tx, token: string | undefined, email: string, via: 'form' | 'google') {
   const invite = token ? await findAnyInvite(tx, token) : null
-  if (!(await getSettings(tx)).openSignup && !invite) throw new HttpError(403, 'Sign-up is closed. Ask a board owner for an invite link.')
+  if (!invite) {
+    const { openSignup, signupGoogleOnly } = await getSettings(tx)
+    if (!openSignup) throw new HttpError(403, 'Sign-up is closed. Ask a board owner for an invite link.')
+    if (signupGoogleOnly && via === 'form')
+      throw new HttpError(403, 'New accounts here are made with Google: use “Continue with Google”, or ask a board owner for an invite link.')
+  }
   if (token) checkInviteFor(invite, email)
   return invite
 }
@@ -176,12 +182,15 @@ export async function setUpAccount(app: FastifyInstance, userId: string, joined:
 export const authRoutes: FastifyPluginAsync = async (app) => {
   app.get('/me', async (req) => {
     const settings = await getSettings(app.db)
+    const googleSignIn = settings.googleSignIn && !!(await googleApp(app.db))
     return {
       user: req.user ? publicUser(req.user) : null,
-      openSignup: settings.openSignup,
+      // (Only with Google, on a site that doesn't offer it: nobody can sign up without an invite.)
+      openSignup: settings.openSignup && (!settings.signupGoogleOnly || googleSignIn),
+      signupGoogleOnly: settings.openSignup && settings.signupGoogleOnly && googleSignIn,
       /** The site can send email (so password reset works, and new accounts confirm their email). */
       emailEnabled: app.mail.platformReady,
-      googleSignIn: settings.googleSignIn && !!(await googleApp(app.db)),
+      googleSignIn,
       links: app.siteLinks,
       guidesUrl: app.guidesUrl,
     }
@@ -198,7 +207,7 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
     // Hashed whether or not the account gets made, so both answers take about as long.
     const passwordHash = await hashPassword(body.password)
     const result = await app.db.transaction(async (tx) => {
-      const invite = await inviteForSignUp(tx, body.invite, body.email)
+      const invite = await inviteForSignUp(tx, body.invite, body.email, 'form')
       const [taken] = await tx.select().from(users).where(eq(users.email, body.email))
       if (taken) {
         if (!app.mail.platformReady) throw new HttpError(409, 'There’s already an account with that email. Sign in instead.')

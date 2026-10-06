@@ -151,14 +151,14 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
   })
 
   const settings = async (): Promise<AdminSettings> => {
-    const { openSignup, apiTokens, webhooks, oauthApps, calendarLinks, telegramBots, googleSignIn } = await getSettings(app.db)
-    return { openSignup, apiTokens, webhooks, oauthApps, calendarLinks, telegramBots, googleSignIn }
+    const { openSignup, signupGoogleOnly, apiTokens, webhooks, oauthApps, calendarLinks, telegramBots, googleSignIn } = await getSettings(app.db)
+    return { openSignup, signupGoogleOnly, apiTokens, webhooks, oauthApps, calendarLinks, telegramBots, googleSignIn }
   }
 
   app.get('/settings', settings)
 
   /**
-   * Sign-up, API tokens (turning them off stops every token working), where webhooks may go, which apps may connect,
+   * Sign-up (open, open only with Google, or by invite), API tokens (turning them off stops every token working), where webhooks may go, which apps may connect,
    * calendar links (turning them off stops every link working), boards' own Telegram bots (turning them off
    * stops them all: nothing is read from them or sent through them), and signing in with Google (which needs the
    * site's Google app; turned off, accounts made with Google get back in with "Forgot password").
@@ -168,6 +168,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       z
         .object({
           openSignup: z.boolean(),
+          signupGoogleOnly: z.boolean(),
           apiTokens: z.boolean(),
           webhooks: z.enum(['off', 'public', 'any']),
           oauthApps: z.enum(['off', 'known', 'any']),
@@ -181,6 +182,8 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     )
     if (body.googleSignIn && !(await googleApp(app.db)))
       throw new HttpError(400, 'Save the Google app’s client ID and secret first: signing in with Google goes through it.')
+    if (body.signupGoogleOnly && !(body.googleSignIn ?? (await getSettings(app.db)).googleSignIn))
+      throw new HttpError(400, 'Turn on “People can sign in with Google” first (Platform console → Integrations).')
     if (Object.keys(body).length)
       await app.db
         .insert(siteSettings)

@@ -1,0 +1,1 @@
+ALTER TABLE "site_settings" ADD COLUMN "signup_google_only" boolean DEFAULT false NOT NULL;

@@ -2,7 +2,7 @@ import { Copy, DotsThree, EnvelopeSimpleOpen, Key, Power } from '@phosphor-icons
 import { format, parseISO } from 'date-fns'
 import { useState } from 'react'
 import { toast } from 'sonner'
-import type { AdminUser } from '@kanbanto/model/api'
+import type { AdminSettings, AdminUser } from '@kanbanto/model/api'
 import { api, errorMessage } from '@/api/client'
 import { useLoaded } from '@/data/useLoaded'
 import { hrefFor } from '@/app/router'
@@ -12,14 +12,38 @@ import { ConfirmDialog, type ConfirmRequest } from '@/components/common/ConfirmD
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
-import { Switch } from '@/components/ui/switch'
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { cn } from '@/lib/utils'
 import { PageTitle, SettingsCard } from '@/components/settings/SettingsCard'
 
+/** Who can create an account without an invite. */
+type SignUp = 'anyone' | 'google' | 'invite'
+const SIGN_UP: { value: SignUp; title: string; hint: string; done: string }[] = [
+  {
+    value: 'anyone',
+    title: 'Anyone',
+    hint: 'With an email address and a password, or with Google if signing in with Google is on.',
+    done: 'Anyone can sign up now',
+  },
+  {
+    value: 'google',
+    title: 'Anyone, but only with Google',
+    hint: 'New accounts are made with a Google account: no passwords to choose, no confirmation emails, no made-up addresses. Someone with an invite can still use an email address and a password.',
+    done: 'New accounts are now made with Google only',
+  },
+  {
+    value: 'invite',
+    title: 'Nobody without an invite',
+    hint: 'People can only sign up through a board’s share link, access code or email invite, or a workspace’s invite.',
+    done: 'Sign-up now needs an invite',
+  },
+]
+
 const fetchAccounts = () =>
-  Promise.all([api<{ users: AdminUser[] }>('GET', '/admin/users'), api<{ openSignup: boolean }>('GET', '/admin/settings')]).then(([u, s]) => ({
+  Promise.all([api<{ users: AdminUser[] }>('GET', '/admin/users'), api<AdminSettings>('GET', '/admin/settings')]).then(([u, s]) => ({
     users: u.users,
-    openSignup: s.openSignup,
+    signUp: (!s.openSignup ? 'invite' : s.signupGoogleOnly ? 'google' : 'anyone') as SignUp,
+    googleSignIn: s.googleSignIn,
   }))
 
 /** Platform console → Accounts: who can sign up, and everyone who has. */
@@ -27,7 +51,8 @@ export function AccountsSection() {
   const { user, emailEnabled } = useAuth()
   const [loaded, load] = useLoaded(fetchAccounts)
   const users = loaded?.users ?? null
-  const openSignup = loaded?.openSignup ?? null
+  const signUp = loaded?.signUp ?? null
+  const googleSignIn = loaded?.googleSignIn ?? false
   const [confirm, setConfirm] = useState<ConfirmRequest | null>(null)
   const [reset, setReset] = useState<{ name: string; url: string } | null>(null)
 
@@ -73,28 +98,54 @@ export function AccountsSection() {
         title="Accounts"
         description="Everyone with an account. People’s boards aren’t visible here: you see a board only if someone shares it with you."
       />
-      <SettingsCard
-        title="Anyone can create an account"
-        description="When this is off, people can only sign up through a board’s share link, access code or email invite."
-        action={
-          openSignup !== null && (
-            <Switch
-              checked={openSignup}
-              aria-label="Anyone can create an account"
-              onCheckedChange={(on) =>
-                api('PATCH', '/admin/settings', { openSignup: on }).then(
-                  () => {
-                    void load()
-                    toast(on ? 'Anyone can sign up now' : 'Sign-up now needs an invite')
-                  },
-                  (e) => toast.error(errorMessage(e)),
-                )
-              }
-            />
-          )
-        }
-      >
-        <p className="text-xs text-muted-foreground">{openSignup ? 'Open: anyone can create an account.' : 'Invite only.'}</p>
+      <SettingsCard title="Who can create an account" description="People who already have an account sign in as before, whichever you choose.">
+        {signUp !== null && (
+          <RadioGroup
+            value={signUp}
+            onValueChange={(v) => {
+              const to = SIGN_UP.find((o) => o.value === v)!
+              api('PATCH', '/admin/settings', { openSignup: to.value !== 'invite', signupGoogleOnly: to.value === 'google' }).then(
+                () => {
+                  void load()
+                  toast(to.done)
+                },
+                (e) => toast.error(errorMessage(e)),
+              )
+            }}
+            className="gap-2"
+          >
+            {SIGN_UP.map((o) => {
+              // Only with Google needs signing in with Google to be on (Integrations).
+              const unavailable = o.value === 'google' && !googleSignIn
+              return (
+                <label
+                  key={o.value}
+                  className={cn(
+                    'flex gap-3 rounded-lg border p-3 transition-colors has-[[data-state=checked]]:border-primary has-[[data-state=checked]]:bg-primary/5',
+                    unavailable && signUp !== 'google' ? 'opacity-60' : 'cursor-pointer hover:bg-accent/50',
+                  )}
+                >
+                  <RadioGroupItem value={o.value} className="mt-0.5" disabled={unavailable && signUp !== 'google'} />
+                  <span className="space-y-0.5">
+                    <span className="block text-sm font-medium">{o.title}</span>
+                    <span className="block text-xs leading-relaxed text-muted-foreground">{o.hint}</span>
+                    {unavailable && (
+                      <span className={cn('block text-xs leading-relaxed', signUp === 'google' ? 'text-destructive' : 'text-muted-foreground')}>
+                        {signUp === 'google'
+                          ? 'Signing in with Google is off, so nobody can sign up without an invite right now. '
+                          : 'Needs signing in with Google: '}
+                        <a href={hrefFor({ page: 'admin', section: 'integrations' })} className="font-medium text-primary hover:underline">
+                          {signUp === 'google' ? 'Turn it on in Integrations' : 'turn it on in Integrations'}
+                        </a>
+                        .
+                      </span>
+                    )}
+                  </span>
+                </label>
+              )
+            })}
+          </RadioGroup>
+        )}
       </SettingsCard>
       <section>
         <div className="mb-3 flex items-baseline gap-2">

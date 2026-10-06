@@ -147,8 +147,15 @@ server {
 
 3. Refresh: **Platform console** appears in the menu under your initials.
 
-**For an internal team**, turn off open sign-up in **Platform console → Accounts → Anyone can create an account**.
-People can then only join through a board's share link, access code or email invite, or a workspace's invite.
+**Who can create an account** is in **Platform console → Accounts**:
+
+- **Anyone** (to start with): with an email address and a password, or with Google if you turn that on.
+- **Anyone, but only with Google:** new accounts are made with a Google account, so there are no passwords to choose,
+  no confirmation emails and no made-up addresses. It needs [signing in with Google](#signing-in-with-google) turned
+  on. Someone with an invite can still use an email address and a password, and people who already have a password
+  sign in with it as before.
+- **Nobody without an invite**, for an internal team: people can only join through a board's share link, access code
+  or email invite, or a workspace's invite.
 
 Other server commands (all run as `docker compose exec app node dist/cli.js …`):
 
@@ -195,7 +202,8 @@ What it does with accounts:
   someone else could have made it with that address. On a site that sends no email, no account is confirmed, so this
   happens at each account's first Google sign-in; the person adds a password again in Account settings if they want
   one. To avoid it for an account you know, confirm it first (Platform console → Accounts → ⋯ → Confirm email).
-- **Closed sign-up stays closed:** Google lets in people who have an account or an invite.
+- **Closed sign-up stays closed:** Google lets in people who have an account or an invite. You can also make Google
+  the only way to sign up: see [who can create an account](#first-admin-and-who-can-sign-up).
 - **Turned off later,** people who signed up with Google get back in with **Forgot password**, a reset link from
   you, or `user password`.
 
@@ -387,7 +395,7 @@ Run it under a process manager (systemd, pm2) and put a reverse proxy with HTTPS
       set without one.
 - [ ] Your own `POSTGRES_PASSWORD` (not the default), set before the first start. (Kanbanto says so in its log at
       start if it's still the default.)
-- [ ] Open sign-up turned off, if it's for an internal team.
+- [ ] Sign-up set to **Nobody without an invite**, if it's for an internal team.
 - [ ] Backups running and copied off the server, including the encryption key. Store the key and `.env` like passwords.
 - [ ] The database port stays private (by default it listens only on `127.0.0.1:5433`).
 - [ ] Keep Kanbanto updated. Security reports: see [SECURITY.md](../SECURITY.md).

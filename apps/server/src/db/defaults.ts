@@ -4,6 +4,8 @@
  */
 export const SETTING_DEFAULTS = {
   openSignup: true,
+  /** While sign-up is open: new accounts are only made with Google (an invite still lets someone use the form). */
+  signupGoogleOnly: false,
   /** Emails the site sends per day / month: under Resend's free plan. Null means no limit. */
   emailDailyBudget: 90 as number | null,
   emailMonthlyBudget: 2800 as number | null,
