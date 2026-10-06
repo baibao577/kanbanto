@@ -74,6 +74,7 @@ const HEADERS = { 'content-type': 'application/json', 'user-agent': 'Kanbanto-We
 
 export class Webhooks {
   private timer: ReturnType<typeof setInterval> | null = null
+  private queueing = new Set<Promise<unknown>>()
   private busy = false
   private log: FastifyBaseLogger | null = null
 
@@ -163,6 +164,20 @@ export class Webhooks {
   cardUrl(boardId: string, taskId: string): string | null {
     const site = this.site()
     return site ? taskUrl(site, boardId, taskId) : null
+  }
+
+  /**
+   * Queues in the background, after the request that caused it has been answered: `work` is remembered until it's
+   * done, so `queued` can wait for it. (Whoever starts it says what happens when it fails.)
+   */
+  later(work: Promise<unknown>) {
+    const done = work.catch(() => {}).finally(() => this.queueing.delete(done))
+    this.queueing.add(done)
+  }
+
+  /** Everything that was being queued in the background is in the queue (tests wait for this before sending). */
+  async queued() {
+    while (this.queueing.size) await Promise.all(this.queueing)
   }
 
   /** Sends due deliveries in the background (the server does this; tests call `process` themselves). */
@@ -269,7 +284,8 @@ export class Webhooks {
         .select({ d: webhookDeliveries, h: webhooks })
         .from(webhookDeliveries)
         .innerJoin(webhooks, eq(webhooks.id, webhookDeliveries.webhookId))
-        .where(and(inArray(webhookDeliveries.id, ids), eq(webhookDeliveries.status, 'pending'), lte(webhookDeliveries.nextAttemptAt, new Date())))
+        // (Due by the database's clock, which stamped them when they were queued: the server's may be a little behind.)
+        .where(and(inArray(webhookDeliveries.id, ids), eq(webhookDeliveries.status, 'pending'), lte(webhookDeliveries.nextAttemptAt, sql`now()`)))
         .orderBy(asc(webhookDeliveries.createdAt))
       if (!due.length) return 0
       const mode = (await loadSettings(this.db)).webhooks

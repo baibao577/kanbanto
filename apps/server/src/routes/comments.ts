@@ -203,29 +203,31 @@ export async function postComment(
       app.log.error({ err: e instanceof Error ? e.message : e }, 'push')
       return null
     })
-  void Promise.all([...mentions.map((userId) => tell(userId, 'mentions')), ...followers.map((userId) => tell(userId, 'follows'))])
-    .then((told) =>
-      app.webhooks.emit(
-        id,
-        'comment.added',
-        {
-          board: { id, name: board.name },
-          actor: { id: me.id, name: me.name },
-          task: { id: taskId, title: data.tasks[taskId].title },
-          comment: {
-            id: commentId,
-            body: body.body,
-            mentions,
-            // (The files posted with it: fetched with a token from /api/attachments/<id>.)
-            files: comment.attachments.map((f) => ({ id: f.id, name: f.name, size: f.size })),
+  app.webhooks.later(
+    Promise.all([...mentions.map((userId) => tell(userId, 'mentions')), ...followers.map((userId) => tell(userId, 'follows'))])
+      .then((told) =>
+        app.webhooks.emit(
+          id,
+          'comment.added',
+          {
+            board: { id, name: board.name },
+            actor: { id: me.id, name: me.name },
+            task: { id: taskId, title: data.tasks[taskId].title },
+            comment: {
+              id: commentId,
+              body: body.body,
+              mentions,
+              // (The files posted with it: fetched with a token from /api/attachments/<id>.)
+              files: comment.attachments.map((f) => ({ id: f.id, name: f.name, size: f.size })),
+            },
           },
-        },
-        () =>
-          commentMessage({ actor: me.name, board: board.name, title: data.tasks[taskId].title, body: body.body }, app.webhooks.cardUrl(id, taskId)),
-        [body.notToHook, ...told].filter((hook): hook is string => !!hook),
-      ),
-    )
-    .catch((e) => app.log.error({ err: e instanceof Error ? e.message : e }, 'queueing webhooks'))
+          () =>
+            commentMessage({ actor: me.name, board: board.name, title: data.tasks[taskId].title, body: body.body }, app.webhooks.cardUrl(id, taskId)),
+          [body.notToHook, ...told].filter((hook): hook is string => !!hook),
+        ),
+      )
+      .catch((e) => app.log.error({ err: e instanceof Error ? e.message : e }, 'queueing webhooks')),
+  )
   return comment
 }
 

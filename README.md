@@ -19,7 +19,7 @@
   <a href="#license">License</a>
 </p>
 
-![A Kanbanto board](docs/images/board.png)
+![A Kanbanto board](guides/public/images/board.webp)
 
 ## What you can do
 
@@ -58,7 +58,7 @@
 
 | Timeline | Outline | A card |
 |---|---|---|
-| ![Timeline](docs/images/timeline.png) | ![Outline](docs/images/outline.png) | ![A card](docs/images/card.png) |
+| ![Timeline](guides/public/images/timeline.webp) | ![Outline](guides/public/images/outline.webp) | ![A card](guides/public/images/card.webp) |
 
 **New to it?** The [guides](guides/) explain each of these for the people using Kanbanto, with pictures: your first
 board, sharing, workspaces, assistants, time and planning.

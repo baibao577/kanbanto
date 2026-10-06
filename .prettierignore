@@ -2,7 +2,6 @@ pnpm-lock.yaml
 **/dist
 **/node_modules
 apps/server/drizzle
-docs/images
 *.md
 guides/.vitepress/dist
 guides/.vitepress/cache

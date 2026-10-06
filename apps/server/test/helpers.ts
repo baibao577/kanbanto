@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify'
 import { sql } from 'drizzle-orm'
+import { vi } from 'vitest'
 import { buildApp } from '../src/app'
 import { MemoryGoogle } from '../src/calendar/google'
 import { createDb, migrateDb, type Db } from '../src/db'
@@ -125,6 +126,19 @@ export { setPlatformAdmin } from '../src/admins'
 export async function flushMail(app: FastifyInstance) {
   await new Promise((r) => setImmediate(r))
   await app.mail.process()
+}
+
+/**
+ * Runs `work` with the server's clock a few seconds behind the database's: two machines never agree exactly, so what
+ * the database stamped as "now" mustn't look like it's still to come.
+ */
+export async function serverClockBehind<T>(work: () => Promise<T>): Promise<T> {
+  vi.useFakeTimers({ toFake: ['Date'], now: Date.now() - 5000 })
+  try {
+    return await work()
+  } finally {
+    vi.useRealTimers()
+  }
 }
 
 /** The token at the end of the first link like …/#/<page>/<token> in an email. */

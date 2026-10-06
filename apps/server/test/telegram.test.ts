@@ -70,6 +70,7 @@ const cards = async (boardId: string) =>
     .sort((a, b) => a.id.localeCompare(b.id))
 const deliver = async () => {
   await new Promise((r) => setTimeout(r, 100))
+  await t.app.webhooks.queued()
   return t.app.webhooks.process()
 }
 

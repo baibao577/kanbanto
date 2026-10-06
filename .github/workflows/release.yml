@@ -1,6 +1,7 @@
 # A version tag (v1.2.3) publishes a ready-made image to GitHub's container registry:
 #   ghcr.io/<owner>/<repo>:1.2.3 and :latest
-name: Release image
+# and then lists the release on GitHub, with that version's part of CHANGELOG.md as its text.
+name: Release
 
 on:
   push:
@@ -39,3 +40,22 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  release:
+    needs: image
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: This version's part of the changelog
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          awk -v v="$version" '/^## /{on = ($2 == v); next} on' CHANGELOG.md > notes.md
+          if ! grep -q '[^[:space:]]' notes.md; then
+            echo "::error::CHANGELOG.md has no section \"## $version\": add it, then make the release by hand (gh release create $GITHUB_REF_NAME)."
+            exit 1
+          fi
+      - run: gh release create "$GITHUB_REF_NAME" --verify-tag --title "Kanbanto ${GITHUB_REF_NAME#v}" --notes-file notes.md
+        env:
+          GH_TOKEN: ${{ github.token }}

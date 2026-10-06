@@ -8,6 +8,18 @@ updates:
     groups:
       minor-and-patch:
         update-types: [minor, patch]
+    ignore:
+      # Node moves up a major version by hand: the image, these types and CI together.
+      - dependency-name: '@types/node'
+        update-types: ['version-update:semver-major']
+  # The guides are a project of their own, with their own lockfile.
+  - package-ecosystem: npm
+    directory: /guides
+    schedule:
+      interval: weekly
+    groups:
+      minor-and-patch:
+        update-types: [minor, patch]
   - package-ecosystem: github-actions
     directory: /
     schedule:
@@ -16,3 +28,6 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    ignore:
+      - dependency-name: node
+        update-types: ['version-update:semver-major']

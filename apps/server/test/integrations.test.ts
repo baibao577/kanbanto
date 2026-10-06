@@ -4,7 +4,7 @@ import { eq } from 'drizzle-orm'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { boardActivity, comments, tasks, webhookDeliveries } from '../src/db/schema'
 import type { BoardData } from '@kanbanto/model/types'
-import { mid, Person, reset, setPlatformAdmin, setup } from './helpers'
+import { mid, Person, reset, serverClockBehind, setPlatformAdmin, setup } from './helpers'
 
 let t: Awaited<ReturnType<typeof setup>>
 beforeAll(async () => (t = await setup()))
@@ -27,9 +27,9 @@ const withToken = (token: string) => {
     p.request(method, url, body, { authorization: `Bearer ${token}`, ...headers })
   return call
 }
-/** Webhooks are queued in the background after a change is saved: give that a moment, then send what's due. */
+/** Webhooks are queued in the background after a change is saved: wait for that, then send what's due. */
 const deliver = async () => {
-  await new Promise((r) => setTimeout(r, 100))
+  await t.app.webhooks.queued()
   return t.app.webhooks.process()
 }
 const makeToken = async (p: Person, scope: 'read' | 'write') =>
@@ -153,6 +153,21 @@ describe('webhooks', () => {
       const bob = await Person.signUp(t.app, 'Bob')
       await ann.ok('POST', `/api/boards/${id}/invitations`, { email: 'bob@example.com', role: 'editor' })
       expect((await bob.request('GET', `/api/boards/${id}/webhooks`)).status).toBe(403)
+    } finally {
+      await r.close()
+    }
+  })
+
+  it('send what was just queued, also when the database’s clock is ahead of the server’s', async () => {
+    const { ann, id } = await site({ webhooks: 'any' })
+    const r = await receiver()
+    try {
+      await ann.ok('POST', `/api/boards/${id}/webhooks`, { url: r.url })
+      await serverClockBehind(async () => {
+        await ann.ok('POST', `/api/boards/${id}/mutations`, { mutationId: mid(), command: { type: 'task.update', id: 'A', fields: { title: 'x' } } })
+        expect(await deliver()).toBe(1)
+      })
+      expect(r.got).toHaveLength(1)
     } finally {
       await r.close()
     }
@@ -1238,7 +1253,7 @@ describe('webhook events', () => {
 
     await ann.ok('POST', `/api/boards/${id}/mutations`, { mutationId: mid(), command: { type: 'task.update', id: 'A3', fields: { title: 'Ship' } } })
     await ann.ok('POST', `/api/boards/${id}/tasks/A3/comments`, { body: 'done' })
-    await new Promise((r) => setTimeout(r, 100))
+    await t.app.webhooks.queued()
     const queued = await t.db.select({ webhookId: webhookDeliveries.webhookId, event: webhookDeliveries.event }).from(webhookDeliveries)
     const events = (hook: string) =>
       queued

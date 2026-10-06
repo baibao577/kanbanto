@@ -39,6 +39,10 @@
   "pnpm": {
     "onlyBuiltDependencies": [
       "esbuild"
-    ]
+    ],
+    "overrides": {
+      "source-map-js": ">=1.2.2",
+      "tsup>esbuild": "^0.28.1"
+    }
   }
 }

@@ -161,11 +161,19 @@ export class CalendarSync {
     const [old] = await this.db.select().from(calendarConnections).where(eq(calendarConnections.userId, userId))
     // A first connection, or another Google account: its calendar is a new one, filled from nothing.
     if (!old || old.googleEmail !== grant.email) await this.forget(userId)
-    const fresh = { googleEmail: grant.email, refreshTokenEncrypted: encrypt(grant.refreshToken), lastError: null, failingSince: null, attempts: 0 }
+    // (Due from now by the server's clock, the one `process` checks it with: the database's may be a little ahead.)
+    const fresh = {
+      googleEmail: grant.email,
+      refreshTokenEncrypted: encrypt(grant.refreshToken),
+      lastError: null,
+      failingSince: null,
+      attempts: 0,
+      nextAttemptAt: new Date(),
+    }
     await this.db
       .insert(calendarConnections)
       .values({ userId, ...fresh })
-      .onConflictDoUpdate({ target: calendarConnections.userId, set: { ...fresh, nextAttemptAt: new Date() } })
+      .onConflictDoUpdate({ target: calendarConnections.userId, set: fresh })
     this.tokens.delete(userId)
     this.changed()
   }

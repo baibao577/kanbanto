@@ -140,7 +140,7 @@ export async function buildApp(
   const webhooks = new Webhooks(db, () => mail.siteUrl ?? env.appUrl ?? null)
   const calendar = new CalendarSync(db, engine, opts.google ?? google, () => mail.siteUrl ?? env.appUrl ?? null)
   engine.onChanged = (boardId, e) => {
-    void webhooks.boardChanged(boardId, e).catch((err) => app.log.error({ err: loggable(err) }, 'queueing webhooks'))
+    webhooks.later(webhooks.boardChanged(boardId, e).catch((err) => app.log.error({ err: loggable(err) }, 'queueing webhooks')))
     calendar.kick()
   }
   // (Telling people never undoes the change it's about.)

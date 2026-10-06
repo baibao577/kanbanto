@@ -254,7 +254,8 @@ export class Mailer {
           const due = await tx
             .select()
             .from(emailOutbox)
-            .where(and(eq(emailOutbox.status, 'queued'), lte(emailOutbox.nextAttemptAt, new Date())))
+            // (Due by the database's clock, which stamped them when they were queued: the server's may be a little behind.)
+            .where(and(eq(emailOutbox.status, 'queued'), lte(emailOutbox.nextAttemptAt, sql`now()`)))
             .orderBy(emailOutbox.priority, emailOutbox.createdAt)
             .limit(10)
             .for('update', { skipLocked: true })

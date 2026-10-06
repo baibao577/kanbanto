@@ -3,7 +3,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { redactUrl } from '../src/app'
 import { GoogleError } from '../src/calendar/google'
 import { calendarConnections, calendarEvents, siteSettings } from '../src/db/schema'
-import { mid, Person, reset, setPlatformAdmin, setup } from './helpers'
+import { mid, Person, reset, serverClockBehind, setPlatformAdmin, setup } from './helpers'
 
 let t: Awaited<ReturnType<typeof setup>>
 beforeAll(async () => (t = await setup()))
@@ -278,6 +278,16 @@ describe('connecting Google Calendar', () => {
     await run(ann, id, { type: 'task.delete', id: 't1' })
     await sync()
     expect(t.google.titles()).toEqual([])
+  })
+
+  it('fills a new calendar on the first pass, also when the database’s clock is ahead of the server’s', async () => {
+    const { ann, id } = await site({ google: true })
+    await card(ann, id, 't1', { title: 'Pay rent', due: '2026-10-15' })
+    await serverClockBehind(async () => {
+      await connect(ann)
+      await sync()
+    })
+    expect(t.google.titles()).toEqual(['Pay rent'])
   })
 
   it('follows who can open a board, and which boards are left out', async () => {

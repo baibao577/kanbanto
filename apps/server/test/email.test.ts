@@ -6,7 +6,7 @@ import { SendError } from '../src/mail/transport'
 import { buildApp } from '../src/app'
 import { serverSender } from '../src/mail/senders'
 import { MemoryTransport } from '../src/mail/transport'
-import { flushMail, linkToken, Person, reset, setPlatformAdmin, setup } from './helpers'
+import { flushMail, linkToken, Person, reset, serverClockBehind, setPlatformAdmin, setup } from './helpers'
 
 let t: Awaited<ReturnType<typeof setup>>
 beforeAll(async () => (t = await setup()))
@@ -270,6 +270,18 @@ describe('forgot password', () => {
     expect((await bob.ok('GET', '/api/auth/me')).user).toBeNull() // the old session ended
     expect((await anon.request('POST', '/api/auth/reset', { token, password: 'another one!' })).status).toBe(400)
     await new Person(t.app).ok('POST', '/api/auth/signin', { email: 'bob@example.com', password: 'a brand new one' })
+  })
+})
+
+describe('the outbox', () => {
+  it('sends what was just queued, also when the database’s clock is ahead of the server’s', async () => {
+    await platformWithEmail()
+    await Person.signUp(t.app, 'Bob')
+    await serverClockBehind(async () => {
+      await new Person(t.app).ok('POST', '/api/auth/forgot', { email: 'bob@example.com' })
+      await flushMail(t.app)
+    })
+    expect(linkToken(t.mail.last('bob@example.com')?.text, 'reset')).toBeTruthy()
   })
 })
 
