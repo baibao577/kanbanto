@@ -191,7 +191,7 @@ then `git pull` (or download the new release) and `docker compose up -d --build`
   Restore and Delete); assistants can archive as completed too.
 - **Done cards out of the way:** Display → Done lists shows only cards done or touched lately (14 days, or the
   number you choose), with "12 older · Show". The Outline and Timeline can hide done tasks, with a line saying how
-  many.
+  many. Fixed: with done tasks hidden, Expand all, Collapse all and each row's arrow did nothing (they were switched off as they are while searching, when what is found shows unfolded); they work now, and while searching or filtering the two buttons are greyed out instead of doing nothing.
 - **Archive older done cards:** a done list's menu (or "Archive…" beside its older cards) archives, in one go, the
   cards done more than a number of days ago, each with its subtasks. It says how many will go first, and Undo brings
   them back. A finished card under work that isn't finished stays. Assistants do the same with `archive_done_tasks`.

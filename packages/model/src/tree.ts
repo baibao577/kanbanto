@@ -37,7 +37,8 @@ export const searchKeep = (idx: TaskIndex, match: (title: string) => boolean) =>
 
 /**
  * Flattens only the expanded part of the tree, stopping at `limit` rows.
- * With `keep` (a search), only those tasks show and they're all expanded.
+ * With `keep` (a search), only those tasks show and they're all expanded. With `folds` as well, `keep` only says
+ * which tasks show ("Hide done"): what is folded stays folded.
  */
 export function flattenTree(
   idx: TaskIndex,
@@ -47,6 +48,7 @@ export function flattenTree(
   keep?: Set<string>,
   /** Sibling order (e.g. sorted by a column); outline order when omitted. */
   order?: (siblings: string[]) => string[],
+  folds = false,
 ) {
   const rows: string[] = []
   const stack = [...(order ? order(top) : top)].reverse()
@@ -56,7 +58,7 @@ export function flattenTree(
     rows.push(id)
     const found = idx.childrenOf.get(id)
     const kids = found && order ? order(found) : found
-    if (kids && (keep || expanded.has(id))) for (let i = kids.length - 1; i >= 0; i--) stack.push(kids[i])
+    if (kids && ((keep && !folds) || expanded.has(id))) for (let i = kids.length - 1; i >= 0; i--) stack.push(kids[i])
   }
   return { rows: rows.slice(0, limit), truncated: rows.length > limit }
 }

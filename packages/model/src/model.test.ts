@@ -196,6 +196,9 @@ describe('focus and search', () => {
   it('tree search keeps each match with its ancestors', () => {
     const keep = searchKeep(idx, (t) => t.toLowerCase().includes('logo'))
     expect(flattenTree(idx, idx.roots, new Set(), 100, keep).rows).toEqual(['A', 'A2', 'A2b'])
+    // When the kept tasks are only what is left to show ("Hide done"), what is folded stays folded.
+    expect(flattenTree(idx, idx.roots, new Set(), 100, keep, undefined, true).rows).toEqual(['A'])
+    expect(flattenTree(idx, idx.roots, new Set(['A']), 100, keep, undefined, true).rows).toEqual(['A', 'A2'])
   })
 })
 

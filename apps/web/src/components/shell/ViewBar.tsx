@@ -23,11 +23,21 @@ export function ViewActions({ children, lead }: { children: ReactNode; lead?: bo
 }
 
 /** A small icon button for the view bar (expand or collapse all), named by its tooltip. */
-export function BarIconButton({ label, onClick, children }: { label: string; onClick: () => void; children: ReactNode }) {
+export function BarIconButton({
+  label,
+  onClick,
+  disabled,
+  children,
+}: {
+  label: string
+  onClick: () => void
+  disabled?: boolean
+  children: ReactNode
+}) {
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <Button variant="ghost" size="icon" className="size-8" aria-label={label} onClick={onClick}>
+        <Button variant="ghost" size="icon" className="size-8" aria-label={label} onClick={onClick} disabled={disabled}>
           {children}
         </Button>
       </TooltipTrigger>

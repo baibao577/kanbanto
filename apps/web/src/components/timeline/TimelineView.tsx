@@ -98,7 +98,13 @@ export function TimelineView({ search }: { search: string }) {
   const { top, baseDepth } = treeTop(idx, focusId)
   // Search and filters (shared with every tab) keep the matches plus their parents, muted, for context.
   const { keep, matched, filtering, hiddenDone } = useTreeFilter(search)
-  const { rows, truncated } = useMemo(() => flattenTree(idx, top, expanded, limit, keep), [idx, top, expanded, limit, keep])
+  // Search and filters show what they found unfolded, and folding is off meanwhile. "Hide done" alone only leaves
+  // rows out: folding works as usual.
+  const forced = matched !== undefined
+  const { rows, truncated } = useMemo(
+    () => flattenTree(idx, top, expanded, limit, keep, undefined, !forced),
+    [idx, top, expanded, limit, keep, forced],
+  )
 
   const expand = (id: string) => {
     if (!expanded.has(id)) setExpanded(new Set(expanded).add(id))
@@ -245,10 +251,10 @@ export function TimelineView({ search }: { search: string }) {
         </Button>
       </ViewActions>
       <ViewActions lead>
-        <BarIconButton label="Expand all" onClick={() => setExpanded(new Set(idx.childrenOf.keys()))}>
+        <BarIconButton label="Expand all" disabled={forced} onClick={() => setExpanded(new Set(idx.childrenOf.keys()))}>
           <ArrowsOutSimple />
         </BarIconButton>
-        <BarIconButton label="Collapse all" onClick={() => setExpanded(new Set())}>
+        <BarIconButton label="Collapse all" disabled={forced} onClick={() => setExpanded(new Set())}>
           <ArrowsInSimple />
         </BarIconButton>
       </ViewActions>
@@ -303,7 +309,7 @@ export function TimelineView({ search }: { search: string }) {
                 const kids = idx.childrenOf.get(id)
                 const span = spanOf(id)
                 const col = statusCol(idx, id)
-                const open = !!keep || expanded.has(id)
+                const open = forced || expanded.has(id)
                 const w = span ? (span.end - span.start + 1) * dayW : 0
                 const depth = idx.depth.get(id)! - baseDepth
                 const zone = zoneOf(id)
@@ -325,7 +331,7 @@ export function TimelineView({ search }: { search: string }) {
                       style={{ width: LEFT_W, paddingLeft: depth * 16 + 8 }}
                     >
                       <button
-                        disabled={!kids || !!keep}
+                        disabled={!kids || forced || (!!keep && !kids.some((k) => keep.has(k)))}
                         onClick={() => toggle(id)}
                         aria-label={open ? 'Collapse' : 'Expand'}
                         className="grid size-5 shrink-0 place-items-center rounded text-muted-foreground hover:bg-accent"

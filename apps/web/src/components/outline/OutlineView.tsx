@@ -119,7 +119,13 @@ export function OutlineView({ search }: { search: string }) {
 
   // (Laid out again only when something it's made from changes: on a big board, sorting every list of siblings is the
   // slow part, and a redraw for a menu opening or a cell being edited doesn't need it.)
-  const { rows, truncated } = useMemo(() => flattenTree(idx, top, expanded, limit, keep, order), [idx, top, expanded, limit, keep, order])
+  // Search and filters show what they found unfolded, and folding is off meanwhile. "Hide done" alone only leaves
+  // rows out: folding works as usual.
+  const forced = matched !== undefined
+  const { rows, truncated } = useMemo(
+    () => flattenTree(idx, top, expanded, limit, keep, order, !forced),
+    [idx, top, expanded, limit, keep, order, forced],
+  )
 
   const toggle = (id: string) => {
     const next = new Set(expanded)
@@ -241,10 +247,10 @@ export function OutlineView({ search }: { search: string }) {
         <OutlineDisplayMenu />
       </ViewActions>
       <ViewActions lead>
-        <BarIconButton label="Expand all" onClick={() => setExpanded(new Set(idx.childrenOf.keys()))}>
+        <BarIconButton label="Expand all" disabled={forced} onClick={() => setExpanded(new Set(idx.childrenOf.keys()))}>
           <ArrowsOutSimple />
         </BarIconButton>
-        <BarIconButton label="Collapse all" onClick={() => setExpanded(new Set())}>
+        <BarIconButton label="Collapse all" disabled={forced} onClick={() => setExpanded(new Set())}>
           <ArrowsInSimple />
         </BarIconButton>
       </ViewActions>
@@ -284,7 +290,7 @@ export function OutlineView({ search }: { search: string }) {
               {rows.map((id) => {
                 const t = data.tasks[id]
                 const kids = idx.childrenOf.get(id)
-                const open = !!keep || expanded.has(id)
+                const open = forced || expanded.has(id)
                 const depth = idx.depth.get(id)! - baseDepth
                 const done = idx.category.get(id) === 'done'
                 const col = statusCol(idx, id)
@@ -304,7 +310,7 @@ export function OutlineView({ search }: { search: string }) {
                     style={{ paddingLeft: 6 + depth * 16 }}
                   >
                     <button
-                      disabled={!kids || !!keep}
+                      disabled={!kids || forced || (!!keep && !kids.some((k) => keep.has(k)))}
                       onClick={() => toggle(id)}
                       aria-label={open ? 'Collapse' : 'Expand'}
                       className="grid size-6 shrink-0 place-items-center rounded text-muted-foreground disabled:opacity-0"
@@ -426,7 +432,7 @@ export function OutlineView({ search }: { search: string }) {
                 {rows.map((id, i) => {
                   const t = data.tasks[id]
                   const kids = idx.childrenOf.get(id)
-                  const open = !!keep || expanded.has(id)
+                  const open = forced || expanded.has(id)
                   const depth = idx.depth.get(id)! - baseDepth
                   const done = idx.category.get(id) === 'done'
                   const context = matched && !matched.has(id) // shown only because a subtask matches
@@ -472,7 +478,7 @@ export function OutlineView({ search }: { search: string }) {
                         </span>
                         <span style={{ width: depth * INDENT }} className="shrink-0" />
                         <button
-                          disabled={!kids || !!keep}
+                          disabled={!kids || forced || (!!keep && !kids.some((k) => keep.has(k)))}
                           onClick={() => toggle(id)}
                           aria-label={open ? 'Collapse' : 'Expand'}
                           className="grid size-6 shrink-0 place-items-center rounded text-muted-foreground hover:bg-accent disabled:hover:bg-transparent"
