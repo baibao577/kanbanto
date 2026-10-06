@@ -322,6 +322,9 @@ function Composer({
             placeholder={placeholder}
             aria-label={initial ? 'Edit comment' : 'Write a comment'}
             className="min-h-12"
+            // A long comment scrolls inside its box: left to grow, it pushes the card's window past what can be
+            // scrolled back (beside the card, the column has nowhere to go), and the buttons under it out of reach.
+            scrollClassName="max-h-[min(45dvh,26rem)] overflow-y-auto overscroll-contain"
           />
         </Suspense>
       ) : (
