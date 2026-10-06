@@ -13,13 +13,13 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "chrono-node": "^2.10.1",
+    "chrono-node": "^2.10.2",
     "fractional-indexing": "^4.0.0",
     "zod": "^4.6.5"
   },
   "devDependencies": {
     "@types/node": "^24.19.0",
     "typescript": "~6.0.2",
-    "vitest": "^5.0.2"
+    "vitest": "^5.0.3"
   }
 }
