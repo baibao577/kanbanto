@@ -318,7 +318,10 @@ The app uses hash routing, so any static host or proxy works without rewrite rul
 - **Moving files** (`src/storage/move.ts`): files kept elsewhere (the disk, the site's storage, an earlier bucket) can
   be moved to the storage in use, by the platform admin for the site's storage and by people for their own boards.
   Each file is copied, its record switched, then the old copy removed; progress is kept in memory, so a restart just
-  leaves the rest where it was. An earlier bucket with no files left is forgotten, with its keys.
+  leaves the rest where it was. An earlier bucket with no files left is forgotten, with its keys. Two settings can be
+  one bucket under two addresses: before a move between buckets, a mark is written through one and looked for
+  through the other (`sameBucket`), and when it's found only the records change. Without that the "old copy" removed
+  would be the only one.
 - **Bring your own bucket:** people can connect their own bucket in Account settings; files on boards they own go
   there, with no limit. Their buckets must be at public addresses: every connection is checked after the name is
   looked up (so changing DNS later doesn't get around it), and redirects aren't followed.

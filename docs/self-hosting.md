@@ -197,7 +197,8 @@ fine for most teams. To keep files elsewhere, use any **S3-compatible bucket**:
 |---|---|---|
 | Cloudflare R2 | `https://<account-id>.r2.cloudflarestorage.com` (EU: `…eu.r2.cloudflarestorage.com`) | leave empty (`auto`) |
 | Amazon S3 | `https://s3.<region>.amazonaws.com` | e.g. `eu-west-1` |
-| MinIO / others | your server's address | as configured |
+| MinIO | the address people's browsers reach it at, e.g. `https://files.example.com` | leave empty, unless your MinIO has a region set |
+| Others (Backblaze B2, Wasabi…) | the provider's S3 endpoint | as the provider says |
 
 **Cloudflare R2, step by step:**
 
@@ -207,6 +208,26 @@ fine for most teams. To keep files elsewhere, use any **S3-compatible bucket**:
    Copy the **Access Key ID**, the **Secret Access Key** (shown once) and the **S3 endpoint**.
 3. Kanbanto → **Platform console → Storage → Use an S3 / R2 bucket**: fill in endpoint, bucket, keys →
    **Test and save**. Kanbanto writes and deletes a small test file before saving.
+
+**MinIO, step by step** (tried with MinIO `RELEASE.2026-09-22`, with and without a region):
+
+1. In MinIO, make a bucket, e.g. `kanbanto-files`, and an access key that can read and write it. Leave the bucket
+   private.
+2. Kanbanto → **Platform console → Storage → Use an S3 / R2 bucket**. **Endpoint** is MinIO's S3 address (the API
+   port, 9000 unless you changed it, not the console's). Leave **Region** empty, unless your MinIO has one set
+   (`MINIO_SITE_REGION`): then put that one in. If it's wrong, the test says which region the storage is set to.
+3. **Test and save.**
+
+Two things to get right, because a file opens in the person's browser through a short-lived link straight to MinIO:
+
+- **The endpoint has to be an address people's browsers can reach**, not only the server. A name that only exists
+  inside Docker (`http://minio:9000`) saves and uploads fine, and then no file opens. Use the address you'd type in a
+  browser.
+- **If Kanbanto is on `https://`, put MinIO on `https://` too.** Browsers don't show pictures from an `http://`
+  address on an `https://` page.
+
+MinIO as the site's storage may be on your private network. People's own buckets (Account settings) may not: see
+below.
 
 No CORS setup is needed. **Switching storage never breaks files already uploaded**, and doesn't move them by itself:
 each file keeps opening from where it was saved. Switch back with **Stop using it**.
@@ -220,6 +241,9 @@ earlier):
   then its files don't open.
 - **Use again** makes an earlier bucket the storage in use again. Saving a bucket Kanbanto already knows brings its
   setting back, with the keys given now.
+- **A bucket whose address changed** (a new domain, an inside name replaced by a public one): save it under the new
+  address, then **Move here** from the earlier setting. Kanbanto checks whether the two are one and the same bucket;
+  if so it copies and removes nothing, and only notes the new address for each file.
 
 Keep an earlier bucket and its key until its files are moved. Once it holds no files it leaves the list, and Kanbanto
 deletes its saved keys.

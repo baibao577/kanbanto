@@ -214,6 +214,18 @@ People's own storage has to be at a public `https://` address: Kanbanto won't co
 (`localhost`, `10.x`, `192.168.x`, cloud-internal addresses) on anyone's behalf. For storage on your own network (a
 MinIO), a platform admin can set it as the site's storage in Platform console → Storage instead.
 
+### "The region isn't right: this storage is set to …"
+The bucket's storage expects another region than the one in **Region**. Put the one it names there. For a MinIO
+without a region set, leave Region empty.
+
+### Files in a bucket upload, but don't open (or pictures don't show)
+A file opens in the browser through a short-lived link straight to the storage, at the **endpoint** you saved. So that
+address has to work from people's browsers: not a name that only exists on the server or inside Docker
+(`http://minio:9000`), and on `https://` if Kanbanto is. To put it right: save the bucket again with the address a
+browser can reach (Platform console → Storage), then press **Move here** beside the earlier setting in "files kept
+elsewhere". Kanbanto sees that both are the same bucket: nothing is copied or removed, the files are just looked for
+at the new address from then on.
+
 ### "You have files waiting in comments you haven't posted"
 Files attached to a comment wait until the comment is posted (at most 10, and 3 times the largest file size). Post or
 cancel those comments, or remove their files. Unposted files are removed after a day.

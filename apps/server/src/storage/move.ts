@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import type { StorageMove } from '@kanbanto/model/api'
 import { and, eq, isNull } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
@@ -12,6 +13,8 @@ import { S3Store, StorageError } from './stores'
  * - One move at a time for the site (`owner` null) and for each person. Progress is kept in memory only.
  * - Each file is copied, then its record is switched, then the old copy is removed. Stopping part-way (or a restart)
  *   loses nothing: what's left is still listed as kept elsewhere, and can be moved again.
+ * - Two settings can be one and the same bucket (its address changed, or its server has two names). Then nothing is
+ *   copied and, above all, nothing is removed: "the old copy" would be the only one. See `sameBucket`.
  * - A person's files go to their own bucket, except on boards now in a workspace (always the site's storage). Files
  *   coming into the site's storage must fit in the space of whoever they count against.
  */
@@ -69,8 +72,35 @@ export async function startMove(app: FastifyInstance, owner: string | null, plac
   return view(job)
 }
 
+/**
+ * Whether two bucket settings reach one and the same bucket. The same address and name, plainly; and otherwise it's
+ * tried: a mark written through one is looked for through the other. (Saving a bucket again under another address,
+ * an inside name and then the public one, makes two settings of one bucket: moving "from the old one" used to copy
+ * each file onto itself and then delete it as the old copy.) When it can't be told, because the old address doesn't
+ * answer, it counts as two: the file can't be read from there either, so nothing is moved or removed.
+ */
+async function sameBucket(source: S3Store, dest: S3Store): Promise<boolean> {
+  if (source.base === dest.base) return true
+  const mark = `.kanbanto-same-${randomUUID()}`
+  try {
+    await dest.put(mark, Buffer.from('?'), 'text/plain')
+    return !!(await source.get(mark))
+  } catch {
+    return false
+  } finally {
+    await dest.delete(mark).catch(() => {})
+  }
+}
+
 async function run(app: FastifyInstance, owner: string | null, placeId: string, ids: string[], job: Job) {
   const db = app.db
+  /** Asked once for each pair of settings in a move, not for every file. */
+  const sameAs = new Map<string, Promise<boolean>>()
+  const oneBucket = (source: S3Store, dest: S3Store) => {
+    const pair = `${source.base} ${dest.base}`
+    if (!sameAs.has(pair)) sameAs.set(pair, sameBucket(source, dest))
+    return sameAs.get(pair)!
+  }
   const own = owner ? await activeBackend(db, owner) : null
   const platform = await activeBackend(db, null)
   const { quotaMb } = await storageSettings(db)
@@ -102,7 +132,7 @@ async function run(app: FastifyInstance, owner: string | null, placeId: string, 
       const source = await storeOf(db, a)
       const dest = target ? s3For(target) : disk
       // The same bucket under two settings: the file is already there, only its record changes.
-      const same = source instanceof S3Store && dest instanceof S3Store && source.base === dest.base
+      const same = source instanceof S3Store && dest instanceof S3Store && (await oneBucket(source, dest))
       if (!same) {
         const bytes = await source.get(a.storageKey)
         if (!bytes) {

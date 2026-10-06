@@ -45,7 +45,7 @@ export function AccountStorageSection() {
         description={
           info.bucket
             ? 'Files on boards you own go to your own bucket, with no limit.'
-            : 'Connect an S3-compatible bucket (Cloudflare R2, AWS S3…) for unlimited space on your boards.'
+            : 'Connect an S3-compatible bucket (Cloudflare R2, AWS S3, MinIO…) for unlimited space on your boards.'
         }
       >
         <BucketForm
@@ -53,6 +53,7 @@ export function AccountStorageSection() {
           bucket={info.bucket}
           encryptionReady={info.encryptionReady}
           defaultLabel="Kanbanto’s storage"
+          own
           onSave={async (fields) => {
             await api('PUT', '/account/storage/bucket', fields)
             toast('Bucket connected. New files on your boards go there.')

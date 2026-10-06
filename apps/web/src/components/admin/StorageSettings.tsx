@@ -23,7 +23,7 @@ export function StorageSettings() {
       <PageTitle title="Storage" description="Where card attachments are kept, and how much space people get." />
       <SettingsCard
         title="Where files are kept"
-        description="Switching doesn’t move files already uploaded: they keep opening from where they were saved, and can be moved afterwards."
+        description="This server’s disk, or any S3-compatible bucket: Cloudflare R2, AWS S3, a MinIO of your own. Switching doesn’t move files already uploaded: they keep opening from where they were saved, and can be moved afterwards."
       >
         <BucketForm
           key={info.bucket?.updatedAt ?? 'disk'}

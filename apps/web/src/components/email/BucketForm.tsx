@@ -22,6 +22,7 @@ export function BucketForm({
   bucket,
   encryptionReady,
   defaultLabel,
+  own,
   onSave,
   onRemove,
 }: {
@@ -29,6 +30,8 @@ export function BucketForm({
   encryptionReady: boolean
   /** What's used without a bucket (e.g. "This server’s disk"). */
   defaultLabel: string
+  /** A person's own bucket: it has to be on the public internet. (The site's own may be on its network.) */
+  own?: boolean
   onSave: (fields: BucketFields) => Promise<void>
   onRemove: () => Promise<void>
 }) {
@@ -124,8 +127,12 @@ export function BucketForm({
           className="h-8"
           required
         />
-        <p className="text-[11px] text-muted-foreground">
-          Cloudflare R2: R2 → Overview → your account’s S3 API address. AWS: https://s3.&lt;region&gt;.amazonaws.com.
+        <p className="text-[11px] leading-relaxed text-muted-foreground">
+          Cloudflare R2: R2 → Overview → your account’s S3 API address. AWS: https://s3.&lt;region&gt;.amazonaws.com. MinIO and others: the storage’s
+          own S3 address.{' '}
+          {own
+            ? 'It has to be a public https:// address.'
+            : 'Files open in people’s browsers straight from this address, so use one their browsers can reach, not a name that only works on the server.'}
         </p>
       </div>
       <div className="grid gap-3 sm:grid-cols-2">
@@ -139,7 +146,7 @@ export function BucketForm({
           <Label htmlFor="s3-region" className="text-xs">
             Region
           </Label>
-          <Input id="s3-region" value={f.region} onChange={set('region')} placeholder="auto (R2) or e.g. eu-west-1" className="h-8" />
+          <Input id="s3-region" value={f.region} onChange={set('region')} placeholder="Empty (R2, MinIO) or eu-west-1" className="h-8" />
         </div>
         <div className="space-y-1">
           <Label htmlFor="s3-key" className="text-xs">

@@ -380,6 +380,41 @@ describe('attachments', () => {
     }
   })
 
+  it('one bucket saved under two addresses: moving its files changes where they’re looked for, and removes nothing', async () => {
+    const s3 = await fakeS3()
+    try {
+      const { ann, bob, id } = await team()
+      await setPlatformAdmin(t.db, 'ann@example.com', true)
+      // (The same server by another name: an address that was changed, an inside name and a public one.)
+      const again = s3.endpoint.replace('127.0.0.1', 'localhost')
+      const first = await ann.ok('PUT', '/api/admin/storage/bucket', {
+        endpoint: s3.endpoint,
+        bucket: 'files',
+        accessKeyId: 'AK',
+        secret: 'SECRET1234',
+      })
+      const kept = await upload(bob, id, 'A3', 'kept.txt', Buffer.from('kept'))
+      const second = await ann.ok('PUT', '/api/admin/storage/bucket', { endpoint: again, bucket: 'files', accessKeyId: 'AK', secret: 'SECRET1234' })
+      expect(second.id).not.toBe(first.id)
+      expect((await ann.ok('GET', '/api/admin/storage')).elsewhere).toMatchObject([{ id: first.id, files: 1 }])
+      // "Move here" used to copy the file onto itself and then delete it, as the old copy.
+      await ann.ok('POST', '/api/admin/storage/move', { place: first.id })
+      const page = await afterMove(ann, '/api/admin/storage')
+      expect(page.move).toMatchObject({ total: 1, moved: 1, failed: 0 })
+      expect(page.elsewhere).toEqual([])
+      expect(inBucket(s3, 'files')).toBe(1)
+      expect((await fileRow(kept.body.attachment.id)).backendId).toBe(second.id)
+      // It opens, from the address in use now; and the mark that told the two were one is gone.
+      const opened = await bob.request('GET', kept.body.attachment.url)
+      expect(opened.status).toBe(302)
+      expect(String(opened.headers.location)).toContain(`${again}/files/`)
+      expect([...s3.objects.keys()].filter((k) => k.includes('.kanbanto-same-'))).toEqual([])
+      expect(s3.objects.get(`/files/${(await fileRow(kept.body.attachment.id)).storageKey}`)?.toString()).toBe('kept')
+    } finally {
+      await s3.close()
+    }
+  })
+
   it('a person moves their files into their own bucket, and back only as far as their space allows', async () => {
     const s3 = await fakeS3()
     try {

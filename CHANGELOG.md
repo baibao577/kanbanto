@@ -77,6 +77,10 @@ then `git pull` (or download the new release) and `docker compose up -d --build`
   second file with a name the card already has is numbered (`report (2).pdf`), so a mark always means one file;
   attaching a file to a card is a line in the board's activity. `FILES_FROM_URL=off` stops the server fetching
   files from web addresses.
+- **File storage on MinIO**, tried against a real one (the docs have the steps): a wrong Region now says which
+  region the storage is set to. Fixed: a bucket saved a second time under another address (its address changed) lost
+  its files when they were moved "from the earlier bucket"; Kanbanto now recognises that both are one bucket and
+  only notes the new address.
 - **Integrations:** personal API tokens (once a platform admin turns them on), webhooks per board with signed
   deliveries and retries, an MCP endpoint for AI assistants, a Skill for Claude Code, and an API reference at
   `/api/docs` on every site. Claude on the web and in Claude Desktop (and ChatGPT) can connect by signing in (OAuth),

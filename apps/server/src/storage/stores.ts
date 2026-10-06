@@ -118,9 +118,12 @@ export class S3Store implements ObjectStore {
       const why =
         code === 'NoSuchBucket'
           ? 'That bucket doesn’t exist.'
-          : code === 'InvalidAccessKeyId' || code === 'SignatureDoesNotMatch' || res.status === 403
-            ? 'The access key or secret isn’t right, or it can’t write to this bucket.'
-            : `The storage answered ${res.status}${code ? ` (${code})` : ''}.`
+          : code === 'AuthorizationHeaderMalformed'
+            ? // (A request signed for another region than the storage is set to: S3 and MinIO both say which they expect.)
+              wrongRegion(text.match(/<Region>([^<]+)<\/Region>/)?.[1])
+            : code === 'InvalidAccessKeyId' || code === 'SignatureDoesNotMatch' || res.status === 403
+              ? 'The access key or secret isn’t right, or it can’t write to this bucket.'
+              : `The storage answered ${res.status}${code ? ` (${code})` : ''}.`
       throw new StorageError(why)
     }
     return res
@@ -158,6 +161,11 @@ export class S3Store implements ObjectStore {
     await this.delete(key)
   }
 }
+
+const wrongRegion = (expected: string | undefined) =>
+  expected
+    ? `The region isn’t right: this storage is set to “${expected}”. Put that in Region.`
+    : 'The region isn’t right. Put the storage’s own region in Region.'
 
 /** The most useful part of a network error: undici puts the real reason in `cause`. */
 function reasonOf(e: unknown): string {
