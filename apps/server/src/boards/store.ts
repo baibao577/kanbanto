@@ -145,3 +145,22 @@ export async function writeChanges(tx: Tx, boardId: string, changes: Change[], f
   await save(labels, by.label, (l: Parameters<typeof labelToRow>[1]) => labelToRow(boardId, l))
   await save(tasks, by.task, (t: Parameters<typeof taskToRow>[1]) => taskToRow(boardId, t), { custom })
 }
+
+/**
+ * Gives many cards their fields' values in a few statements, 500 cards to each, instead of one statement per card
+ * (merging two fields on a board of 10,000 cards took eight seconds that way). `changed`: the cards count as changed
+ * at that moment (their version goes up), as when each is edited.
+ */
+export async function writeCustom(tx: Tx, rows: { boardId: string; id: string; custom: object | null }[], changed?: Date) {
+  const touch = changed ? sql`, updated_at = ${changed.toISOString()}::timestamptz, version = t.version + 1` : sql``
+  for (let i = 0; i < rows.length; i += 500) {
+    const values = sql.join(
+      rows.slice(i, i + 500).map((r) => sql`(${r.boardId}::text, ${r.id}::text, ${r.custom && JSON.stringify(r.custom)}::jsonb)`),
+      sql`, `,
+    )
+    await tx.execute(sql`
+      update tasks t set custom = v.custom${touch}
+      from (values ${values}) as v(board_id, id, custom)
+      where t.board_id = v.board_id and t.id = v.id`)
+  }
+}

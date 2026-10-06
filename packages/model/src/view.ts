@@ -1,7 +1,8 @@
 import { descendantsOf, isBlocked, isLeaf, type TaskIndex } from './indexer'
 import { comparePositions } from './position'
 import { sortComparator } from './table'
-import { DONE_DAYS, type Scope, type ViewConfig } from './types'
+import type { FieldDef } from './fields'
+import { DONE_DAYS, type Scope, type Task, type ViewConfig } from './types'
 
 /** A column or a row. `taskId` is set when the lane stands for a task (a parent). */
 export interface Lane {
@@ -84,10 +85,16 @@ export function groupCell(idx: TaskIndex, ids: string[], rowKey: string): CardGr
 
 export const validFocus = (idx: TaskIndex, scope: Scope) => (scope.focusId && scope.focusId in idx.tasks ? scope.focusId : undefined)
 
-/** Case-insensitive title match; null when there's no search. */
-export function matcher(search?: string): ((title: string) => boolean) | null {
+/**
+ * Does a card answer the search box? Its title holds what was typed, in any case, or one of its text fields does
+ * (`fields`: the board's own). Null when there's no search.
+ */
+export function matcher(search?: string, fields?: Iterable<FieldDef>): ((t: Pick<Task, 'title' | 'custom'>) => boolean) | null {
   const q = search?.trim().toLowerCase()
-  return q ? (title) => title.toLowerCase().includes(q) : null
+  if (!q) return null
+  const texts = [...(fields ?? [])].filter((f) => f.type === 'text').map((f) => f.id)
+  const holds = (v: unknown) => typeof v === 'string' && v.toLowerCase().includes(q)
+  return (t) => holds(t.title) || (!!t.custom && texts.some((id) => holds(t.custom![id])))
 }
 
 /** Step 1 — which tasks are visible: the focused subtree (or everything), then the filter. */
@@ -124,7 +131,7 @@ export function buildView(idx: TaskIndex, cfg: ViewConfig, scope: Scope = {}): B
   const visible = (id: string) => !hidden.has(idx.status.get(id)!)
   const all = filterTasks(idx, cfg, scope)
   const filtered = hidden.size ? all.filter(visible) : all
-  const match = matcher(scope.search)
+  const match = matcher(scope.search, idx.fields.values())
 
   // Step 2 — columns, and which (task → column) each visible card belongs to.
   let columns: Lane[]
@@ -142,7 +149,7 @@ export function buildView(idx: TaskIndex, cfg: ViewConfig, scope: Scope = {}): B
     cards.sort((a, b) => idx.position.get(a.id)! - idx.position.get(b.id)!)
   }
   // Search and filters narrow the cards, never the columns, so the board keeps its shape.
-  if (match) cards = cards.filter((c) => match(tasks[c.id].title))
+  if (match) cards = cards.filter((c) => match(tasks[c.id]))
   if (scope.keep) cards = cards.filter((c) => scope.keep!(c.id))
 
   // Step 3 — rows.
@@ -224,7 +231,7 @@ export function buildView(idx: TaskIndex, cfg: ViewConfig, scope: Scope = {}): B
   })
   rows.sort((a, b) => laneRank(idx, a, cfg) - laneRank(idx, b, cfg) || a.title.localeCompare(b.title))
 
-  return { columns, rows, cells, ids: match ? filtered.filter((id) => match(tasks[id].title)) : filtered, olderDone }
+  return { columns, rows, cells, ids: match ? filtered.filter((id) => match(tasks[id])) : filtered, olderDone }
 }
 
 function laneRank(idx: TaskIndex, lane: Lane, cfg: ViewConfig): number {

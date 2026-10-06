@@ -127,7 +127,7 @@ describe('filtering and sorting by a link', () => {
   const today = todayDay()
 
   it('by the cards linked, by none, and by whether there is one', () => {
-    const pass = (id: string, f: object) => fieldMatches(company, data.tasks[id].custom?.['f-company'], f, today)
+    const pass = (id: string, f: object) => fieldMatches(company, data.tasks[id].custom?.['f-company'], f, { today })
     expect([pass('A1', { in: [acme] }), pass('A3', { in: [acme] }), pass('A4', { in: [acme] })]).toEqual([true, false, false])
     // "None linked" doesn't match a card that has a link.
     expect([pass('A1', { in: [''] }), pass('A4', { in: [''] }), pass('A4', { in: ['', acme] })]).toEqual([false, true, true])

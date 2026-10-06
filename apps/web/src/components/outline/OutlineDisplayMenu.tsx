@@ -25,7 +25,7 @@ export function OutlineDisplayMenu() {
   const { data, prefs, setPrefs } = useBoard()
   const cfg = prefs.outline
   const hidden = new Set<string>(cfg.hidden ?? [])
-  const changed = hidden.size > 0 || !!cfg.hideFields || cfg.density === 'comfortable' || !!cfg.hideDone
+  const changed = hidden.size > 0 || !!cfg.hideFields || cfg.density === 'comfortable' || !!cfg.hideDone || !!cfg.order?.length
   // Always written in the same order (built-in columns, then fields by key), so a saved view compares equal to itself.
   const toggle = (c: OutlineColumn | FieldKey, on: boolean) => {
     const all: (OutlineColumn | FieldKey)[] = [...OUTLINE_COLUMNS, ...data.fields.map((f) => fieldKey(f.id)).sort()]
@@ -50,6 +50,9 @@ export function OutlineDisplayMenu() {
               {LABEL[c]}
             </label>
           ))}
+          <p className="pt-1 text-[11px] text-muted-foreground max-md:hidden">
+            To move a column, drag its name in the table.{cfg.order?.length ? ' Reset puts them back in order.' : ''}
+          </p>
           <p className="pt-1 text-[11px] text-muted-foreground md:hidden">
             On a phone, the Outline is a list: columns show as details under each task.
           </p>
@@ -120,7 +123,7 @@ export function OutlineDisplayMenu() {
                 onClick={() =>
                   setPrefs({
                     type: 'setOutline',
-                    config: { ...cfg, hidden: undefined, hideFields: undefined, density: undefined, hideDone: undefined },
+                    config: { ...cfg, hidden: undefined, hideFields: undefined, density: undefined, hideDone: undefined, order: undefined },
                   })
                 }
               >

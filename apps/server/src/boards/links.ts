@@ -10,6 +10,7 @@ import type { Db, Tx } from '../db'
 import { boardFieldRows, boardMembers, boards, libraryFields, tasks } from '../db/schema'
 import { openBoards, type BoardRow } from './access'
 import type { BoardEngine } from './engine'
+import { writeCustom } from './store'
 
 /**
  * Links between cards (the card link field: see model/fields.ts for what a link is and what one board can check).
@@ -465,6 +466,7 @@ export async function relink(
       .select({ boardId: tasks.boardId, id: tasks.id, custom: tasks.custom })
       .from(tasks)
       .where(and(inArray(tasks.boardId, boardIds), sql`jsonb_exists_any(${tasks.custom}, ${textArray(fieldIds)})`))
+    const rewritten: { boardId: string; id: string; custom: object | null }[] = []
     for (const row of rows) {
       const holder = facts.get(row.boardId)
       if (!holder || !row.custom) continue
@@ -477,11 +479,9 @@ export async function relink(
       }
       if (custom === row.custom) continue
       changed.add(row.boardId)
-      await tx
-        .update(tasks)
-        .set({ custom: Object.keys(custom).length ? custom : null, version: sql`${tasks.version} + 1`, updatedAt: new Date() })
-        .where(and(eq(tasks.boardId, row.boardId), eq(tasks.id, row.id)))
+      rewritten.push({ boardId: row.boardId, id: row.id, custom: Object.keys(custom).length ? custom : null })
     }
+    await writeCustom(tx, rewritten, new Date())
     await env.engine.bump(tx, [...changed])
   })
   env.engine.reloaded([...changed])

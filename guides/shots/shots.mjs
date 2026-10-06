@@ -435,10 +435,10 @@ await shot('search', async () => {
 await shot('filter', async () => {
   await openBoard()
   // (A taller window for this one: the whole list of filters, down to the labels.)
-  await page.setViewportSize({ width: 1360, height: 1160 })
+  await page.setViewportSize({ width: 1360, height: 1340 })
   await page.getByRole('button', { name: 'Filter' }).click()
   await page.waitForTimeout(500)
-  return { clip: { x: 760, y: 50, width: 600, height: 1090 } }
+  return { clip: { x: 760, y: 50, width: 600, height: 1270 } }
 })
 await page.setViewportSize({ width: 1360, height: 860 })
 await shot('display', async () => {
@@ -1266,8 +1266,16 @@ await shot('fields-10-merge', async () => {
   await page.waitForTimeout(400)
   return dialog
 })
+// (The starters are made in a workspace of their own: its fields are only theirs, so each has the name the starter
+// gives it, and they share that workspace's board of clients.)
+let shopSpace = null
+const starters = {}
+async function starter(kind, name, background) {
+  shopSpace ??= (await api(ann, 'POST', '/workspaces', { name: 'Northside' })).id
+  return (starters[kind] ??= (await api(ann, 'POST', '/boards', { name, template: kind, background, workspaceId: shopSpace })).id)
+}
 await shot('fields-11-starter', async () => {
-  const { id } = await api(ann, 'POST', '/boards', { name: 'Sales pipeline', template: 'sales', background: 'violet' })
+  const id = await starter('sales', 'Sales pipeline', 'violet')
   // (Five lists: a little wider than the usual window, so the last one is whole.)
   await page.setViewportSize({ width: 1500, height: 860 })
   await page.goto(`${SITE}/#/b/${id}/board`)
@@ -1277,6 +1285,53 @@ await shot('fields-11-starter', async () => {
   return { clip: { x: 0, y: 0, width: 1500, height: 480 } }
 })
 await page.setViewportSize({ width: 1360, height: 860 })
+await shot('fields-12-bookings', async () => {
+  const id = await starter('bookings', 'Bookings', 'teal')
+  await page.goto(`${SITE}/#/b/${id}/board`)
+  await page.reload()
+  await page.getByText('Booked', { exact: true }).first().waitFor()
+  await page.waitForTimeout(600)
+  return { clip: { x: 0, y: 0, width: 1360, height: 560 } }
+})
+await shot('fields-13-client', async () => {
+  // (Dana Keller has an order at the shop and two bookings at the salon: her card lists all three.)
+  await starter('store', 'Store orders', 'orange')
+  await starter('bookings', 'Bookings', 'teal')
+  const clients = (await api(ann, 'GET', '/boards')).boards.find((b) => b.workspaceId === shopSpace && b.name === 'Clients')
+  const cards = Object.values((await api(ann, 'GET', `/boards/${clients.id}`)).data.tasks)
+  const dana = cards.find((c) => c.title === 'Dana Keller')
+  // (A taller window: the list of what points at her is at the end of the card.)
+  await page.setViewportSize({ width: 1360, height: 1180 })
+  await page.goto(`${SITE}/#/b/${clients.id}/board?task=${dana.id}`)
+  await page.reload()
+  const card = page.getByRole('dialog').first()
+  const section = card.locator('section').filter({ has: page.getByRole('heading', { name: 'Linked from', exact: true }) })
+  await section.getByText('Order 1042: Dana Keller').waitFor()
+  await section.scrollIntoViewIfNeeded()
+  await page.waitForTimeout(500)
+  const { clip } = await around([section], 20)
+  // (From the section's own heading: the line above it belongs to the one before.)
+  return { clip: { ...clip, y: clip.y + 14, height: clip.height - 14 } }
+})
+await page.setViewportSize({ width: 1360, height: 860 })
+// The Outline's columns, one being dragged in front of another (the line shows where it lands).
+await shot('outline-columns', async () => {
+  const id = await starter('sales', 'Sales pipeline', 'violet')
+  await page.goto(`${SITE}/#/b/${id}/outline`)
+  await page.reload()
+  await page.getByRole('table', { name: 'Tasks' }).waitFor()
+  const header = (name) => page.locator('[role="columnheader"]', { hasText: new RegExp(`^${name}$`) })
+  const from = await header('Deal value').boundingBox()
+  const to = await header('Status').boundingBox()
+  await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(from.x + from.width / 2 + 12, from.y + from.height / 2, { steps: 3 })
+  await page.mouse.move(to.x + 6, to.y + to.height / 2, { steps: 12 })
+  await page.waitForTimeout(300)
+  const { clip } = await around([page.getByRole('table', { name: 'Tasks' })], 24)
+  return { clip: { ...clip, height: Math.min(clip.height, 330) } }
+})
+await page.mouse.up()
 
 // ── Fields in a workspace: Studio's own, and one of its boards choosing from them (last: its board gains fields) ──
 let studioFields = false

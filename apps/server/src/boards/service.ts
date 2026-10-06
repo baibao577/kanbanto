@@ -1,17 +1,18 @@
 import type { BoardBackground } from '@kanbanto/model/colors'
 import { newId } from '@kanbanto/model/ids'
 import { emptyBoard, exampleData } from '@kanbanto/model/sample'
-import { carryCustom, FIELD_LIMITS } from '@kanbanto/model/fields'
+import { isTimeZone } from '@kanbanto/model/dates'
+import { carryCustom, FIELD_LIMITS, linkRef, nameKey, type CustomValues } from '@kanbanto/model/fields'
 import { remapPreset } from '@kanbanto/model/prefs'
-import { starterBoard, type Starter } from '@kanbanto/model/starters'
+import { CLIENT_FIELD, CLIENT_NAME, clientsBoard, EXAMPLE_CLIENTS, starterBoard, type Starter } from '@kanbanto/model/starters'
 import type { BoardData, Meta, Task } from '@kanbanto/model/types'
-import { eq } from 'drizzle-orm'
+import { and, eq, isNull } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import type { Db, Tx } from '../db'
-import { boardMembers, boardPresets, boards, workspaces, type Visibility } from '../db/schema'
+import { boardMembers, boardPresets, boards, tasks, workspaces, type Visibility } from '../db/schema'
 import { HttpError } from '../http'
-import { workspaceRole } from './access'
-import { adoptFields, applyAdoption, fitStarter, replaceBoardFields, type Library } from './fields'
+import { accessOf, workspaceRole } from './access'
+import { adoptFields, applyAdoption, clientLink, fitStarter, replaceBoardFields, type Library } from './fields'
 import { creations } from './records'
 import { writeChanges } from './store'
 
@@ -92,19 +93,32 @@ const listed = (names: string[]) => names.map((n) => `“${n}”`).join(', ')
  */
 export async function createStarter(
   app: FastifyInstance,
-  ownerId: string,
+  owner: { id: string; timeZone?: string | null },
   kind: Starter,
   opts: { name?: string; background?: BoardBackground; workspaceId?: string | null; description?: string },
-): Promise<{ id: string; added: string[]; leftOut: string[] }> {
+): Promise<{ id: string; added: string[]; leftOut: string[]; clients?: { id: string; made: boolean } }> {
+  const ownerId = owner.id
   const id = newId()
   const now = new Date()
-  const starter = starterBoard(kind, id)
-  const base = freshMeta(starter.data, now.toISOString())
   const workspaceId = opts.workspaceId ?? null
   const lib: Library = workspaceId ? { workspaceId } : { ownerId }
   const made = await app.db.transaction(async (tx) => {
     const canAdd = workspaceId ? (await workspaceRole(tx, workspaceId, ownerId)) === 'admin' : true
-    const plan = await fitStarter(tx, lib, starter.data.fields, canAdd)
+    // Who the examples are for: cards of the board the library's "Client" field links to. The first starter made
+    // in a space finds no such field, and a board of clients is made with it; the ones after use that board.
+    const known = await clientLink(tx, lib, CLIENT_NAME)
+    const [there] = known?.boardId ? await tx.select().from(boards).where(eq(boards.id, known.boardId)) : []
+    // (A board that's gone or put away, or that this person can't open, has no cards for them to link.)
+    const usable = there && !there.archivedAt && !!(await accessOf(tx, there, ownerId)) ? there.id : undefined
+    const clientsId = known ? usable : newId()
+    const starter = starterBoard(kind, id, { ownerId, zone: isTimeZone(owner.timeZone) ? owner.timeZone : 'UTC', now, clientsBoardId: clientsId })
+    const base = freshMeta(starter.data, now.toISOString())
+    // (Every example client, this starter's first: the starters made after it find theirs there.)
+    const newClients = known
+      ? null
+      : freshMeta(clientsBoard(clientsId!, [...new Set([...Object.values(starter.clients), ...EXAMPLE_CLIENTS])]), now.toISOString())
+    const wanted = [...starter.data.fields, ...(newClients ? clientsBoard(clientsId!, []).fields : [])]
+    const plan = await fitStarter(tx, lib, wanted, canAdd)
     if (plan.cant.length) {
       if (plan.why === 'room')
         throw new HttpError(
@@ -118,20 +132,47 @@ export async function createStarter(
       )
     }
     await applyAdoption(app, tx, lib, { add: plan.add, addOptions: new Map() })
-    const tasks = Object.fromEntries(
-      Object.values(base.tasks).map((t) => {
-        const { custom: held, ...rest } = t
-        const custom = carryCustom(held, plan.map)
-        return [t.id, custom ? { ...rest, custom } : rest]
-      }),
-    )
+    const fitted = (data: BoardData, more: (t: Task) => CustomValues | undefined = () => undefined) =>
+      Object.fromEntries(
+        Object.values(data.tasks).map((t) => {
+          const { custom: held, ...rest } = t
+          const custom = carryCustom({ ...held, ...more(t) }, plan.map)
+          return [t.id, custom && Object.keys(custom).length ? { ...rest, custom } : rest]
+        }),
+      )
+    // The clients: the new board's cards, or the cards of the one that's there, by name. A client that isn't there
+    // (the examples were cleared away, or it's another kind of starter's) just isn't linked: nothing is added to a
+    // board people already use.
+    const refOf = new Map<string, string>()
+    if (newClients) {
+      await insertBoard(tx, { ...newClients, tasks: fitted(newClients) }, ownerId, workspaceId)
+      await replaceBoardFields(
+        tx,
+        clientsId!,
+        clientsBoard(clientsId!, []).fields.flatMap((f) =>
+          plan.map.has(f.id) ? [{ id: plan.map.get(f.id)!.id, front: f.front, total: f.total }] : [],
+        ),
+      )
+      for (const t of Object.values(newClients.tasks)) refOf.set(nameKey(t.title), linkRef(clientsId!, t.id))
+    } else if (clientsId) {
+      const cards = await tx
+        .select({ id: tasks.id, title: tasks.title })
+        .from(tasks)
+        .where(and(eq(tasks.boardId, clientsId), isNull(tasks.archivedAt)))
+      for (const c of cards) if (!refOf.has(nameKey(c.title))) refOf.set(nameKey(c.title), linkRef(clientsId, c.id))
+    }
+    const client = (t: Task) => {
+      const ref = starter.clients[t.id] && refOf.get(nameKey(starter.clients[t.id]))
+      return ref ? { [CLIENT_FIELD]: [ref] } : undefined
+    }
+    const cards = fitted(base, client)
     const board = {
       ...base.board,
       ...(opts.name?.trim() && { name: opts.name.trim() }),
       ...(opts.background && { background: opts.background }),
       ...(opts.description?.trim() && { description: opts.description.trim() }),
     }
-    await insertBoard(tx, { ...base, board, tasks }, ownerId, workspaceId)
+    await insertBoard(tx, { ...base, board, tasks: cards }, ownerId, workspaceId)
     await replaceBoardFields(
       tx,
       id,
@@ -147,7 +188,7 @@ export async function createStarter(
         // (A millisecond apart: they're listed in the order they were made.)
         presets.map((p, i) => ({ id: newId(), boardId: id, ...p, updatedBy: ownerId, createdAt: new Date(now.getTime() + i) })),
       )
-    return { added: plan.add.map((f) => f.name), leftOut: plan.leftOut }
+    return { added: plan.add.map((f) => f.name), leftOut: plan.leftOut, ...(clientsId && { clients: { id: clientsId, made: !!newClients } }) }
   })
   return { id, ...made }
 }

@@ -459,7 +459,13 @@ export interface CardsQuery {
   priorities?: (Priority | 'none')[]
   /** A label's name. */
   label?: string
-  due?: 'overdue' | 'week' | 'none'
+  /**
+   * A test of the due date: `overdue`, `week` (the next 7 days), `none`, a word (`today`, `tomorrow`, `this-week`,
+   * `next-month`, …), `next-30` or `last-7` (days), or days as `2026-10-01..2026-10-31` (see `dueFromText`).
+   */
+  due?: string
+  /** The time zone "today" is in, and the day a date with a time falls on. The one on your account, when unset. */
+  timeZone?: string
   /** Which of a card's dates `from`..`to` is about (any of them, by default); alone, only cards that have that date. */
   when?: CardDate
   /** Moments (ISO): from this one up to, not including, that one. */
@@ -472,8 +478,9 @@ export interface CardsQuery {
   /**
    * One of the boards' own fields, by id: each card then says what it has for it (`field`). With `fv`, only the cards
    * whose value passes, on the boards that use the field: a choice's option ids with commas (`-`: none picked), `yes`
-   * or `no` for a checkbox, `any` or `none` (has a value or not) for the rest, a date also `past` or `week`, a number
-   * also a range, `10..200` (see `filterFromText`).
+   * or `no` for a checkbox, `any` or `none` (has a value or not) for the rest; text also `~word` (contains), `=word`
+   * (is), `!~word`, `!=word`; a date also `past`, `week`, and what `due` takes; a number also a range, `10..200`; a
+   * list after `!` means none of them (see `filterFromText`).
    */
   field?: string
   fv?: string

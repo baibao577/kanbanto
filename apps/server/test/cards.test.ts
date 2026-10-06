@@ -202,6 +202,71 @@ describe('searching cards across boards', () => {
     expect((await by('nope', 'any')).total).toBe(0)
   })
 
+  it('by a field with a test: text that contains or doesn’t, a date by a word or by days, none of some options', async () => {
+    const { ann, id } = await start()
+    const add = async (body: object) => (await ann.ok('POST', '/api/fields', body)).id as string
+    const company = await add({ name: 'Company', type: 'text' })
+    const close = await add({ name: 'Close date', type: 'date' })
+    const stage = await add({
+      name: 'Stage',
+      type: 'choice',
+      options: [
+        { name: 'Lead', color: 'gray' },
+        { name: 'Won', color: 'green' },
+      ],
+    })
+    const library = (await ann.ok('GET', '/api/fields')).fields as { id: string; options?: { id: string }[] }[]
+    const [, won] = library.find((f) => f.id === stage)!.options!.map((o) => o.id)
+    await ann.ok('PUT', `/api/boards/${id}/fields`, { fields: [{ id: company }, { id: close }, { id: stage }] })
+    const day = (from: number) => new Date(Date.now() + from * DAY).toISOString().slice(0, 10)
+    await run(ann, id, { type: 'task.update', id: 'A1', fields: { custom: { [company]: 'Blue Harbor Cafe', [close]: day(0), [stage]: [won] } } })
+    await run(ann, id, { type: 'task.update', id: 'A3', fields: { custom: { [company]: 'Pinecrest Dental', [close]: day(40) } } })
+    const by = (field: string, fv: string, more: Record<string, string> = {}) => search(ann, { state: 'active', timeZone: 'UTC', field, fv, ...more })
+
+    expect(ids(await by(company, '~HARBOR'))).toEqual(['A1'])
+    expect(ids(await by(company, '=pinecrest dental'))).toEqual(['A3'])
+    expect(ids(await by(company, '!=pinecrest dental', { q: 'domain' }))).toEqual(['A1'])
+    // "Doesn't contain" keeps the cards with nothing there.
+    expect((await by(company, '!~harbor')).total).toBe(12)
+    expect(ids(await by(close, 'today'))).toEqual(['A1'])
+    expect(ids(await by(close, 'next-60'))).toEqual(['A1', 'A3'])
+    expect(ids(await by(close, `${day(30)}..${day(50)}`))).toEqual(['A3'])
+    expect(ids(await by(close, `..${day(1)}`))).toEqual(['A1'])
+    expect((await by(stage, `!${won}`)).total).toBe(12)
+
+    // Text needs its test in front, and a date a stretch of days that exists: each says what it takes.
+    const bare = await ann.request('GET', `/api/cards?state=active&field=${company}&fv=cafe`)
+    expect([bare.status, bare.body.error]).toEqual([400, expect.stringMatching(/Company.*~word/)])
+    const soon = await ann.request('GET', `/api/cards?state=active&field=${close}&fv=soon`)
+    expect([soon.status, soon.body.error]).toEqual([400, expect.stringMatching(/Close date.*this-week/)])
+  })
+
+  it('the due date takes any test of a day, by the day it is where the person asking is', async () => {
+    const { ann, id } = await start()
+    // Half past six in the morning in Bangkok, today there: the evening before in UTC.
+    const there = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Bangkok', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date())
+    const due = new Date(`${there}T06:30:00+07:00`).toISOString().slice(0, 19) + 'Z'
+    await run(ann, id, { type: 'task.update', id: 'B1', fields: { due } })
+    const found = async (query: Record<string, string>) => ids(await search(ann, { state: 'active', q: 'invites', ...query })).includes('B1')
+
+    expect(await found({ due: 'today', timeZone: 'Asia/Bangkok' })).toBe(true)
+    expect(await found({ due: 'yesterday', timeZone: 'Asia/Bangkok' })).toBe(false)
+    expect(await found({ due: `${there}..${there}`, timeZone: 'Asia/Bangkok' })).toBe(true)
+    // Anywhere else it is "today" only if that moment falls on today there.
+    const dayIn = (d: Date, zone: string) =>
+      new Intl.DateTimeFormat('en-CA', { timeZone: zone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(d)
+    for (const zone of ['UTC', 'America/Los_Angeles', 'Pacific/Kiritimati'])
+      expect(await found({ due: 'today', timeZone: zone })).toBe(dayIn(new Date(due), zone) === dayIn(new Date(), zone))
+    // The three it always took still mean what they did, and "the next 7 days" is one meaning with two spellings.
+    expect(await found({ due: 'week', timeZone: 'Asia/Bangkok' })).toBe(true)
+    expect(await found({ due: 'next-7', timeZone: 'Asia/Bangkok' })).toBe(true)
+    expect(await found({ due: 'none' })).toBe(false)
+
+    const bad = await ann.request('GET', '/api/cards?state=active&due=soon')
+    expect([bad.status, bad.body.error]).toEqual([400, expect.stringMatching(/due.*overdue.*today/)])
+    expect((await ann.request('GET', '/api/cards?state=active&due=today&timeZone=Mars/Olympus')).status).toBe(400)
+  })
+
   it('only boards you can open; a viewer’s rows can’t be changed; archived boards only with archived cards', async () => {
     const { ann, id } = await start()
     const bob = await Person.signUp(t.app, 'Bob')

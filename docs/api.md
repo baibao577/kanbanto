@@ -88,10 +88,18 @@ curl -X POST https://kanbanto.example.com/api/boards/<board id>/mutations \
   `kind`, `priority`, `label`, `due`, and a time range (`from`, `to`) about one of a card's dates (`when=done`,
   `created`, `changed` or `archived`). What I finished this week: `?state=all&assignee=me&when=done&from=2026-09-28`.
   Without `state`, only archived cards are searched. A task's `doneAt` is when it entered a done list.
+  `due` takes `overdue`, `none`, or a test of the date: a word (`today`, `tomorrow`, `yesterday`, `this-week`,
+  `next-week`, `last-week`, `this-month`, `next-month`, `last-month`, `past`, `future`, `any`), `next-7` or `last-30`
+  (that many days from today), or two days with `..` between them (`2026-10-01..2026-10-31`; either side can be left
+  out). `week` still means the next 7 days. "Today" is the day in `timeZone` (an IANA name such as `Asia/Bangkok`;
+  without it, the zone in your account, then UTC), and a date with a time counts as the day it falls on there.
   By one of your own fields: `field=<field id>` makes each card say what it has for it, and `fv` keeps the cards whose
-  value passes, on the boards that use the field: a choice's option ids with commas (`-` for none picked), `yes` or
-  `no` for a checkbox, `any` or `none` (has a value or not) for the rest, a date also `past` or `week`, a number also
-  a range like `1000..5000`. The first page lists the `fields` of the boards searched.
+  value passes, on the boards that use the field. Every kind takes `any` or `none` (has a value or not). A choice, a
+  card link or a person takes ids with commas (`-` for none picked; `me` for a person), and a leading `!` asks for
+  cards with none of them (`!id1,id2`). A checkbox takes `yes` or `no`. A number takes a range like `1000..5000`,
+  `1000..` or `..5000`. A date takes what `due` takes. Text takes its test first: `~word` (contains), `!~word`
+  (doesn't contain), `=words` (is exactly), `!=words` (isn't), without regard to capitals. Something `fv` can't read
+  is refused with a sentence saying what the field takes. The first page lists the `fields` of the boards searched.
 
 `GET /api/boards/<id>` returns the whole board: its lists, labels, people and the tasks on it (a task's `status` is
 its list's id; `parentId` makes the tree; `priority` is `urgent`, `high`, `medium` or `low`). Its archived tasks come
@@ -204,7 +212,7 @@ claude mcp add --transport http kanbanto https://kanbanto.example.com/api/mcp --
 |---|---|
 | `list_boards` | Who you act as (name, time zone, today's date there) and the boards you can open: where each lives (a workspace, "Personal" or "Shared with you"), what it's for, and which is your Inbox (a private board of your own, for cards that have no board yet) |
 | `get_board` | A board's lists, labels, people and its open tasks: the top levels (subtasks under their task), the part under one task, or one list's cards (`tasks: false` for just the lists, labels and people), and its own fields with their types and options. Top-level tasks come list by list, each list in the order made by hand (`order: outline` for the outline's order) |
-| `find_tasks` | Search one board, one workspace or everything: text, list, kind of list (`counts_as: doing`: in progress on every board, whatever the list is called), label, assignee (`me`, `nobody`), priority, blocked, the board's own fields by name (`fields: {"Stage": "Won", "Client": null}`; boards without the field are skipped), due, created, last worked on, done or archived between two times; sorted and paged. Without a `sort`, results come list by list, each list in the order its cards were put in by hand, so one list reads top to bottom as on the board. Asking by when tasks got done also finds the ones archived since. `worked_after` / `worked_before`: what was worked on in a stretch of time (made or changed then), each result saying what happened |
+| `find_tasks` | Search one board, one workspace or everything: text, list, kind of list (`counts_as: doing`: in progress on every board, whatever the list is called), label, assignee (`me`, `nobody`), priority, blocked, the board's own fields by name (`fields: {"Stage": "Won", "Client": null}`, or a test: `{"Deal value": {"min": 10000}, "Close date": {"range": "this-month"}, "Company": {"contains": "cafe"}, "Stage": {"none_of": ["Lost"]}}`; boards without the field are skipped, and a test a field's kind doesn't have is refused), due, created, last worked on, done or archived between two times; sorted and paged. Without a `sort`, results come list by list, each list in the order its cards were put in by hand, so one list reads top to bottom as on the board. Asking by when tasks got done also finds the ones archived since. `worked_after` / `worked_before`: what was worked on in a stretch of time (made or changed then), each result saying what happened |
 | `team_overview` | How a board or workspace is doing: tasks per list, each person's open, overdue and blocked work, what needs attention, and the time each person logged on it this week |
 | `reminders` | Your reminders coming up in the next days, and the ones that went off in the last 24 hours |
 | `my_day` | What needs your attention across your boards, in one answer: your overdue tasks and the ones due today, what you have in progress, your tasks waiting on others, today's reminders, and comments that mention you and you haven't seen |
@@ -219,7 +227,7 @@ claude mcp add --transport http kanbanto https://kanbanto.example.com/api/mcp --
 | `archive_task` | Archive a task with its subtasks, or restore it (`restore: true`); nothing is lost |
 | `archive_done_tasks` | Tidy a board: archive a done list's top-level tasks that got done more than some days ago, with their subtasks (`dry_run` says what would go) |
 | `move_to_board` | Move a task, with its subtasks, comments and files, to another board (say, from the Inbox) |
-| `create_board` | A new board in Personal or a workspace, with what it's for; `starter: "sales"` or `"support"` for one that comes with its own lists, fields, saved filters and example cards |
+| `create_board` | A new board in Personal or a workspace, with what it's for; `starter: "sales"`, `"support"`, `"store"` or `"bookings"` for one that comes with its own lists, fields, saved filters and example cards. A starter's cards link to a client each, on a Clients board made with the first starter in a space and shared by the ones after (`clients_board` in the answer) |
 | `update_board` | Name, what it's for, background, how a parent task's status is set |
 | `manage_lists` | Add, rename, reorder, change the kind of, or remove (empty) lists |
 | `manage_labels` | Add, rename, recolor, or remove (unused) labels |

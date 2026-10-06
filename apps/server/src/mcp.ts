@@ -4,6 +4,8 @@ import { doneBefore, type Command, type TaskFields } from '@kanbanto/model/comma
 import { BOARD_DESIGNS, COLORS, isBackground, LABEL_COLOR_CYCLE, type BoardBackground, type ColorName } from '@kanbanto/model/colors'
 import type { FieldView, LinkedCard } from '@kanbanto/model/api'
 import {
+  criteriaFilter,
+  fieldMatches,
   linksOf,
   nameKey,
   parseRef,
@@ -18,11 +20,13 @@ import {
   type FieldType,
   type FieldValue,
   type LinkScope,
+  type MatchContext,
+  type SaidCriteria,
   type TextFormat,
 } from '@kanbanto/model/fields'
 import { newId } from '@kanbanto/model/ids'
 import { idleDays, lastActivity } from '@kanbanto/model/age'
-import { fromDay, isPast, mondayOf, sortTime, toDay } from '@kanbanto/model/dates'
+import { dayNumberIn, fromDay, isPast, mondayOf, sortTime, toDay } from '@kanbanto/model/dates'
 import { bookedUntil, isWorkDay, personFacts, planActuals, projectFacts, sumManDays } from '@kanbanto/model/planning'
 import { formatDuration, parseDuration } from '@kanbanto/model/time'
 import { ancestorsOf, descendantsOf, indexFor, isBlocked, statusCol, type TaskIndex } from '@kanbanto/model/indexer'
@@ -297,6 +301,25 @@ function buildServer(app: FastifyInstance, me: SessionUser, token: TokenAccess) 
     return some
   }
   const MOMENT = 'An ISO date or date-time, or a time back from now like "24h", "3d" or "2w".'
+  /**
+   * More than an exact value for one of a board's fields (see SaidCriteria). Strict: a part that's misspelt is
+   * refused, since leaving it out would answer a wider question than the one asked.
+   */
+  const FieldCriteria = z
+    .object({
+      contains: z.string().max(200).optional(),
+      not_contains: z.string().max(200).optional(),
+      is_not: z.union([z.string().max(2000), z.number(), z.boolean()]).optional(),
+      min: z.number().optional(),
+      max: z.number().optional(),
+      from: z.string().max(10).optional(),
+      to: z.string().max(10).optional(),
+      range: z.string().max(20).optional(),
+      any_of: z.array(z.string().max(2000)).max(50).optional(),
+      none_of: z.array(z.string().max(2000)).max(50).optional(),
+      empty: z.boolean().optional(),
+    })
+    .strict()
   const WORKSPACE = z.string().optional().describe('A workspace’s name, "Personal" (your own boards) or "Shared with you". Leave out for everywhere.')
 
   const readOnly = { readOnlyHint: true, openWorldHint: false }
@@ -304,6 +327,8 @@ function buildServer(app: FastifyInstance, me: SessionUser, token: TokenAccess) 
   /** Today where the person is (their account's time zone, or UTC). */
   const zone = me.timeZone || 'UTC'
   const today = () => dayIn(new Date(), zone)
+  /** The day a task date falls on there ("2026-10-15"): a whole day is itself. */
+  const dueDay = (date: string) => fromDay(dayNumberIn(zone)(date))
   /** "today", "yesterday" or a day (YYYY-MM-DD), as a day. */
   const dayOf = (v: string | undefined) => {
     const t = today()
@@ -458,10 +483,10 @@ function buildServer(app: FastifyInstance, me: SessionUser, token: TokenAccess) 
         assignee: z.string().optional().describe('A person’s name or id, "me", or "nobody" for unassigned tasks.'),
         following: z.boolean().optional().describe('true: only tasks you follow (you’re told about their comments and changes).'),
         fields: z
-          .record(z.string().max(100), z.union([z.string().max(2000), z.number(), z.boolean(), z.null()]))
+          .record(z.string().max(100), z.union([z.string().max(2000), z.number(), z.boolean(), z.null(), FieldCriteria]))
           .optional()
           .describe(
-            'By the boards’ own fields, by name (get_board lists them): {"Stage": "Won", "Signed": true, "Client": null}. A choice takes an option’s name, a checkbox true or false, text and numbers the value itself (text in any case), a date its day, a card link a card’s title, a person field a person’s name or "me"; null finds tasks with nothing for the field. Boards without one of the fields are skipped. For a range, ask without it: every result carries its fields.',
+            'By the boards’ own fields, by name (get_board lists them): {"Stage": "Won", "Signed": true, "Client": null}. A choice takes an option’s name, a checkbox true or false, text and numbers the value itself (text in any case), a date its day, a card link a card’s title, a person field a person’s name or "me"; null finds tasks with nothing for the field. For more than an exact value, give criteria instead: {"Deal value": {"min": 10000}, "Close date": {"range": "this-month"}, "Company": {"contains": "cafe"}, "Stage": {"none_of": ["Lost"]}}. Text: contains, not_contains, is_not. A number: min, max. A date: from and to (days), or range: today, tomorrow, yesterday, this-week, next-week, last-week, this-month, next-month, last-month, past, future, next-30, last-7 (any number of days). A choice, card link or person field: any_of, none_of, is_not. All but a checkbox: empty true or false. Boards without one of the fields are skipped.',
           ),
         priority: z.enum(PRIORITIES).optional().describe('This priority or more important: "high" finds urgent and high.'),
         blocked: z.boolean().optional().describe('true: only tasks waiting on unfinished tasks; false: only ones that aren’t.'),
@@ -532,7 +557,7 @@ function buildServer(app: FastifyInstance, me: SessionUser, token: TokenAccess) 
         label?: string
         assignee?: string
         following?: boolean
-        fields?: Record<string, string | number | boolean | null>
+        fields?: Record<string, string | number | boolean | null | SaidCriteria>
         priority?: Priority
         blocked?: boolean
         due_before?: string
@@ -627,8 +652,44 @@ function buildServer(app: FastifyInstance, me: SessionUser, token: TokenAccess) 
           const defs = asked.map(([name]) => data.fields.find((f) => f.id === name) ?? data.fields.find((f) => nameKey(f.name) === nameKey(name)))
           if (defs.some((d) => !d)) continue
           const read: ({ id: string } & ReturnType<typeof saidFilter>)[] = []
+          const itsPeople = new Set(data.members.map((m) => m.id))
+          // Who is asking and what day it is for them, for criteria ("me", "today", a date that has a time).
+          const asker: MatchContext = { me: me.id, today: toDay(today()), dayOf: dayNumberIn(zone), isMember: (u) => itsPeople.has(u) }
           for (const [i, [, said]] of asked.entries()) {
             const def = defs[i]!
+            if (said !== null && typeof said === 'object') {
+              // Criteria: what's said by name is looked up on this board first (an option, a person, the cards of a
+              // title), then they're read as the same filter the Filter menu makes.
+              const named = async (one: string): Promise<string[] | { error: string }> => {
+                if (def.type === 'choice') {
+                  const options = def.options ?? []
+                  const hit = options.find((o) => o.id === one) ?? options.find((o) => nameKey(o.name) === nameKey(one))
+                  return hit
+                    ? [hit.id]
+                    : {
+                        error: `There’s no option “${one}” for ${def.name}. The options are: ${options.map((o) => o.name).join(', ') || 'none yet'}.`,
+                      }
+                }
+                if (def.type === 'person') {
+                  const who =
+                    one.trim().toLowerCase() === 'me'
+                      ? me.id
+                      : (data.members.find((m) => m.id === one) ?? data.members.find((m) => nameKey(m.name) === nameKey(one)))?.id
+                  return who ? [who] : { error: `${def.name}: no one called “${one}” is on that board.` }
+                }
+                if (parseRef(one)) return [one]
+                const { cards } = await pickCards(env, me.id, board, def, one)
+                const refs = cards.filter((c) => nameKey(c.title) === nameKey(one)).map((c) => c.ref)
+                return refs.length ? refs : { error: `${def.name}: there’s no card called “${one}” that it links.` }
+              }
+              const known = new Map<string, string[] | { error: string }>()
+              if (def.type === 'choice' || def.type === 'person' || def.type === 'link')
+                for (const one of [...(said.any_of ?? []), ...(said.none_of ?? []), ...(said.is_not !== undefined ? [String(said.is_not)] : [])])
+                  known.set(one, await named(one))
+              const got = criteriaFilter(def, said, (one) => known.get(one) ?? { error: `${def.name}: “${one}” can’t be read.` })
+              read.push('error' in got ? { id: def.id, error: got.error } : { id: def.id, test: (v) => fieldMatches(def, v, got.filter, asker) })
+              continue
+            }
             // A card link said by a card's title: every card of that title the field may link counts.
             if (def.type === 'link' && typeof said === 'string' && said && !parseRef(said)) {
               const { cards } = await pickCards(env, me.id, board, def, said)
@@ -691,9 +752,9 @@ function buildServer(app: FastifyInstance, me: SessionUser, token: TokenAccess) 
             if (!passes(t)) continue
             if (a.priority && !(t.priority && PRIORITIES.indexOf(t.priority) <= rank)) continue
             if (a.blocked !== undefined && isBlocked(idx, id) !== a.blocked) continue
-            // (A due time counts by its day in UTC.)
-            if (a.due_before && (!t.due || t.due.slice(0, 10) > a.due_before)) continue
-            if (a.due_after && (!t.due || t.due.slice(0, 10) < a.due_after)) continue
+            // (A due time counts by the day it falls on where the person is.)
+            if (a.due_before && (!t.due || dueDay(t.due) > a.due_before)) continue
+            if (a.due_after && (!t.due || dueDay(t.due) < a.due_after)) continue
             if (!within(t.createdAt, created) || !within(t.activeAt ?? t.updatedAt, changed)) continue
             if (!hasWords(words, `${t.title} ${t.description ?? ''}`.toLowerCase())) continue
             const active = aging ? lastActivity(idx, id, commented) : undefined
@@ -730,8 +791,8 @@ function buildServer(app: FastifyInstance, me: SessionUser, token: TokenAccess) 
               if (nobody && t.assigneeId) continue
               if (!passes(t)) continue
               if (a.priority && !(t.priority && PRIORITIES.indexOf(t.priority) <= rank)) continue
-              if (a.due_before && (!t.due || t.due.slice(0, 10) > a.due_before)) continue
-              if (a.due_after && (!t.due || t.due.slice(0, 10) < a.due_after)) continue
+              if (a.due_before && (!t.due || dueDay(t.due) > a.due_before)) continue
+              if (a.due_after && (!t.due || dueDay(t.due) < a.due_after)) continue
               if (!within(t.createdAt, created) || !within(t.activeAt ?? t.updatedAt, changed)) continue
               if (!gotDone(t.archivedDone ? Date.parse(t.doneAt ?? t.archivedAt!) : null)) continue
               if (!hasWords(words, `${t.title} ${t.description ?? ''}`.toLowerCase())) continue
@@ -1701,7 +1762,7 @@ function buildServer(app: FastifyInstance, me: SessionUser, token: TokenAccess) 
       {
         title: 'Create a board',
         description:
-          'Makes a new board, yours: in your Personal space, or in a workspace you’re in (everyone there can then open it). It starts with the lists To Do, Doing and Done (and a hidden Backlog); change them with manage_lists. Or from a starter, ready for a kind of work with its own lists, fields, saved filters and a few example cards: "sales" (a pipeline of deals) or "support" (a desk for customer requests). Sharing it with people is done in the app.',
+          'Makes a new board, yours: in your Personal space, or in a workspace you’re in (everyone there can then open it). It starts with the lists To Do, Doing and Done (and a hidden Backlog); change them with manage_lists. Or from a starter, ready for a kind of work with its own lists, fields, saved filters and a few example cards: "sales" (a pipeline of deals), "support" (a desk for customer requests), "store" (a shop’s orders: the due date is when one has to leave, its subtasks are its items) or "bookings" (appointments: the due date and time are when, the assignee is with whom). Each card of a starter has a Client field, a link to a card on a board called Clients that is made with the first starter in a space and shared by the ones after (clients_board in the answer). Sharing it with people is done in the app.',
         inputSchema: {
           name: z.string().trim().min(1).max(200),
           about: z.string().max(1000).optional().describe('What the board is for, in a sentence.'),
@@ -1731,7 +1792,7 @@ function buildServer(app: FastifyInstance, me: SessionUser, token: TokenAccess) 
           workspaceId = found.id
         }
         const made = a.starter
-          ? await createStarter(app, me.id, a.starter, { name: a.name, description: a.about, background: a.background, workspaceId })
+          ? await createStarter(app, me, a.starter, { name: a.name, description: a.about, background: a.background, workspaceId })
           : {
               id: await createBoard(app.db, me.id, {
                 name: a.name,
@@ -1750,6 +1811,8 @@ function buildServer(app: FastifyInstance, me: SessionUser, token: TokenAccess) 
             fields: data.fields.map((f) => f.name),
             ...('added' in made && made.added.length && { fields_added_to_the_library: made.added }),
             ...('leftOut' in made && made.leftOut.length && { fields_left_out_because_archived_there: made.leftOut }),
+            // The board its Client field links to: add a card there for each client, then set Client by that card's title.
+            ...('clients' in made && made.clients && { clients_board: { id: made.clients.id, ...(made.clients.made && { made_with_it: true }) } }),
           }),
         }
       }),

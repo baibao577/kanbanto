@@ -35,7 +35,7 @@ const CreateBoard = z.object({
     .max(200)
     .refine((n) => !n.includes('\u0000'), 'Board names can’t contain NUL characters.'),
   background: background.optional(),
-  /** `sales`, `support`: a starter board, with its fields (see createStarter). */
+  /** `sales`, `support`, `store`, `bookings`: a starter board, with its fields and the clients it links to (see createStarter). */
   template: z.enum(['empty', 'example', ...STARTERS]).default('empty'),
   /** Where it goes: a workspace you're in (shared with everyone in it), or your Personal space. */
   workspaceId: z.uuid().nullable().optional(),
@@ -141,7 +141,7 @@ export const boardRoutes: FastifyPluginAsync = async (app) => {
     const user = requireUser(req.user)
     const body = parse(CreateBoard, req.body)
     if (body.workspaceId) await requireWorkspace(app.db, body.workspaceId, user.id)
-    if (isStarter(body.template)) return createStarter(app, user.id, body.template, body)
+    if (isStarter(body.template)) return createStarter(app, user, body.template, body)
     return { id: await createBoard(app.db, user.id, { ...body, template: body.template }) }
   })
 

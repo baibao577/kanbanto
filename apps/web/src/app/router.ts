@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from 'react'
 import { CARD_DATES, CARD_RANGES, CARD_SORTS, type CardDate, type CardRange, type CardSort, type CardState } from '@kanbanto/model/search'
+import { dueFromText, dueToText } from '@kanbanto/model/table'
 import { CATEGORIES, LAYOUTS, PRIORITIES, type Category, type Layout, type Priority } from '@kanbanto/model/types'
 
 /**
@@ -47,7 +48,8 @@ export type CardsRoute = {
   assignee?: string
   priorities?: (Priority | 'none')[]
   label?: string
-  due?: 'overdue' | 'week' | 'none'
+  /** A test of the due date, as text: "overdue", "week", "none", "today", "this-month", "next-30"… (see `dueFromText`). */
+  due?: string
   when?: CardDate
   range?: CardRange
   /** Days, YYYY-MM-DD. */
@@ -106,6 +108,7 @@ export function parseRoute(hash: string): Route {
     const one = <T extends string>(key: string, values: readonly T[]) => values.find((v) => v === p.get(key))
     const some = <T extends string>(key: string, values: readonly T[]) => (p.get(key) ?? '').split(',').flatMap((v) => values.filter((x) => x === v))
     const day = (key: string) => (/^\d{4}-\d{2}-\d{2}$/.test(p.get(key) ?? '') ? p.get(key)! : undefined)
+    const due = dueFromText(p.get('due') ?? '')
     const state = one('state', ['archived', 'all'] as const) ?? 'active'
     const kinds = some('kind', CATEGORIES)
     const priorities = some('priority', [...PRIORITIES, 'none'] as const)
@@ -121,7 +124,8 @@ export function parseRoute(hash: string): Route {
       ...(p.get('assignee') && { assignee: p.get('assignee')! }),
       ...(priorities.length && { priorities }),
       ...(p.get('label') && { label: p.get('label')! }),
-      ...(one('due', ['overdue', 'week', 'none'] as const) && { due: one('due', ['overdue', 'week', 'none'] as const) }),
+      // (Written the one way each test is: "next-7" is "week".)
+      ...(due && { due: dueToText(due) }),
       ...(one('when', CARD_DATES) && one('when', CARD_DATES) !== 'any' && { when: one('when', CARD_DATES) }),
       // A named range, or days: not both.
       ...(range ? { range } : { ...(day('from') && { from: day('from') }), ...(day('to') && { to: day('to') }) }),

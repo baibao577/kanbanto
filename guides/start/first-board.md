@@ -27,7 +27,7 @@ Type a name, such as "My first board". The rest can stay as it is:
   things out; a board can be moved into a workspace later.
 - **Start with:** **An empty board** has lists for To Do, Doing and Done and no cards yet (plus a Backlog list that
   is hidden: a line at the right of the board says so, and shows it when you want it). **The example board** is a
-  small website-launch plan to explore. **A sales pipeline** and **A support desk** are
+  small website-launch plan to explore. **A sales pipeline**, **A support desk**, **Store orders** and **Bookings** are
   [starters](/everyday/fields#start-from-a-ready-made-board): boards for one kind of work, with their own lists and
   fields.
 - **Background:** any color or design you like.

@@ -16,6 +16,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore
 import { useBoard } from '@/app/board-context'
 import { Avatar, DueChip, LabelChip, PriorityIcon, ProgressBar, StatusDot } from '@/components/common/bits'
 import { FieldChip } from '@/components/fields/FieldValue'
+import { pointerDrag } from '@/lib/pointerDrag'
 import { useMediaQuery } from '@/lib/useMediaQuery'
 import { FieldCell } from './FieldCell'
 import { OutlineDisplayMenu } from './OutlineDisplayMenu'
@@ -30,7 +31,7 @@ import { formatDay } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { fieldIdOf, fieldKey, isFieldKey, numberText, type BoardField, type FieldType, type FieldValue } from '@kanbanto/model/fields'
 import { isBlocked, statusCol } from '@kanbanto/model/indexer'
-import { sortComparator, type BuiltInSortKey, type Sort, type SortKey } from '@kanbanto/model/table'
+import { arrangeColumns, moveColumn, sortComparator, type BuiltInSortKey, type ColumnKey, type Sort, type SortKey } from '@kanbanto/model/table'
 import { subtreeSums, sumOf } from '@kanbanto/model/totals'
 import { afterSubtree, defaultExpanded, flattenTree, treeTop } from '@kanbanto/model/tree'
 import { FilterMenu } from '@/components/shell/FilterMenu'
@@ -102,7 +103,9 @@ export function OutlineView({ search }: { search: string }) {
     // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [idx, cfg.sort, labelById, links, titles])
 
-  const { rows, truncated } = flattenTree(idx, top, expanded, limit, keep, order)
+  // (Laid out again only when something it's made from changes: on a big board, sorting every list of siblings is the
+  // slow part, and a redraw for a menu opening or a cell being edited doesn't need it.)
+  const { rows, truncated } = useMemo(() => flattenTree(idx, top, expanded, limit, keep, order), [idx, top, expanded, limit, keep, order])
 
   const toggle = (id: string) => {
     const next = new Set(expanded)
@@ -123,12 +126,63 @@ export function OutlineView({ search }: { search: string }) {
 
   // Phones get a nested list instead of the table (no sideways scrolling).
   const narrow = useMediaQuery('(max-width: 767px)')
-  const hidden = new Set<string>(cfg.hidden ?? [])
+  const hidden = useMemo(() => new Set<string>(cfg.hidden ?? []), [cfg.hidden])
   const fieldColumns = useMemo(
     () => (cfg.hideFields ? [] : data.fields.map((f): Column => ({ key: fieldKey(f.id), label: f.name, width: fieldWidth(f), field: f }))),
     [data.fields, cfg.hideFields],
   )
-  const columns = [...COLUMNS, ...fieldColumns].filter((c) => c.key === 'title' || !hidden.has(c.key))
+  // Every column after Task there could be, in the order they come in: the built-in ones, then the board's fields.
+  // How they've been arranged (hidden ones keep their place in it) decides the order of the ones that show.
+  const orderable = useMemo(
+    () => [...COLUMNS.slice(1), ...data.fields.map((f): Column => ({ key: fieldKey(f.id), label: f.name, width: fieldWidth(f), field: f }))],
+    [data.fields],
+  )
+  const allKeys = useMemo(() => orderable.map((c) => c.key as ColumnKey), [orderable])
+  const columns = useMemo(() => {
+    const byKey = new Map(orderable.map((c) => [c.key as string, c]))
+    const shown = arrangeColumns(allKeys, cfg.order)
+      .map((k) => byKey.get(k)!)
+      .filter((c) => !hidden.has(c.key) && !(c.field && cfg.hideFields))
+    return [COLUMNS[0] as Column, ...shown]
+  }, [orderable, allKeys, cfg.order, hidden, cfg.hideFields])
+  /** Moves a column to just before another one that shows (null: after the last). */
+  const moveBefore = (key: ColumnKey, before: ColumnKey | null) =>
+    setPrefs({ type: 'setOutline', config: { ...cfg, order: moveColumn(allKeys, cfg.order, key, before) } })
+  // Dragging a column's name: which one, and the one it would land before (null: after the last).
+  const [columnDrag, setColumnDrag] = useState<{ key: ColumnKey; before: ColumnKey | null | undefined } | null>(null)
+  const headerRow = useRef<HTMLDivElement>(null)
+  const dragColumn = (e: React.PointerEvent<HTMLElement>, key: ColumnKey) => {
+    const cell = e.currentTarget
+    pointerDrag(e, {
+      ghost: cell,
+      start: () => {
+        let before: ColumnKey | null | undefined
+        setColumnDrag({ key, before })
+        return {
+          move: (x) => {
+            // Before the first name whose middle is right of the pointer; after the last one otherwise.
+            const cells = [...(headerRow.current?.querySelectorAll<HTMLElement>('[data-column]') ?? [])]
+            const next = cells.find((c) => {
+              const r = c.getBoundingClientRect()
+              return x < r.left + r.width / 2
+            })
+            before = (next?.dataset.column as ColumnKey | undefined) ?? null
+            setColumnDrag({ key, before })
+          },
+          drop: () => before !== undefined && before !== key && moveBefore(key, before),
+          end: () => setColumnDrag(null),
+        }
+      },
+    })
+  }
+  /** With the keyboard: one place to the left or right, among the columns that show. */
+  const nudgeColumn = (key: ColumnKey, by: -1 | 1) => {
+    const shown = columns.slice(1).map((c) => c.key as ColumnKey)
+    const at = shown.indexOf(key)
+    const to = at + by
+    if (at < 0 || to < 0 || to >= shown.length) return
+    moveBefore(key, by < 0 ? shown[to] : (shown[to + 1] ?? null))
+  }
   const sortLabel = !cfg.sort
     ? ''
     : isFieldKey(cfg.sort.key)
@@ -290,25 +344,43 @@ export function OutlineView({ search }: { search: string }) {
             <div className="w-full overflow-clip rounded-xl border bg-card" style={{ minWidth }}>
               <div role="table" aria-label="Tasks">
                 {/* Header row, pinned while you scroll. Click a column to sort by it. */}
-                <div role="row" className="sticky top-0 z-20 border-b bg-muted" style={grid}>
+                <div ref={headerRow} role="row" className="sticky top-0 z-20 border-b bg-muted" style={grid}>
                   {columns.map((c, i) => {
                     const on = cfg.sort?.key === c.key ? cfg.sort.dir : undefined
+                    // Every column but Task can be moved: by dragging its name, or with Alt+Shift and an arrow.
+                    const movable = i > 0
+                    const landing = !!columnDrag && columnDrag.key !== c.key && columnDrag.before === c.key
+                    const landingAfter = !!columnDrag && columnDrag.before === null && i === columns.length - 1 && columnDrag.key !== c.key
                     return (
                       <div
                         key={c.key}
                         role="columnheader"
                         aria-sort={on === 'asc' ? 'ascending' : on === 'desc' ? 'descending' : 'none'}
+                        {...(movable && {
+                          'data-column': c.key,
+                          onPointerDown: (e: React.PointerEvent<HTMLElement>) => dragColumn(e, c.key as ColumnKey),
+                        })}
                         className={cn(
                           'flex h-9 items-center',
                           // The pinned Task column draws its own divider, so columns sliding under it stay separate.
                           i === 0 && 'sticky left-0 z-10 bg-muted shadow-[inset_-1px_0_0_var(--border)]',
                           i > 1 && 'border-l',
+                          columnDrag?.key === c.key && 'opacity-40',
+                          // Where the column being dragged would go: a line on that side of this one.
+                          landing && 'shadow-[inset_3px_0_0_var(--primary)]',
+                          landingAfter && 'shadow-[inset_-3px_0_0_var(--primary)]',
                         )}
                         style={i === 0 ? { paddingLeft: HANDLE } : undefined}
                       >
                         <button
                           onClick={() => setSort(!on ? { key: c.key, dir: 'asc' } : on === 'asc' ? { key: c.key, dir: 'desc' } : undefined)}
-                          title={!on ? `Sort by ${c.field ? c.label : c.label.toLowerCase()}` : on === 'asc' ? 'Sort the other way' : 'Stop sorting'}
+                          onKeyDown={(e) => {
+                            if (!movable || !e.altKey || !e.shiftKey || (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight')) return
+                            e.preventDefault()
+                            nudgeColumn(c.key as ColumnKey, e.key === 'ArrowLeft' ? -1 : 1)
+                          }}
+                          aria-keyshortcuts={movable ? 'Alt+Shift+ArrowLeft Alt+Shift+ArrowRight' : undefined}
+                          title={`${!on ? `Sort by ${c.field ? c.label : c.label.toLowerCase()}` : on === 'asc' ? 'Sort the other way' : 'Stop sorting'}${movable ? '. Drag to move the column' : ''}`}
                           className={cn(
                             'group/sort flex h-full w-full min-w-0 items-center gap-1 px-3 text-left text-xs font-medium hover:text-foreground',
                             on ? 'text-foreground' : 'text-muted-foreground',

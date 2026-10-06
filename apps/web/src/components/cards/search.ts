@@ -11,8 +11,11 @@ export const SEARCH_KEYS = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/
 /** A search, without where it's shown: what the address holds. */
 export type Search = Omit<CardsRoute, 'page'>
 
-/** The address as the question for GET /api/cards: named ranges and days become moments where you are. */
-export function cardsQuery(r: Search, opts: { offset?: number; now?: Date } = {}): string {
+/**
+ * The address as the question for GET /api/cards: named ranges and days become moments where you are. `zone`: your
+ * time zone, sent when something asked depends on the day it is for you (the due date, a date field).
+ */
+export function cardsQuery(r: Search, opts: { offset?: number; now?: Date; zone?: string } = {}): string {
   const p = new URLSearchParams({ state: r.state })
   if (r.board) p.set('board', r.board)
   if (r.place) p.set('place', r.place)
@@ -32,6 +35,7 @@ export function cardsQuery(r: Search, opts: { offset?: number; now?: Date } = {}
   if (r.field) p.set('field', r.field)
   if (r.field && r.fv) p.set('fv', r.fv)
   if (r.sort) p.set('sort', r.sort)
+  if (opts.zone && (r.due || (r.field && r.fv))) p.set('timeZone', opts.zone)
   if (opts.offset) p.set('offset', String(opts.offset))
   return p.toString()
 }

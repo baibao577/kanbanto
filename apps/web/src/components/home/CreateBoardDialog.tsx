@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { toast } from 'sonner'
 import { api, errorMessage } from '@/api/client'
 import type { BoardBackground } from '@kanbanto/model/colors'
-import { isStarter, STARTER_INFO, STARTERS, type Starter } from '@kanbanto/model/starters'
+import { CLIENTS_BOARD_NAME, isStarter, STARTER_INFO, STARTERS, type Starter } from '@kanbanto/model/starters'
 
 const PERSONAL = 'personal'
 
@@ -64,17 +64,22 @@ export function CreateBoardDialog({
     setBusy(true)
     setProblem('')
     try {
-      const { id, added, leftOut } = await api<{ id: string; added?: string[]; leftOut?: string[] }>('POST', '/boards', {
-        name: name.trim() || starter?.name || 'Untitled board',
-        background,
-        template: start,
-        workspaceId: workspace?.id ?? null,
-      })
+      const { id, added, leftOut, clients } = await api<{ id: string; added?: string[]; leftOut?: string[]; clients?: { made: boolean } }>(
+        'POST',
+        '/boards',
+        {
+          name: name.trim() || starter?.name || 'Untitled board',
+          background,
+          template: start,
+          workspaceId: workspace?.id ?? null,
+        },
+      )
       onOpenChange(false)
       setName('')
       setPicked(null)
       setStart('empty')
       navigate({ page: 'board', id })
+      if (clients?.made) toast(`A “${CLIENTS_BOARD_NAME}” board came with it: the cards its Client field links to. Add your own clients there.`)
       if (added?.length) toast(`Added to ${library}: ${joinWords(added)}.`)
       if (leftOut?.length)
         toast(`Made without ${joinWords(leftOut)}: ${leftOut.length === 1 ? 'that field is' : 'those fields are'} archived in ${library}.`)
@@ -172,7 +177,8 @@ export function CreateBoardDialog({
             </RadioGroup>
             {starter && !problem && (
               <p className="text-xs text-muted-foreground">
-                It comes with its own fields, a few saved filters and example cards.{' '}
+                It comes with its own fields, a few saved filters and example cards. Each card is for a client: a card on a “{CLIENTS_BOARD_NAME}”
+                board, made with your first starter and shared by the ones after.{' '}
                 {workspace && workspace.role !== 'admin'
                   ? `The fields are ${workspace.name}’s: if they aren’t there yet, one of its admins has to make the first board from this starter.`
                   : `The fields it needs are added to ${library}, unless they’re there already.`}

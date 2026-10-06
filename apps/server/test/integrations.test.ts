@@ -312,6 +312,18 @@ describe('MCP', () => {
     expect((await tool('find_tasks', { board_id: other.id, fields: { Stage: 'Won' } })).error).toMatch(
       /This board has no field “Stage”. There are no fields there/,
     )
+    // More than an exact value: criteria, read the way the Filter menu reads a filter.
+    expect(titles(await tool('find_tasks', { board_id: id, fields: { Value: { min: 10000 } } }))).toEqual(['Logo'])
+    expect((await tool('find_tasks', { board_id: id, fields: { Value: { max: 5 } } })).tasks).toEqual([])
+    expect(titles(await tool('find_tasks', { board_id: id, fields: { Stage: { none_of: ['lead'] }, Value: { empty: false } } }))).toEqual(['Logo'])
+    expect(titles(await tool('find_tasks', { board_id: id, fields: { Stage: { any_of: ['Won', 'Lead'] } } }))).toEqual(['Logo'])
+    // What a field's kind can't be asked, and a name that isn't there, are refused with what can be said.
+    expect((await tool('find_tasks', { board_id: id, fields: { Stage: { min: 3 } } })).error).toMatch(/Stage is a .*“any_of”.*not “min”/)
+    expect((await tool('find_tasks', { board_id: id, fields: { Stage: { any_of: ['Lost'] } } })).error).toMatch(/no option “Lost” for Stage/)
+    // A part that's misspelt is refused too: left out, it would answer a wider question than the one asked.
+    const misspelt = await rpc(mcp, 'tools/call', { name: 'find_tasks', arguments: { board_id: id, fields: { Value: { minimum: 10 } } } })
+    expect(JSON.stringify(misspelt.body)).toMatch(/minimum|[Uu]nrecognized/)
+    expect(JSON.stringify(misspelt.body)).not.toMatch(/"Logo"/)
 
     // Links to other cards: listed with the board, read as the cards' titles, set and found by title.
     const firms = await ann.ok('POST', '/api/boards', { name: 'Companies' })
@@ -670,9 +682,26 @@ describe('MCP', () => {
     // From a starter: its own lists and fields, and what it added to the library.
     const desk = await call('create_board', { name: 'Help desk', starter: 'support', workspace: 'Acme' })
     expect(desk.lists.map((l: { name: string }) => l.name)).toEqual(['New', 'In progress', 'Waiting on customer', 'Solved'])
-    expect(desk.fields).toEqual(['Severity', 'Customer', 'Customer email', 'Channel', 'Reported on'])
-    expect(desk.fields_added_to_the_library).toEqual(desk.fields)
-    expect((await call('create_board', { name: 'Second desk', starter: 'support', workspace: 'Acme' })).fields_added_to_the_library).toBeUndefined()
+    expect(desk.fields).toEqual(['Severity', 'Client', 'Customer email', 'Channel', 'Reported on'])
+    // (With the fields of the board of clients that came with it: what its Client field links to.)
+    expect(desk.fields_added_to_the_library).toEqual([...desk.fields, 'Email', 'Phone'])
+    expect(desk.clients_board).toMatchObject({ made_with_it: true })
+    const secondDesk = await call('create_board', { name: 'Second desk', starter: 'support', workspace: 'Acme' })
+    expect(secondDesk.fields_added_to_the_library).toBeUndefined()
+    expect(secondDesk.clients_board).toEqual({ id: desk.clients_board.id })
+    // A shop's orders and a salon's bookings, in Personal: their own clients there, shared by the two.
+    const shop = await call('create_board', { name: 'Shop', starter: 'store' })
+    expect(shop.lists.map((l: { name: string }) => l.name)).toEqual(['New', 'Packing', 'Packed', 'Shipped'])
+    expect(shop.fields).toEqual(['Order total', 'Shipping', 'Client', 'Tracking number'])
+    expect(shop.clients_board.made_with_it).toBe(true)
+    expect(shop.clients_board.id).not.toBe(desk.clients_board.id)
+    const salon = await call('create_board', { name: 'Salon', starter: 'bookings' })
+    expect(salon.lists.map((l: { name: string }) => l.name)).toEqual(['Booked', 'Arrived', 'Done', 'No-show'])
+    expect(salon.fields_added_to_the_library).toEqual(['Service', 'Price', 'Deposit paid'])
+    expect(salon.clients_board).toEqual({ id: shop.clients_board.id })
+    // An assistant finds a client's bookings by the client's name (the no-show among them: it counts as finished).
+    const visits = await call('find_tasks', { board_id: salon.board.id, fields: { Client: { any_of: ['Dana Keller'] } }, include_done: true })
+    expect(visits.tasks.map((x: { title: string }) => x.title).sort()).toEqual(['Dana Keller: colour', 'Dana Keller: nails'])
 
     const set = await call('update_board', { board_id: id, name: 'Q4 site launch', background: 'teal', parent_status: 'set_by_hand' })
     expect(set.board).toMatchObject({ name: 'Q4 site launch', background: 'teal', parent_status: 'set_by_hand', about: 'Launching the new site' })

@@ -87,19 +87,31 @@ Click **Filter**, go down to **Fields**, and pick the field.
 
 | Kind | You can ask for |
 |---|---|
-| **Choice** | Any of the options you tick, or **None picked** |
+| **Text** | **Contains** a word, **doesn't contain** it, **is exactly**, **isn't**, **is filled in**, **is empty** |
+| **Number** | **Is** an amount, **at least**, **at most**, **between** two. Or **has a number**, **is empty** |
+| **Date** | Today, this week, next month, the next 30 days, between two days, and more: [the same choices as Due](/everyday/search-and-filters#filter-by-a-date) |
+| **Choice** | **Any of** the options you tick, **none of** them, or **none picked** |
 | **Checkbox** | **Yes** or **No** |
-| **Number** | **From** an amount, **to** an amount, or both. Or **No number** |
-| **Date** | In the **past**, in the **next 7 days**, or **No date** |
-| **Text** | **Filled in** or **Empty** |
-| **Card link** | Any of the cards linked on this board, or **None linked** |
-| **Person** | Any of the people you tick, or **No one** |
+| **Card link** | **Any of** the cards you tick, **none of** them, **has a link**, or **none linked**. Type part of a title to find a card among the ones linked on this board |
+| **Person** | **Me**, **any of** the people you tick, **none of** them, **someone**, or **no one** |
+
+One test per field. Set tests on several fields and a card has to pass them all: deals **of 10,000 and up** that
+**close this month** and **aren't** from a referral.
+
+A few to try:
+
+- **A sales pipeline:** Close date **this month**, Deal value **at least** 10,000.
+- **A support desk:** Severity **any of** High, Critical; Reported on **in the last 7 days**.
+- **A salon's bookings:** Due **today**; Deposit paid **No**.
+- **Fundraising:** Stage **none of** Passed; Lead partner (a Person field) **Me**.
 
 Filters work in all three views, and a [preset](/everyday/search-and-filters#presets-save-a-combination) remembers
-them, along with the Outline's columns.
+them, along with the Outline's columns and their order.
+
+The board's search box looks in text fields too: type a company's name or a tracking number.
 
 To look through **every board** at once, open [Search cards](/everyday/search-and-filters#search-cards-every-board-at-once),
-then **More → Field**. Each card then shows its value, and you can narrow the list to the ones you want.
+then **More → Field**. Each card then shows its value, and you can narrow the list with the same tests.
 
 ## Totals
 
@@ -162,23 +174,54 @@ the people on the board.
 
 - **Nobody is told** when they are put in a Person field, and the card does not show up in their week. That is what
   Assignee is for. A Person field is something to read, sort and filter by.
-- **Filter** by a person, or by **No one**. In the Outline, sort by the column to group cards by person.
-  [Search cards](/everyday/search-and-filters#search-cards-every-board-at-once) can find the cards where it is **Me**.
+- **Filter** by a person, by **Me** (whoever is looking), or by **No one**. In the Outline, sort by the column to
+  group cards by person.
 - **Someone who leaves the board** is taken out of its Person fields, as they are unassigned from its cards. Where a
   name can no longer be shown, it reads "Someone who left", and goes the next time that field is changed.
 - **A card moved to another board** keeps the people who are on that board too. The move tells you who is left behind.
 
 ## Start from a ready-made board
 
-**Create board** offers two starters under **Start with**. Each is a board for one kind of work, with its lists, its
-fields, a couple of saved filters and five example cards to show how it is meant to be filled in.
+**Create board** offers four starters under **Start with**. Each is a board for one kind of work, with its lists, its
+fields, a few saved filters and five example cards to show how it is meant to be filled in.
 
 ![A sales pipeline made from the starter](/images/fields-11-starter.webp)
 
-| Starter | Lists | Fields |
-|---|---|---|
-| **A sales pipeline** | Leads, Contacted, Proposal, Won, Lost | Deal value (totalled under each list), Company, Contact email, Close date, Source |
-| **A support desk** | New, In progress, Waiting on customer, Solved | Severity, Customer, Customer email, Channel, Reported on |
+| Starter | Lists | Fields | Saved filters |
+|---|---|---|---|
+| **A sales pipeline** | Leads, Contacted, Proposal, Won, Lost | Deal value (totalled under each list), Client, Contact email, Close date, Source | Closing in the next 7 days; Deals of 10,000 and up |
+| **A support desk** | New, In progress, Waiting on customer, Solved | Severity, Client, Customer email, Channel, Reported on | High and critical; Most severe first (Outline) |
+| **Store orders** | New, Packing, Packed, Shipped | Order total (totalled under each list), Shipping, Client, Tracking number | Leaves today; Late; By ship-by date (Outline) |
+| **Bookings** | Booked, Arrived, Done, No-show | Service, Price (totalled under each list), Client, Deposit paid | Today; This week; Mine; The day in order (Outline) |
+
+How the two newest are meant to be used:
+
+- **Store orders:** an order's **due date** is the day it has to leave, so late orders turn red and the Timeline
+  shows the week. Its **subtasks** are what is in it: tick them as you pack and the card counts "2/3". You move the
+  order itself from list to list.
+- **Bookings:** a booking's **due date and time** are when it is, and its **assignee** is who it is with, so it shows
+  in that person's week and calendar. The services are a salon's to start with: rename them for a clinic, a studio
+  or a restaurant's tables.
+
+![A bookings board, with each booking's time, service, price and client](/images/fields-12-bookings.webp)
+
+### The Clients board
+
+Every starter card has a **Client** field: a [card link](#link-cards-together) to a card on a board called
+**Clients**.
+
+- **The first starter you make brings the Clients board with it**, with a card for each example client, an email
+  and a phone number on each. A message says so.
+- **The starters after it share that board.** A deal, a request, an order and a booking for the same client all
+  point at the same card.
+- **Open a client's card** and scroll to **Linked from**: everything that is for them, board by board, with what the
+  amounts come to.
+- **Add a card on Clients for each of your own clients**, then pick it in the Client field. A later starter never
+  adds cards to your Clients board: its example cards link only to the clients that are there by name.
+- In a workspace, the Clients board belongs to the workspace like its other boards. Personal starters get one of
+  your own.
+
+![A client's card, listing the order that is for them](/images/fields-13-client.webp){.medium}
 
 The fields are ordinary fields, in your own fields or the workspace's:
 
@@ -190,7 +233,8 @@ The fields are ordinary fields, in your own fields or the workspace's:
   in Personal. After that, anyone in the workspace can make more.
 
 On a starter board a card's list is set by hand (a deal's stage is where you drag it), and a card with subtasks
-stays one card. Delete the example cards when you are ready.
+stays one card. The example cards have real dates, counted from the day you make the board. None that is still open
+is assigned to you and none has a reminder, so they send you nothing. Delete them when you are ready.
 
 ## Merge two fields
 

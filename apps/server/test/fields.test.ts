@@ -413,6 +413,19 @@ describe('fields when things move', () => {
     await set(ann, id, 'A3', { [company]: 'Acme', [value]: 5, [stage]: won, [extra]: 'hidden soon' })
     await set(ann, id, 'A1', { [stage]: lead })
     await pick(ann, id, [{ id: stage, front: true }, { id: company }, { id: value }])
+    // A saved filter that names the fields, to see it follow them.
+    await ann.ok('POST', `/api/boards/${id}/presets`, {
+      name: 'Big ones',
+      settings: {
+        display: { board: { columns: 'status', rows: 'none', filter: 'all', parentDisplay: [] } },
+        outline: { sort: { key: `f:${value}`, dir: 'desc' }, order: [`f:${value}`, 'due', `f:${company}`] },
+        filter: {
+          assignees: ['me'],
+          dueIs: { on: 'this-month' },
+          fields: { [company]: { text: 'ac' }, [stage]: { notIn: [lead] }, [value]: { min: 1 } },
+        },
+      },
+    })
 
     const { id: ws } = await ann.ok('POST', '/api/workspaces', { name: 'Acme' })
     await ann.ok('POST', `/api/workspaces/${ws}/invitations`, { email: 'bob@example.com' })
@@ -443,6 +456,14 @@ describe('fields when things move', () => {
     expect(moved.data.tasks.A1.custom).toEqual({ [wsStage]: [wsLead] })
     // What was hidden on the board didn't move with it.
     expect(Object.keys((await stored(id, 'A3'))!).sort()).toEqual([wsCompany, wsValue.id, wsStage].sort())
+    // Its saved filter names the fields it has now, their options too, and still says the rest.
+    const [kept] = (await ann.ok('GET', `/api/boards/${id}/presets`)).presets
+    expect(kept.settings.filter).toEqual({
+      assignees: ['me'],
+      dueIs: { on: 'this-month' },
+      fields: { [wsCompany]: { text: 'ac' }, [wsStage]: { notIn: [wsLead] }, [wsValue.id]: { min: 1 } },
+    })
+    expect(kept.settings.outline).toEqual({ sort: { key: `f:${wsValue.id}`, dir: 'desc' }, order: [`f:${wsValue.id}`, 'due', `f:${wsCompany}`] })
     // An undo from before the move names the fields the board had then: it's refused, and wipes nothing.
     const undo = await attempt(ann, id, {
       type: 'records.restore',

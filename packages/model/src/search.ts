@@ -1,4 +1,4 @@
-import { isPast, toDay } from './dates'
+import { dateMatches, hasTime, isPast, toDay, type DateTest } from './dates'
 import type { Category, Priority } from './types'
 
 /**
@@ -56,6 +56,8 @@ export interface CardFacts {
   assigneeId?: string
   priority?: Priority
   due?: string
+  /** The day number `due` falls on for the person asking (see `dayNumberIn`). */
+  dueDay?: number
   /** Its labels' names, lower case. */
   labels: string[]
   /** The kind of list it shows in. null: archived unfinished (the kind of list wasn't kept). */
@@ -81,8 +83,11 @@ export interface CardFilter {
   /** A label's name, lower case. */
   label?: string
   due?: 'overdue' | 'week' | 'none'
-  /** Today's day number where the person is (for `due`). */
+  /** Any other test of the due date (see TableFilter: only one of the two is set). */
+  dueIs?: DateTest
+  /** Today's day number where the person is (for `due`), and now in ms. */
   today?: number
+  now?: number
   kinds?: Category[]
   completed?: boolean
   when?: CardDate
@@ -121,12 +126,19 @@ export function matchesCard(c: CardFacts, f: CardFilter): boolean {
   if (f.assignee !== undefined && (c.assigneeId ?? '') !== f.assignee) return false
   if (f.priorities?.length && !f.priorities.includes(c.priority ?? '')) return false
   if (f.label && !c.labels.includes(f.label)) return false
+  // The day the due date falls on for the person asking, when whoever made the facts worked it out (a date with a
+  // time depends on their time zone); otherwise where this code runs.
+  const dueDay = c.due ? (c.dueDay ?? toDay(c.due)) : undefined
   if (f.due === 'none' && c.due) return false
-  if (f.due === 'overdue' && (!c.due || c.done || !isPast(c.due))) return false
+  if (f.due === 'overdue') {
+    const past = !!c.due && (hasTime(c.due) || f.today === undefined ? isPast(c.due, f.now) : dueDay! < f.today)
+    if (c.done || !past) return false
+  }
   if (f.due === 'week') {
-    const d = c.due && f.today !== undefined ? toDay(c.due) - f.today : NaN
+    const d = dueDay !== undefined && f.today !== undefined ? dueDay - f.today : NaN
     if (!(d >= 0 && d <= 7)) return false
   }
+  if (!f.due && f.dueIs && !(f.today !== undefined && dateMatches(dueDay, f.dueIs, f.today))) return false
   if (f.words?.length && !hasWords(f.words, c.text)) return false
   return cardMoment(c, f) !== null
 }

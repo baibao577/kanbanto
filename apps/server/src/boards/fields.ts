@@ -37,7 +37,7 @@ import { HttpError } from '../http'
 import { workspaceRole, type Access, type BoardRow } from './access'
 import { canLinkTo, linksAround } from './links'
 import { fieldFromRow } from './records'
-import { boardPeople, loadBoard } from './store'
+import { boardPeople, loadBoard, writeCustom } from './store'
 
 /**
  * Custom fields on the server (the rules and the types are in model/fields.ts).
@@ -494,13 +494,15 @@ export async function mergeFields(app: FastifyInstance, lib: Library, fromId: st
         .select({ id: tasks.id, custom: tasks.custom })
         .from(tasks)
         .where(and(eq(tasks.boardId, boardId), sql`jsonb_exists(${tasks.custom}, ${fromId}::text)`))
-      for (const t of held) {
-        const custom = mergeCustom(t.custom ?? undefined, from, into, { options: options?.map, fromShown }) ?? null
-        await tx
-          .update(tasks)
-          .set({ custom, updatedAt: now, version: sql`${tasks.version} + 1` })
-          .where(and(eq(tasks.boardId, boardId), eq(tasks.id, t.id)))
-      }
+      await writeCustom(
+        tx,
+        held.map((t) => ({
+          boardId,
+          id: t.id,
+          custom: mergeCustom(t.custom ?? undefined, from, into, { options: options?.map, fromShown }) ?? null,
+        })),
+        now,
+      )
       moved += held.length
       // The board's own list of fields: the kept field takes the other's place, or stays where it was shown.
       if (!kept)
@@ -699,6 +701,24 @@ export async function adoptFields(tx: Tx, lib: Library, incoming: BoardField[], 
 }
 
 /**
+ * Where a library's "Client" field gets its cards, for a starter board (see model/starters.ts): the card link of that
+ * name that's in use, and the board it links to when it links to one. Null when the library has no such field yet.
+ * Takes the library's lock, like everything that then adds to it: two starters made at once make one board of
+ * clients, not two.
+ */
+export async function clientLink(tx: Tx, lib: Library, name: string): Promise<{ boardId: string | null } | null> {
+  await lockLibrary(tx, lib)
+  const links = (await rowsOf(tx, lib)).map((r) => ({ ...fieldFromRow(r), archived: !!r.archivedAt })).filter((f) => f.type === 'link')
+  const active = links.filter((f) => !f.archived)
+  // (The one `planStarter` will use: of that name, or the one a starter added before under a numbered name.)
+  const field =
+    active.find((f) => nameKey(f.name) === nameKey(name)) ?? active.find((f) => nameKey(f.name).replace(/ \(\d+\)$/, '') === nameKey(name))
+  if (field) return { boardId: field.linkTo === 'board' && field.board ? field.board : null }
+  // One that was put away stays off the board: there's a field, and nothing for it to link.
+  return links.some((f) => f.archived && nameKey(f.name) === nameKey(name)) ? { boardId: null } : null
+}
+
+/**
  * What making a board from a starter would do to a library (nothing is changed yet): which of the starter's fields
  * it has, which are to be added, and which can't be. The library stays locked until the transaction ends, so two
  * boards made at the same moment don't both add the fields.
@@ -791,13 +811,21 @@ export async function moveBoardFields(app: FastifyInstance, tx: Tx, board: Board
   // People in its person fields stay only if they're still on the board where it lands (the move changed that already).
   const [moved] = await tx.select().from(boards).where(eq(boards.id, board.id))
   const people = new Set((await boardPeople(tx, moved)).map((p) => p.userId))
-  for (const t of [...Object.values(data.tasks), ...Object.values(data.archived ?? {})]) {
-    const custom = carryCustom(t.custom, plan.map, { relink: own, isMember: (u) => people.has(u) })
-    if (custom)
-      await tx
-        .update(tasks)
-        .set({ custom })
-        .where(and(eq(tasks.boardId, board.id), eq(tasks.id, t.id)))
+  await writeCustom(
+    tx,
+    [...Object.values(data.tasks), ...Object.values(data.archived ?? {})].flatMap((t) => {
+      const custom = carryCustom(t.custom, plan.map, { relink: own, isMember: (u) => people.has(u) })
+      return custom ? [{ boardId: board.id, id: t.id, custom }] : []
+    }),
+  )
+  // Its saved filters follow its fields, the way its cards' values just did: a filter by a field that couldn't come
+  // along goes, and so do the linked cards and the people it named that stay behind. (Left as they were, they'd name
+  // fields the board no longer has and quietly stop filtering by them.)
+  for (const p of await tx.select().from(boardPresets).where(eq(boardPresets.boardId, board.id))) {
+    const read = PresetSettingsSchema.safeParse(p.settings)
+    if (!read.success) continue
+    const next = remapPreset(read.data as PresetSettings, plan.map, 'drop', { relink: own, isMember: (u) => people.has(u) })
+    if (JSON.stringify(next) !== JSON.stringify(read.data)) await tx.update(boardPresets).set({ settings: next }).where(eq(boardPresets.id, p.id))
   }
   await replaceBoardFields(
     tx,

@@ -1,10 +1,10 @@
-import { normalizeTaskDate } from './dates'
+import { DATE_WORDS, MAX_DATE_DAYS, normalizeTaskDate } from './dates'
 import { z } from 'zod'
 import { COLORS, isBackground, type BoardBackground, type ColorName } from './colors'
 import type { Command } from './commands'
-import { FIELD_LIMITS, FIELD_TYPES, TEXT_FORMATS, LINK_SCOPES, type FieldSettings } from './fields'
+import { FIELD_LIMITS, FIELD_TYPES, FILTER_TEXT_MAX, TEXT_FORMATS, TEXT_MATCHES, LINK_SCOPES, type FieldSettings } from './fields'
 import { isPosition } from './position'
-import { BUILT_IN_SORT_KEYS, OUTLINE_COLUMNS } from './table'
+import { BUILT_IN_SORT_KEYS, OUTLINE_COLUMNS, type OutlineConfig, type TableFilter } from './table'
 import { CATEGORIES, LAYOUTS, LIST_ORDERS, PRIORITIES } from './types'
 
 /**
@@ -272,17 +272,30 @@ const viewConfig = z.object({
  * field is still on the board is for `cleanPrefs`, like a filter by a list that's gone.
  */
 const fieldKey = z.templateLiteral(['f:', z.string()]).refine((k) => k.length > 2 && k.length <= 110, 'Not a field.')
+const wholeDay = z.string().regex(/^\d{4}-\d{2}-\d{2}$/)
+/**
+ * A test of a day (see DateTest). Like every part of a filter added after the first ones, a value this version
+ * doesn't know reads as not there: the test is then left out, and never read as a different one.
+ */
+const dateTest = {
+  on: z.enum(DATE_WORDS).optional().catch(undefined),
+  days: z.number().int().min(1).max(MAX_DATE_DAYS).optional().catch(undefined),
+  from: wholeDay.optional().catch(undefined),
+  to: wholeDay.optional().catch(undefined),
+}
+const picked = z.array(z.string().max(FIELD_LIMITS.ref)).max(FIELD_LIMITS.options * 2 + 1)
 /** What a field's value has to be to pass a filter (see FieldFilter). */
 const fieldFilter = z.object({
-  in: z
-    .array(z.string().max(FIELD_LIMITS.ref))
-    .max(FIELD_LIMITS.options * 2 + 1)
-    .optional(),
+  in: picked.optional(),
+  notIn: picked.optional().catch(undefined),
   checked: z.boolean().optional(),
   min: z.number().optional(),
   max: z.number().optional(),
   date: z.enum(['past', 'week', 'none']).optional(),
+  text: z.string().max(FILTER_TEXT_MAX).optional().catch(undefined),
+  match: z.enum(TEXT_MATCHES).optional().catch(undefined),
   has: z.boolean().optional(),
+  ...dateTest,
 })
 
 /** A board preset's settings (see PresetSettings): filters, and how the Board and Outline look. */
@@ -297,6 +310,11 @@ export const PresetSettingsSchema = z.object({
     hideFields: z.boolean().optional(),
     density: z.enum(['comfortable', 'compact']).optional(),
     hideDone: z.boolean().optional(),
+    order: z
+      .array(z.union([z.enum(OUTLINE_COLUMNS), fieldKey]))
+      .max(200)
+      .optional()
+      .catch(undefined),
   }),
   filter: z.object({
     statuses: z.array(z.string()).optional(),
@@ -304,11 +322,17 @@ export const PresetSettingsSchema = z.object({
     labels: z.array(z.string()).optional(),
     priorities: z.array(z.enum([...PRIORITIES, ''])).optional(),
     due: z.enum(['overdue', 'week', 'none']).optional(),
+    dueIs: z.object(dateTest).optional().catch(undefined),
+    startIs: z.object(dateTest).optional().catch(undefined),
     changed: z.number().int().min(1).max(3650).optional(),
     idle: z.number().int().min(1).max(3650).optional(),
     fields: z.record(recordId, fieldFilter).optional(),
   }),
 })
+// (A key in the types and not here would be dropped from every saved filter and every device's settings without a
+// word, so the two are kept the same: this stops compiling when they drift.)
+export const filterSchemaMatchesType: SameAs<z.infer<typeof PresetSettingsSchema>['filter'], TableFilter> = true
+export const outlineSchemaMatchesType: SameAs<z.infer<typeof PresetSettingsSchema>['outline'], OutlineConfig> = true
 
 export const ViewPrefsSchema = PresetSettingsSchema.extend({
   version: z.literal(3),

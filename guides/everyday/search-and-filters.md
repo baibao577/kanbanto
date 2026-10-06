@@ -9,8 +9,11 @@ Click the **magnifier** at the top, or press <kbd>/</kbd>, and type.
 
 ![Searching a board for "launch"](/images/search.webp)
 
-The board shows only cards whose title or description has your words. Clear the box to see everything again: it
-folds back into the magnifier.
+The board shows only cards with your words in their title, or in one of the board's
+[text fields](/everyday/fields): a company, a tracking number, an email address. Clear the box to see everything
+again: it folds back into the magnifier.
+
+To look inside descriptions and comments too, use [Search cards](#search-cards-every-board-at-once).
 
 If archived cards match too, a line under the bar says how many, as a link to them.
 
@@ -21,20 +24,44 @@ Click **Filter**.
 ![The Filter menu](/images/filter.webp)
 
 Tick what you want to see. Choices in one group widen the result (Ann *or* Ben); different groups narrow it (Ann's
-cards *that are* urgent).
+cards *that are* urgent). A card has to pass every group you set.
 
 | Filter | Shows |
 |---|---|
 | **Recently changed** | Cards moved, edited or commented on in the last few days. Turn it on and a box appears for the number of days. |
 | **No activity lately** | Cards nothing has happened on for a number of days. Good for finding stuck work. |
 | **Status** | Cards in the lists you tick. |
-| **Assignee** | One or more people's cards, or **No one assigned**. |
+| **Assignee** | **Me**, one or more people's cards, or **No one assigned**. |
 | **Priority** | Urgent, High, Medium, Low, or **No priority**. |
 | **Labels** | Cards with a label. |
-| **Fields** | Cards by one of the board's [own fields](/everyday/fields#filter-by-a-field): a stage, an amount, a yes or no. |
+| **Due** and **Start** | Cards by their date: see [Filter by a date](#filter-by-a-date). Due also has **Overdue**. |
+| **Fields** | Cards by one of the board's [own fields](/everyday/fields#filter-by-a-field): a stage, an amount, a name that contains a word, a close date this month. |
 
 Filters apply to all three views: Board, Timeline and Outline. Small tags under the bar show which filters are on;
 click the ✕ on one to drop that filter.
+
+### "Me" is whoever is looking
+
+**Me** means the person looking at the board. Save a preset called "Mine" with Assignee set to **Me**, and each
+person who opens it sees their own cards. Someone looking through a public link is nobody's "me" and sees none.
+
+### Filter by a date
+
+Due, Start and every date field of your own take the same choices:
+
+| Choice | Shows cards dated |
+|---|---|
+| **Today**, **Tomorrow**, **Yesterday** | That day. |
+| **This week**, **Next week**, **Last week** | A week from Monday to Sunday. |
+| **This month**, **Next month**, **Last month** | A calendar month. |
+| **In the next … days**, **In the last … days** | From today, that many days forward or back. You type the number. |
+| **On or before**, **On or after**, **Between** | Up to a day, from a day, or between two days you pick. |
+| **In the past**, **In the future** | Before today, or after today. |
+| **Has a date**, **No date** | Any date at all, or none. |
+
+"Today" is the day where you are. A date with a time counts as the day it falls on on your clock.
+
+A preset that says **This week** shows this week's cards every week: the choice is saved, not the days.
 
 ## Presets: save a combination
 
@@ -59,8 +86,9 @@ It can:
 
 - search **words** in titles, descriptions and comments,
 - show cards **on their boards**, **archived** ones, or both,
-- narrow by **board** or workspace, **person**, **priority**, **label**, **due date** and one of your
-  [own fields](/everyday/fields) (some of these are under **More**),
+- narrow by **board** or workspace, **person**, **priority**, **label**, **due date** (with the
+  [same choices](#filter-by-a-date) as on a board) and one of your [own fields](/everyday/fields), with the same
+  tests as a board's Filter (some of these are under **More**),
 - start from a ready-made search: **My tasks**, **Following** (the cards you are
   [told about](/people/notifications#cards-you-follow)), **Done this week**, **Recently changed**, **Archived**,
 - and look at a **stretch of time**: cards done, made, changed or archived today, this week, last month, or between

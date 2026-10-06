@@ -29,6 +29,20 @@ Drag rows to put them in the order you want.
 - Click a column's heading to sort by it.
 - **Filter** and search work as in the other views.
 
+## Put the columns in your order
+
+Drag a column's heading sideways and let go where you want it. A line shows where it will land. **Task** always
+stays first.
+
+![Dragging the Deal value column in front of Status](/images/outline-columns.webp)
+
+- **With the keyboard:** move to a heading with <kbd>Tab</kbd>, then press
+  <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>←</kbd> or <kbd>→</kbd>.
+- The order is remembered on each device, and a [preset](/everyday/search-and-filters#presets-save-a-combination)
+  saves it with its filters: "The day in order" can put the time first and the price beside it.
+- A column you hide keeps its place for when you show it again. A field added to the board later goes to the end.
+- **Display → Reset** puts the columns back in their usual order.
+
 ## Choose what to show
 
 Click **Display**:

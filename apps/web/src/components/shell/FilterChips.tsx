@@ -14,7 +14,8 @@ export function FilterChips() {
   const remove = (key: keyof TableFilter, field?: string) => {
     const { [field ?? '']: _gone, ...left } = prefs.filter.fields ?? {}
     const next = field && Object.keys(left).length ? left : undefined
-    setPrefs({ type: 'setFilter', filter: { ...prefs.filter, [key]: next } })
+    // (Due is one chip, wherever it's held: both places are cleared.)
+    setPrefs({ type: 'setFilter', filter: { ...prefs.filter, [key]: next, ...(key === 'due' && { dueIs: undefined }) } })
   }
   return (
     <div className="flex flex-wrap items-center gap-1.5">

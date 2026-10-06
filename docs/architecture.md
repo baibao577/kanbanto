@@ -269,12 +269,39 @@ The app uses hash routing, so any static host or proxy works without rewrite rul
   where the board is made: one of the same name and kind is used as it is (never changed), one that's archived is
   left out, the rest are added, which a workspace's admins may do; otherwise nothing is made. The cards' values and
   the saved filters are then carried to the library's ids. The ids of the starters' choice options are a contract:
-  an added field keeps them, so they're in people's data from then on.
+  an added field keeps them, so they're in people's data from then on. An example card's dates are counted from
+  today where the owner is (their time zone, not the server's); only a finished one is ever assigned to them, and
+  none has a reminder, so making a starter sends nothing.
+- **The Clients board.** Every starter has a "Client" card link (`linkTo: 'board'`). `clientLink` looks for that
+  field in the library, under the library's lock: when there is none, a board of clients is made in the same
+  transaction (a card per example client) and the new field links to it; when there is one, its board is used as it
+  is, and the example cards are linked to the cards already there, by title. Nothing is ever added to a board of
+  clients that exists; one that is archived, gone, or that the person can't open just leaves the examples
+  unlinked. Two starters made at the same moment make one board of clients.
 - **Columns, filters and totals.** The index carries the board's definitions (`TaskIndex.fields`), so sorting and
-  filtering need nothing else. A field's column and sort key is `f:<field id>` (`model/table.ts`); a filter by a field
-  is a `FieldFilter` in `TableFilter.fields`, with one rule per kind (`fieldMatches`, `tidyFilter` in
-  `model/fields.ts`). View settings that point at a field that left the board are dropped by `cleanPrefs`, which gives
-  the same object back when nothing changed (it runs on every change). Totals have one rule (`model/totals.ts`): a
+  filtering need nothing else. A field's column and sort key is `f:<field id>` (`model/table.ts`); the Outline's
+  columns can be put in an order of the person's own (`OutlineConfig.order`: every column after Task as last
+  arranged, nothing stored while it's the usual order). A filter by a field is a `FieldFilter` in
+  `TableFilter.fields`, with one rule per kind (`fieldMatches`, `tidyFilter` in `model/fields.ts`). View settings
+  that point at a field that left the board are dropped by `cleanPrefs`, which gives the same object back when
+  nothing changed (it runs on every change).
+- **A filter's tests, and how they stay compatible.** A new test is always a new key; no key ever changes meaning
+  (`in` got `notIn` beside it, the old `date: 'past' | 'week' | 'none'` got `on` / `days` / `from` / `to`, `due` got
+  `dueIs` and `startIs`). A tab left open across an update, or a rollback, reads a filter with keys it doesn't know
+  and drops them: that filter isn't applied, which is safe. An overloaded key would be applied wrongly. The schema
+  (`model/schema.ts`) names every key, each new one with `.catch(undefined)`, and a compile-time check holds it to
+  the type, because a key the schema doesn't name is stripped from a saved preset without a word. One date test
+  (`DateTest`, `dateMatches` in `model/dates.ts`) serves date fields, Due and Start. `filterCount` decides whether a
+  filter is applied at all, so it counts every key.
+- **Who is asking, and what day it is for them** (`MatchContext`): `'me'` is kept as a word in `assignees`, `in` and
+  `notIn` and filled in when matching, so a saved "Mine" is each viewer's own; a public visitor is nobody. A whole
+  day is itself; a moment is the day it falls on in the asker's time zone (`dayNumberIn`). The browser uses its own
+  zone, `GET /api/cards` takes `timeZone` (else the account's, else UTC), assistants the zone they pass.
+- **The address form** of a field's test (`fv`, `due`; `filterToText` / `filterFromText`): text always carries its
+  test (`~`, `=`, `!~`, `!=`), "none of" is a leading `!` on a list, dates are a word, `next-N`, `last-N` or `A..B`.
+  Every form read before is still read the same.
+- **A board's saved filters follow its fields**: merged, or moved with the board to another space
+  (`remapPreset`, in `mergeFields` and `moveBoardFields`), dropping what couldn't come along. Totals have one rule (`model/totals.ts`): a
   number counts once, on the card that holds it, and a card's total is its own plus its subtasks'. The Outline's cells
   are memoised and build their menus only when opened, so a table of thousands stays quick.
 - **Fields travel by name and type.** A card moved to another board keeps a value where that board uses the same
@@ -362,6 +389,49 @@ process's memory, so two instances would not see each other's changes live. For 
 (about 1 GB of memory) with PostgreSQL next to it is the intended setup. The board cache is bounded (200 boards, and
 200,000 records in all), so large boards don't grow memory without limit. Long lists aren't virtualized: each list
 shows 100 cards at a time, with "show more".
+
+### How it holds up on a big board
+
+Measured, and kept as tests. The data (`model/bigBoard.ts`, `apps/server/test/perfSeed.ts`): a workspace of 30
+people and 25 boards, a library of 50 fields, one board of 10,000 cards (and 3,000 archived) with twenty fields of
+every kind, and a board of 4,000 companies the others link to. On a laptop, with PostgreSQL in Docker:
+
+| What | Takes |
+|---|---|
+| Open the big board (17 MB): read from the database / from memory | 0.22 s / 0.06 s |
+| Edit one card's field; rename a field; add an option | 0.02 s |
+| Eight people reopen the board at once after a field was renamed | 0.5 s (it is read from the database once, for all of them) |
+| Merge two fields that 19,000 cards on 25 boards hold | 1.2 s |
+| Move a 500-card board to Personal, and back | 0.3 s, 0.1 s |
+| Move a card other cards link to, to another board | 0.3 s |
+| Clear a field on every card of the big board | 0.8 s |
+| Search cards over 24,000 cards, by words or a field's test | 0.08 to 0.14 s |
+| An assistant's `find_tasks` | 0.12 to 0.21 s |
+| Who links to a card; the card picker; what 40 links point at | 0.02 s or less |
+| The model on 3,000 cards: index, filter by three fields, sort by a field, lay out a view | 4 ms or less each |
+
+What made the difference: cards are written 500 to a statement where they used to be written one by one
+(`writeCustom`: merging fields took 8.4 s), a board being read from the database is read once for everyone asking
+(`BoardEngine.load`: eight people took 1.5 s), and a sort works out each card's value once instead of at every
+comparison (`sortComparator`).
+
+In Chrome, on the same board: the Board opens in about 0.2 s; the Outline draws its first 500 rows, sorts or shows
+500 more in about 0.5 s, nearly all of it drawing 500 rows of 25 columns; a filter or a cell's edit shows in 0.2 s,
+and a reload on the Outline in 0.9 s.
+
+Known limits, left as they are: filters and searches are matched in memory, not in the database; the Outline draws
+every row it shows (500 at a time), not only the ones on screen; and undoing "clear a field on every card" on a
+board of 10,000 cards is refused, because an undo sends every card back and that request is over the 10 MB a
+request may be.
+
+To measure again:
+
+- `pnpm test` runs the model's timings on 3,000 cards (`model/src/perf.test.ts`), each with a limit about five times
+  what it took, so they fail only when something got much slower.
+- `PERF=1 TEST_DATABASE_URL=<a throwaway database> pnpm --filter @kanbanto/server exec vitest run test/perf.test.ts --silent=false`
+  times the server on the 10,000-card workspace (it empties that database first).
+- `guides/perf/browser.mjs` times the app in Chrome against a throwaway site filled by
+  `apps/server/test/perfSeedRun.ts`.
 
 To run several instances you would pass live messages between them (Postgres `LISTEN/NOTIFY` or Redis) — see
 `src/live.ts` and `src/boards/engine.ts`. Contributions welcome.

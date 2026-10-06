@@ -166,7 +166,7 @@ describe('filtering and sorting by a person', () => {
   const today = todayDay()
 
   it('by who it is, by no one, and by whether there is someone', () => {
-    const pass = (id: string, f: object) => fieldMatches(reviewer, data.tasks[id].custom?.['f-reviewer'], f, today, on)
+    const pass = (id: string, f: object) => fieldMatches(reviewer, data.tasks[id].custom?.['f-reviewer'], f, { today, isMember: on })
     expect([pass('A1', { in: ['ton'] }), pass('A3', { in: ['ton'] }), pass('B', { in: ['ton'] })]).toEqual([true, false, false])
     expect([pass('A1', { in: [''] }), pass('B', { in: [''] }), pass('B', { in: ['', 'ton'] })]).toEqual([false, true, true])
     // A card that only holds someone who left has no one.

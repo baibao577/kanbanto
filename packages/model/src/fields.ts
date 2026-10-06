@@ -1,5 +1,16 @@
 import type { ColorName } from './colors'
-import { normalizeTaskDate, sortTime, toDay } from './dates'
+import {
+  dateMatches,
+  dateTestFromText,
+  dateTestText,
+  dateTestToText,
+  normalizeTaskDate,
+  sortTime,
+  tidyDateTest,
+  toDay,
+  todayDay,
+  type DateTest,
+} from './dates'
 
 /**
  * Custom fields: what a space's library defines, what a board uses, and what a card holds.
@@ -334,13 +345,18 @@ export function parseValue(def: FieldDef, input: string | number | boolean | nul
 export const optionsOf = (def: FieldDef, value: FieldValue | undefined): FieldOption[] =>
   Array.isArray(value) ? (def.options ?? []).filter((o) => value.includes(o.id)) : []
 
+const NUMBER_FORMATS = new Map<number | undefined, Intl.NumberFormat>()
+
 /** A number with its decimals and unit: "฿12,000", "50%", "3.5 h". */
 export function numberText(def: Pick<FieldDef, 'unit' | 'decimals'>, n: number): string {
   const d = def.decimals
-  const text = new Intl.NumberFormat(
-    'en-US',
-    d === undefined ? { maximumFractionDigits: 6 } : { minimumFractionDigits: d, maximumFractionDigits: d },
-  ).format(n)
+  // (One formatter per number of decimals, kept: making one costs far more than using it, and a table makes thousands.)
+  let format = NUMBER_FORMATS.get(d)
+  if (!format) {
+    format = new Intl.NumberFormat('en-US', d === undefined ? { maximumFractionDigits: 6 } : { minimumFractionDigits: d, maximumFractionDigits: d })
+    NUMBER_FORMATS.set(d, format)
+  }
+  const text = format.format(n)
   const unit = def.unit?.trim()
   if (!unit) return text
   if (/^\p{Sc}$/u.test(unit)) return `${unit}${text}`
@@ -818,90 +834,166 @@ export function mergeCustom(
 
 // ── Filtering by a field ───────────────────────────────────────────────────────
 
+/** Whoever is looking: a filter can ask for "me" wherever it asks for people, and matching fills it in. */
+export const ME = 'me'
+
+/** How a filter's text is held against a card's: it's the whole of it, or (turned round) isn't in it, isn't it. */
+export const TEXT_MATCHES = ['is', 'not', 'is-not'] as const
+export type TextMatch = (typeof TEXT_MATCHES)[number]
+/** The longest text a filter looks for. */
+export const FILTER_TEXT_MAX = 200
+
 /**
  * What a card's value for a field has to be to pass a filter. Each kind of field uses the parts that mean something
- * for it (see `tidyFilter`): a choice `in`, a checkbox `checked`, a number `min` / `max` / `has`, a date `date` /
- * `has`, text `has`, a card link `in` (links) / `has`, a person `in` (their ids) / `has`.
+ * for it (see `FILTER_PARTS` and `tidyFilter`).
+ *
+ * Parts are only ever added, never given a second meaning: a filter saved by an older version reads as it always
+ * did, and a version that doesn't know a part drops it, so that filter isn't applied (it's never read as something
+ * else).
  */
-export interface FieldFilter {
-  /** Any of these options, linked cards (a card link) or people (a person field); '' is "none picked". */
+export interface FieldFilter extends DateTest {
+  /** Any of these options, linked cards (a card link) or people (a person field; "me" is one); '' is "none picked". */
   in?: string[]
+  /** None of these (the same things). `in` wins where both are there. */
+  notIn?: string[]
   /** Ticked, or not. */
   checked?: boolean
   /** At least, and at most. */
   min?: number
   max?: number
-  /** In the past, in the next 7 days, or no date. */
+  /** In the past, in the next 7 days, or no date. (A date's other tests are DateTest's: `on`, `days`, `from`, `to`.) */
   date?: 'past' | 'week' | 'none'
+  /** Text to look for, in any case: the value contains it, unless `match` says otherwise. */
+  text?: string
+  match?: TextMatch
   /** Has a value, or doesn't. */
   has?: boolean
 }
 
 /** The parts of a filter each kind of field uses. */
 const FILTER_PARTS: Record<FieldType, (keyof FieldFilter)[]> = {
-  text: ['has'],
+  text: ['text', 'match', 'has'],
   number: ['min', 'max', 'has'],
-  date: ['date', 'has'],
-  choice: ['in'],
+  date: ['date', 'on', 'days', 'from', 'to', 'has'],
+  choice: ['in', 'notIn'],
   checkbox: ['checked'],
-  link: ['in', 'has'],
-  person: ['in', 'has'],
+  link: ['in', 'notIn', 'has'],
+  person: ['in', 'notIn', 'has'],
 }
 
-/**
- * Does a card's value for a field pass? `today`: the day it is, as a day number (see dates.ts), for date filters.
- * `isMember`: who is on the board, so a person field that only holds people who left counts as holding no one.
- */
-export function fieldMatches(
-  def: FieldDef,
-  value: FieldValue | undefined,
-  f: FieldFilter,
-  today: number,
-  isMember?: (userId: string) => boolean,
-): boolean {
+/** What matching needs to know besides the card: who is looking, and what day it is for them. */
+export interface MatchContext {
+  /** The person looking, for "me". Without one (a visitor through a public link), "me" is no one. */
+  me?: string
+  /** Today as a day number (see dates.ts). Where this code runs, when unset. */
+  today?: number
+  /** Now, in ms: for "overdue" on a date that has a time. */
+  now?: number
+  /** The day number a date falls on for the person looking. A date with a time depends on their time zone. */
+  dayOf?: (date: string) => number
+  /** Who is on the board, so a person field that only holds people who left counts as holding no one. */
+  isMember?: (userId: string) => boolean
+}
+
+const foldText = (s: string) => s.normalize('NFC').toLowerCase().trim()
+
+/** Does a card's value for a field pass? */
+export function fieldMatches(def: FieldDef, value: FieldValue | undefined, f: FieldFilter, ctx: MatchContext = {}): boolean {
   const asks = (part: keyof FieldFilter) => FILTER_PARTS[def.type].includes(part) && f[part] !== undefined
-  const people = def.type === 'person' ? peopleOf(value).filter((id) => !isMember || isMember(id)) : null
+  const people = def.type === 'person' ? peopleOf(value).filter((id) => !ctx.isMember || ctx.isMember(id)) : null
   if (asks('has') && (people ? people.length > 0 : value !== undefined) !== f.has) return false
   if (asks('checked') && (value === true) !== f.checked) return false
-  if (asks('in')) {
+  if (asks('in') || asks('notIn')) {
     const picked = people ?? (def.type === 'link' ? linksOf(value) : optionsOf(def, value).map((o) => o.id))
-    if (!(picked.length ? picked.some((id) => f.in!.includes(id)) : f.in!.includes(''))) return false
+    const among = (list: string[]) =>
+      picked.length ? picked.some((id) => list.includes(id) || (id === ctx.me && list.includes(ME))) : list.includes('')
+    if (asks('in') ? !among(f.in!) : among(f.notIn!)) return false
   }
   if (asks('min') && !(typeof value === 'number' && value >= f.min!)) return false
   if (asks('max') && !(typeof value === 'number' && value <= f.max!)) return false
+  if (asks('text')) {
+    const held = typeof value === 'string' ? foldText(value) : ''
+    const wanted = foldText(f.text!)
+    const whole = f.match === 'is' || f.match === 'is-not'
+    const turned = f.match === 'not' || f.match === 'is-not'
+    if ((whole ? held === wanted : held.includes(wanted)) === turned) return false
+  }
+  if (def.type !== 'date') return true
+  const today = ctx.today ?? todayDay()
+  const day = typeof value === 'string' ? (ctx.dayOf ?? toDay)(value) : undefined
   if (asks('date')) {
     if (f.date === 'none') return value === undefined
-    const days = typeof value === 'string' ? toDay(value) - today : NaN
+    const days = day === undefined ? NaN : day - today
     if (f.date === 'past' && !(days < 0)) return false
     if (f.date === 'week' && !(days >= 0 && days <= 7)) return false
   }
-  return true
+  return f.on === undefined && f.from === undefined && f.to === undefined ? true : dateMatches(day, f, today)
 }
 
 /**
- * A filter kept to what its field can use now: the parts for its kind, and options that still exist (a card link
- * keeps every well-formed link, a person field every id: whether the card or the person is still there isn't known
- * here). Undefined when nothing is left. The same object comes back when nothing had to go. `isMember`: who is on
- * the board, where that's known, so a person field's filter keeps only them.
+ * A filter kept to what its field can use now: the parts for its kind, options that still exist (a card link keeps
+ * every well-formed link, a person field every id and "me": whether the card or the person is still there isn't
+ * known here), text that says something, a test of a date that makes sense. Undefined when nothing is left. The same
+ * object comes back when nothing had to go. `isMember`: who is on the board, where that's known, so a person field's
+ * filter keeps only them.
  */
 export function tidyFilter(def: FieldDef, f: FieldFilter, isMember?: (userId: string) => boolean): FieldFilter | undefined {
-  const out: FieldFilter = {}
-  for (const part of FILTER_PARTS[def.type]) {
-    if (f[part] === undefined) continue
-    if (part === 'in') {
-      const fits = (id: string) =>
-        def.type === 'link'
-          ? !!parseRef(id)
-          : def.type === 'person'
-            ? isPersonId(id) && (!isMember || isMember(id))
-            : (def.options ?? []).some((o) => o.id === id)
-      const known = f.in!.filter((id) => id === '' || fits(id))
-      if (known.length) out.in = known.length === f.in!.length ? f.in : known
-    } else Object.assign(out, { [part]: f[part] })
+  const uses = (part: keyof FieldFilter) => FILTER_PARTS[def.type].includes(part)
+  const fits = (id: string) =>
+    def.type === 'link'
+      ? !!parseRef(id)
+      : def.type === 'person'
+        ? id === ME || (isPersonId(id) && (!isMember || isMember(id)))
+        : (def.options ?? []).some((o) => o.id === id)
+  const known = (list: string[]) => {
+    const kept = list.filter((id) => id === '' || fits(id))
+    return kept.length === list.length ? list : kept
   }
-  const keys = Object.keys(out) as (keyof FieldFilter)[]
+  const out: FieldFilter = {}
+  if (uses('in') && f.in && known(f.in).length) out.in = known(f.in)
+  if (uses('notIn') && f.notIn && !out.in && known(f.notIn).length) out.notIn = known(f.notIn)
+  for (const part of ['checked', 'min', 'max', 'date', 'has'] as const)
+    if (uses(part) && f[part] !== undefined) Object.assign(out, { [part]: f[part] })
+  if (uses('text') && typeof f.text === 'string' && f.text.trim() && f.text.length <= FILTER_TEXT_MAX) {
+    out.text = f.text
+    if (f.match !== undefined && TEXT_MATCHES.includes(f.match)) out.match = f.match
+  }
+  if (uses('on')) Object.assign(out, tidyDateTest({ on: f.on, days: f.days, from: f.from, to: f.to }))
+  const keys = (Object.keys(out) as (keyof FieldFilter)[]).filter((k) => out[k] !== undefined)
   if (!keys.length) return undefined
-  return keys.length === Object.keys(f).filter((k) => f[k as keyof FieldFilter] !== undefined).length && keys.every((k) => out[k] === f[k]) ? f : out
+  const had = (Object.keys(f) as (keyof FieldFilter)[]).filter((k) => f[k] !== undefined)
+  if (keys.length === had.length && keys.every((k) => out[k] === f[k])) return f
+  return Object.fromEntries(keys.map((k) => [k, out[k]])) as FieldFilter
+}
+
+/**
+ * A date field's filter as one test of a day, whichever of its parts hold it: "in the past", "the next 7 days" and
+ * "no date" are held where they always were (`date`), "has a date" in `has`, every other test as it is.
+ */
+export function dateTestOf(f: FieldFilter): DateTest | undefined {
+  if (f.date === 'past') return { on: 'past' }
+  if (f.date === 'week') return { on: 'next', days: 7 }
+  if (f.date === 'none' || f.has === false) return { on: 'none' }
+  if (f.has === true) return { on: 'any' }
+  return tidyDateTest({ on: f.on, days: f.days, from: f.from, to: f.to })
+}
+
+/**
+ * The other way: a test of a day as a date field's filter. Each meaning is written one way, so a saved filter
+ * compares equal to itself whatever was clicked to get there.
+ */
+export function withDateTest(t: DateTest | undefined): FieldFilter | undefined {
+  const test = t && tidyDateTest(t)
+  if (!test) return undefined
+  if (test.on === 'past' || test.on === 'none') return { date: test.on }
+  if (test.on === 'any') return { has: true }
+  if (test.on === 'next' && test.days === 7) return { date: 'week' }
+  return {
+    ...(test.on && { on: test.on }),
+    ...(test.days && { days: test.days }),
+    ...(test.from && { from: test.from }),
+    ...(test.to && { to: test.to }),
+  }
 }
 
 /**
@@ -917,19 +1009,22 @@ export function filterText(def: FieldDef, f: FieldFilter, titleOf?: TitleOf): st
       : def.type === 'person'
         ? (titleOf?.(id) ?? SOMEONE_GONE)
         : (def.options ?? []).find((o) => o.id === id)?.name
-  if (f.in)
-    parts.push(
-      f.in
-        .map((id) => (id ? named(id) : def.type === 'person' ? 'no one' : 'none'))
-        .filter(Boolean)
-        .join(', '),
-    )
+  const list = (ids: string[]) =>
+    ids
+      .map((id) => (id === ME && def.type === 'person' ? 'me' : id ? named(id) : def.type === 'person' ? 'no one' : 'none'))
+      .filter(Boolean)
+      .join(', ')
+  if (f.in) parts.push(list(f.in))
+  else if (f.notIn) parts.push(`not ${list(f.notIn)}`)
   if (f.checked !== undefined) parts.push(f.checked ? 'yes' : 'no')
   const n = (x: number) => numberText(def, x)
-  if (f.min !== undefined && f.max !== undefined) parts.push(`${n(f.min)} to ${n(f.max)}`)
+  if (f.min !== undefined && f.max !== undefined) parts.push(f.min === f.max ? n(f.min) : `${n(f.min)} to ${n(f.max)}`)
   else if (f.min !== undefined) parts.push(`${n(f.min)} or more`)
   else if (f.max !== undefined) parts.push(`${n(f.max)} or less`)
+  if (f.text !== undefined)
+    parts.push(`${{ contains: 'contains', is: 'is', not: 'doesn’t contain', 'is-not': 'isn’t' }[f.match ?? 'contains']} “${f.text.trim()}”`)
   if (f.date) parts.push({ past: 'in the past', week: 'in the next 7 days', none: 'no date' }[f.date])
+  if (f.on !== undefined || f.from !== undefined || f.to !== undefined) parts.push(dateTestText(f))
   if (f.has !== undefined) parts.push(f.has ? 'has a value' : 'empty')
   return parts.join(', ')
 }
@@ -941,31 +1036,153 @@ export function filterText(def: FieldDef, f: FieldFilter, titleOf?: TitleOf): st
  * person field: "any" or "none", or people's ids with commas ("-" for no one; "me" is for whoever reads it to fill in).
  */
 export function filterToText(def: FieldDef, f: FieldFilter): string {
-  if (def.type === 'choice' || (def.type === 'person' && f.in)) return (f.in ?? []).map((id) => id || '-').join(',')
-  if (def.type === 'link' && f.in) return f.in.map((ref) => (ref ? encodeURIComponent(ref) : '-')).join(',')
+  // A list of things, and "none of these" as the same list after a "!".
+  const listed = (write: (id: string) => string) =>
+    f.in ? f.in.map((id) => (id ? write(id) : '-')).join(',') : f.notIn ? `!${f.notIn.map((id) => (id ? write(id) : '-')).join(',')}` : ''
+  if (def.type === 'choice' || (def.type === 'person' && (f.in || f.notIn))) return listed((id) => id)
+  if (def.type === 'link' && (f.in || f.notIn)) return listed(encodeURIComponent)
   if (def.type === 'checkbox') return f.checked === undefined ? '' : f.checked ? 'yes' : 'no'
   if (f.has !== undefined) return f.has ? 'any' : 'none'
-  if (def.type === 'date') return f.date ?? ''
+  if (def.type === 'text')
+    return f.text === undefined ? '' : `${{ contains: '~', is: '=', not: '!~', 'is-not': '!=' }[f.match ?? 'contains']}${f.text.trim()}`
+  if (def.type === 'date') return f.date ?? dateTestToText(f)
   if (f.min !== undefined || f.max !== undefined) return `${f.min ?? ''}..${f.max ?? ''}`
   return ''
 }
 
-/** Reads `filterToText` back. Undefined when the text says nothing this kind of field understands. */
+/**
+ * Reads `filterToText` back. Undefined when the text says nothing this kind of field understands. Besides what's
+ * said there: text always comes with its test in front ("~word" contains, "=word" is, "!~word" and "!=word" turned
+ * round), a date may be a word ("today", "this-month"), "next-30", "last-7" or days ("2026-10-01..2026-10-31"), and
+ * a list after "!" means none of them.
+ */
 export function filterFromText(def: FieldDef, text: string): FieldFilter | undefined {
   const t = text.trim()
   if (!t) return undefined
+  const items = (s: string, read: (x: string) => string) => [...new Set(s.split(',').map((x) => (x === '-' ? '' : read(x))))]
   let f: FieldFilter = {}
-  if (def.type === 'choice') f = { in: [...new Set(t.split(',').map((id) => (id === '-' ? '' : id)))] }
-  else if (def.type === 'checkbox') f = t === 'yes' ? { checked: true } : t === 'no' ? { checked: false } : {}
+  if (def.type === 'choice') {
+    // An option's id may begin with "!" (an imported board keeps its ids): the text is "none of" only when it
+    // isn't a list of options as it stands.
+    const picked = items(t, (id) => id)
+    const options = new Set((def.options ?? []).map((o) => o.id))
+    f = t.startsWith('!') && !picked.every((id) => id === '' || options.has(id)) ? { notIn: items(t.slice(1), (id) => id) } : { in: picked }
+  } else if (def.type === 'checkbox') f = t === 'yes' ? { checked: true } : t === 'no' ? { checked: false } : {}
   else if (t === 'any' || t === 'none') f = { has: t === 'any' }
-  else if (def.type === 'link') f = { in: [...new Set(t.split(',').map((x) => (x === '-' ? '' : safeDecode(x))))] }
-  else if (def.type === 'person') f = { in: [...new Set(t.split(',').map((id) => (id === '-' ? '' : id)))] }
-  else if (def.type === 'date') f = t === 'past' || t === 'week' ? { date: t } : {}
+  else if (def.type === 'link') f = t.startsWith('!') ? { notIn: items(t.slice(1), safeDecode) } : { in: items(t, safeDecode) }
+  else if (def.type === 'person') f = t.startsWith('!') ? { notIn: items(t.slice(1), (id) => id) } : { in: items(t, (id) => id) }
+  else if (def.type === 'text') {
+    const test = t.match(/^(!~|!=|~|=)([\s\S]*)$/)
+    if (test)
+      f = {
+        text: test[2].trim(),
+        ...(test[1] !== '~' && { match: ({ '=': 'is', '!~': 'not', '!=': 'is-not' } as const)[test[1] as '=' | '!~' | '!='] }),
+      }
+  } else if (def.type === 'date') f = t === 'past' || t === 'week' ? { date: t } : (dateTestFromText(t) ?? {})
   else if (def.type === 'number' && t.includes('..')) {
     const [min, max] = t.split('..').map((x) => (x === '' ? undefined : Number(x)))
     f = { ...(min !== undefined && Number.isFinite(min) && { min }), ...(max !== undefined && Number.isFinite(max) && { max }) }
   }
   return tidyFilter(def, f)
+}
+
+/**
+ * More than an exact value, as an assistant asks for it when looking for cards (the find_tasks tool): what a text
+ * contains, a number's or a date's range, some of a choice's options, people or linked cards, or none of them.
+ */
+export interface SaidCriteria {
+  contains?: string
+  not_contains?: string
+  is_not?: string | number | boolean
+  min?: number
+  max?: number
+  /** Whole days, both included. */
+  from?: string
+  to?: string
+  /** Days counted from today: "today", "this-week", "next-month", "past", "next-30", "last-7" (see DateTest). */
+  range?: string
+  any_of?: string[]
+  none_of?: string[]
+  /** true: nothing for the field; false: something. */
+  empty?: boolean
+}
+
+/** What each kind of field can be asked, by an assistant. */
+const SAID_PARTS: Record<FieldType, (keyof SaidCriteria)[]> = {
+  text: ['contains', 'not_contains', 'is_not', 'empty'],
+  number: ['min', 'max', 'empty'],
+  date: ['from', 'to', 'range', 'empty'],
+  choice: ['any_of', 'none_of', 'is_not', 'empty'],
+  checkbox: [],
+  link: ['any_of', 'none_of', 'is_not', 'empty'],
+  person: ['any_of', 'none_of', 'is_not', 'empty'],
+}
+
+/**
+ * Criteria as a filter, to match the same way the Filter menu does (`fieldMatches`), or why they can't be read.
+ * `idsOf`: what one thing said by name is on this board (an option, a person, the cards of that title), as ids: only
+ * whoever knows the board can say. A part the field's kind can't answer is refused with a sentence, never left out:
+ * an answer filtered by less than was asked would look like the whole answer.
+ */
+export function criteriaFilter(
+  def: FieldDef,
+  c: SaidCriteria,
+  idsOf: (said: string) => string[] | { error: string },
+): { filter: FieldFilter } | { error: string } {
+  const kind = FIELD_TYPE_LABEL[def.type].toLowerCase()
+  const said = (Object.keys(c) as (keyof SaidCriteria)[]).filter((k) => c[k] !== undefined)
+  const can = SAID_PARTS[def.type]
+  if (!can.length) return { error: `${def.name} is a ${kind}: ask for true or false.` }
+  const odd = said.find((k) => !can.includes(k))
+  if (odd || !said.length)
+    return { error: `${def.name} is a ${kind}: it can be asked ${can.map((k) => `“${k}”`).join(', ')}${odd ? `, not “${odd}”` : ''}.` }
+  const f: FieldFilter = {}
+  if (def.type === 'text') {
+    const tests = (['contains', 'not_contains', 'is_not'] as const).filter((k) => c[k] !== undefined)
+    if (tests.length > 1) return { error: `${def.name}: one test of its text at a time (${tests.map((k) => `“${k}”`).join(', ')} were given).` }
+    if (tests.length) {
+      f.text = String(c[tests[0]])
+      if (tests[0] !== 'contains') f.match = tests[0] === 'not_contains' ? 'not' : 'is-not'
+    }
+  }
+  if (def.type === 'number') Object.assign(f, { ...(c.min !== undefined && { min: c.min }), ...(c.max !== undefined && { max: c.max }) })
+  if (def.type === 'date') {
+    if (c.range !== undefined && (c.from !== undefined || c.to !== undefined))
+      return { error: `${def.name}: give “range”, or “from” and “to”, not both.` }
+    const range = c.range?.trim().toLowerCase()
+    if (range === 'past' || range === 'week') f.date = range
+    else Object.assign(f, range === undefined ? { from: c.from, to: c.to } : dateTestFromText(range))
+    if (!tidyDateTest(f) && !f.date && c.empty === undefined)
+      return {
+        error: `${def.name}: ${c.range !== undefined ? `“${c.range}” isn’t a stretch of days. Say “today”, “tomorrow”, “this-week”, “next-month”, “past”, “future”, “next-30” or “last-7”` : 'days look like 2026-10-31'}.`,
+      }
+  }
+  if (def.type === 'choice' || def.type === 'link' || def.type === 'person') {
+    const ids = (list: string[]) => {
+      const out: string[] = []
+      for (const one of list) {
+        const found = idsOf(one)
+        if (!Array.isArray(found)) return found
+        out.push(...found)
+      }
+      return out
+    }
+    const any = c.any_of && ids(c.any_of)
+    const none = (c.none_of || c.is_not !== undefined) && ids([...(c.none_of ?? []), ...(c.is_not !== undefined ? [String(c.is_not)] : [])])
+    if (any && !Array.isArray(any)) return any
+    if (none && !Array.isArray(none)) return none
+    if (any && none) return { error: `${def.name}: give the ones it may be, or the ones it may not be, not both.` }
+    if (any) f.in = any
+    if (none) f.notIn = none
+    // A choice has no "has a value" of its own: nothing picked is one of the things it can be, or can't.
+    if (def.type === 'choice' && c.empty !== undefined) {
+      if (c.empty) f.in = [...(f.in ?? []), '']
+      else if (!f.in) f.notIn = [...(f.notIn ?? []), '']
+    }
+  }
+  if (def.type !== 'choice' && c.empty !== undefined) f.has = !c.empty
+  const filter = tidyFilter(def, f)
+  return filter ? { filter } : { error: `${def.name}: that says nothing to look for.` }
 }
 
 /**

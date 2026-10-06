@@ -203,8 +203,9 @@ export function HomeView() {
     <div className="flex h-full flex-col">
       <header className="flex h-14 shrink-0 items-center gap-3 border-b bg-background px-3 sm:px-4">
         <LogoMark className="size-7" />
-        <span className="text-sm font-semibold">Kanbanto</span>
-        <div className="ml-auto flex items-center gap-2">
+        {/* (On a phone the buttons are icons, "Join with a code" is under More, and a narrow one shows the mark alone: the bar has to fit the screen.) */}
+        <span className="text-sm font-semibold max-[419px]:hidden">Kanbanto</span>
+        <div className="ml-auto flex items-center gap-1.5 sm:gap-2">
           <Button size="sm" variant="outline" className="gap-1.5" title="Your time this week, on every board" asChild>
             <a href={hrefFor({ page: 'time' })}>
               <Timer /> <span className="hidden sm:inline">My week</span>
@@ -215,8 +216,8 @@ export function HomeView() {
               <MagnifyingGlass /> <span className="hidden sm:inline">Search cards</span>
             </a>
           </Button>
-          <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setJoining(true)}>
-            <Key /> <span className="hidden sm:inline">Join with a code</span>
+          <Button size="sm" variant="outline" className="hidden gap-1.5 sm:inline-flex" onClick={() => setJoining(true)}>
+            <Key /> Join with a code
           </Button>
           <Button size="sm" className="gap-1.5" onClick={() => setCreating({ where: null })}>
             <Plus weight="bold" /> <span className="hidden sm:inline">Create board</span>
@@ -228,6 +229,9 @@ export function HomeView() {
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-52">
+              <DropdownMenuItem className="sm:hidden" onSelect={() => setJoining(true)}>
+                <Key /> Join with a code…
+              </DropdownMenuItem>
               <DropdownMenuItem onSelect={() => setNewWorkspace(true)}>
                 <Buildings /> New workspace…
               </DropdownMenuItem>

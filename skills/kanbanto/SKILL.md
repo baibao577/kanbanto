@@ -72,8 +72,14 @@ Without MCP, use the REST API (see "REST fallback" below).
   `create_tasks` or `update_task`: `fields: {"Stage": "Won", "Value": 12000, "Signed": true}` (a choice takes an
   option's name, a date looks like `due`, `null` clears one; fields left out stay as they are). Use only fields the
   board has (to add or change the fields themselves, see **Setting up fields**). `find_tasks` finds by them too:
-  `fields: {"Stage": "Won"}` (`null`: tasks with nothing for the field), across every board that has the field. For a
-  range ("deals over 10,000"), find without it and compare the values in the results. A **card link** field holds
+  `fields: {"Stage": "Won"}` (`null`: tasks with nothing for the field), across every board that has the field. For
+  anything but an exact value, give the field a test instead: `{"Deal value": {"min": 10000}}` (or `max`, or both),
+  `{"Close date": {"range": "this-month"}}` (also `today`, `tomorrow`, `this-week`, `next-week`, `last-month`,
+  `next-30`, `last-7`, `past`, `future`; or `from` and `to`, two days), `{"Company": {"contains": "cafe"}}` (or
+  `not_contains`, `is_not`; an exact value is the plain form), `{"Stage": {"any_of": ["Won", "Proposal"]}}` or `{"none_of": [...]}` (options,
+  people or linked cards, by name; `"me"` for a person), `{"empty": true}` or `false`. "Deals over 10,000 that close
+  this month" is one call with two fields. A test the field's kind doesn't have is refused with a sentence that says
+  what it takes: never guess a key. A **card link** field holds
   other cards (a deal's Company): it reads as the linked cards' titles, is set by a card's title
   (`fields: {"Company": "Acme"}`, or a list for one that holds several) and found the same way. If two cards share
   the title the tool says so and gives their links: pass the right one instead. A linked card you can't open has no
@@ -91,9 +97,14 @@ Without MCP, use the REST API (see "REST fallback" below).
 - **Comments:** `add_comment`; write `@Name` to notify someone on the board. Use comments to explain changes you made
   on the user's behalf when that helps their team.
 - **Setting up a board:** `create_board` (with `about`, in Personal or a workspace), then `manage_lists` for its
-  workflow (e.g. add "Review" before Done, counting as in progress) and `manage_labels`. For a sales pipeline or a
-  support desk, `starter: "sales"` or `"support"` makes one with its lists, fields and saved filters ready (in a
-  workspace its fields can only be added by an admin: if it's refused, say which fields are missing). `update_board` renames it or
+  workflow (e.g. add "Review" before Done, counting as in progress) and `manage_labels`. For a sales pipeline, a
+  support desk, a shop's orders or appointments, `starter: "sales"`, `"support"`, `"store"` or `"bookings"` makes one
+  with its lists, fields and saved filters ready (in a workspace its fields can only be added by an admin: if it's
+  refused, say which fields are missing). On a store board an order's due date is the day it has to leave and its
+  subtasks are its items; on a bookings board the due date and time are when, and the assignee is with whom. Every
+  starter card has a **Client**: a link to a card on a board called Clients, made with the first starter in a space
+  and shared by the ones after (`clients_board` in the answer). For a new client, add a card to that board first,
+  then set `fields: {"Client": "<their name>"}` on the deal, request, order or booking. `update_board` renames it or
   changes what it's for.
 - **Reminders:** `set_reminder` with `at` ("remind me Monday 1pm") or `before_due_minutes` (e.g. 1440 for a day
   before; pass the user's `time_zone`). They go to the task's assignee, or the user if nobody is assigned. `reminders`

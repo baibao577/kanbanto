@@ -1,12 +1,13 @@
 import { CalendarBlank, CaretDown, FunnelSimple } from '@phosphor-icons/react'
 import { lazy, Suspense, useState, type ReactNode } from 'react'
 import type { BoardSummary, WorkspaceSummary } from '@kanbanto/model/api'
-import { filterFromText, filterToText, type FieldDef, type FieldFilter } from '@kanbanto/model/fields'
+import { filterFromText, filterToText, type FieldDef } from '@kanbanto/model/fields'
 import { CARD_DATES, CARD_DATE_LABEL, CARD_RANGES, CARD_RANGE_LABEL, type CardState } from '@kanbanto/model/search'
+import { dueAsTest, dueChoiceOf, dueFromText, dueToText, withDue } from '@kanbanto/model/table'
 import { PRIORITIES, PRIORITY_LABEL, type Priority } from '@kanbanto/model/types'
-import { BoardDot, LabelChip, PriorityIcon } from '@/components/common/bits'
+import { BoardDot, PriorityIcon } from '@/components/common/bits'
+import { CheckRow, DateTestSelect, FieldCriteria } from '@/components/fields/FieldCriteria'
 import { Button } from '@/components/ui/button'
-import { Checkbox } from '@/components/ui/checkbox'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectSeparator, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
@@ -123,7 +124,7 @@ export function CardsFilters({
       </Select>
 
       <WhenMenu search={search} set={set} />
-      <MoreMenu search={search} set={set} labels={labels} fields={fields} field={field} />
+      <MoreMenu search={search} set={set} people={people} labels={labels} fields={fields} field={field} />
     </div>
   )
 }
@@ -214,16 +215,19 @@ const ARCHIVED: { state: CardState; label: string }[] = [
 function MoreMenu({
   search,
   set,
+  people,
   labels,
   fields,
   field,
 }: {
   search: Search
   set: (patch: Partial<Search>) => void
+  people: { id: string; name: string }[]
   labels: string[]
   fields: FieldDef[]
   field?: FieldDef
 }) {
+  const due = dueFromText(search.due ?? '')
   // A field picked on other boards than the ones now searched still shows as picked.
   const picked = search.field ? (fields.find((f) => f.id === search.field) ?? field) : undefined
   const choices = picked && !fields.includes(picked) ? [picked, ...fields] : fields
@@ -302,28 +306,17 @@ function MoreMenu({
           </Part>
         )}
         <Part title="Due">
-          <ToggleGroup
-            type="single"
-            variant="outline"
-            size="sm"
-            value={search.due ?? 'any'}
-            onValueChange={(v) => v && set({ due: v === 'any' ? undefined : (v as Search['due']) })}
-            className="w-full"
-            aria-label="Due"
-          >
-            <ToggleGroupItem value="any" className="flex-1 text-xs">
-              Any
-            </ToggleGroupItem>
-            <ToggleGroupItem value="overdue" className="flex-1 text-xs">
-              Overdue
-            </ToggleGroupItem>
-            <ToggleGroupItem value="week" className="flex-1 text-xs">
-              In 7 days
-            </ToggleGroupItem>
-            <ToggleGroupItem value="none" className="flex-1 text-xs">
-              No date
-            </ToggleGroupItem>
-          </ToggleGroup>
+          <DateTestSelect
+            label="Due"
+            any="Any date"
+            overdue
+            value={due && dueAsTest(due)}
+            onChange={(next) => {
+              // (Written the one way each test is, as in a board's saved filters.)
+              const choice = dueChoiceOf(withDue(next))
+              set({ due: choice && dueToText(choice) })
+            }}
+          />
         </Part>
         {(choices.length > 0 || search.field) && (
           <Part title="Field">
@@ -343,11 +336,16 @@ function MoreMenu({
             </Select>
             {picked && (
               <>
-                <FieldTest
-                  field={picked}
-                  value={filterFromText(picked, search.fv ?? '') ?? {}}
-                  onChange={(f) => set({ fv: (f && filterToText(picked, f)) || undefined })}
-                />
+                {/* (A new one for each field: what was typed for one isn't the next one's.) */}
+                <div className="pt-1">
+                  <FieldCriteria
+                    key={picked.id}
+                    field={picked}
+                    value={filterFromText(picked, search.fv ?? '') ?? {}}
+                    onChange={(f) => set({ fv: (f && filterToText(picked, f)) || undefined })}
+                    people={people}
+                  />
+                </div>
                 <p className="pt-1 text-xs text-muted-foreground">
                   {search.fv
                     ? `Only on the boards that use ${picked.name}.`
@@ -378,82 +376,6 @@ function MoreMenu({
   )
 }
 
-/**
- * What the picked field has to be: any of a choice's options (or none picked), yes or no for a checkbox, for a
- * person field you, someone or no one, and for the other kinds whether it's filled in.
- */
-function FieldTest({ field, value, onChange }: { field: FieldDef; value: FieldFilter; onChange: (next: FieldFilter | undefined) => void }) {
-  if (field.type === 'choice') {
-    const toggle = (id: string) => {
-      const next = value.in?.includes(id) ? value.in.filter((x) => x !== id) : [...(value.in ?? []), id]
-      onChange(next.length ? { in: next } : undefined)
-    }
-    return (
-      <div className="pt-1">
-        {(field.options ?? [])
-          .filter((o) => !o.archived || value.in?.includes(o.id))
-          .map((o) => (
-            <CheckRow key={o.id} checked={!!value.in?.includes(o.id)} onChange={() => toggle(o.id)}>
-              <LabelChip label={o} />
-            </CheckRow>
-          ))}
-        <CheckRow checked={!!value.in?.includes('')} onChange={() => toggle('')}>
-          <span className="text-muted-foreground">None picked</span>
-        </CheckRow>
-      </div>
-    )
-  }
-  if (field.type === 'person') {
-    // (The boards searched have different people: "me" is the one person who is the same on all of them.)
-    const now = value.in?.includes('me') ? 'me' : value.has === undefined ? 'any' : value.has ? 'yes' : 'no'
-    return (
-      <ToggleGroup
-        type="single"
-        variant="outline"
-        size="sm"
-        value={now}
-        onValueChange={(v) => v && onChange(v === 'any' ? undefined : v === 'me' ? { in: ['me'] } : { has: v === 'yes' })}
-        className="w-full pt-1"
-        aria-label={field.name}
-      >
-        {[
-          ['any', 'Any'],
-          ['me', 'Me'],
-          ['yes', 'Someone'],
-          ['no', 'No one'],
-        ].map(([key, text]) => (
-          <ToggleGroupItem key={key} value={key} className="flex-1 text-xs">
-            {text}
-          </ToggleGroupItem>
-        ))}
-      </ToggleGroup>
-    )
-  }
-  const yesNo = field.type === 'checkbox'
-  const now = yesNo ? value.checked : value.has
-  return (
-    <ToggleGroup
-      type="single"
-      variant="outline"
-      size="sm"
-      value={now === undefined ? 'any' : now ? 'yes' : 'no'}
-      onValueChange={(v) => v && onChange(v === 'any' ? undefined : yesNo ? { checked: v === 'yes' } : { has: v === 'yes' })}
-      className="w-full pt-1"
-      aria-label={field.name}
-    >
-      <ToggleGroupItem value="any" className="flex-1 text-xs">
-        Any
-      </ToggleGroupItem>
-      <ToggleGroupItem value="yes" className="flex-1 text-xs">
-        {yesNo ? 'Yes' : 'Filled in'}
-      </ToggleGroupItem>
-      <ToggleGroupItem value="no" className="flex-1 text-xs">
-        {yesNo ? 'No' : 'Empty'}
-      </ToggleGroupItem>
-    </ToggleGroup>
-  )
-}
-
 function Part({ title, children }: { title: string; children: ReactNode }) {
   return (
     <div className="space-y-1.5 border-b p-4 last:border-b-0">
@@ -473,14 +395,5 @@ function Pick({ on, onClick, children }: { on: boolean; onClick: () => void; chi
     >
       {children}
     </button>
-  )
-}
-
-function CheckRow({ checked, onChange, children }: { checked: boolean; onChange: () => void; children: ReactNode }) {
-  return (
-    <label className="flex h-7 cursor-pointer items-center gap-2.5 text-sm">
-      <Checkbox checked={checked} onCheckedChange={onChange} />
-      <span className="flex min-w-0 items-center gap-2 truncate">{children}</span>
-    </label>
   )
 }

@@ -1,6 +1,6 @@
 import type { CardRow, CardsPage, CardsQuery } from '@kanbanto/model/api'
-import { toDay } from '@kanbanto/model/dates'
-import { fieldMatches, filterFromText, linksOf, valueText, type FieldDef, type FieldType } from '@kanbanto/model/fields'
+import { dayIn, dayNumberIn, toDay } from '@kanbanto/model/dates'
+import { fieldMatches, filterFromText, linksOf, valueText, type FieldDef, type FieldType, type MatchContext } from '@kanbanto/model/fields'
 import { indexFor, isLeaf, statusCol } from '@kanbanto/model/indexer'
 import {
   CARD_DATES,
@@ -19,7 +19,7 @@ import type { FastifyInstance, FastifyPluginAsync } from 'fastify'
 import { z } from 'zod'
 import type { SessionUser } from './auth/sessions'
 import { HttpError, parse } from './http'
-import { dayIn } from './mail/digest'
+import { dueFromText, withDue } from '@kanbanto/model/table'
 import { requireUser } from './routes/auth'
 import { boardsFor, withPlaces } from './routes/boards'
 import type { BoardRow } from './boards/access'
@@ -34,15 +34,25 @@ import { commentsWith, lastCommentsFor } from './routes/comments'
  * as the server holds them (from memory, mostly); only comments are looked up in the database.
  */
 
+/** How a test of a day is written (see `dateTestFromText`). */
+const DAY_HINT = 'a word like “today”, “tomorrow”, “this-week” or “next-month”, “next-30” or “last-7” (days), or days as “2026-10-01..2026-10-31”'
 /** What `fv` can say, for each kind of field (see `filterFromText`). */
 const FV_HINT: Record<FieldType, string> = {
-  choice: 'the ids of its options, with commas (“-” for none picked)',
+  choice: 'the ids of its options, with commas (“-” for none picked); after “!”, none of them',
   checkbox: '“yes” or “no”',
-  text: '“any” (has a value) or “none”',
-  date: '“any” (has a date), “none”, “past” or “week” (in the next 7 days)',
+  text: '“any” (has a value), “none”, or text with its test in front: “~word” (contains), “=word” (is), “!~word”, “!=word”',
+  date: `“any” (has a date), “none”, “past”, “week” (in the next 7 days), ${DAY_HINT}`,
   number: '“any” (has a number), “none”, or a range like “10..200”, “10..” or “..200”',
-  link: '“any” (has a link) or “none”',
-  person: '“any” (has someone), “none”, “me”, or people’s ids with commas (“-” for no one)',
+  link: '“any” (has a link), “none”, or links with commas (“-” for none linked); after “!”, none of them',
+  person: '“any” (has someone), “none”, “me”, or people’s ids with commas (“-” for no one); after “!”, none of them',
+}
+const validZone = (zone: string) => {
+  try {
+    new Intl.DateTimeFormat('en', { timeZone: zone })
+    return true
+  } catch {
+    return false
+  }
 }
 
 /** Boards searched at once (each is read from memory or the database). */
@@ -71,13 +81,22 @@ export async function searchCards(app: FastifyInstance, me: SessionUser, q: Card
     if (Number.isNaN(ms)) throw new HttpError(400, `“${name}” isn’t a date: use one like 2026-10-15 or 2026-10-15T07:30:00Z.`)
     return ms
   }
+  // The day it is for the person asking, and the day a date with a time falls on for them: by the time zone they
+  // give, or the one on their account. (Not this server's.)
+  const zone = q.timeZone ?? (me.timeZone && validZone(me.timeZone) ? me.timeZone : 'UTC')
+  const dayOf = dayNumberIn(zone)
+  const now = new Date()
+  const today = toDay(dayIn(now, zone))
+  const due = q.due === undefined ? undefined : dueFromText(q.due)
+  if (q.due !== undefined && !due) throw new HttpError(400, `“due” can’t be read: give “overdue”, “week” (the next 7 days), “none”, ${DAY_HINT}.`)
   const filter: CardFilter = {
     words,
     ...(q.assignee && { assignee: q.assignee === 'me' ? me.id : q.assignee === 'none' ? '' : q.assignee }),
     ...(q.priorities && { priorities: q.priorities.map((p) => (p === 'none' ? '' : p)) }),
     ...(q.label?.trim() && { label: q.label.trim().toLowerCase() }),
-    due: q.due,
-    today: toDay(dayIn(new Date(), me.timeZone ?? 'UTC')),
+    ...withDue(due),
+    today,
+    now: now.getTime(),
     kinds: q.kinds,
     completed: q.completed,
     when: q.when,
@@ -109,9 +128,10 @@ export async function searchCards(app: FastifyInstance, me: SessionUser, q: Card
     if (q.field && q.fv && !asked) continue
     const read = asked && q.fv ? filterFromText(asked, q.fv) : undefined
     if (asked && q.fv && !read) throw new HttpError(400, `“fv” can’t be read for ${asked.name}: give ${FV_HINT[asked.type]}.`)
-    // (For a person field, "me" is whoever is asking.)
-    const want = asked?.type === 'person' && read?.in ? { ...read, in: read.in.map((id) => (id === 'me' ? me.id : id)) } : read
+    const want = read
     const onBoard = new Map(data.members.map((m) => [m.id, m.name]))
+    // (For a person field, "me" is whoever is asking.)
+    const asker: MatchContext = { me: me.id, today, now: filter.now, dayOf, isMember: (u) => onBoard.has(u) }
     // A card link reads as its cards' titles, as far as this person may see them.
     const linked =
       asked?.type === 'link'
@@ -141,6 +161,7 @@ export async function searchCards(app: FastifyInstance, me: SessionUser, q: Card
         assigneeId: t.assigneeId,
         priority: t.priority,
         due: t.due,
+        ...(t.due && { dueDay: dayOf(t.due) }),
         labels: t.labels.flatMap((l) => (labelById.get(l)?.name.trim() ? [labelById.get(l)!.name.trim().toLowerCase()] : [])),
         kind,
         done,
@@ -154,7 +175,7 @@ export async function searchCards(app: FastifyInstance, me: SessionUser, q: Card
       }
       if (!matchesCard(facts, filter)) return
       const held = asked && t.custom?.[asked.id]
-      if (want && !fieldMatches(asked!, held, want, filter.today!, (u) => onBoard.has(u))) return
+      if (want && !fieldMatches(asked!, held, want, asker)) return
       const said = asked && held !== undefined ? valueText(asked, held, titleOf) : ''
       const at = cardMoment(facts, filter)!
       const assignee = t.assigneeId ? (data.members.find((m) => m.id === t.assigneeId)?.name ?? null) : null
@@ -315,7 +336,8 @@ const Query = z
     assignee: z.string().max(100).optional(),
     priority: listOf([...PRIORITIES, 'none'] as const),
     label: z.string().max(200).optional(),
-    due: z.enum(['overdue', 'week', 'none']).optional(),
+    due: z.string().max(40).optional(),
+    timeZone: z.string().max(64).refine(validZone, 'That isn’t a time zone.').optional(),
     when: z.enum(CARD_DATES).optional(),
     from: z.string().max(40).optional(),
     to: z.string().max(40).optional(),

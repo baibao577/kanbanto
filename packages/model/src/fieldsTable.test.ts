@@ -107,7 +107,7 @@ describe('totals', () => {
 })
 
 describe('filtering by a field', () => {
-  const pass = (def: BoardField, v: CustomValues[string] | undefined, f: FieldFilter) => fieldMatches(def, v, f, today)
+  const pass = (def: BoardField, v: CustomValues[string] | undefined, f: FieldFilter) => fieldMatches(def, v, f, { today })
 
   it('asks each kind what it can answer', () => {
     expect([pass(stage, ['won'], { in: ['won', 'lead'] }), pass(stage, ['lead'], { in: ['won'] })]).toEqual([true, false])

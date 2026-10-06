@@ -3,6 +3,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { flushSync } from 'react-dom'
 import { toast } from 'sonner'
 import { useBoard } from '@/app/board-context'
+import { useAuth } from '@/app/use-auth'
 import { Avatar, ProgressBar, StatusDot, StatusPill } from '@/components/common/bits'
 import { Empty } from '@/components/common/Empty'
 import { DisplayMenu } from '@/components/shell/DisplayMenu'
@@ -103,6 +104,7 @@ export function BoardView({ search }: { search: string }) {
 
 function Board({ search }: { search: string }) {
   const { data, prefs, setPrefs, idx, run, openTask, createTask, focus, readOnly, counts, moveToBoard, logTime } = useBoard()
+  const me = useAuth().user?.id
   // Minutes logged on each card, with its subtasks'.
   const timeOf = useMemo(() => rollUp(counts.time, idx.childrenOf), [counts.time, idx.childrenOf])
   const config = prefs.display.board
@@ -112,9 +114,10 @@ function Board({ search }: { search: string }) {
   const [showOlder, setShowOlder] = useState<ReadonlySet<string>>(new Set())
   const now = useNow(3_600_000)
   const view = useMemo(() => {
-    const keep = filterCount(filter) ? (id: string) => matchesFilter(idx, id, filter, counts.lastComment) : undefined
+    // ("Me" in a filter is whoever is looking.)
+    const keep = filterCount(filter) ? (id: string) => matchesFilter(idx, id, filter, counts.lastComment, { me }) : undefined
     return buildView(idx, config, { focusId: prefs.focusId, search, keep, now, showOlder })
-  }, [idx, config, prefs.focusId, search, filter, counts.lastComment, now, showOlder])
+  }, [idx, config, prefs.focusId, search, filter, counts.lastComment, now, showOlder, me])
   const labelById = useMemo(() => new Map(data.labels.map((l) => [l.id, l])), [data.labels])
   const frontFields = useMemo(() => data.fields.filter((f) => f.front), [data.fields])
   // Numbers that add up, under each list's name (Board settings → Fields → "Total in lists"): the cards the list

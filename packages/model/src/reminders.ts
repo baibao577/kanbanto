@@ -22,10 +22,10 @@ export function upcoming(task: Pick<Task, 'due' | 'reminders'>, after = new Date
     .sort((a, b) => a.at.getTime() - b.at.getTime())
 }
 
-/** `hour`:00 on `day` (YYYY-MM-DD) in a time zone (UTC when unknown), as a moment. */
-export function zoned(day: string, hour: number, tz?: string): Date {
+/** `hour`:`minute` (:00 when not said) on `day` (YYYY-MM-DD) in a time zone (UTC when unknown), as a moment. */
+export function zoned(day: string, hour: number, tz?: string, minute = 0): Date {
   const [y, m, d] = day.slice(0, 10).split('-').map(Number)
-  const guess = Date.UTC(y, m - 1, d, hour)
+  const guess = Date.UTC(y, m - 1, d, hour, minute)
   if (!tz) return new Date(guess)
   try {
     // The zone's offset at that moment: format the guess there, and compare.

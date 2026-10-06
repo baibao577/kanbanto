@@ -131,8 +131,9 @@ Good to know:
 - **A board moved into the workspace** brings its fields along. The ones the workspace already has (same name and
   kind) are used. The rest are added if you are an admin; if you are not, the move lists what would be lost and asks
   first.
-- **A starter board** (Create board → A sales pipeline, or A support desk) adds its fields to the workspace the first
-  time, which only an admin can do. After that, any member can make one.
+- **A starter board** (Create board → A sales pipeline, A support desk, Store orders or Bookings) adds its fields to
+  the workspace the first time, which only an admin can do. After that, any member can make one. The first starter
+  also brings the workspace's [Clients board](/everyday/fields#the-clients-board), which the ones after share.
 - **Not sure a field is still needed?** Archive it on the Fields page. It goes from every board and its values are
   kept, until you restore it.
 

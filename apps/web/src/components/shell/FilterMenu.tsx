@@ -1,18 +1,19 @@
 import { FunnelSimple, Plus, X } from '@phosphor-icons/react'
 import { useState, useSyncExternalStore, type ReactNode } from 'react'
 import { useBoard } from '@/app/board-context'
+import { useAuth } from '@/app/use-auth'
 import { Avatar, LabelChip, PriorityIcon, StatusDot } from '@/components/common/bits'
+import { CheckRow, DateTestSelect, FieldCriteria } from '@/components/fields/FieldCriteria'
 import { LinkChip } from '@/components/fields/LinkValue'
 import { Button } from '@/components/ui/button'
-import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Separator } from '@/components/ui/separator'
 import { Switch } from '@/components/ui/switch'
-import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { AGE_SHOWN } from '@kanbanto/model/age'
-import { linksOf, tidyFilter, type BoardField, type FieldFilter, type FieldType } from '@kanbanto/model/fields'
-import { filterCount, type TableFilter } from '@kanbanto/model/table'
+import { tidyDateTest } from '@kanbanto/model/dates'
+import { linksOf, ME, tidyFilter, type BoardField, type FieldFilter } from '@kanbanto/model/fields'
+import { dueAsTest, dueChoiceOf, filterCount, withDue, type TableFilter } from '@kanbanto/model/table'
 import { PRIORITIES, PRIORITY_LABEL } from '@kanbanto/model/types'
 
 // "Recently" ends where a card starts showing its age (Display → Card age).
@@ -25,11 +26,12 @@ const toggleIn = (list: string[] | undefined, v: string) => {
 }
 
 /**
- * "Filter" popover, shared by every tab: recent or no activity, status, people, priority, labels, due date, and the
- * board's own fields.
+ * "Filter" popover, shared by every tab: recent or no activity, status, people, priority, labels, the due and start
+ * dates, and the board's own fields (what each can be asked is in FieldCriteria).
  */
 export function FilterMenu() {
   const { data, prefs, setPrefs } = useBoard()
+  const { user } = useAuth()
   const f = prefs.filter
   const set = (patch: Partial<TableFilter>) => setPrefs({ type: 'setFilter', filter: { ...f, ...patch } })
   const n = filterCount(f)
@@ -40,10 +42,17 @@ export function FilterMenu() {
     const all = { ...f.fields, [def.id]: next && tidyFilter(def, next) }
     const kept = data.fields.flatMap((d) => (all[d.id] ? [[d.id, all[d.id]!] as const] : []))
     set({ fields: kept.length ? Object.fromEntries(kept) : undefined })
-    setOpened((o) => (next === undefined ? o.filter((id) => id !== def.id) : o.includes(def.id) ? o : [...o, def.id]))
+    // (Open, whatever it's set to now: a test that isn't whole yet, "contains" with nothing typed, is no filter.)
+    setOpened((o) => (o.includes(def.id) ? o : [...o, def.id]))
+  }
+  const close = (def: BoardField) => {
+    const { [def.id]: _gone, ...left } = f.fields ?? {}
+    set({ fields: Object.keys(left).length ? left : undefined })
+    setOpened((o) => o.filter((id) => id !== def.id))
   }
   const shown = data.fields.filter((d) => f.fields?.[d.id] || opened.includes(d.id))
   const waiting = data.fields.filter((d) => !shown.includes(d))
+  const due = dueChoiceOf(f)
 
   return (
     <Popover onOpenChange={(open) => !open && setOpened([])}>
@@ -90,6 +99,12 @@ export function FilterMenu() {
         </Section>
 
         <Section title="Assignee">
+          {/* "Me" is whoever is looking: a filter saved with it is everyone's own. */}
+          {user && (
+            <CheckRow checked={!!f.assignees?.includes(ME)} onChange={() => set({ assignees: toggleIn(f.assignees, ME) })}>
+              <Avatar name={user.name} className="size-5 text-[9px]" /> Me
+            </CheckRow>
+          )}
           {data.members.map((m) => (
             <CheckRow key={m.id} checked={!!f.assignees?.includes(m.id)} onChange={() => set({ assignees: toggleIn(f.assignees, m.id) })}>
               <Avatar name={m.name} className="size-5 text-[9px]" /> {m.name}
@@ -129,27 +144,16 @@ export function FilterMenu() {
         )}
 
         <Section title="Due">
-          <ToggleGroup
-            type="single"
-            variant="outline"
-            size="sm"
-            value={f.due ?? 'any'}
-            onValueChange={(v) => v && set({ due: v === 'any' ? undefined : (v as TableFilter['due']) })}
-            className="w-full"
-          >
-            <ToggleGroupItem value="any" className="flex-1 text-xs">
-              Any
-            </ToggleGroupItem>
-            <ToggleGroupItem value="overdue" className="flex-1 text-xs">
-              Overdue
-            </ToggleGroupItem>
-            <ToggleGroupItem value="week" className="flex-1 text-xs">
-              This week
-            </ToggleGroupItem>
-            <ToggleGroupItem value="none" className="flex-1 text-xs">
-              No date
-            </ToggleGroupItem>
-          </ToggleGroup>
+          <DateTestSelect label="Due" any="Any date" overdue value={due && dueAsTest(due)} onChange={(next) => set(withDue(next))} />
+        </Section>
+
+        <Section title="Start">
+          <DateTestSelect
+            label="Start"
+            any="Any date"
+            value={f.startIs}
+            onChange={(next) => set({ startIs: typeof next === 'object' ? tidyDateTest(next) : undefined })}
+          />
         </Section>
 
         {data.fields.length > 0 && (
@@ -160,13 +164,17 @@ export function FilterMenu() {
                   <span className="truncate text-sm font-medium">{d.name}</span>
                   <button
                     aria-label={`Stop filtering by ${d.name}`}
-                    onClick={() => setField(d, undefined)}
+                    onClick={() => close(d)}
                     className="grid size-6 shrink-0 place-items-center rounded text-muted-foreground hover:bg-accent hover:text-foreground"
                   >
                     <X className="size-3.5" />
                   </button>
                 </div>
-                <FieldFilterControl field={d} value={f.fields?.[d.id] ?? {}} onChange={(next) => setField(d, next)} />
+                {d.type === 'link' ? (
+                  <LinkCriteria field={d} value={f.fields?.[d.id] ?? {}} onChange={(next) => setField(d, next)} />
+                ) : (
+                  <FieldCriteria field={d} value={f.fields?.[d.id] ?? {}} onChange={(next) => setField(d, next)} people={data.members} />
+                )}
               </div>
             ))}
             {waiting.length > 0 && (
@@ -245,154 +253,28 @@ function Days({
   )
 }
 
-/** Any, or one of a few: the whole of a filter for a field of a kind that needs no more. */
-function OneOf({ label, value, options, onChange }: { label: string; value: string; options: [string, string][]; onChange: (v: string) => void }) {
-  return (
-    <ToggleGroup
-      type="single"
-      variant="outline"
-      size="sm"
-      value={value}
-      onValueChange={(v) => v && onChange(v)}
-      aria-label={label}
-      className="w-full"
-    >
-      {[['any', 'Any'], ...options].map(([key, text]) => (
-        <ToggleGroupItem key={key} value={key} className="flex-1 text-xs">
-          {text}
-        </ToggleGroupItem>
-      ))}
-    </ToggleGroup>
-  )
-}
-
-type FilterControl = (p: { field: BoardField; value: FieldFilter; onChange: (next: FieldFilter | undefined) => void }) => ReactNode
-
-/** Cards a filter by a card link offers at once. */
-const MAX_LINKED = 50
-
-/** A card link: tick from the cards the board's cards link to in this field (and the ones already ticked), or none. */
-function LinkFilter({ field, value, onChange }: Parameters<FilterControl>[0]) {
+/**
+ * A card link: the cards to tick from are the ones this board's cards link to in the field (and the ones already
+ * ticked), every one of them, found by typing part of a title.
+ */
+function LinkCriteria({ field, value, onChange }: { field: BoardField; value: FieldFilter; onChange: (next: FieldFilter | undefined) => void }) {
   const { data, links } = useBoard()
-  // (Named by title, so in the order they're found until titles arrive.)
+  // (Named by title, so in the order they're found until titles arrive: listed again as they do.)
   useSyncExternalStore(links.subscribeAll, links.getVersion)
-  const refs = [...new Set([...(value.in ?? []).filter(Boolean), ...Object.values(data.tasks).flatMap((t) => linksOf(t.custom?.[field.id]))])]
-    .sort((a, b) => (links.titleOf(a) ?? '~').localeCompare(links.titleOf(b) ?? '~'))
-    .slice(0, MAX_LINKED)
+  const refs = [
+    ...new Set([
+      ...[...(value.in ?? []), ...(value.notIn ?? [])].filter(Boolean),
+      ...Object.values(data.tasks).flatMap((t) => linksOf(t.custom?.[field.id])),
+    ]),
+  ].sort((a, b) => (links.titleOf(a) ?? '~').localeCompare(links.titleOf(b) ?? '~'))
   return (
-    <>
-      {refs.map((ref) => (
-        <CheckRow key={ref} checked={!!value.in?.includes(ref)} onChange={() => onChange({ in: toggleIn(value.in, ref) })}>
-          <LinkChip link={ref} plain />
-        </CheckRow>
-      ))}
-      <CheckRow checked={!!value.in?.includes('')} onChange={() => onChange({ in: toggleIn(value.in, '') })}>
-        <span className="text-muted-foreground">None linked</span>
-      </CheckRow>
-    </>
+    <FieldCriteria
+      field={field}
+      value={value}
+      onChange={onChange}
+      links={{ refs, titleOf: links.titleOf, chip: (ref) => <LinkChip link={ref} plain /> }}
+    />
   )
-}
-
-/** A person field: tick from the board's people (and anyone already ticked who has left since), or no one. */
-function PersonFilter({ value, onChange }: Parameters<FilterControl>[0]) {
-  const { data } = useBoard()
-  return (
-    <>
-      {data.members.map((m) => (
-        <CheckRow key={m.id} checked={!!value.in?.includes(m.id)} onChange={() => onChange({ in: toggleIn(value.in, m.id) })}>
-          <Avatar name={m.name} className="size-5 text-[9px]" /> {m.name}
-        </CheckRow>
-      ))}
-      <CheckRow checked={!!value.in?.includes('')} onChange={() => onChange({ in: toggleIn(value.in, '') })}>
-        <span className="text-muted-foreground">No one</span>
-      </CheckRow>
-    </>
-  )
-}
-
-/** What each kind of field can be filtered by (the rules themselves are in model/fields.ts). */
-const FIELD_FILTER: Record<FieldType, FilterControl> = {
-  link: (p) => <LinkFilter {...p} />,
-  person: (p) => <PersonFilter {...p} />,
-  choice: ({ field, value, onChange }) => (
-    <>
-      {(field.options ?? [])
-        .filter((o) => !o.archived || value.in?.includes(o.id))
-        .map((o) => (
-          <CheckRow key={o.id} checked={!!value.in?.includes(o.id)} onChange={() => onChange({ in: toggleIn(value.in, o.id) })}>
-            <LabelChip label={o} />
-          </CheckRow>
-        ))}
-      <CheckRow checked={!!value.in?.includes('')} onChange={() => onChange({ in: toggleIn(value.in, '') })}>
-        <span className="text-muted-foreground">None picked</span>
-      </CheckRow>
-    </>
-  ),
-  checkbox: ({ field, value, onChange }) => (
-    <OneOf
-      label={field.name}
-      value={value.checked === undefined ? 'any' : value.checked ? 'yes' : 'no'}
-      options={[
-        ['yes', 'Yes'],
-        ['no', 'No'],
-      ]}
-      onChange={(v) => onChange(v === 'any' ? undefined : { checked: v === 'yes' })}
-    />
-  ),
-  text: ({ field, value, onChange }) => (
-    <OneOf
-      label={field.name}
-      value={value.has === undefined ? 'any' : value.has ? 'filled' : 'empty'}
-      options={[
-        ['filled', 'Filled in'],
-        ['empty', 'Empty'],
-      ]}
-      onChange={(v) => onChange(v === 'any' ? undefined : { has: v === 'filled' })}
-    />
-  ),
-  date: ({ field, value, onChange }) => (
-    <OneOf
-      label={field.name}
-      value={value.date ?? 'any'}
-      options={[
-        ['past', 'Past'],
-        ['week', 'Next 7 days'],
-        ['none', 'No date'],
-      ]}
-      onChange={(v) => onChange(v === 'any' ? undefined : { date: v as FieldFilter['date'] })}
-    />
-  ),
-  number: ({ field, value, onChange }) => {
-    const bound = (part: 'min' | 'max', label: string) => (
-      <Input
-        type="number"
-        inputMode="decimal"
-        step="any"
-        aria-label={`${field.name}, ${label}`}
-        disabled={value.has === false}
-        defaultValue={value[part] ?? ''}
-        onChange={(e) => {
-          const n = e.target.value.trim() === '' ? undefined : Number(e.target.value)
-          if (n === undefined || Number.isFinite(n)) onChange({ ...value, [part]: n })
-        }}
-        className="h-7 w-24 px-2 text-sm"
-      />
-    )
-    return (
-      <>
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          From {bound('min', 'at least')} to {bound('max', 'at most')}
-        </div>
-        <CheckRow checked={value.has === false} onChange={() => onChange(value.has === false ? undefined : { has: false })}>
-          <span className="text-muted-foreground">No number</span>
-        </CheckRow>
-      </>
-    )
-  },
-}
-
-function FieldFilterControl(p: { field: BoardField; value: FieldFilter; onChange: (next: FieldFilter | undefined) => void }) {
-  return FIELD_FILTER[p.field.type](p)
 }
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
@@ -401,14 +283,5 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
       <p className="mb-2 text-xs font-medium text-muted-foreground">{title}</p>
       {children}
     </div>
-  )
-}
-
-function CheckRow({ checked, onChange, children }: { checked: boolean; onChange: () => void; children: ReactNode }) {
-  return (
-    <label className="flex h-7 cursor-pointer items-center gap-2.5 text-sm">
-      <Checkbox checked={checked} onCheckedChange={onChange} />
-      <span className="flex min-w-0 items-center gap-2 truncate">{children}</span>
-    </label>
   )
 }

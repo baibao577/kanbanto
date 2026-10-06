@@ -1,3 +1,4 @@
+import { dayIn } from '@kanbanto/model/dates'
 import { fireTime } from '@kanbanto/model/reminders'
 import { and, desc, eq, inArray, isNotNull, isNull, ne, or, sql } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
@@ -12,9 +13,8 @@ const FROM_HOUR = 8
 const UNTIL_HOUR = 12
 const MAX_ITEMS = 10
 
-/** "2026-10-01" in a time zone. */
-export const dayIn = (d: Date, tz: string) =>
-  new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' }).format(d)
+/** "2026-10-01" in a time zone (the model's: matching a filter by a day uses the same one). */
+export { dayIn }
 const hourIn = (d: Date, tz: string) => Number(new Intl.DateTimeFormat('en-GB', { timeZone: tz, hour: '2-digit', hourCycle: 'h23' }).format(d))
 const timeIn = (d: Date, tz: string) =>
   new Intl.DateTimeFormat('en-GB', { timeZone: tz, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(d)

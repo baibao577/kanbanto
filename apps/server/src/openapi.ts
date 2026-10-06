@@ -247,7 +247,7 @@ The answer lists the records that changed.
                     template: {
                       enum: ['empty', 'example', ...STARTERS],
                       description:
-                        'sales, support: a starter board, with its lists, fields, saved filters and a few example cards. Its fields come from the library of where it’s made: the ones it lacks are added (in a workspace, only by its admins: otherwise the answer is a 403 that names them), and the answer lists what was `added` and what was `leftOut` (fields that library has archived).',
+                        'sales, support, store, bookings: a starter board, with its lists, fields, saved filters and a few example cards. Its fields come from the library of where it’s made: the ones it lacks are added (in a workspace, only by its admins: otherwise the answer is a 403 that names them), and the answer lists what was `added` and what was `leftOut` (fields that library has archived). Its cards have a Client field, a link to a card of a board of clients: `clients` in the answer is that board’s `id`, and `made` says whether it was made now (the first starter in a space) or was there already.',
                     },
                     workspaceId: { ...nullable(str), description: 'Put it in a workspace you’re in.' },
                   },
@@ -389,7 +389,24 @@ The answer lists the records that changed.
             { name: 'following', in: 'query', schema: { enum: ['true'], description: 'Only the cards you follow.' } },
             { name: 'priority', in: 'query', schema: { ...str, description: 'With commas: `urgent`, `high`, `medium`, `low`, `none`.' } },
             { name: 'label', in: 'query', schema: { ...str, description: 'A label’s name.' } },
-            { name: 'due', in: 'query', schema: { enum: ['overdue', 'week', 'none'] } },
+            {
+              name: 'due',
+              in: 'query',
+              schema: {
+                ...str,
+                description:
+                  'A test of the due date: `overdue`, `week` (the next 7 days), `none`; a word: `today`, `tomorrow`, `yesterday`, `this-week`, `next-week`, `last-week` (Monday to Sunday), `this-month`, `next-month`, `last-month`, `past`, `future`, `any`; `next-30` or `last-7` (any number of days, today included); or days, both included: `2026-10-01..2026-10-31`, `2026-10-01..`, `..2026-10-31`.',
+              },
+            },
+            {
+              name: 'timeZone',
+              in: 'query',
+              schema: {
+                ...str,
+                description:
+                  'The time zone “today” is in, and the day a date that has a time falls on (for `due` and for a date field’s `fv`): `Asia/Bangkok`. The one on your account when left out, or UTC.',
+              },
+            },
             {
               name: 'when',
               in: 'query',
@@ -417,7 +434,7 @@ The answer lists the records that changed.
               schema: {
                 ...str,
                 description:
-                  'With `field`: only cards whose value passes, on the boards that use the field. A choice: its options’ ids with commas (`-` for none picked). A checkbox: `yes` or `no`. The rest: `any` (has a value) or `none`; a date also `past` or `week` (in the next 7 days); a number also a range, `10..200`, `10..` or `..200`.',
+                  'With `field`: only cards whose value passes, on the boards that use the field. A choice: its options’ ids with commas (`-` for none picked). A checkbox: `yes` or `no`. The rest: `any` (has a value) or `none`. Text also with its test in front: `~word` (contains), `=word` (is exactly), `!~word` (doesn’t contain), `!=word` (isn’t). A date also `past`, `week` (the next 7 days), and everything `due` takes (`today`, `this-month`, `next-30`, `2026-10-01..2026-10-31`). A number also a range: `10..200`, `10..` or `..200`. A card link: links with commas; a person field: people’s ids, or `me`. For a choice, a card link and a person field, a `!` in front means none of them: `!id1,id2`.',
               },
             },
             { name: 'sort', in: 'query', schema: { enum: ['recent', 'created', 'due', 'priority'], default: 'recent' } },

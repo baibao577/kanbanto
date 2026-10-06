@@ -3,16 +3,33 @@ import { carryCustom, checkValue, nameKey, nameProblem, planAdoption, planStarte
 import { indexFor } from './indexer'
 import { DEFAULT_DISPLAY, remapPreset, type PresetSettings } from './prefs'
 import { BoardDataSchema, PresetSettingsSchema } from './schema'
-import { STARTERS, STARTER_INFO, starterBoard, isStarter } from './starters'
+import {
+  CLIENT_FIELD,
+  CLIENTS_BOARD_NAME,
+  clientsBoard,
+  EXAMPLE_CLIENTS,
+  STARTERS,
+  STARTER_INFO,
+  starterBoard,
+  isStarter,
+  type StarterContext,
+} from './starters'
+import { filterCount } from './table'
+import { normalizeTaskDate } from './dates'
 
 const BOARD = '01900000-0000-7000-8000-00000000000a'
+const CLIENTS = '01900000-0000-7000-8000-00000000000c'
+// Half past one at night on the 7th in Bangkok; still the 6th in Los Angeles.
+const NOW = new Date('2026-10-06T18:30:00Z')
+const ANN: StarterContext = { ownerId: 'ann', zone: 'Asia/Bangkok', now: NOW, clientsBoardId: CLIENTS }
 let n = 0
 const newId = () => `lib-${++n}`
-const defs = (kind: (typeof STARTERS)[number]): FieldDef[] => starterBoard(kind, BOARD).data.fields.map(({ front: _f, total: _t, ...def }) => def)
+const defs = (kind: (typeof STARTERS)[number]): FieldDef[] =>
+  starterBoard(kind, BOARD, ANN).data.fields.map(({ front: _f, total: _t, ...def }) => def)
 
 describe('a starter board', () => {
   it.each(STARTERS)('%s: is a whole board whose example cards fit its own fields', (kind) => {
-    const { data, presets } = starterBoard(kind, BOARD)
+    const { data, presets, clients } = starterBoard(kind, BOARD, ANN)
     expect(BoardDataSchema.safeParse(data).success).toBe(true)
     expect(data.board).toMatchObject({ id: BOARD, mode: 'manual', name: STARTER_INFO[kind].name })
     // Fields a person could have made themselves: allowed names, no two alike, at most three on the card.
@@ -27,9 +44,15 @@ describe('a starter board', () => {
     expect(data.columns[0].category).toBe('todo')
     expect(data.columns.some((c) => c.category === 'done')).toBe(true)
     const cards = Object.values(data.tasks)
-    expect(cards.length).toBe(5)
+    // Five examples; what's under one (an order's items) is its subtasks.
+    expect(cards.filter((t) => !t.parentId).length).toBe(5)
     for (const t of cards) {
       expect(data.columns.some((c) => c.id === t.status)).toBe(true)
+      if (t.parentId) expect(data.tasks[t.parentId]?.parentId).toBeNull()
+      // A date as the app stores one, and nobody but the owner given anything.
+      if (t.due) expect(normalizeTaskDate(t.due)).toBe(t.due)
+      if (t.assigneeId) expect(t.assigneeId).toBe('ann')
+      expect(t.reminders).toBeUndefined()
       for (const l of t.labels) expect(data.labels.some((x) => x.id === l)).toBe(true)
       for (const [id, v] of Object.entries(t.custom ?? {})) {
         const def = data.fields.find((f) => f.id === id)!
@@ -43,8 +66,89 @@ describe('a starter board', () => {
       expect(p.settings.display.board.filter).toBe('main')
       for (const id of Object.keys(p.settings.filter.fields ?? {})) expect(data.fields.some((f) => f.id === id)).toBe(true)
     }
+    // Every example is for a client the Clients board can be made with, through the one field all starters share.
+    const client = data.fields.find((f) => f.id === CLIENT_FIELD)
+    expect(client).toMatchObject({ name: 'Client', type: 'link', linkTo: 'board', board: CLIENTS, front: true })
+    expect(Object.keys(clients).sort()).toEqual(
+      cards
+        .filter((t) => !t.parentId)
+        .map((t) => t.id)
+        .sort(),
+    )
+    for (const name of Object.values(clients)) expect(EXAMPLE_CLIENTS, name).toContain(name)
+    const board = clientsBoard(CLIENTS, EXAMPLE_CLIENTS)
+    expect(Object.keys(board.tasks)).toHaveLength(9)
+    for (const t of Object.values(board.tasks)) expect(Object.keys(t.custom ?? {}), t.title).toHaveLength(2)
     expect(isStarter(kind)).toBe(true)
     expect(isStarter('example')).toBe(false)
+  })
+
+  it('the board of clients is a whole board too: a card each, with how to reach them', () => {
+    const data = clientsBoard(CLIENTS, ['Northwind Traders', 'Dana Keller', 'Someone New'])
+    expect(BoardDataSchema.safeParse(data).success).toBe(true)
+    expect(data.board).toMatchObject({ id: CLIENTS, name: CLIENTS_BOARD_NAME, mode: 'manual' })
+    expect(Object.values(data.tasks).map((t) => [t.id, t.title, t.status])).toEqual([
+      ['client-1', 'Northwind Traders', 'clients'],
+      ['client-2', 'Dana Keller', 'clients'],
+      ['client-3', 'Someone New', 'clients'],
+    ])
+    for (const f of data.fields) expect(nameProblem(f.name)).toBeNull()
+    for (const t of Object.values(data.tasks))
+      for (const [id, v] of Object.entries(t.custom ?? {}))
+        expect(
+          checkValue(
+            data.fields.find((f) => f.id === id)!,
+            v,
+          ),
+        ).toEqual({ value: v })
+    // (A client the examples don't know has a card and nothing else.)
+    expect(data.tasks['client-3'].custom).toBeUndefined()
+  })
+
+  it('the examples’ days and times are the owner’s: today where they are, a time of day on their clock', () => {
+    const due = (who: StarterContext, kind: 'store' | 'bookings', title: string) =>
+      Object.values(starterBoard(kind, BOARD, who).data.tasks).find((t) => t.title === title)!.due
+    // In Bangkok it's already the 7th.
+    expect(due(ANN, 'store', 'Order 1042: Dana Keller')).toBe('2026-10-07')
+    expect(due(ANN, 'store', 'Order 1039: Jonas Weber')).toBe('2026-10-06')
+    expect(due(ANN, 'bookings', 'Mai Tran: cut')).toBe('2026-10-07T02:30:00Z')
+    expect(due(ANN, 'bookings', 'Dana Keller: colour')).toBe('2026-10-08T03:00:00Z')
+    // In Los Angeles it's still the 6th, seven hours behind UTC.
+    const ben: StarterContext = { ownerId: 'ben', zone: 'America/Los_Angeles', now: NOW }
+    expect(due(ben, 'store', 'Order 1042: Dana Keller')).toBe('2026-10-06')
+    expect(due(ben, 'bookings', 'Mai Tran: cut')).toBe('2026-10-06T16:30:00Z')
+    // Nowhere said: UTC.
+    expect(due({ now: NOW }, 'bookings', 'Mai Tran: cut')).toBe('2026-10-06T09:30:00Z')
+  })
+
+  it('an order’s items are its subtasks, the ticked ones done, and its total is on the order alone', () => {
+    const { data } = starterBoard('store', BOARD, ANN)
+    const idx = indexFor(data)
+    const order = Object.values(data.tasks).find((t) => t.title === 'Order 1041: Blue Harbor Cafe')!
+    const items = (idx.childrenOf.get(order.id) ?? []).map((id) => data.tasks[id])
+    expect(items.map((t) => [t.title, t.status])).toEqual([
+      ['Linen apron, sand (8)', 'shipped'],
+      ['Oak serving board (4)', 'new'],
+    ])
+    expect([idx.subDone.get(order.id), idx.subTotal.get(order.id)]).toEqual([1, 2])
+    expect(Object.values(data.tasks).filter((t) => t.parentId && t.custom)).toEqual([])
+    // Set by hand: the order is where it was put, whatever its items say.
+    expect(idx.status.get(order.id)).toBe('packing')
+  })
+
+  it('example cards that are still open are nobody’s, so they don’t land in anyone’s morning email', () => {
+    for (const kind of STARTERS) {
+      const { data } = starterBoard(kind, BOARD, ANN)
+      const done = new Set(data.columns.filter((c) => c.category === 'done').map((c) => c.id))
+      for (const t of Object.values(data.tasks)) if (t.assigneeId) expect(done.has(t.status), t.title).toBe(true)
+    }
+    const { data } = starterBoard('bookings', BOARD, ANN)
+    expect(
+      Object.values(data.tasks)
+        .filter((t) => t.assigneeId)
+        .map((t) => t.title),
+    ).toEqual(['Mai Tran: cut'])
+    expect(Object.values(starterBoard('bookings', BOARD, { now: NOW }).data.tasks).some((t) => t.assigneeId)).toBe(false)
   })
 
   it('keeps the ids of its options for good: they end up in people’s libraries', () => {
@@ -63,20 +167,33 @@ describe('a starter board', () => {
       'Channel: Email = st-channel-email',
       'Channel: Chat = st-channel-chat',
       'Channel: Phone = st-channel-phone',
+      'Shipping: Standard = st-shipping-standard',
+      'Shipping: Express = st-shipping-express',
+      'Shipping: Collection = st-shipping-collection',
+      'Service: Cut = st-service-cut',
+      'Service: Colour = st-service-colour',
+      'Service: Nails = st-service-nails',
+      'Service: Treatment = st-service-treatment',
     ])
   })
 
   it('once fitted to a library, nothing on the board names the starter’s own fields any more', () => {
     for (const kind of STARTERS) {
-      const { data, presets } = starterBoard(kind, BOARD)
+      const { data, presets } = starterBoard(kind, BOARD, ANN)
       const plan = planStarter([], defs(kind), { canAdd: true, room: 50, newId })
-      const cards = Object.values(data.tasks).map((t) => carryCustom(t.custom, plan.map))
+      // (With its client, as whoever saves the board links one.)
+      const cards = Object.values(data.tasks).map((t) =>
+        carryCustom({ ...t.custom, ...(!t.parentId && { [CLIENT_FIELD]: [`${CLIENTS}:client-1`] }) }, plan.map),
+      )
       const filters = presets.map((p) => remapPreset(p.settings, plan.map, 'drop'))
-      expect(JSON.stringify([cards, filters])).not.toMatch(/st-(sales|support)-/)
-      for (const [i, c] of cards.entries()) expect(Object.keys(c ?? {}).length).toBe(Object.keys(Object.values(data.tasks)[i].custom ?? {}).length)
+      expect(JSON.stringify([cards, filters])).not.toMatch(/st-(sales|support|store|bookings)-|st-client/)
+      for (const [i, c] of cards.entries()) {
+        const t = Object.values(data.tasks)[i]
+        expect(Object.keys(c ?? {}).length).toBe(Object.keys(t.custom ?? {}).length + (t.parentId ? 0 : 1))
+      }
       for (const f of filters) expect(PresetSettingsSchema.safeParse(f).success).toBe(true)
       // Every saved filter still says something.
-      for (const f of filters) expect(Object.keys(f.filter.fields ?? {}).length + (f.outline.sort ? 1 : 0)).toBeGreaterThan(0)
+      for (const f of filters) expect(filterCount(f.filter) + (f.outline.sort ? 1 : 0)).toBeGreaterThan(0)
     }
   })
 })
@@ -122,7 +239,7 @@ describe('fitting a starter to a library', () => {
     expect(to.id).toBe('mine')
     // Website is theirs under another id; Referral and Outreach they don't have; Event they put away.
     expect([...to.options!]).toEqual([['st-source-website', 'o1']])
-    const { data } = starterBoard('sales', BOARD)
+    const { data } = starterBoard('sales', BOARD, ANN)
     const carried = Object.values(data.tasks).map((t) => carryCustom(t.custom, plan.map)?.mine)
     expect(carried).toEqual([['o1'], undefined, undefined, undefined, undefined])
     // A saved filter that asked for options that aren't there loses them.
@@ -136,16 +253,16 @@ describe('fitting a starter to a library', () => {
 
   it('leaves out a field the library archived, and numbers one whose name another kind has', () => {
     const library: LibraryField[] = [
-      { id: 'a', name: 'Company', type: 'text', archived: true },
+      { id: 'a', name: 'Contact email', type: 'text', archived: true },
       { id: 'b', name: 'Close date', type: 'text' },
     ]
     const plan = planStarter(library, wanted, { canAdd: true, room: 50, newId })
-    expect(plan.leftOut).toEqual(['Company'])
-    expect(plan.map.has('st-sales-company')).toBe(false)
-    expect(plan.add.map((f) => f.name)).toEqual(['Deal value', 'Contact email', 'Close date (2)', 'Source'])
+    expect(plan.leftOut).toEqual(['Contact email'])
+    expect(plan.map.has('st-sales-email')).toBe(false)
+    expect(plan.add.map((f) => f.name)).toEqual(['Deal value', 'Client', 'Close date (2)', 'Source'])
     // Next time the numbered one is found again.
     const again = planStarter([...library, ...plan.add], wanted, { canAdd: false, room: 0, newId })
-    expect(again).toMatchObject({ add: [], cant: [], leftOut: ['Company'] })
+    expect(again).toMatchObject({ add: [], cant: [], leftOut: ['Contact email'] })
     expect(again.map.get('st-sales-close')!.id).toBe(plan.add.find((f) => f.name === 'Close date (2)')!.id)
   })
 })

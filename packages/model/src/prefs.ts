@@ -1,4 +1,5 @@
-import { fieldIdOf, fieldKey, isFieldKey, tidyFilter, type FieldFilter, type FieldMap } from './fields'
+import { tidyDateTest } from './dates'
+import { fieldIdOf, fieldKey, isFieldKey, ME, tidyFilter, type CarryOn, type FieldFilter, type FieldMap } from './fields'
 import type { OutlineConfig, TableFilter } from './table'
 import type { BoardData, Layout, StatusMode, ViewConfig } from './types'
 
@@ -35,9 +36,10 @@ export const presetOf = (p: ViewPrefs): PresetSettings => ({ filter: p.filter, d
  * A preset's settings with its fields carried over by `map` (a board made from a starter, two fields merged into
  * one): the filters by a field, a choice's options inside them, and the Outline's sort and hidden columns.
  * `others`: what happens to the fields the map doesn't name, kept as they are or dropped. Where two filters land on
- * one field, the one that was already there stays.
+ * one field, the one that was already there stays. `on`: for a board that moves to another space, what becomes of the
+ * linked cards and the people its filters name (see CarryOn).
  */
-export function remapPreset(s: PresetSettings, map: FieldMap, others: 'keep' | 'drop'): PresetSettings {
+export function remapPreset(s: PresetSettings, map: FieldMap, others: 'keep' | 'drop', on?: CarryOn): PresetSettings {
   const to = (id: string) => map.get(id) ?? (others === 'keep' ? { id, options: undefined } : undefined)
   const key = <K extends string>(k: K) => {
     if (!isFieldKey(k)) return k
@@ -50,21 +52,39 @@ export function remapPreset(s: PresetSettings, map: FieldMap, others: 'keep' | '
     const t = to(id)
     if (!t || t.id in fields) continue
     let next = f
-    if (f.in && t.options) {
-      const { in: picked, ...rest } = f
-      const there = [...new Set(picked.flatMap((o) => (o === '' ? [''] : (t.options!.get(o) ?? []))))]
-      next = there.length ? { ...rest, in: there } : rest
+    // What a list names goes by the map, in "any of" and in "none of" alike: a choice's options, and (with `on`) a
+    // card link's cards and a person field's people, as their values do. A list left empty goes.
+    const carry = t.options
+      ? (o: string) => t.options!.get(o) ?? []
+      : t.link && on?.relink
+        ? (ref: string) => on.relink!(ref) ?? []
+        : t.people && on?.isMember
+          ? (id: string) => (id === ME || on.isMember!(id) ? id : [])
+          : null
+    for (const part of ['in', 'notIn'] as const) {
+      const picked = next[part]
+      if (!picked || !carry) continue
+      const { [part]: _picked, ...rest } = next
+      const there = [...new Set(picked.flatMap((o) => (o === '' ? [''] : carry(o))))]
+      next = there.length ? { ...rest, [part]: there } : rest
     }
     if (Object.keys(next).length) fields[t.id] = next
   }
   const { fields: _fields, ...filter } = s.filter
-  const { sort, hidden, ...outline } = s.outline
+  const { sort, hidden, order, ...outline } = s.outline
   const sortKey = sort && key(sort.key)
   const shownOff = hidden && [...new Set(hidden.flatMap((k) => key(k) ?? []))]
+  // (Two columns that land on one field keep the first one's place.)
+  const arranged = order && [...new Set(order.flatMap((k) => key(k) ?? []))]
   return {
     display: s.display,
     filter: { ...filter, ...(Object.keys(fields).length && { fields }) },
-    outline: { ...outline, ...(sort && sortKey && { sort: { ...sort, key: sortKey } }), ...(shownOff?.length && { hidden: shownOff }) },
+    outline: {
+      ...outline,
+      ...(sort && sortKey && { sort: { ...sort, key: sortKey } }),
+      ...(shownOff?.length && { hidden: shownOff }),
+      ...(arranged?.length && { order: arranged }),
+    },
   }
 }
 
@@ -165,11 +185,17 @@ export function cleanPrefs(p: ViewPrefs, data: BoardData): ViewPrefs {
     return next.length === list.length ? list : next.length ? next : undefined
   }
   const f = p.filter
+  // Tests of the due and start dates that say something; "overdue" and its like win over another test of the due date.
+  const dueIs = f.due ? undefined : f.dueIs && tidyDateTest(f.dueIs)
+  const startIs = f.startIs && tidyDateTest(f.startIs)
   const filter: TableFilter = {
     ...f,
     statuses: keepIn(f.statuses, cols),
     labels: keepIn(f.labels, labels),
-    assignees: keepIn(f.assignees, people),
+    // ("Me" is always someone to ask for: it's whoever is looking.)
+    assignees: keepIn(f.assignees, new Set([...people, ME])),
+    dueIs,
+    startIs,
   }
   const hidden = p.display.board.hiddenColumns
   const nextHidden = keepIn(hidden, cols)
@@ -193,13 +219,18 @@ export function cleanPrefs(p: ViewPrefs, data: BoardData): ViewPrefs {
   const sort = o.sort && isFieldKey(o.sort.key) && !defs.has(fieldIdOf(o.sort.key)) ? undefined : o.sort
   const shownOff = o.hidden?.filter((k) => !isFieldKey(k) || defs.has(fieldIdOf(k)))
   const outlineHidden = !o.hidden || shownOff!.length === o.hidden.length ? o.hidden : shownOff!.length ? shownOff : undefined
+  const arranged = o.order?.filter((k) => !isFieldKey(k) || defs.has(fieldIdOf(k)))
+  const outlineOrder = !o.order || arranged!.length === o.order.length ? o.order : arranged!.length ? arranged : undefined
   const changed =
     filter.fields !== f.fields ||
     sort !== o.sort ||
     outlineHidden !== o.hidden ||
+    outlineOrder !== o.order ||
     filter.statuses !== f.statuses ||
     filter.labels !== f.labels ||
     filter.assignees !== f.assignees ||
+    dueIs !== f.dueIs ||
+    startIs !== f.startIs ||
     nextHidden !== hidden ||
     nextFolded !== folded ||
     nextOrder !== order ||
@@ -208,7 +239,8 @@ export function cleanPrefs(p: ViewPrefs, data: BoardData): ViewPrefs {
   return {
     ...p,
     filter,
-    outline: sort !== o.sort || outlineHidden !== o.hidden ? { ...o, sort, hidden: outlineHidden } : o,
+    outline:
+      sort !== o.sort || outlineHidden !== o.hidden || outlineOrder !== o.order ? { ...o, sort, hidden: outlineHidden, order: outlineOrder } : o,
     focusId,
     display: { ...p.display, board: { ...p.display.board, hiddenColumns: nextHidden, collapsedColumns: nextFolded, listOrder: nextOrder } },
   }

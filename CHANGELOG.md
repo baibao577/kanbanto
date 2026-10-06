@@ -44,16 +44,25 @@ then `git pull` (or download the new release) and `docker compose up -d --build`
   a board, or archiving it, keeps its values; deleting an
   archived field for good removes them. Values go along when a card or a board moves, where the other side has a
   field for them, and with an exported board. In the Outline each field is a column: sort by it, change values in
-  place, hide the ones you don't need. Filter by a field in every view (saved presets keep it), and in Search cards
-  across boards. Numbers that add up are totalled: in the Outline's bottom row and for a task with its subtasks, and
+  place, hide the ones you don't need, and drag a column's name sideways to put the columns in your own order
+  (Alt+Shift and an arrow key does it without a mouse; a saved preset keeps the order). Filter by a field in every
+  view (saved presets keep it), and in Search cards across boards, with a test that fits its kind: text that contains
+  a word, doesn't, is exactly or isn't; a number that is, is at least, at most or between; a date that is today, this
+  week, next month, in the next or last so many days, or between two days; any of a choice's options or none of
+  them; a linked card found by typing its title; a person, or "Me", which is whoever is looking, so one saved "Mine"
+  works for everyone. Due and Start take the same date tests, Assignee has "Me", and a board's search box looks in
+  its text fields too. For apps: `due`, `fv` and `timeZone` on `GET /api/cards`; assistants ask with the same tests
+  (`find_tasks`). Numbers that add up are totalled: in the Outline's bottom row and for a task with its subtasks, and
   under each list on the Board for the fields its owners choose. A **Card link** field joins cards, on the same
   board or across the boards of a workspace: a deal points at a company, picked by title, and the company lists the
   deals that point at it, with their total; links follow a card that moves, and you only see the title of a card
   you can open. A **Person** field holds one or several people of the board (a reviewer, an account owner), to read,
   sort and filter by: nobody is told, which is what Assignee is for. Two fields that turned out to mean the same
   thing can be **merged**: it says first how many cards change, a card that has both keeps the one its board shows,
-  and boards and saved filters follow. **Starter boards** (a sales pipeline, a support desk) come with their lists,
-  fields, saved filters and a few example cards. Assistants read, set and find by fields, by name, and can add and
+  and boards and saved filters follow. **Starter boards** (a sales pipeline, a support desk, store orders, bookings) come with their
+  lists, fields, saved filters and a few example cards, each card linked to a client on a **Clients** board that
+  comes with the first starter and is shared by the ones after: open a client and see every deal, request, order
+  and booking that is for them. Assistants read, set and find by fields, by name, and can add and
   change them (`manage_fields`).
 - **Following cards:** you're told about new comments and what happens to the cards you're part of (moved to another
   list, assigned, due date, description, archived or deleted): the ones you made, are assigned, commented on or were

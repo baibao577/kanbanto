@@ -15,6 +15,7 @@ import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { useBoards } from '@/data/useBoards'
 import { useWorkspaces } from '@/data/useWorkspaces'
+import { zone } from '@/components/time/logging'
 import { useNow } from '@/lib/useNow'
 import { CardPeek } from './CardPeek'
 import { CardRowItem } from './CardRowItem'
@@ -55,7 +56,7 @@ export function CardsView({ route }: { route: CardsRoute }) {
     return () => clearTimeout(t)
   }, [words, route])
 
-  const query = cardsQuery(route)
+  const query = cardsQuery(route, { zone: zone() })
   useEffect(() => {
     let alive = true
     api<CardsPage>('GET', `/cards?${query}`).then(
@@ -75,7 +76,7 @@ export function CardsView({ route }: { route: CardsRoute }) {
   const loadMore = async () => {
     if (!page) return
     try {
-      const r = await api<CardsPage>('GET', `/cards?${cardsQuery(route, { offset: page.cards.length + more.length })}`)
+      const r = await api<CardsPage>('GET', `/cards?${cardsQuery(route, { offset: page.cards.length + more.length, zone: zone() })}`)
       setMore((m) => [...m, ...r.cards])
     } catch (e) {
       toast.error(errorMessage(e))

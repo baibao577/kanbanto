@@ -41,6 +41,8 @@ const sizeOf = (d: BoardData) =>
 export class BoardEngine {
   private cache = new Map<string, { seq: number; data: BoardData; size: number }>()
   private cached = 0
+  /** Boards being read from the database right now, by id and the change counter that was seen. */
+  private loading = new Map<string, Promise<{ data: BoardData; seq: number } | null>>()
   private done = new Map<string, MutationResult>()
   private readonly db: Db
   private readonly hub: LiveHub
@@ -67,10 +69,29 @@ export class BoardEngine {
     if (!row) throw new HttpError(404, 'This board doesn’t exist.')
     const hit = this.cache.get(boardId)
     if (hit && hit.seq === row.seq) return { data: hit.data, seq: hit.seq }
-    const loaded = await loadBoard(this.db, boardId)
+    const loaded = await this.load(boardId, row.seq)
     if (!loaded) throw new HttpError(404, 'This board doesn’t exist.')
-    this.remember(boardId, loaded)
     return loaded
+  }
+
+  /**
+   * Reads a board from the database and remembers it: once for everyone who asks while it's being read. (A field
+   * renamed on a big board makes everyone who has it open ask for it at the same moment: read once each, eight people
+   * waited a second and a half for what one read gives them all.) Asked again after another change, it's read again.
+   */
+  private load(boardId: string, seq: number) {
+    const key = `${boardId}:${seq}`
+    let going = this.loading.get(key)
+    if (!going) {
+      going = loadBoard(this.db, boardId)
+        .then((loaded) => {
+          if (loaded) this.remember(boardId, loaded)
+          return loaded ?? null
+        })
+        .finally(() => this.loading.delete(key))
+      this.loading.set(key, going)
+    }
+    return going
   }
 
   /** Several boards as they are now, with one look at all their change counters (boards that are gone are left out). */
@@ -85,10 +106,8 @@ export class BoardEngine {
         out.set(row.id, hit.data)
         continue
       }
-      const loaded = await loadBoard(this.db, row.id)
-      if (!loaded) continue
-      this.remember(row.id, loaded)
-      out.set(row.id, loaded.data)
+      const loaded = await this.load(row.id, row.seq)
+      if (loaded) out.set(row.id, loaded.data)
     }
     return out
   }
