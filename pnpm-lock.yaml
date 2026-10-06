@@ -163,8 +163,8 @@ importers:
         specifier: ^4.4.0
         version: 4.4.0
       marked:
-        specifier: ^17.0.6
-        version: 17.0.6
+        specifier: ^18.0.14
+        version: 18.0.14
       radix-ui:
         specifier: ^1.6.7
         version: 1.6.7(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
@@ -3335,6 +3335,11 @@ packages:
 
   marked@17.0.6:
     resolution: {integrity: sha512-gB0gkNafnonOw0obSTEGZTT86IuhILt2Wfx0mWH/1Au83kybTayroZ/V6nS25mN7u8ASy+5fMhgB3XPNrOZdmA==}
+    engines: {node: '>= 20'}
+    hasBin: true
+
+  marked@18.0.14:
+    resolution: {integrity: sha512-mBHK6FBHuBAlhgRe88w9F0O1AbwwXJUcQibUbC/QcdTbVGAD7aWza+xt3N6oT/jCZx3/OMeS+8rnuiHZcQ9s7A==}
     engines: {node: '>= 20'}
     hasBin: true
 
@@ -6751,6 +6756,8 @@ snapshots:
       '@jridgewell/sourcemap-codec': 1.6.0
 
   marked@17.0.6: {}
+
+  marked@18.0.14: {}
 
   math-intrinsics@1.1.0: {}
 
