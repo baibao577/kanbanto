@@ -4,6 +4,7 @@ import { COLORS, isBackground, type BoardBackground, type ColorName } from './co
 import { BULK_MAX, IMPORT_MAX, type Command } from './commands'
 import { FIELD_LIMITS, FIELD_TYPES, FILTER_TEXT_MAX, TEXT_FORMATS, TEXT_MATCHES, LINK_SCOPES, type FieldSettings } from './fields'
 import { isPosition } from './position'
+import { CALENDAR_RANGES } from './prefs'
 import { BUILT_IN_SORT_KEYS, OUTLINE_COLUMNS, OUTLINE_EXTRA, type OutlineConfig, type TableFilter } from './table'
 import { CATEGORIES, LAYOUTS, LIST_ORDERS, PRIORITIES } from './types'
 
@@ -363,4 +364,13 @@ export const ViewPrefsSchema = PresetSettingsSchema.extend({
   showPerf: z.boolean(),
   presetId: z.string().optional(),
   beforePreset: PresetSettingsSchema.optional(),
+  // (Like any setting added later: a value this version doesn't know reads as not set.)
+  timeline: z
+    .object({
+      as: z.enum(['calendar']).optional().catch(undefined),
+      range: z.enum(CALENDAR_RANGES).optional().catch(undefined),
+      subtasks: z.boolean().optional().catch(undefined),
+    })
+    .optional()
+    .catch(undefined),
 })

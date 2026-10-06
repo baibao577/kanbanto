@@ -15,8 +15,8 @@ the top of the list.
 - **Show** reveals the older cards for now. **Hide** tucks them away again.
 - To change the number of days, or always show everything: **Display → Done lists → All** or **Recent**.
 
-The Outline and Timeline do it differently: one **Hide done** switch covers both of them (a button on the Timeline,
-and in **Display** on the Outline), with a line saying how many are hidden.
+The Outline and Timeline do it differently: one switch covers both of them, **Display → Hide done tasks** in
+either, with a line saying how many are hidden.
 
 ## Archive a card
 

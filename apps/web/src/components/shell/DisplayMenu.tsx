@@ -1,5 +1,5 @@
 import { SlidersHorizontal } from '@phosphor-icons/react'
-import type { ReactNode } from 'react'
+import type { ReactNode, RefObject } from 'react'
 import { useBoard } from '@/app/board-context'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -27,8 +27,16 @@ const sameConfig = (a: ViewConfig, b: ViewConfig) =>
   (a.doneLists === 'recent' || !a.doneLists ? (a.doneDays ?? DONE_DAYS) === (b.doneDays ?? DONE_DAYS) : true)
 
 /** "Display" popover: the settings that shape the board, in plain words. */
-export function DisplayMenu() {
+export function DisplayMenu({ rowKeys }: { rowKeys?: RefObject<string[]> }) {
   const { data, prefs, setPrefs } = useBoard()
+  /** Every row the board shows, opened or folded at once. */
+  const foldRows = (fold: boolean) => {
+    const keys = rowKeys?.current ?? []
+    setPrefs({
+      type: 'setCollapsedRows',
+      keys: fold ? [...new Set([...prefs.collapsedRows, ...keys])] : prefs.collapsedRows.filter((k) => !keys.includes(k)),
+    })
+  }
   const cfg = prefs.display.board
   const focused = !!prefs.focusId
   const set = (p: Partial<ViewConfig>) => setPrefs({ type: 'setDisplay', config: { ...cfg, ...p } })
@@ -70,6 +78,16 @@ export function DisplayMenu() {
                 <SelectItem value="assignee">A row for each person</SelectItem>
               </SelectContent>
             </Select>
+            {cfg.rows !== 'none' && (
+              <div className="flex gap-1.5">
+                <Button variant="outline" size="sm" className="h-7 flex-1 text-xs" onClick={() => foldRows(false)}>
+                  Expand all rows
+                </Button>
+                <Button variant="outline" size="sm" className="h-7 flex-1 text-xs" onClick={() => foldRows(true)}>
+                  Collapse all rows
+                </Button>
+              </div>
+            )}
           </Field>
 
           <Field label="Show">

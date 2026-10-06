@@ -1572,6 +1572,87 @@ await shot('add-3-phone', async () => {
 })
 await page.setViewportSize({ width: 1360, height: 860 })
 
+// ── The Timeline as a calendar: a board of bookings, where cards are on a day more than they last days ───────────
+let salon = null
+const salonBoard = async () => {
+  if (salon) return salon
+  const { id } = await api(ann, 'POST', '/boards', { name: 'Salon bookings', background: 'teal' })
+  let k = 0
+  const put = (command) => api(ann, 'POST', `/boards/${id}/mutations`, { mutationId: `s${stamp}-${k++}`, command })
+  const card = (cid, title, fields = {}, parentId = null) => put({ type: 'task.create', id: cid, parentId, fields: { title, ...fields } })
+  // (A time on this computer's clock, as someone typing it means it.)
+  const at = (n, time) => new Date(`${day(n)}T${time}:00`).toISOString()
+  await put({ type: 'board.update', fields: { mode: 'manual' } })
+  const NAMES = [
+    'Mai S. · Haircut',
+    'Ben O. · Colour',
+    'Nok P. · Manicure',
+    'June T. · Facial',
+    'Tom H. · Beard trim',
+    'Fah R. · Massage',
+    'Dao L. · Haircut',
+  ]
+  const TIMES = ['09:00', '10:30', '13:00', '14:30', '16:00', '17:30']
+  const PER_DAY = [3, 2, 5, 3, 4, 2, 0, 3, 4, 2, 3, 5, 1, 0, 2, 3, 1, 2]
+  let b = 0
+  for (const [i, count] of PER_DAY.entries()) {
+    const n = i - 4
+    for (let j = 0; j < count; j++, b++)
+      await card(`bk${b}`, NAMES[b % NAMES.length], {
+        due: at(n, TIMES[(j * 2 + i) % TIMES.length]),
+        status: n < 0 ? 'done' : 'todo',
+        ...(b % 2 === 0 && { assigneeId: me.id }),
+      })
+  }
+  await card('order', 'Order #1114', { due: day(0), status: 'doing' })
+  for (const [i, t] of ['Shampoo x2', 'Hair oil', 'Gift wrap'].entries()) await card(`order-${i}`, t, { status: i ? 'todo' : 'done' }, 'order')
+  await card('refit', 'Shop refit', { start: day(-1), due: day(8), status: 'doing' })
+  await card('refit-1', 'Order mirrors', { due: day(-1), status: 'done' }, 'refit')
+  await card('refit-2', 'Painter comes', { due: at(1, '09:00') }, 'refit')
+  await card('refit-3', 'Fit new lights', { due: day(3) }, 'refit')
+  await card('refit-4', 'Deep clean', { due: at(8, '17:00') }, 'refit')
+  await card('away', 'Bo away', { start: day(4), due: day(6) })
+  await card('idea', 'Think about a loyalty card')
+  return (salon = id)
+}
+const openCalendar = async (range, subtasks = false) => {
+  const id = await salonBoard()
+  await page.goto(`${SITE}/#/b/${id}/timeline`)
+  await page.reload()
+  await page.getByRole('radio', { name: 'Calendar' }).click()
+  await page.getByRole('heading', { level: 2 }).waitFor()
+  await page.getByRole('radio', { name: range, exact: true }).click()
+  await page.getByRole('button', { name: 'Display' }).click()
+  const sub = page.getByRole('switch', { name: /subtasks/i })
+  if (((await sub.getAttribute('aria-checked')) === 'true') !== subtasks) await sub.click()
+  await page.keyboard.press('Escape')
+  await page.getByRole('button', { name: 'Today', exact: true }).click()
+  await page.waitForTimeout(500)
+}
+await shot('timeline-cal-1-month', async () => {
+  await openCalendar('Month')
+  await ring(page.getByRole('radio', { name: 'Calendar' }))
+})
+await shot('timeline-cal-2-week', async () => {
+  await openCalendar('Week', true)
+  return { clip: { x: 0, y: 0, width: 1360, height: 640 } }
+})
+await shot('timeline-cal-3-add', async () => {
+  await openCalendar('2 weeks')
+  const cell = page.locator(`[data-day="${day(2)}"]`)
+  await cell.hover()
+  await cell.getByRole('button', { name: /^Add a card on/ }).click()
+  await page.keyboard.type('Call Sam 3pm')
+  await page.waitForTimeout(300)
+  return around([cell, page.locator(`[data-day="${day(1)}"]`), page.locator(`[data-day="${day(3)}"]`)], 12)
+})
+await page.keyboard.press('Escape')
+await shot('timeline-cal-4-phone', async () => {
+  await page.setViewportSize({ width: 390, height: 760 })
+  await openCalendar('Month')
+})
+await page.setViewportSize({ width: 1360, height: 860 })
+
 // ── Bring your work in: a Trello board (a made-up export), and cards from pasted rows ─────────────────────────────
 const TRELLO = {
   name: 'Shop opening',

@@ -13,6 +13,8 @@ export interface ViewPrefs {
   display: { board: ViewConfig }
   /** The Outline table's sort. */
   outline: OutlineConfig
+  /** How the Timeline tab is drawn. Unset: bars, as it always was. */
+  timeline?: TimelineConfig
   /** Filters, shared by every tab (like search). */
   filter: TableFilter
   /** Focused task (show only its subtasks), shared by all tabs. */
@@ -25,6 +27,20 @@ export interface ViewPrefs {
   presetId?: string
   /** How the view was before picking a preset (turning presets off brings it back). */
   beforePreset?: PresetSettings
+}
+
+/** How much time the Timeline's calendar shows at once. */
+export const CALENDAR_RANGES = ['day', 'week', '2w', 'month'] as const
+export type CalendarRange = (typeof CALENDAR_RANGES)[number]
+
+/**
+ * The Timeline tab's own settings: drawn as a calendar of days instead of bars, how much of it at once (a month,
+ * when not said), and whether subtasks that have a date of their own show beside the top-level cards.
+ */
+export interface TimelineConfig {
+  as?: 'calendar'
+  range?: CalendarRange
+  subtasks?: boolean
 }
 
 /** What a board preset keeps: the filters, and how the Board and Outline look (not which tab is open). */
@@ -130,6 +146,7 @@ export type PrefsAction =
   | { type: 'setLayout'; layout: Layout }
   | { type: 'setDisplay'; config: ViewConfig }
   | { type: 'setOutline'; config: OutlineConfig }
+  | { type: 'setTimeline'; config: TimelineConfig }
   | { type: 'setFilter'; filter: TableFilter }
   | { type: 'setFocus'; id?: string }
   | { type: 'toggleRow'; key: string }
@@ -148,6 +165,12 @@ export function prefsReducer(p: ViewPrefs, a: PrefsAction): ViewPrefs {
       return { ...p, display: { ...p.display, board: a.config } }
     case 'setOutline':
       return { ...p, outline: a.config }
+    case 'setTimeline': {
+      // (Nothing set is no entry at all: bars, a month, no subtasks.)
+      const { as, range, subtasks } = a.config
+      const config = { ...(as && { as }), ...(range && range !== 'month' && { range }), ...(subtasks && { subtasks }) }
+      return { ...p, timeline: Object.keys(config).length ? config : undefined }
+    }
     case 'setFilter':
       return { ...p, filter: a.filter }
     case 'setFocus':

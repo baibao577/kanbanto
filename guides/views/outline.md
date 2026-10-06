@@ -11,7 +11,8 @@ One row per task, with columns for its status, assignee, dates, priority and mor
 [own fields](/everyday/fields). Projects (top-level tasks) are lightly tinted, and guide lines show what sits under
 what.
 
-- Click the arrow beside a task to fold or unfold what is inside it.
+- Click the arrow beside a task to fold or unfold what is inside it. The two small buttons in the **Task** heading
+  expand or collapse everything at once.
 - Click a row to open the card.
 
 ## Change things in place

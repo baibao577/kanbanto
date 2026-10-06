@@ -1,17 +1,4 @@
-import {
-  ArrowDown,
-  ArrowUp,
-  ArrowsDownUp,
-  ArrowsInSimple,
-  ArrowsOutSimple,
-  CaretDown,
-  CaretRight,
-  Crosshair,
-  DotsSixVertical,
-  Plus,
-  Prohibit,
-  X,
-} from '@phosphor-icons/react'
+import { ArrowDown, ArrowUp, ArrowsDownUp, CaretDown, CaretRight, Crosshair, DotsSixVertical, Plus, Prohibit, X } from '@phosphor-icons/react'
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { useBoard } from '@/app/board-context'
 import { Avatar, DueChip, LabelChip, PriorityIcon, ProgressBar, StatusDot } from '@/components/common/bits'
@@ -24,7 +11,8 @@ import { PRIORITY_LABEL } from '@kanbanto/model/types'
 import { Empty } from '@/components/common/Empty'
 import { StatusMenu } from '@/components/common/StatusMenu'
 import { QuickAdd } from '@/components/board/QuickAdd'
-import { BarIconButton, ViewActions } from '@/components/shell/ViewBar'
+import { ViewActions } from '@/components/shell/ViewBar'
+import { FoldAll } from '@/components/tree/FoldAll'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { formatDay, formatMoment, formatShortDay } from '@/lib/format'
@@ -246,17 +234,13 @@ export function OutlineView({ search }: { search: string }) {
         <FilterMenu />
         <OutlineDisplayMenu />
       </ViewActions>
-      <ViewActions lead>
-        <BarIconButton label="Expand all" disabled={forced} onClick={() => setExpanded(new Set(idx.childrenOf.keys()))}>
-          <ArrowsOutSimple />
-        </BarIconButton>
-        <BarIconButton label="Collapse all" disabled={forced} onClick={() => setExpanded(new Set())}>
-          <ArrowsInSimple />
-        </BarIconButton>
-      </ViewActions>
 
       <div className="h-full overflow-auto">
         <div className="px-3 py-4 sm:px-6">
+          {/* A phone's list has no "Task" heading to hold them. */}
+          <div className="mb-1 flex justify-end md:hidden">
+            <FoldAll disabled={forced} onExpand={() => setExpanded(new Set(idx.childrenOf.keys()))} onCollapse={() => setExpanded(new Set())} />
+          </div>
           {(cfg.sort || matched) && (
             <div className="mb-3 flex flex-wrap items-center gap-1.5">
               {cfg.sort && (
@@ -424,6 +408,14 @@ export function OutlineView({ search }: { search: string }) {
                             <ArrowsDownUp className="size-3 shrink-0 opacity-0 group-hover/sort:opacity-60" />
                           )}
                         </button>
+                        {i === 0 && (
+                          <FoldAll
+                            className="pr-1.5"
+                            disabled={forced}
+                            onExpand={() => setExpanded(new Set(idx.childrenOf.keys()))}
+                            onCollapse={() => setExpanded(new Set())}
+                          />
+                        )}
                       </div>
                     )
                   })}

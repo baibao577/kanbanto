@@ -122,6 +122,22 @@ then `git pull` (or download the new release) and `docker compose up -d --build`
   a reminder if you like) and in the Due and Start pickers.
 - **Webhooks** live in Board settings: each can send only some events (card changes, comments, reminders), and has a
   delivery log showing what was sent and what came back, with "Send again".
+- **The Timeline as a calendar:** the Timeline tab has a switch, Bars or Calendar, and each board remembers which
+  it last showed. The calendar is for boards whose cards happen on a day (bookings, deliveries, posts) more than
+  they last days: each day lists the cards on it, a card on the day it is due with its time, one with a start and a
+  due date stretching across its days. A month, two weeks, a week or a day at a time; days and weeks list cards in
+  time order (no hour-by-hour grid). Click + on a day to add a card there (a time in the title, "Call Sam 3pm",
+  becomes its time; nobody is assigned), drag a card to another day to change its date, click a day's number to see
+  that day alone. A Subtasks switch (off to start) also shows subtasks that have a date of their own, each saying
+  what it is under. A card shows its title in full, its priority, how many of its subtasks are done and who it is
+  assigned to, and a row of days grows to fit its cards. Search, filters and "Hide done" apply. On a phone
+  a month is dots with the picked day's cards under it, and weeks are a list day by day.
+- **A tidier bar under the tabs:** it is the same in every view now, Presets, Filter and Display (and Log time).
+  What belongs to one view sits in that view: the Timeline has a row of its own (Bars or Calendar, Today, and how
+  much time to show), and Expand all and Collapse all are small buttons in the "Task" heading of the Outline and of
+  the Timeline's bars. The Timeline has a Display menu like the others, with "Hide done tasks" (it was a button
+  there, and a switch in the Outline's Display) and, for the calendar, Subtasks. On a board shown in rows, "Expand
+  all rows" and "Collapse all rows" are in Display, beside the choice of rows.
 - **Sort by when cards were created or last updated:** a list on the Board can be ordered by Created or Updated
   (the list's ⋯ → Order cards by), beside priority, due date and title, and "Reverse the order" turns any order
   round (oldest first, least important first, Z to A). The Outline has two more columns, Created and Updated, off

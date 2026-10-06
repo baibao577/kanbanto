@@ -1,4 +1,4 @@
-import { ArrowSquareOut, ArrowsInSimple, ArrowsOutSimple, CalendarX, CaretDown, CaretRight, Check, Plus } from '@phosphor-icons/react'
+import { ArrowSquareOut, CalendarX, CaretDown, CaretRight, Check, Plus } from '@phosphor-icons/react'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import type { BoardPlan } from '@kanbanto/model/api'
 import { api } from '@/api/client'
@@ -9,10 +9,11 @@ import { Empty } from '@/components/common/Empty'
 import { QuickAdd } from '@/components/board/QuickAdd'
 import { FilterMenu } from '@/components/shell/FilterMenu'
 import { PresetMenu } from '@/components/shell/PresetMenu'
-import { BarIconButton, ViewActions } from '@/components/shell/ViewBar'
+import { ViewActions } from '@/components/shell/ViewBar'
 import { AddSubtaskRow, DropLine } from '@/components/tree/rows'
 import { useRowDrag } from '@/components/tree/useRowDrag'
-import { HiddenDoneNote, HideDoneToggle } from '@/components/tree/HiddenDone'
+import { FoldAll } from '@/components/tree/FoldAll'
+import { HiddenDoneNote } from '@/components/tree/HiddenDone'
 import { useTreeFilter } from '@/components/tree/useTreeFilter'
 import { Button } from '@/components/ui/button'
 import {
@@ -27,6 +28,8 @@ import {
 } from '@/components/ui/context-menu'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { cn } from '@/lib/utils'
+import { CalendarView } from './CalendarView'
+import { TimelineDisplayMenu, TimelineRow } from './TimelineBar'
 import { PlanBand } from './PlanBand'
 import { dayParts, fromDay, shiftDays, taskSpan, toDay, todayDay } from '@kanbanto/model/dates'
 import { formatDay } from '@/lib/format'
@@ -60,11 +63,17 @@ function dragged(d: Drag) {
   return { start: d.start, end: Math.max(d.end + d.delta, d.start) }
 }
 
+/** The Timeline tab: bars (a row for each task), or a calendar of days. Each board remembers which was last shown. */
+export function TimelineView({ search }: { search: string }) {
+  const { prefs } = useBoard()
+  return prefs.timeline?.as === 'calendar' ? <CalendarView search={search} /> : <BarsView search={search} />
+}
+
 /**
  * Nested task list on the left, one independent bar per task on the right.
  * Drag a bar to move it, drag its ends to change the dates, click an empty row to schedule.
  */
-export function TimelineView({ search }: { search: string }) {
+function BarsView({ search }: { search: string }) {
   const { data, prefs, idx, run, openTask, createTask, readOnly, access } = useBoard()
   const { user } = useAuth()
   // The workspace's plan for this board's project, if it has one: shown above the tasks.
@@ -234,259 +243,291 @@ export function TimelineView({ search }: { search: string }) {
       <ViewActions>
         <PresetMenu />
         <FilterMenu />
-        <HideDoneToggle />
-        <ToggleGroup type="single" size="sm" variant="outline" value={zoom} onValueChange={(v) => v && setZoom(v as Zoom)}>
-          <ToggleGroupItem value="day" className="px-3">
-            Days
-          </ToggleGroupItem>
-          <ToggleGroupItem value="week" className="px-3">
-            Weeks
-          </ToggleGroupItem>
-          <ToggleGroupItem value="month" className="px-3">
-            Months
-          </ToggleGroupItem>
-        </ToggleGroup>
-        <Button variant="outline" size="sm" className="h-8" onClick={() => scroller.current?.scrollTo({ left: todayLeft(), behavior: 'smooth' })}>
-          Today
-        </Button>
-      </ViewActions>
-      <ViewActions lead>
-        <BarIconButton label="Expand all" disabled={forced} onClick={() => setExpanded(new Set(idx.childrenOf.keys()))}>
-          <ArrowsOutSimple />
-        </BarIconButton>
-        <BarIconButton label="Collapse all" disabled={forced} onClick={() => setExpanded(new Set())}>
-          <ArrowsInSimple />
-        </BarIconButton>
+        <TimelineDisplayMenu />
       </ViewActions>
 
-      {/* With a plan, the timeline shows even before there are tasks (a board just made for a planned project). */}
-      {rows.length === 0 && !plan ? (
-        <Empty action={hiddenDone ? <HiddenDoneNote count={hiddenDone} /> : undefined}>{emptyText}</Empty>
-      ) : (
-        <div ref={scroller} className="h-full overflow-auto">
-          <div className="relative" style={{ width: LEFT_W + width }}>
-            {/* header */}
-            <div className="sticky top-0 z-20 flex border-b bg-background">
-              <div
-                className="sticky left-0 z-30 flex shrink-0 items-end border-r bg-background px-4 pb-2 text-xs font-medium text-muted-foreground"
-                style={{ width: LEFT_W }}
-              >
-                Task
-              </div>
-              <div className="relative h-12 shrink-0" style={{ width }}>
-                {months.map((m) => (
-                  <span key={m.day} className="absolute top-1.5 border-l pl-2 text-xs font-semibold whitespace-nowrap" style={{ left: x(m.day) }}>
-                    {m.label}
-                  </span>
-                ))}
-                {minor.map((m) => (
-                  <span
-                    key={m.day}
-                    className={cn(
-                      'absolute top-7 text-[11px] whitespace-nowrap text-muted-foreground',
-                      zoom === 'day' ? 'text-center' : 'border-l border-grid-line pl-1.5',
-                      m.weekend && 'text-muted-foreground/50',
-                      m.day === today && 'font-bold text-primary',
-                    )}
-                    style={{ left: x(m.day), width: zoom === 'day' ? dayW : undefined }}
-                  >
-                    {m.label}
-                  </span>
-                ))}
-              </div>
-            </div>
-
-            {plan && (
-              <PlanBand plan={plan} boardId={boardId} x={x} width={width} left={LEFT_W} dayW={dayW} today={today} start={rangeStart} end={rangeEnd} />
-            )}
-
-            {rows.length === 0 && <p className="sticky left-0 w-fit px-4 py-3 text-sm text-muted-foreground">{emptyText}</p>}
-
-            {/* rows */}
-            <div className="relative">
-              {rows.map((id, i) => {
-                const t = idx.tasks[id]
-                const kids = idx.childrenOf.get(id)
-                const span = spanOf(id)
-                const col = statusCol(idx, id)
-                const open = forced || expanded.has(id)
-                const w = span ? (span.end - span.start + 1) * dayW : 0
-                const depth = idx.depth.get(id)! - baseDepth
-                const zone = zoneOf(id)
-                const context = matched && !matched.has(id) // shown only because a subtask matches
-                const row = (
+      <div className="flex h-full flex-col">
+        <TimelineRow
+          className="border-b"
+          right={
+            <ToggleGroup
+              type="single"
+              size="sm"
+              variant="outline"
+              value={zoom}
+              onValueChange={(v) => v && setZoom(v as Zoom)}
+              aria-label="How much time to show"
+            >
+              <ToggleGroupItem value="day" className="px-3">
+                Days
+              </ToggleGroupItem>
+              <ToggleGroupItem value="week" className="px-3">
+                Weeks
+              </ToggleGroupItem>
+              <ToggleGroupItem value="month" className="px-3">
+                Months
+              </ToggleGroupItem>
+            </ToggleGroup>
+          }
+        >
+          <Button variant="outline" size="sm" className="h-8" onClick={() => scroller.current?.scrollTo({ left: todayLeft(), behavior: 'smooth' })}>
+            Today
+          </Button>
+        </TimelineRow>
+        <div className="min-h-0 flex-1">
+          {/* With a plan, the timeline shows even before there are tasks (a board just made for a planned project). */}
+          {rows.length === 0 && !plan ? (
+            <Empty action={hiddenDone ? <HiddenDoneNote count={hiddenDone} /> : undefined}>{emptyText}</Empty>
+          ) : (
+            <div ref={scroller} className="h-full overflow-auto">
+              <div className="relative" style={{ width: LEFT_W + width }}>
+                {/* header */}
+                <div className="sticky top-0 z-20 flex border-b bg-background">
                   <div
-                    key={id}
-                    {...dropProps(id)}
-                    className={cn('group relative flex border-b border-grid-line', dragId === id && 'opacity-40')}
-                    style={{ height: ROW_H }}
+                    className="sticky left-0 z-30 flex shrink-0 items-end justify-between border-r bg-background pr-2 pb-1 pl-4 text-xs font-medium text-muted-foreground"
+                    style={{ width: LEFT_W }}
                   >
-                    <div
-                      {...dragProps(id)}
-                      title="Drag to move"
-                      className={cn(
-                        'drag-handle sticky left-0 z-10 flex shrink-0 cursor-grab items-center gap-1.5 overflow-hidden border-r bg-background pr-1.5 group-hover:bg-muted active:cursor-grabbing',
-                        zone === 'inside' && 'bg-[color-mix(in_oklab,var(--primary)_10%,var(--background))] ring-2 ring-primary/40 ring-inset',
-                      )}
-                      style={{ width: LEFT_W, paddingLeft: depth * 16 + 8 }}
-                    >
-                      <button
-                        disabled={!kids || forced || (!!keep && !kids.some((k) => keep.has(k)))}
-                        onClick={() => toggle(id)}
-                        aria-label={open ? 'Collapse' : 'Expand'}
-                        className="grid size-5 shrink-0 place-items-center rounded text-muted-foreground hover:bg-accent"
-                      >
-                        {kids ? open ? <CaretDown className="size-3" /> : <CaretRight className="size-3" /> : null}
-                      </button>
-                      <StatusDot category={col.category} color={col.color} />
-                      <button
-                        onClick={() => openTask(id)}
-                        className={cn(
-                          'min-w-0 truncate text-left text-[13px] hover:underline',
-                          kids && 'font-medium',
-                          context && 'font-normal text-muted-foreground',
-                        )}
-                      >
-                        {t.title}
-                      </button>
-                      <button
-                        hidden={readOnly}
-                        onClick={() => {
-                          expand(id)
-                          setAdding(id)
-                        }}
-                        aria-label="Add a subtask"
-                        title="Add a subtask"
-                        className="ml-auto grid size-6 shrink-0 place-items-center rounded text-muted-foreground opacity-0 group-hover:opacity-100 hover:bg-accent hover:text-foreground focus-visible:opacity-100"
-                      >
-                        <Plus className="size-3.5" />
-                      </button>
-                    </div>
-                    <div
-                      className={cn('relative shrink-0 group-hover:bg-muted/40', !span && !readOnly && 'cursor-copy')}
-                      style={trackStyle}
-                      title={span || readOnly ? undefined : 'Click to schedule'}
-                      onClick={
-                        span || readOnly
-                          ? undefined
-                          : (e) => {
-                              const day = rangeStart + Math.floor((e.clientX - e.currentTarget.getBoundingClientRect().left) / dayW)
-                              run({ type: 'task.update', id, fields: { start: fromDay(day), due: fromDay(day + 2) } })
-                            }
-                      }
-                    >
-                      {span && (
-                        <BarMenu
-                          color={t.color}
-                          onOpen={() => openTask(id)}
-                          onColor={(color) => run({ type: 'task.update', id, fields: { color: color ?? null } })}
-                          onClearDates={() => run({ type: 'task.update', id, fields: { start: '', due: '' } })}
-                        >
-                          <div
-                            data-bar-id={id}
-                            className={cn(
-                              'absolute top-1.5 bottom-1.5 z-[2] flex min-w-1.5 touch-none items-center rounded-md border select-none',
-                              kids && 'border-2',
-                              col.category === 'backlog' && !t.color && 'border-dashed',
-                              drag?.id === id ? 'z-[3] cursor-grabbing shadow-lg' : 'cursor-grab',
-                            )}
-                            style={barStyle(t.color ? tone(t.color) : statusTone(col.category, col.color), { left: x(span.start), width: w })}
-                            title={`${t.title}\n${formatDay(t.start ?? fromDay(span.start), true)} → ${formatDay(t.due ?? fromDay(span.end), true)} (${span.end - span.start + 1} ${span.end === span.start ? 'day' : 'days'})`}
-                            onPointerDown={(e) => onBarDown(e, id)}
-                            onPointerMove={onBarMove}
-                            onPointerUp={onBarUp}
-                            onPointerCancel={() => setDrag(null)}
-                          >
-                            <span data-handle="start" className="w-2 shrink-0 self-stretch cursor-ew-resize rounded-l-md hover:bg-foreground/15" />
-                            {w >= 70 ? (
-                              // Sticks to the visible edge when the bar starts off-screen.
-                              <span
-                                className={cn('pointer-events-none sticky min-w-0 truncate px-1 text-xs', kids && 'font-semibold')}
-                                style={{ left: LEFT_W + 6 }}
-                              >
-                                {t.title}
-                              </span>
-                            ) : (
-                              <span className="pointer-events-none absolute left-full ml-1.5 text-xs whitespace-nowrap">{t.title}</span>
-                            )}
-                            <span
-                              data-handle="end"
-                              className="ml-auto w-2 shrink-0 self-stretch cursor-ew-resize rounded-r-md hover:bg-foreground/15"
-                            />
-                          </div>
-                        </BarMenu>
-                      )}
-                    </div>
-                    <DropLine zone={zone} left={depth * 16 + 8} />
+                    <span className="pb-1">Task</span>
+                    <FoldAll
+                      disabled={forced}
+                      onExpand={() => setExpanded(new Set(idx.childrenOf.keys()))}
+                      onCollapse={() => setExpanded(new Set())}
+                    />
                   </div>
-                )
-                if (addAfter !== i || !adding) return row
-                return [
-                  row,
-                  <AddSubtaskRow
-                    key="__add"
-                    className="border-grid-line"
-                    style={{ height: ROW_H, width: LEFT_W + width }}
-                    cellWidth={LEFT_W + 240}
-                    indent={(idx.depth.get(adding)! - baseDepth + 1) * 16 + 8}
-                    parentTitle={idx.tasks[adding].title}
-                    onAdd={(title, fields) => createTask(adding, { ...fields, title })}
-                    onClose={() => setAdding(null)}
-                  />,
-                ]
-              })}
+                  <div className="relative h-12 shrink-0" style={{ width }}>
+                    {months.map((m) => (
+                      <span key={m.day} className="absolute top-1.5 border-l pl-2 text-xs font-semibold whitespace-nowrap" style={{ left: x(m.day) }}>
+                        {m.label}
+                      </span>
+                    ))}
+                    {minor.map((m) => (
+                      <span
+                        key={m.day}
+                        className={cn(
+                          'absolute top-7 text-[11px] whitespace-nowrap text-muted-foreground',
+                          zoom === 'day' ? 'text-center' : 'border-l border-grid-line pl-1.5',
+                          m.weekend && 'text-muted-foreground/50',
+                          m.day === today && 'font-bold text-primary',
+                        )}
+                        style={{ left: x(m.day), width: zoom === 'day' ? dayW : undefined }}
+                      >
+                        {m.label}
+                      </span>
+                    ))}
+                  </div>
+                </div>
 
-              <svg className="pointer-events-none absolute top-0 z-[2] overflow-visible" style={{ left: LEFT_W }} width={width} height={bodyHeight}>
-                <defs>
-                  {(['ok', 'late'] as const).map((k) => (
-                    <marker key={k} id={`tl-arrow-${k}`} viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto">
-                      <path d="M0,0 L8,4 L0,8 z" fill={k === 'late' ? 'var(--destructive)' : 'var(--muted-foreground)'} />
-                    </marker>
-                  ))}
-                </defs>
-                <line
-                  x1={x(today) + dayW / 2}
-                  x2={x(today) + dayW / 2}
-                  y1={0}
-                  y2={bodyHeight}
-                  stroke="var(--primary)"
-                  strokeWidth={2}
-                  opacity={0.5}
-                />
-                {arrows.map((a) => (
-                  <path
-                    key={a.key}
-                    d={a.d}
-                    fill="none"
-                    stroke={a.late ? 'var(--destructive)' : 'var(--muted-foreground)'}
-                    strokeWidth={1.5}
-                    strokeDasharray={a.late ? '4 3' : undefined}
-                    markerEnd={`url(#tl-arrow-${a.late ? 'late' : 'ok'})`}
+                {plan && (
+                  <PlanBand
+                    plan={plan}
+                    boardId={boardId}
+                    x={x}
+                    width={width}
+                    left={LEFT_W}
+                    dayW={dayW}
+                    today={today}
+                    start={rangeStart}
+                    end={rangeEnd}
                   />
-                ))}
-              </svg>
-            </div>
-          </div>
-          {truncated && (
-            <Button variant="ghost" size="sm" className="sticky left-0 m-3 text-muted-foreground" onClick={() => setLimit(limit + ROWS_STEP)}>
-              Show more rows
-            </Button>
-          )}
-          <HiddenDoneNote count={hiddenDone} className="sticky left-0 mx-3 mt-3" />
-          {!search && (
-            <div className="sticky left-0 w-72 p-2">
-              <QuickAdd
-                single
-                label={focusId ? 'Add a subtask' : 'Add a project'}
-                placeholder="Title"
-                submitLabel="Add"
-                dates
-                onAdd={(title, fields) => createTask(focusId ?? null, { ...fields, title })}
-              />
+                )}
+
+                {rows.length === 0 && <p className="sticky left-0 w-fit px-4 py-3 text-sm text-muted-foreground">{emptyText}</p>}
+
+                {/* rows */}
+                <div className="relative">
+                  {rows.map((id, i) => {
+                    const t = idx.tasks[id]
+                    const kids = idx.childrenOf.get(id)
+                    const span = spanOf(id)
+                    const col = statusCol(idx, id)
+                    const open = forced || expanded.has(id)
+                    const w = span ? (span.end - span.start + 1) * dayW : 0
+                    const depth = idx.depth.get(id)! - baseDepth
+                    const zone = zoneOf(id)
+                    const context = matched && !matched.has(id) // shown only because a subtask matches
+                    const row = (
+                      <div
+                        key={id}
+                        {...dropProps(id)}
+                        className={cn('group relative flex border-b border-grid-line', dragId === id && 'opacity-40')}
+                        style={{ height: ROW_H }}
+                      >
+                        <div
+                          {...dragProps(id)}
+                          title="Drag to move"
+                          className={cn(
+                            'drag-handle sticky left-0 z-10 flex shrink-0 cursor-grab items-center gap-1.5 overflow-hidden border-r bg-background pr-1.5 group-hover:bg-muted active:cursor-grabbing',
+                            zone === 'inside' && 'bg-[color-mix(in_oklab,var(--primary)_10%,var(--background))] ring-2 ring-primary/40 ring-inset',
+                          )}
+                          style={{ width: LEFT_W, paddingLeft: depth * 16 + 8 }}
+                        >
+                          <button
+                            disabled={!kids || forced || (!!keep && !kids.some((k) => keep.has(k)))}
+                            onClick={() => toggle(id)}
+                            aria-label={open ? 'Collapse' : 'Expand'}
+                            className="grid size-5 shrink-0 place-items-center rounded text-muted-foreground hover:bg-accent"
+                          >
+                            {kids ? open ? <CaretDown className="size-3" /> : <CaretRight className="size-3" /> : null}
+                          </button>
+                          <StatusDot category={col.category} color={col.color} />
+                          <button
+                            onClick={() => openTask(id)}
+                            className={cn(
+                              'min-w-0 truncate text-left text-[13px] hover:underline',
+                              kids && 'font-medium',
+                              context && 'font-normal text-muted-foreground',
+                            )}
+                          >
+                            {t.title}
+                          </button>
+                          <button
+                            hidden={readOnly}
+                            onClick={() => {
+                              expand(id)
+                              setAdding(id)
+                            }}
+                            aria-label="Add a subtask"
+                            title="Add a subtask"
+                            className="ml-auto grid size-6 shrink-0 place-items-center rounded text-muted-foreground opacity-0 group-hover:opacity-100 hover:bg-accent hover:text-foreground focus-visible:opacity-100"
+                          >
+                            <Plus className="size-3.5" />
+                          </button>
+                        </div>
+                        <div
+                          className={cn('relative shrink-0 group-hover:bg-muted/40', !span && !readOnly && 'cursor-copy')}
+                          style={trackStyle}
+                          title={span || readOnly ? undefined : 'Click to schedule'}
+                          onClick={
+                            span || readOnly
+                              ? undefined
+                              : (e) => {
+                                  const day = rangeStart + Math.floor((e.clientX - e.currentTarget.getBoundingClientRect().left) / dayW)
+                                  run({ type: 'task.update', id, fields: { start: fromDay(day), due: fromDay(day + 2) } })
+                                }
+                          }
+                        >
+                          {span && (
+                            <BarMenu
+                              color={t.color}
+                              onOpen={() => openTask(id)}
+                              onColor={(color) => run({ type: 'task.update', id, fields: { color: color ?? null } })}
+                              onClearDates={() => run({ type: 'task.update', id, fields: { start: '', due: '' } })}
+                            >
+                              <div
+                                data-bar-id={id}
+                                className={cn(
+                                  'absolute top-1.5 bottom-1.5 z-[2] flex min-w-1.5 touch-none items-center rounded-md border select-none',
+                                  kids && 'border-2',
+                                  col.category === 'backlog' && !t.color && 'border-dashed',
+                                  drag?.id === id ? 'z-[3] cursor-grabbing shadow-lg' : 'cursor-grab',
+                                )}
+                                style={barStyle(t.color ? tone(t.color) : statusTone(col.category, col.color), { left: x(span.start), width: w })}
+                                title={`${t.title}\n${formatDay(t.start ?? fromDay(span.start), true)} → ${formatDay(t.due ?? fromDay(span.end), true)} (${span.end - span.start + 1} ${span.end === span.start ? 'day' : 'days'})`}
+                                onPointerDown={(e) => onBarDown(e, id)}
+                                onPointerMove={onBarMove}
+                                onPointerUp={onBarUp}
+                                onPointerCancel={() => setDrag(null)}
+                              >
+                                <span
+                                  data-handle="start"
+                                  className="w-2 shrink-0 self-stretch cursor-ew-resize rounded-l-md hover:bg-foreground/15"
+                                />
+                                {w >= 70 ? (
+                                  // Sticks to the visible edge when the bar starts off-screen.
+                                  <span
+                                    className={cn('pointer-events-none sticky min-w-0 truncate px-1 text-xs', kids && 'font-semibold')}
+                                    style={{ left: LEFT_W + 6 }}
+                                  >
+                                    {t.title}
+                                  </span>
+                                ) : (
+                                  <span className="pointer-events-none absolute left-full ml-1.5 text-xs whitespace-nowrap">{t.title}</span>
+                                )}
+                                <span
+                                  data-handle="end"
+                                  className="ml-auto w-2 shrink-0 self-stretch cursor-ew-resize rounded-r-md hover:bg-foreground/15"
+                                />
+                              </div>
+                            </BarMenu>
+                          )}
+                        </div>
+                        <DropLine zone={zone} left={depth * 16 + 8} />
+                      </div>
+                    )
+                    if (addAfter !== i || !adding) return row
+                    return [
+                      row,
+                      <AddSubtaskRow
+                        key="__add"
+                        className="border-grid-line"
+                        style={{ height: ROW_H, width: LEFT_W + width }}
+                        cellWidth={LEFT_W + 240}
+                        indent={(idx.depth.get(adding)! - baseDepth + 1) * 16 + 8}
+                        parentTitle={idx.tasks[adding].title}
+                        onAdd={(title, fields) => createTask(adding, { ...fields, title })}
+                        onClose={() => setAdding(null)}
+                      />,
+                    ]
+                  })}
+
+                  <svg
+                    className="pointer-events-none absolute top-0 z-[2] overflow-visible"
+                    style={{ left: LEFT_W }}
+                    width={width}
+                    height={bodyHeight}
+                  >
+                    <defs>
+                      {(['ok', 'late'] as const).map((k) => (
+                        <marker key={k} id={`tl-arrow-${k}`} viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto">
+                          <path d="M0,0 L8,4 L0,8 z" fill={k === 'late' ? 'var(--destructive)' : 'var(--muted-foreground)'} />
+                        </marker>
+                      ))}
+                    </defs>
+                    <line
+                      x1={x(today) + dayW / 2}
+                      x2={x(today) + dayW / 2}
+                      y1={0}
+                      y2={bodyHeight}
+                      stroke="var(--primary)"
+                      strokeWidth={2}
+                      opacity={0.5}
+                    />
+                    {arrows.map((a) => (
+                      <path
+                        key={a.key}
+                        d={a.d}
+                        fill="none"
+                        stroke={a.late ? 'var(--destructive)' : 'var(--muted-foreground)'}
+                        strokeWidth={1.5}
+                        strokeDasharray={a.late ? '4 3' : undefined}
+                        markerEnd={`url(#tl-arrow-${a.late ? 'late' : 'ok'})`}
+                      />
+                    ))}
+                  </svg>
+                </div>
+              </div>
+              {truncated && (
+                <Button variant="ghost" size="sm" className="sticky left-0 m-3 text-muted-foreground" onClick={() => setLimit(limit + ROWS_STEP)}>
+                  Show more rows
+                </Button>
+              )}
+              <HiddenDoneNote count={hiddenDone} className="sticky left-0 mx-3 mt-3" />
+              {!search && (
+                <div className="sticky left-0 w-72 p-2">
+                  <QuickAdd
+                    single
+                    label={focusId ? 'Add a subtask' : 'Add a project'}
+                    placeholder="Title"
+                    submitLabel="Add"
+                    dates
+                    onAdd={(title, fields) => createTask(focusId ?? null, { ...fields, title })}
+                  />
+                </div>
+              )}
             </div>
           )}
         </div>
-      )}
+      </div>
     </>
   )
 }

@@ -1,5 +1,5 @@
 import { CaretRight, Crosshair, Timer, X } from '@phosphor-icons/react'
-import { createContext, useContext, useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react'
+import { createContext, useContext, useEffect, useState, type CSSProperties, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import type { CardsPage } from '@kanbanto/model/api'
 import { api } from '@/api/client'
@@ -10,40 +10,15 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { ancestorsOf } from '@kanbanto/model/indexer'
 import { FilterChips } from './FilterChips'
 
-const SlotContext = createContext<{ main: HTMLElement | null; lead: HTMLElement | null }>({ main: null, lead: null })
+const SlotContext = createContext<HTMLElement | null>(null)
 
 /**
- * Lets each view put its own controls (display, zoom…) on the right side of the view bar. `lead`: before the main
- * buttons (expand and collapse all).
+ * Lets each view put its buttons on the right side of the view bar: the same three in every view (Presets, Filter,
+ * Display). What belongs to one view alone (the Timeline's dates, expanding and collapsing a table) sits in that view.
  */
-export function ViewActions({ children, lead }: { children: ReactNode; lead?: boolean }) {
-  const slots = useContext(SlotContext)
-  const slot = lead ? slots.lead : slots.main
+export function ViewActions({ children }: { children: ReactNode }) {
+  const slot = useContext(SlotContext)
   return slot ? createPortal(children, slot) : null
-}
-
-/** A small icon button for the view bar (expand or collapse all), named by its tooltip. */
-export function BarIconButton({
-  label,
-  onClick,
-  disabled,
-  children,
-}: {
-  label: string
-  onClick: () => void
-  disabled?: boolean
-  children: ReactNode
-}) {
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <Button variant="ghost" size="icon" className="size-8" aria-label={label} onClick={onClick} disabled={disabled}>
-          {children}
-        </Button>
-      </TooltipTrigger>
-      <TooltipContent>{label}</TooltipContent>
-    </Tooltip>
-  )
 }
 
 /**
@@ -53,10 +28,8 @@ export function BarIconButton({
 export function ViewBar({ children, search, style }: { children: ReactNode; search: string; style?: CSSProperties }) {
   const { logTime } = useBoard()
   const [main, setMain] = useState<HTMLElement | null>(null)
-  const [lead, setLead] = useState<HTMLElement | null>(null)
-  const slots = useMemo(() => ({ main, lead }), [main, lead])
   return (
-    <SlotContext.Provider value={slots}>
+    <SlotContext.Provider value={main}>
       <div className="flex min-h-0 min-w-0 flex-1 flex-col" style={style}>
         <div className="relative z-10 flex min-h-11 shrink-0 flex-wrap items-center gap-2 border-b border-white/25 bg-background/35 px-3 py-1.5 shadow-[0_6px_16px_-12px_oklch(0_0_0/0.25)] backdrop-blur-md backdrop-saturate-[1.15] sm:px-4 dark:border-white/[0.06] dark:bg-background/40">
           <ScopeTrail search={search} />
@@ -66,8 +39,7 @@ export function ViewBar({ children, search, style }: { children: ReactNode; sear
            * see-through here, like the bar they sit on, rather than solid white (`:where`: hover still wins).
            */}
           <div className="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-1.5 [&_:where(button[data-variant=outline])]:bg-background/40 [&_:where(button[data-variant=outline])]:shadow-none">
-            {/* `contents`: both slots' buttons flow as one row, so they wrap together. */}
-            <div ref={setLead} className="contents" />
+            {/* `contents`: the view's buttons and Log time flow as one row, so they wrap together. */}
             <div ref={setMain} className="contents" />
             {logTime && (
               <Tooltip>

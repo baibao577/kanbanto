@@ -1,5 +1,5 @@
-import { ArrowsInSimple, ArrowsOutSimple, CaretDown, CaretRight, Crosshair, Eye, EyeSlash } from '@phosphor-icons/react'
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { CaretDown, CaretRight, Crosshair, Eye, EyeSlash } from '@phosphor-icons/react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { flushSync } from 'react-dom'
 import { toast } from 'sonner'
 import { useBoard } from '@/app/board-context'
@@ -9,7 +9,7 @@ import { Empty } from '@/components/common/Empty'
 import { DisplayMenu } from '@/components/shell/DisplayMenu'
 import { FilterMenu } from '@/components/shell/FilterMenu'
 import { PresetMenu } from '@/components/shell/PresetMenu'
-import { BarIconButton, ViewActions } from '@/components/shell/ViewBar'
+import { ViewActions } from '@/components/shell/ViewBar'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -89,6 +89,12 @@ const laneTint = (col?: StatusColumn) =>
 
 export function BoardView({ search }: { search: string }) {
   const { prefs } = useBoard()
+  // The rows the board is showing, for Display's "Expand all rows" and "Collapse all rows" (it draws the choice of
+  // rows; the board knows which there are).
+  const rowKeys = useRef<string[]>([])
+  const onRows = useCallback((keys: string[]) => {
+    rowKeys.current = keys
+  }, [])
   // Changing how the board is laid out starts it fresh (paging, drag state); the Display menu stays open. What is set
   // from one list (its order, folding it, hiding it) isn't that: the board stays as it is, scrolled where it was.
   const { listOrder: _order, collapsedColumns: _folded, hiddenColumns: _hidden, ...shape } = prefs.display.board
@@ -97,14 +103,14 @@ export function BoardView({ search }: { search: string }) {
       <ViewActions>
         <PresetMenu />
         <FilterMenu />
-        <DisplayMenu />
+        <DisplayMenu rowKeys={rowKeys} />
       </ViewActions>
-      <Board key={JSON.stringify(shape)} search={search} />
+      <Board key={JSON.stringify(shape)} search={search} onRows={onRows} />
     </>
   )
 }
 
-function Board({ search }: { search: string }) {
+function Board({ search, onRows }: { search: string; onRows: (keys: string[]) => void }) {
   const { data, prefs, setPrefs, idx, run, openTask, createTask, focus, readOnly, counts, moveToBoard, logTime } = useBoard()
   const me = useAuth().user?.id
   // Minutes logged on each card, with its subtasks'.
@@ -120,6 +126,10 @@ function Board({ search }: { search: string }) {
     const keep = filterCount(filter) ? (id: string) => matchesFilter(idx, id, filter, counts.lastComment, { me }) : undefined
     return buildView(idx, config, { focusId: prefs.focusId, search, keep, now, showOlder })
   }, [idx, config, prefs.focusId, search, filter, counts.lastComment, now, showOlder, me])
+  // (For Display's "Expand all rows" and "Collapse all rows".)
+  useEffect(() => {
+    onRows(config.rows === 'none' ? [] : view.rows.map((r) => r.key))
+  }, [onRows, view.rows, config.rows])
   const labelById = useMemo(() => new Map(data.labels.map((l) => [l.id, l])), [data.labels])
   const frontFields = useMemo(() => data.fields.filter((f) => f.front), [data.fields])
   // Numbers that add up, under each list's name (Board settings → Fields → "Total in lists"): the cards the list
@@ -661,25 +671,8 @@ function Board({ search }: { search: string }) {
     </>
   )
 
-  const allKeys = view.rows.map((r) => r.key)
   return (
     <>
-      {grouped && view.rows.length > 0 && view.columns.length > 0 && (
-        <ViewActions lead>
-          <BarIconButton
-            label="Expand all rows"
-            onClick={() => setPrefs({ type: 'setCollapsedRows', keys: prefs.collapsedRows.filter((k) => !allKeys.includes(k)) })}
-          >
-            <ArrowsOutSimple />
-          </BarIconButton>
-          <BarIconButton
-            label="Collapse all rows"
-            onClick={() => setPrefs({ type: 'setCollapsedRows', keys: [...new Set([...prefs.collapsedRows, ...allKeys])] })}
-          >
-            <ArrowsInSimple />
-          </BarIconButton>
-        </ViewActions>
-      )}
       {!view.columns.length && !statusLists ? (
         <Empty>{search ? 'No cards match your search.' : 'Nothing to show with these display settings.'}</Empty>
       ) : !grouped || !view.columns.length ? (
