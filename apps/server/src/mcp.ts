@@ -1,6 +1,6 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
-import { doneBefore, type Command } from '@kanbanto/model/commands'
+import { BULK_MAX, doneBefore, type Command } from '@kanbanto/model/commands'
 import { BOARD_DESIGNS, COLORS, isBackground, LABEL_COLOR_CYCLE, type BoardBackground, type ColorName } from '@kanbanto/model/colors'
 import type { AttachmentView, FieldView, LinkedCard } from '@kanbanto/model/api'
 import {
@@ -1474,7 +1474,7 @@ function buildServer(app: FastifyInstance, me: SessionUser, token: TokenAccess, 
       {
         title: 'Update a task',
         description:
-          'Changes a task’s title, description, dates, assignee, priority, labels, what it waits on, its list, or its place in its list. Only what you pass changes. Put in another list, it goes to the end of that list unless you say where (position, before_task_id, after_task_id).',
+          'Changes a task’s title, description, dates, assignee, priority, labels, what it waits on, its list, or its place in its list. Only what you pass changes. Put in another list, it goes to the end of that list unless you say where (position, before_task_id, after_task_id). For the same change to several tasks, or to a task with its subtasks, use update_tasks.',
         inputSchema: {
           board_id: z.string(),
           task_id: z.string(),
@@ -1545,6 +1545,116 @@ function buildServer(app: FastifyInstance, me: SessionUser, token: TokenAccess, 
           if (order) await run(a.board_id, { type: 'task.move', id: t.id, ...(moves && { status }), list: order })
           const after = await open(a.board_id, 'viewer')
           return brief(after.data, after.idx, after.data.tasks[a.task_id], await linkedOn(after.board, after.access, after.data))
+        },
+      ),
+    )
+
+    server.registerTool(
+      'update_tasks',
+      {
+        title: 'Update several tasks at once',
+        description:
+          'Makes the same change to several tasks of one board, as one change (one line in the board’s activity, one undo): their list, assignee, priority, dates, labels or the board’s own fields. Only what you pass changes. with_subtasks: also every task under them, which is how a task moves to another list with its subtasks on a board where each task has its own list. Moved to another list, they go to its end, in the order given. A wrong name or id changes nothing. For a task’s title, description, what it waits on, or an exact place in a list, use update_task.',
+        inputSchema: {
+          board_id: z.string(),
+          task_ids: z.array(z.string()).min(1).max(200),
+          with_subtasks: z.boolean().optional().describe('Also change every task under these (their subtasks, and theirs).'),
+          list: Fields.list,
+          assignee: Fields.assignee,
+          priority: Fields.priority,
+          start: Fields.start,
+          due: Fields.due,
+          labels: z
+            .array(z.string())
+            .optional()
+            .describe('Label names or ids: replaces each task’s labels. To keep the ones they have, use add_labels.'),
+          add_labels: z.array(z.string()).max(50).optional().describe('Label names or ids to add to each task, keeping its others.'),
+          remove_labels: z.array(z.string()).max(50).optional().describe('Label names or ids to take off each task.'),
+          fields: Fields.fields,
+        },
+        annotations: { destructiveHint: false, idempotentHint: true, openWorldHint: false },
+      },
+      tool(
+        async (
+          a: Omit<FieldArgs, 'description'> & {
+            board_id: string
+            task_ids: string[]
+            with_subtasks?: boolean
+            add_labels?: string[]
+            remove_labels?: string[]
+          },
+        ) => {
+          const { board, data, idx } = await open(a.board_id, 'editor')
+          const missing = a.task_ids.filter((id) => !data.tasks[id])
+          if (missing.length) throw new HttpError(404, `There’s no task ${missing.slice(0, 5).join(', ')} on this board. Nothing was changed.`)
+          if (a.labels && (a.add_labels || a.remove_labels))
+            throw new HttpError(400, 'Pass labels (to replace them), or add_labels and remove_labels, not both.')
+          // The tasks named, each followed by what is under it when asked, once each.
+          const ids = [...new Set(a.task_ids.flatMap((id) => (a.with_subtasks ? [id, ...descendantsOf(idx, id)] : [id])))]
+          if (ids.length > BULK_MAX)
+            throw new HttpError(400, `That’s ${ids.length.toLocaleString('en')} tasks: ${BULK_MAX.toLocaleString('en')} at most at once.`)
+          // Every name is looked up before anything changes.
+          const { start, due, assignee, priority, labels, list, fields: custom } = a
+          const { status, ...same } = await fieldsFrom(board, data, idx, { start, due, assignee, priority, labels, list, fields: custom })
+          const adding = (a.add_labels ?? []).map((l) => pick(data.labels, l, 'label').id)
+          const removing = new Set((a.remove_labels ?? []).map((l) => pick(data.labels, l, 'label').id))
+          if (!Object.keys(same).length && !status && !adding.length && !removing.size)
+            throw new HttpError(400, 'Nothing to change: pass a list, an assignee, a priority, a date, labels or fields.')
+          // Where a parent's list follows its subtasks, it can't be put in one by hand: with its subtasks it follows
+          // them there; named on its own, that is said before anything changes.
+          const follows = (id: string) => data.board.mode === 'derived' && !!idx.childrenOf.get(id)?.length
+          if (status && !a.with_subtasks) {
+            const parent = ids.find((id) => follows(id) && data.tasks[id].status !== status)
+            if (parent)
+              throw new HttpError(
+                400,
+                `“${data.tasks[parent].title}” follows its subtasks. Pass with_subtasks to move them (it follows), or set parent status yourself in Board settings. Nothing was changed.`,
+              )
+          }
+          const cards = ids.map((id) => {
+            const t = data.tasks[id]
+            const kept = t.labels.filter((l) => !removing.has(l))
+            const next = [...kept, ...adding.filter((l) => !kept.includes(l))]
+            return {
+              id,
+              fields: {
+                ...same,
+                ...(status && !follows(id) && { status }),
+                ...((adding.length || removing.size) && { labels: next }),
+              },
+            }
+          })
+          // The list they move into, in its new order: the cards that are there, then the ones arriving.
+          const moved = status ? cards.filter((c) => c.fields.status && data.tasks[c.id].status !== status).map((c) => c.id) : []
+          const lists =
+            status && moved.length
+              ? [
+                  {
+                    status,
+                    order: [
+                      ...byHand(
+                        idx,
+                        idx.preorder.filter((id) => idx.status.get(id) === status && !moved.includes(id)),
+                      ),
+                      ...moved,
+                    ],
+                  },
+                ]
+              : undefined
+          const done = await run(a.board_id, { type: 'tasks.update', cards, ...(lists && { lists }) })
+          const after = await open(a.board_id, 'viewer')
+          const changed = new Set(done.changes.flatMap((c) => (c.entity === 'task' ? [c.id] : [])))
+          const shown = ids.filter((id) => changed.has(id))
+          return {
+            changed: shown.length,
+            // (Already as asked: left alone.)
+            ...(ids.length > shown.length && { unchanged: ids.length - shown.length }),
+            tasks: shown.slice(0, 50).map((id) => {
+              const t = after.data.tasks[id]
+              return { id, title: t.title, list: statusCol(after.idx, id).name, ...(t.parentId && { parent_id: t.parentId }) }
+            }),
+            ...(shown.length > 50 && { more: shown.length - 50 }),
+          }
         },
       ),
     )

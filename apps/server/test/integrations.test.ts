@@ -3,6 +3,7 @@ import { createServer, type Server } from 'node:http'
 import { eq } from 'drizzle-orm'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { boardActivity, comments, tasks, webhookDeliveries } from '../src/db/schema'
+import type { BoardData } from '@kanbanto/model/types'
 import { mid, Person, reset, setPlatformAdmin, setup } from './helpers'
 
 let t: Awaited<ReturnType<typeof setup>>
@@ -203,6 +204,84 @@ describe('MCP', () => {
     expect(r.headers['www-authenticate']).toBe('Bearer')
   })
 
+  it('an assistant changes several tasks in one go: one change, one line of activity, nothing on a wrong name', async () => {
+    const { ann, id } = await site({ apiTokens: true })
+    const mcp = withToken(await makeToken(ann, 'write'))
+    await rpc(mcp, 'initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'test', version: '1' } })
+    const tool = async (name: string, args: object) => toolResult(await rpc(mcp, 'tools/call', { name, arguments: args }))
+    const board = async () => (await ann.ok('GET', `/api/boards/${id}`)) as { data: BoardData; seq: number }
+    const before = await board()
+    const listOf = (b: { data: BoardData }, task: string) => b.data.columns.find((c) => c.id === b.data.tasks[task].status)!.name
+
+    // The same change to two cards: a list, a priority, a label added to the ones they have.
+    const done = await tool('update_tasks', { board_id: id, task_ids: ['A3', 'A4'], list: 'doing', priority: 'high', add_labels: ['ui'] })
+    expect(done).toMatchObject({
+      changed: 2,
+      tasks: [
+        { id: 'A3', list: 'Doing' },
+        { id: 'A4', list: 'Doing' },
+      ],
+    })
+    const after = await board()
+    expect(after.seq).toBe(before.seq + 1)
+    expect(after.data.tasks.A3).toMatchObject({ priority: 'high', labels: ['ui'] })
+    expect(after.data.tasks.A4.labels).toEqual(['marketing', 'ui'])
+    // They went to the end of Doing, in the order given.
+    const doing = Object.values(after.data.tasks)
+      .filter((x) => x.status === 'doing' && x.rank)
+      .sort((x, y) => (x.rank! < y.rank! ? -1 : 1))
+      .map((x) => x.id)
+    expect(doing.slice(-2)).toEqual(['A3', 'A4'])
+    const { activity } = await ann.ok('GET', `/api/boards/${id}/activity`)
+    expect(activity[0]).toMatchObject({ command: 'tasks.update' })
+    expect(activity[0].items.map((i: { text: string }) => i.text)).toEqual(
+      expect.arrayContaining(['moved “Deploy” to Doing', 'set the priority of “Deploy” to high']),
+    )
+    // Asked again: already so, nothing changes.
+    expect(await tool('update_tasks', { board_id: id, task_ids: ['A3', 'A4'], list: 'Doing', priority: 'high', add_labels: ['ui'] })).toMatchObject({
+      changed: 0,
+      unchanged: 2,
+    })
+    expect((await board()).seq).toBe(after.seq)
+    // Labels taken off; replacing and adding together is refused.
+    await tool('update_tasks', { board_id: id, task_ids: ['A3', 'A4'], remove_labels: ['UI'] })
+    expect((await board()).data.tasks.A4.labels).toEqual(['marketing'])
+    expect((await tool('update_tasks', { board_id: id, task_ids: ['A3'], labels: ['ui'], add_labels: ['brand'] })).error).toMatch(/not both/)
+
+    // A wrong id, a wrong name or nothing to change: nothing is changed, and it says why.
+    const seq = (await board()).seq
+    expect((await tool('update_tasks', { board_id: id, task_ids: ['A3', 'nope'], priority: 'low' })).error).toMatch(/no task nope/)
+    expect((await tool('update_tasks', { board_id: id, task_ids: ['A3', 'A4'], list: 'Later' })).error).toMatch(/no list “Later”/)
+    expect((await tool('update_tasks', { board_id: id, task_ids: ['A3'], assignee: 'Nobody' })).error).toBeTruthy()
+    expect((await tool('update_tasks', { board_id: id, task_ids: ['A3'] })).error).toMatch(/Nothing to change/)
+    // On this board a parent follows its subtasks: named alone it can't be put in a list…
+    expect((await tool('update_tasks', { board_id: id, task_ids: ['A3', 'C'], list: 'Done' })).error).toMatch(/follows its subtasks.*with_subtasks/)
+    expect((await board()).seq).toBe(seq)
+    // …with its subtasks, they move and it follows them.
+    const withKids = await tool('update_tasks', { board_id: id, task_ids: ['C'], with_subtasks: true, list: 'Done', assignee: 'me' })
+    expect(withKids.tasks.map((x: { id: string; list: string }) => [x.id, x.list])).toEqual([
+      ['C', 'Done'],
+      ['C1', 'Done'],
+      ['C2', 'Done'],
+    ])
+    expect((await tool('get_task', { board_id: id, task_id: 'C' })).list).toBe('Done')
+
+    // Where each task has its own list, a task and everything under it move together.
+    await ann.ok('POST', `/api/boards/${id}/mutations`, { mutationId: mid(), command: { type: 'board.update', fields: { mode: 'manual' } } })
+    const moved = await tool('update_tasks', { board_id: id, task_ids: ['A'], with_subtasks: true, list: 'Backlog' })
+    const now = await board()
+    const under = Object.values(now.data.tasks).filter(
+      (x) => x.id === 'A' || x.parentId === 'A' || now.data.tasks[x.parentId ?? '']?.parentId === 'A',
+    )
+    expect(under.length).toBeGreaterThan(3)
+    expect(under.every((x) => listOf(now, x.id) === 'Backlog')).toBe(true)
+    expect(moved.changed + (moved.unchanged ?? 0)).toBe(under.length)
+    // A token that can only read isn't offered it.
+    const read = withToken(await makeToken(ann, 'read'))
+    await rpc(read, 'initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'test', version: '1' } })
+    expect((await rpc(read, 'tools/list')).body.result.tools.map((x: { name: string }) => x.name)).not.toContain('update_tasks')
+  })
+
   it('lets an assistant find, create and change tasks as the token’s person', async () => {
     const { ann, id } = await site({ apiTokens: true })
     const mcp = withToken(await makeToken(ann, 'write'))
@@ -223,6 +302,7 @@ describe('MCP', () => {
       'plan_overview',
       'create_tasks',
       'update_task',
+      'update_tasks',
       'move_task',
       'set_reminder',
       'archive_task',
@@ -1309,7 +1389,7 @@ describe('API reference', () => {
   it('describes the API (with every command) and shows it at /api/docs', async () => {
     const spec = await new Person(t.app).ok('GET', '/api/openapi.json')
     expect(spec.openapi).toBe('3.1.0')
-    expect(spec.components.schemas.Command.oneOf).toHaveLength(19)
+    expect(spec.components.schemas.Command.oneOf).toHaveLength(20)
     expect(spec.components.schemas.PlanCommand.oneOf).toHaveLength(22)
     expect(Object.keys(spec.paths)).toEqual(
       expect.arrayContaining([

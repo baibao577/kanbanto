@@ -131,6 +131,11 @@ then `git pull` (or download the new release) and `docker compose up -d --build`
   date. Fixed on the way: on a phone, a submenu (a list's "Order cards by" and "Color", a board's background and
   "Move to") opened half off the screen with its words cut off; it now stays on the screen. And choosing a list's
   order, folding or hiding a list no longer rebuilds the whole board, which sent a wide board back to its left end.
+- **Assistants change several tasks in one go:** a new tool, `update_tasks`, makes the same change to many tasks
+  of a board (their list, assignee, priority, dates, labels to add or take off, the board's own fields), and with
+  `with_subtasks` to everything under them, so a task moves to another list together with its subtasks. It is one
+  change: one line in the activity, one message to webhooks, one undo. A wrong id or name changes nothing. For apps,
+  the command behind it is `tasks.update`.
 - **Bring your work in:** a board from Trello, and cards from a spreadsheet. "Import a board…" on the boards page
   now takes the file Trello's "Export as JSON" gives: lists in their order, cards with their dates and labels,
   checklists as subtasks, comments with the dates they were written (in your name, each saying who wrote it), custom

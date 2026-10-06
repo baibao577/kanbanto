@@ -35,6 +35,13 @@ export type Command =
       /** The target list in its new order. Omit to drop the moved tasks' board positions (outline order). */
       list?: string[]
     }
+  /**
+   * Changes several tasks at once, each with what changes on it: one change, so one line of activity for all of
+   * them and one undo. `lists`: the lists tasks move into, each in its new order (ids, the moved ones included), as
+   * `task.move` takes one; without it a task that changes list keeps the place by hand it had. A task with nothing
+   * to change is left alone.
+   */
+  | { type: 'tasks.update'; cards: { id: string; fields: TaskFields }[]; lists?: { status: string; order: string[] }[] }
   /** Deletes a task and its subtasks (an archived one too: that's for good). */
   | { type: 'task.delete'; id: string }
   /**
@@ -94,6 +101,8 @@ export type Place = { before: string } | { after: string } | { end: true }
 
 /** Cards one `tasks.import` can add. */
 export const IMPORT_MAX = 2000
+/** Tasks one `tasks.update` can change. */
+export const BULK_MAX = 2000
 
 export interface Context {
   /** ISO timestamp for createdAt / updatedAt. */
@@ -212,6 +221,32 @@ function run(data: BoardData, cmd: Command, ctx: Context): Change[] {
         putTask(t, next)
       }
       for (const [id, rank] of Object.entries(ranks)) if (!ids.includes(id)) putTask(data.tasks[id], { ...data.tasks[id], rank })
+      break
+    }
+
+    case 'tasks.update': {
+      if (cmd.cards.length > BULK_MAX) reject(`That’s more tasks than can be changed at once (${BULK_MAX.toLocaleString('en')} at most).`)
+      const next = new Map<string, Task>()
+      for (const c of cmd.cards) {
+        if (next.has(c.id)) reject('The same task is named twice.')
+        const t = task(c.id)
+        const fields = cleanFields(data, t.id, c.fields)
+        if (fields.status && fields.status !== t.status) guardParentStatus(data, ctx, t)
+        next.set(t.id, { ...t, ...fields })
+      }
+      // Places in the lists tasks moved into: the moved ones get theirs between the cards that stay.
+      const ranks: Record<string, string> = {}
+      for (const l of cmd.lists ?? []) {
+        if (!data.columns.some((c) => c.id === l.status)) reject('That list no longer exists.')
+        const moved = new Set(l.order.filter((id) => next.get(id)?.status === l.status && data.tasks[id].status !== l.status))
+        Object.assign(ranks, listRanks(data, l.order, moved))
+      }
+      for (const [id, t] of next) {
+        const placed = ranks[id] !== undefined ? { ...t, rank: ranks[id] } : t
+        // (Nothing different: not a change, so asking twice changes nothing the second time.)
+        if (JSON.stringify(placed) !== JSON.stringify(data.tasks[id])) putTask(data.tasks[id], placed)
+      }
+      for (const [id, rank] of Object.entries(ranks)) if (!next.has(id)) putTask(data.tasks[id], { ...data.tasks[id], rank })
       break
     }
 

@@ -45,6 +45,11 @@ Without MCP, use the REST API (see "REST fallback" below).
   again.
 - **Status:** move a task between lists with `update_task` and `list`. With "follows its subtasks" boards, a parent's
   status comes from its subtasks: change the subtasks instead.
+- **Several tasks at once:** `update_tasks` makes the same change to many tasks in one call (`task_ids`, then a
+  `list`, `assignee`, `priority`, dates, `fields`, or `add_labels` / `remove_labels`): one line in the board's
+  activity, not one per task. `with_subtasks: true` also takes everything under them: use it to move a task to
+  another list together with its subtasks (on a board where each task has its own list, they don't follow by
+  themselves). Use it instead of calling `update_task` in a loop.
 - **Order in a list:** people drag cards into the order they want, and the top of a list usually comes first.
   `get_board` and `find_tasks` give tasks in that order, list by list (`list: "To Do"` for one list, top to bottom), so
   "the next tasks" are the first ones of a list. `update_task` places a card in its list: `position: "top"` or

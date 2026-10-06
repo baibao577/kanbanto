@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { applyChanges, invertChanges } from './changes'
+import { describeChanges } from './activity'
 import { execute, type Command } from './commands'
 import { uuidv7 } from './ids'
 import { indexFor } from './indexer'
@@ -147,6 +148,87 @@ describe('lists, labels, people, board', () => {
   it('deleting a label takes it off every card', () => {
     const { data } = exec(board(), { type: 'label.delete', id: 'marketing' })
     expect(Object.values(data.tasks).some((t) => t.labels.includes('marketing'))).toBe(false)
+  })
+})
+
+describe('changing several tasks at once', () => {
+  const manual = (): BoardData => ({ ...board(), board: { ...board().board, mode: 'manual' } })
+
+  it('is one change: each task gets what was said for it, and one undo puts them all back', () => {
+    const before = manual()
+    // (Someone it isn't assigned to yet.)
+    const who = before.tasks.B.assigneeId === 'ton' ? 'mai' : 'ton'
+    const { data, changes } = exec(before, {
+      type: 'tasks.update',
+      cards: [
+        { id: 'A1', fields: { status: 'doing', priority: 'high' } },
+        { id: 'A3', fields: { status: 'doing', due: '2026-12-01', labels: ['ui', 'ui', 'nope'] } },
+        { id: 'B', fields: { assigneeId: who } },
+      ],
+    })
+    expect(changes.map((c) => c.id)).toEqual(['A1', 'A3', 'B'])
+    expect(data.tasks.A1).toMatchObject({ status: 'doing', priority: 'high', version: before.tasks.A1.version + 1, activeAt: NOW })
+    expect(data.tasks.A3).toMatchObject({ status: 'doing', due: '2026-12-01', labels: ['ui'] })
+    expect(data.tasks.B.assigneeId).toBe(who)
+    expect(describeChanges(before, changes).map((i) => i.text)).toEqual([
+      'moved “Buy domain” to Doing',
+      'set the priority of “Buy domain” to high',
+      'moved “Deploy” to Doing',
+      `set “Deploy” due 2026-12-01`,
+      'changed the labels of “Deploy”',
+      `assigned “${before.tasks.B.title}” to ${who === 'ton' ? 'Ton' : 'Mai'}`,
+    ])
+    const undone = exec(data, { type: 'records.restore', changes: invertChanges(data, changes, NOW) })
+    expect(undone.data.tasks.A1.status).toBe(before.tasks.A1.status)
+    expect(undone.data.tasks.A1.priority).toBeUndefined()
+    expect(undone.data.tasks.A3.due).toBe(before.tasks.A3.due)
+    expect(undone.data.tasks.B.assigneeId).toBe(before.tasks.B.assigneeId)
+  })
+
+  it('tasks moved into a list go where its new order says, without touching the cards that stay', () => {
+    const before = manual()
+    const view = (d: BoardData) => buildView(indexFor(d), { columns: 'status', rows: 'none', filter: 'all', parentDisplay: [] })
+    const inDoing = (d: BoardData) => view(d).cells.get(cellKey(NO_ROW, 'doing')) ?? []
+    const was = inDoing(before)
+    const { data, changes } = exec(before, {
+      type: 'tasks.update',
+      cards: [
+        { id: 'A1', fields: { status: 'doing' } },
+        { id: 'A3', fields: { status: 'doing' } },
+      ],
+      lists: [{ status: 'doing', order: [...was, 'A3', 'A1'] }],
+    })
+    expect(inDoing(data)).toEqual([...was, 'A3', 'A1'])
+    // Asked again, nothing changes: the same request twice is one change.
+    const again = exec(data, {
+      type: 'tasks.update',
+      cards: [
+        { id: 'A1', fields: { status: 'doing' } },
+        { id: 'A3', fields: { status: 'doing' } },
+      ],
+    })
+    expect(again.changes).toEqual([])
+    expect(changes.length).toBeGreaterThanOrEqual(2)
+  })
+
+  it('refuses the whole change when any part of it can’t be done', () => {
+    const data = board()
+    const cards = (more: object[]) => ({
+      type: 'tasks.update' as const,
+      cards: [{ id: 'A1', fields: { priority: 'low' as const } }, ...more] as never,
+    })
+    expect(refusal(data, cards([{ id: 'ghost', fields: { priority: 'low' } }]))).toMatch(/no longer exists/)
+    expect(refusal(data, cards([{ id: 'A1', fields: { priority: 'high' } }]))).toMatch(/named twice/)
+    expect(refusal(data, cards([{ id: 'A3', fields: { status: 'nope' } }]))).toMatch(/list no longer exists/)
+    expect(refusal(data, cards([{ id: 'A3', fields: { assigneeId: 'ghost' } }]))).toMatch(/no longer on this board/)
+    // Where a parent follows its subtasks, it can't be moved by hand, alone or among others.
+    expect(refusal(data, cards([{ id: 'A', fields: { status: 'done' } }]))).toMatch(/follows its subtasks/)
+    expect(refusal(data, { type: 'tasks.update', cards: [{ id: 'A1', fields: {} }], lists: [{ status: 'nope', order: [] }] })).toMatch(
+      /list no longer exists/,
+    )
+    expect(CommandSchema.safeParse({ type: 'tasks.update', cards: [{ id: 'A1', fields: { priority: 'low' } }] }).success).toBe(true)
+    expect(CommandSchema.safeParse({ type: 'tasks.update', cards: [{ id: 'A1', fields: { colour: 'red' } }], extra: 1 }).success).toBe(true)
+    expect(CommandSchema.safeParse({ type: 'tasks.update', cards: [{ fields: {} }] }).success).toBe(false)
   })
 })
 

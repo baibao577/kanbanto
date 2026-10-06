@@ -38,7 +38,9 @@ curl -X POST https://kanbanto.example.com/api/boards/<board id>/mutations \
 - A refused command answers 422 with the reason (for example, moving a task inside its own subtask).
 - `/api/docs` lists every command and its fields: `task.create`, `task.update`, `task.move`, `tasks.moveToList`,
   `task.archive`, `tasks.archiveDone`, `task.restore`, `task.delete`, `tasks.import` (many cards in one change:
-  see "Many cards at once" below), and the ones for lists, labels and the board.
+  see "Many cards at once" below), `tasks.update` (several tasks changed in one change:
+  `{"type":"tasks.update","cards":[{"id":"<task id>","fields":{"status":"<list id>"}}, …]}`, each task with its own
+  `fields` as `task.update` takes them), and the ones for lists, labels and the board.
 - **Custom fields.** A board's own fields are in `data.fields` (id, name, type, and for a choice its options); a
   task's values are in `custom`, by field id. Set them with `task.update`:
   `{"type":"task.update","id":"<task id>","fields":{"custom":{"<field id>":"Acme","<another>":null}}}` sets the
@@ -435,6 +437,7 @@ written to the server's log. Assistants can't delete files.
 | `plan_overview` | A workspace's resource plan, read only: each project's planned, scheduled and logged man-days, who's booked at what share; each person's load, when they go over 100% and when they're free |
 | `create_tasks` | Add tasks, each with its own `subtasks` if you like, or break one down into subtasks (`parent_id`); without a board they go to your Inbox, which everyone has. A wrong list, label or person adds nothing. Each can come with `fields` (the board's own, by name) |
 | `update_task` | Title, description, dates, assignee, priority, labels, what it waits on (`waiting_on`), list, and its place in the list (`position: top` / `bottom`, `before_task_id` / `after_task_id`). Put in another list, it goes to the end unless placed. `fields: {"Stage": "Won", "Value": 12000}` sets the board's own fields by name (`null` clears one; a card link takes a card's title, a person field a person's name or `me`) |
+| `update_tasks` | The same change to several tasks at once (`task_ids`), as one change with one line of activity: their list, assignee, priority, dates, the board's own fields, labels (`labels` replaces them, `add_labels` and `remove_labels` keep the others). `with_subtasks` also takes every task under them, which is how a task moves to another list with its subtasks. A wrong id or name changes nothing; asked twice, it changes nothing the second time |
 | `move_task` | Change a task's parent or its place among siblings in the outline |
 | `set_reminder` | Add a reminder (at a time, or some minutes before it's due: before a whole due day, from 9:00 in your time zone) or remove one; it goes to the task's assignee |
 | `archive_task` | Archive a task with its subtasks, or restore it (`restore: true`); nothing is lost |

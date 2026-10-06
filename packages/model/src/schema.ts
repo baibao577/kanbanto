@@ -1,7 +1,7 @@
 import { DATE_WORDS, MAX_DATE_DAYS, normalizeTaskDate } from './dates'
 import { z } from 'zod'
 import { COLORS, isBackground, type BoardBackground, type ColorName } from './colors'
-import { IMPORT_MAX, type Command } from './commands'
+import { BULK_MAX, IMPORT_MAX, type Command } from './commands'
 import { FIELD_LIMITS, FIELD_TYPES, FILTER_TEXT_MAX, TEXT_FORMATS, TEXT_MATCHES, LINK_SCOPES, type FieldSettings } from './fields'
 import { isPosition } from './position'
 import { BUILT_IN_SORT_KEYS, OUTLINE_COLUMNS, OUTLINE_EXTRA, type OutlineConfig, type TableFilter } from './table'
@@ -223,6 +223,14 @@ export const CommandSchema = z.discriminatedUnion('type', [
     list: ids.optional(),
   }),
   z.object({ type: z.literal('tasks.moveToList'), ids, status: id, assigneeId: id.nullable().optional(), list: ids.optional() }),
+  z.object({
+    type: z.literal('tasks.update'),
+    cards: z.array(z.object({ id, fields: taskFields })).max(BULK_MAX),
+    lists: z
+      .array(z.object({ status: id, order: ids }))
+      .max(200)
+      .optional(),
+  }),
   z.object({ type: z.literal('task.delete'), id }),
   z.object({ type: z.literal('task.archive'), id, complete: z.boolean().optional() }),
   z.object({ type: z.literal('tasks.archiveDone'), status: id, before: z.string().max(40) }),
