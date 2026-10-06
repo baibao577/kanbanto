@@ -19,6 +19,12 @@ export function formatDay(iso: string, full = false) {
   return time ? `${day} · ${time}` : day
 }
 
+/** The day something happened: "3 Oct", with the year when it isn't this one ("3 Oct 2025"). */
+export function formatShortDay(iso: string) {
+  const d = parseISO(iso)
+  return format(d, d.getFullYear() === new Date().getFullYear() ? 'd MMM' : 'd MMM yyyy')
+}
+
 /** A moment something happened: "Sat 3 Oct 2026, 14:30". */
 export const formatMoment = (iso: string) => format(parseISO(iso), 'EEE d MMM yyyy, HH:mm')
 

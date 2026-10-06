@@ -122,6 +122,15 @@ then `git pull` (or download the new release) and `docker compose up -d --build`
   a reminder if you like) and in the Due and Start pickers.
 - **Webhooks** live in Board settings: each can send only some events (card changes, comments, reminders), and has a
   delivery log showing what was sent and what came back, with "Send again".
+- **Sort by when cards were created or last updated:** a list on the Board can be ordered by Created or Updated
+  (the list's ⋯ → Order cards by), beside priority, due date and title, and "Reverse the order" turns any order
+  round (oldest first, least important first, Z to A). The Outline has two more columns, Created and Updated, off
+  until switched on in Display, and sorts by them like any column; on a phone, where the Outline has no headings to
+  click, Display has "Sort by". "Updated" is the last real change to a card (its title, list, dates, description and
+  so on): dragging it to another place doesn't count, and the line at the foot of an open card now says the same
+  date. Fixed on the way: on a phone, a submenu (a list's "Order cards by" and "Color", a board's background and
+  "Move to") opened half off the screen with its words cut off; it now stays on the screen. And choosing a list's
+  order, folding or hiding a list no longer rebuilds the whole board, which sent a wide board back to its left end.
 - **Bring your work in:** a board from Trello, and cards from a spreadsheet. "Import a board…" on the boards page
   now takes the file Trello's "Export as JSON" gives: lists in their order, cards with their dates and labels,
   checklists as subtasks, comments with the dates they were written (in your name, each saying who wrote it), custom

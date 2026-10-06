@@ -8,7 +8,11 @@ import { Switch } from '@/components/ui/switch'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { cn } from '@/lib/utils'
 import { fieldKey, type FieldKey } from '@kanbanto/model/fields'
-import { OUTLINE_COLUMNS, type OutlineColumn } from '@kanbanto/model/table'
+import { isExtraColumn, OUTLINE_COLUMNS, OUTLINE_EXTRA, type OutlineColumn, type Sort, type SortKey } from '@kanbanto/model/table'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+
+/** (A select can't have an empty value: this stands for not sorting.) */
+const NO_SORT = 'none'
 
 const LABEL: Record<OutlineColumn, string> = {
   status: 'Status',
@@ -18,6 +22,8 @@ const LABEL: Record<OutlineColumn, string> = {
   start: 'Start',
   due: 'Due',
   labels: 'Labels',
+  created: 'Created',
+  updated: 'Updated',
 }
 
 /** The Outline's "Display": which columns show, and how tall rows are. Saved per board, like the board's display. */
@@ -25,9 +31,16 @@ export function OutlineDisplayMenu() {
   const { data, prefs, setPrefs } = useBoard()
   const cfg = prefs.outline
   const hidden = new Set<string>(cfg.hidden ?? [])
-  const changed = hidden.size > 0 || !!cfg.hideFields || cfg.density === 'comfortable' || !!cfg.hideDone || !!cfg.order?.length
+  // (Created and Updated are off until switched on; the others are on until switched off.)
+  const extra = new Set<string>(cfg.extra ?? [])
+  const shows = (c: OutlineColumn) => (isExtraColumn(c) ? extra.has(c) : !hidden.has(c))
+  const changed = hidden.size > 0 || extra.size > 0 || !!cfg.hideFields || cfg.density === 'comfortable' || !!cfg.hideDone || !!cfg.order?.length
   // Always written in the same order (built-in columns, then fields by key), so a saved view compares equal to itself.
   const toggle = (c: OutlineColumn | FieldKey, on: boolean) => {
+    if (isExtraColumn(c)) {
+      const next = OUTLINE_EXTRA.filter((x) => (x === c ? on : extra.has(x)))
+      return setPrefs({ type: 'setOutline', config: { ...cfg, extra: next.length ? next : undefined } })
+    }
     const all: (OutlineColumn | FieldKey)[] = [...OUTLINE_COLUMNS, ...data.fields.map((f) => fieldKey(f.id)).sort()]
     const next = all.filter((x) => (x === c ? !on : hidden.has(x)))
     setPrefs({ type: 'setOutline', config: { ...cfg, hidden: next.length ? next : undefined } })
@@ -46,7 +59,7 @@ export function OutlineDisplayMenu() {
           <p className="mb-2 text-xs font-medium text-muted-foreground">Columns</p>
           {OUTLINE_COLUMNS.map((c) => (
             <label key={c} className="flex h-7 cursor-pointer items-center gap-2.5 text-sm">
-              <Checkbox checked={!hidden.has(c)} onCheckedChange={(on) => toggle(c, !!on)} />
+              <Checkbox checked={shows(c)} onCheckedChange={(on) => toggle(c, !!on)} />
               {LABEL[c]}
             </label>
           ))}
@@ -56,6 +69,59 @@ export function OutlineDisplayMenu() {
           <p className="pt-1 text-[11px] text-muted-foreground md:hidden">
             On a phone, the Outline is a list: columns show as details under each task.
           </p>
+        </div>
+        {/* A phone has no column headings to click: the sort is chosen here. */}
+        <div className="md:hidden">
+          <Separator />
+          <div className="space-y-2 p-4">
+            <p className="text-xs font-medium text-muted-foreground">Sort by</p>
+            <Select
+              value={cfg.sort?.key ?? NO_SORT}
+              onValueChange={(v) =>
+                setPrefs({
+                  type: 'setOutline',
+                  config: { ...cfg, sort: v === NO_SORT ? undefined : { key: v as SortKey, dir: cfg.sort?.dir ?? 'asc' } },
+                })
+              }
+            >
+              <SelectTrigger size="sm" className="w-full" aria-label="Sort by">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={NO_SORT}>Your own order</SelectItem>
+                <SelectItem value="title">Task</SelectItem>
+                {OUTLINE_COLUMNS.map((c) => (
+                  <SelectItem key={c} value={c}>
+                    {LABEL[c]}
+                  </SelectItem>
+                ))}
+                {data.fields.map((f) => (
+                  <SelectItem key={f.id} value={fieldKey(f.id)}>
+                    {f.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {cfg.sort && (
+              <ToggleGroup
+                type="single"
+                variant="outline"
+                size="sm"
+                value={cfg.sort.dir}
+                onValueChange={(v) =>
+                  v && cfg.sort && setPrefs({ type: 'setOutline', config: { ...cfg, sort: { ...cfg.sort, dir: v as Sort['dir'] } } })
+                }
+                className="w-full"
+              >
+                <ToggleGroupItem value="asc" className="flex-1 text-xs">
+                  ↑ Ascending
+                </ToggleGroupItem>
+                <ToggleGroupItem value="desc" className="flex-1 text-xs">
+                  ↓ Descending
+                </ToggleGroupItem>
+              </ToggleGroup>
+            )}
+          </div>
         </div>
         {data.fields.length > 0 && (
           <>
@@ -123,7 +189,15 @@ export function OutlineDisplayMenu() {
                 onClick={() =>
                   setPrefs({
                     type: 'setOutline',
-                    config: { ...cfg, hidden: undefined, hideFields: undefined, density: undefined, hideDone: undefined, order: undefined },
+                    config: {
+                      ...cfg,
+                      hidden: undefined,
+                      extra: undefined,
+                      hideFields: undefined,
+                      density: undefined,
+                      hideDone: undefined,
+                      order: undefined,
+                    },
                   })
                 }
               >

@@ -158,9 +158,29 @@ function DropdownMenuSubTrigger({
   )
 }
 
+/**
+ * A submenu opens beside its menu. On a phone there is no room on either side, and it would hang off the edge of the
+ * screen with its words cut off: once it has been placed, it's moved back in (over its menu, which it came from).
+ */
+function keepOnScreen(el: HTMLElement | null) {
+  if (!el) return
+  const fit = () => {
+    if (!el.isConnected) return
+    el.style.translate = ''
+    const r = el.getBoundingClientRect()
+    const edge = 8
+    const dx = r.left < edge ? edge - r.left : r.right > window.innerWidth - edge ? window.innerWidth - edge - r.right : 0
+    if (dx) el.style.translate = `${Math.round(dx)}px 0`
+  }
+  // (Placed a frame after it appears, and measured again once it has finished growing in.)
+  requestAnimationFrame(fit)
+  setTimeout(fit, 220)
+}
+
 function DropdownMenuSubContent({ className, ...props }: React.ComponentProps<typeof DropdownMenuPrimitive.SubContent>) {
   return (
     <DropdownMenuPrimitive.SubContent
+      ref={keepOnScreen}
       data-slot="dropdown-menu-sub-content"
       className={cn(
         'z-50 min-w-[8rem] origin-(--radix-dropdown-menu-content-transform-origin) overflow-hidden rounded-md border bg-popover p-1 text-popover-foreground shadow-lg data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95',

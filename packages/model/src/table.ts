@@ -28,10 +28,22 @@ import {
 } from './fields'
 import type { TaskIndex } from './indexer'
 import { subtreeSums } from './totals'
-import { PRIORITIES, PRIORITY_LABEL, type LabelDef, type Member, type Priority, type StatusColumn } from './types'
+import {
+  isReversed,
+  listOrderKey,
+  PRIORITIES,
+  PRIORITY_LABEL,
+  type LabelDef,
+  type ListOrder,
+  type ListOrderKey,
+  type Member,
+  type Priority,
+  type StatusColumn,
+  type Task,
+} from './types'
 
 /** What every card has that the Outline can sort by. */
-export const BUILT_IN_SORT_KEYS = ['title', 'status', 'progress', 'assignee', 'priority', 'start', 'due', 'labels'] as const
+export const BUILT_IN_SORT_KEYS = ['title', 'status', 'progress', 'assignee', 'priority', 'start', 'due', 'labels', 'created', 'updated'] as const
 export type BuiltInSortKey = (typeof BUILT_IN_SORT_KEYS)[number]
 /** Columns the Outline table can sort by: those, and each of the board's own fields ("f:" and its id). */
 export type SortKey = BuiltInSortKey | FieldKey
@@ -39,6 +51,22 @@ export interface Sort {
   key: SortKey
   dir: 'asc' | 'desc'
 }
+
+/** Which way each order goes before it's turned round: dates start with the newest. */
+const LIST_FIRST: Record<ListOrderKey, Sort['dir']> = { priority: 'asc', due: 'asc', title: 'asc', created: 'desc', updated: 'desc' }
+
+/** What a board list's order (see `ListOrder`) sorts by, and which way. */
+export function listSort(by: ListOrder): Sort {
+  const key = listOrderKey(by)
+  const first = LIST_FIRST[key]
+  return { key, dir: isReversed(by) ? (first === 'asc' ? 'desc' : 'asc') : first }
+}
+
+/**
+ * When a card was last changed, for sorting and for saying so: the last real work on it (see `Task.activeAt`).
+ * Putting cards in another order doesn't count, so sorting by it doesn't shuffle a list you just tidied.
+ */
+export const changedAt = (t: Pick<Task, 'activeAt' | 'updatedAt'>) => t.activeAt ?? t.updatedAt
 
 /** Outline filters: AND across properties, OR within one (e.g. status is To Do or Doing). */
 export interface TableFilter {
@@ -65,13 +93,19 @@ export interface TableFilter {
 
 /** The Outline's own settings (filters are shared by every tab; see State.filter). */
 /** The Outline's property columns (Task is always there). */
-export const OUTLINE_COLUMNS = ['status', 'progress', 'assignee', 'priority', 'start', 'due', 'labels'] as const
+export const OUTLINE_COLUMNS = ['status', 'progress', 'assignee', 'priority', 'start', 'due', 'labels', 'created', 'updated'] as const
 export type OutlineColumn = (typeof OUTLINE_COLUMNS)[number]
+/** The columns that are off until someone switches them on (the others are on until switched off). */
+export const OUTLINE_EXTRA = ['created', 'updated'] as const satisfies readonly OutlineColumn[]
+export type ExtraColumn = (typeof OUTLINE_EXTRA)[number]
+export const isExtraColumn = (key: string): key is ExtraColumn => (OUTLINE_EXTRA as readonly string[]).includes(key)
 
 export interface OutlineConfig {
   sort?: Sort
   /** Property columns switched off (Display → Columns): built-in ones, and the board's fields by their key (kept sorted). */
   hidden?: (OutlineColumn | FieldKey)[]
+  /** Columns that are off by default and were switched on (see OUTLINE_EXTRA; kept in that order). */
+  extra?: ExtraColumn[]
   /** None of the board's own fields as columns. */
   hideFields?: boolean
   /** Row height: compact (the default) or comfortable. */
@@ -294,6 +328,10 @@ export function sortComparator(idx: TaskIndex, sort: Sort, labelById: Map<string
         return t.start ? sortTime(t.start) : undefined
       case 'due':
         return t.due ? sortTime(t.due) : undefined
+      case 'created':
+        return Date.parse(t.createdAt)
+      case 'updated':
+        return Date.parse(changedAt(t))
       case 'labels': {
         const first = t.labels
           .map((l) => labelById.get(l)?.name.toLowerCase())

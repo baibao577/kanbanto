@@ -1,15 +1,26 @@
-import type { ListOrder, ViewConfig } from '@kanbanto/model/types'
+import type { ListOrder, ListOrderKey, ViewConfig } from '@kanbanto/model/types'
 
 /**
  * How one list is shown (set from the list itself, saved with the display settings): in another order than the one
  * made by hand, which is kept underneath; or folded to a narrow strip.
  */
 
-/** How a list's cards can be ordered, and which come first. */
-export const ORDER_LABEL: Record<ListOrder, [string, string]> = {
-  priority: ['Priority', 'Most important first'],
-  due: ['Due date', 'Soonest first'],
-  title: ['Title', 'A to Z'],
+/** What a list's cards can be ordered by: its name, which come first, and which come first turned round. */
+export const ORDER_LABEL: Record<ListOrderKey, [string, string, string]> = {
+  priority: ['Priority', 'Most important first', 'Least important first'],
+  due: ['Due date', 'Soonest first', 'Latest first'],
+  title: ['Title', 'A to Z', 'Z to A'],
+  created: ['Created', 'Newest first', 'Oldest first'],
+  updated: ['Updated', 'Latest first', 'Longest ago first'],
+}
+
+/** The same, as it reads in a sentence: "This list is ordered by …". */
+export const ORDER_WORDS: Record<ListOrderKey, string> = {
+  priority: 'priority',
+  due: 'due date',
+  title: 'title',
+  created: 'when cards were created',
+  updated: 'when cards were last updated',
 }
 
 /** The board's display settings with list `id` shown in that order (none: by hand). */

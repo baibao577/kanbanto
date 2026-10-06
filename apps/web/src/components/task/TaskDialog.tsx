@@ -16,6 +16,7 @@ import {
   X,
 } from '@phosphor-icons/react'
 import { formatDay, formatMoment } from '@/lib/format'
+import { changedAt } from '@kanbanto/model/table'
 import { api, errorMessage } from '@/api/client'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
@@ -512,7 +513,8 @@ function TaskDetail({ id, onClose }: { id: string; onClose: () => void }) {
           </div>
           <p className="mt-3 px-2 text-[11px] leading-relaxed text-muted-foreground">
             Created {formatWhen(t.createdAt)}
-            {t.version > 1 && <> · updated {formatWhen(t.updatedAt)}</>}
+            {/* (The last real change, as the Outline's Updated column and a list sorted by it have it.) */}
+            {changedAt(t) !== t.createdAt && <> · updated {formatWhen(changedAt(t))}</>}
           </p>
         </aside>
 

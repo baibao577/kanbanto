@@ -4,7 +4,7 @@ import { COLORS, isBackground, type BoardBackground, type ColorName } from './co
 import { IMPORT_MAX, type Command } from './commands'
 import { FIELD_LIMITS, FIELD_TYPES, FILTER_TEXT_MAX, TEXT_FORMATS, TEXT_MATCHES, LINK_SCOPES, type FieldSettings } from './fields'
 import { isPosition } from './position'
-import { BUILT_IN_SORT_KEYS, OUTLINE_COLUMNS, type OutlineConfig, type TableFilter } from './table'
+import { BUILT_IN_SORT_KEYS, OUTLINE_COLUMNS, OUTLINE_EXTRA, type OutlineConfig, type TableFilter } from './table'
 import { CATEGORIES, LAYOUTS, LIST_ORDERS, PRIORITIES } from './types'
 
 /**
@@ -319,6 +319,7 @@ export const PresetSettingsSchema = z.object({
       .array(z.union([z.enum(OUTLINE_COLUMNS), fieldKey]))
       .max(100)
       .optional(),
+    extra: z.array(z.enum(OUTLINE_EXTRA)).max(OUTLINE_EXTRA.length).optional().catch(undefined),
     hideFields: z.boolean().optional(),
     density: z.enum(['comfortable', 'compact']).optional(),
     hideDone: z.boolean().optional(),

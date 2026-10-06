@@ -28,6 +28,7 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
+  DropdownMenuCheckboxItem,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
   DropdownMenuSeparator,
@@ -39,8 +40,19 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { cn } from '@/lib/utils'
 import { tone } from '@kanbanto/model/colors'
-import { sortComparator } from '@kanbanto/model/table'
-import { CATEGORIES, CATEGORY_HINT, CATEGORY_LABEL, LIST_ORDERS, type Category, type ListOrder, type StatusColumn } from '@kanbanto/model/types'
+import { listSort, sortComparator } from '@kanbanto/model/table'
+import {
+  CATEGORIES,
+  CATEGORY_HINT,
+  CATEGORY_LABEL,
+  isReversed,
+  LIST_ORDER_KEYS,
+  listOrderKey,
+  reversed,
+  type Category,
+  type ListOrder,
+  type StatusColumn,
+} from '@kanbanto/model/types'
 import { byHand } from '@kanbanto/model/view'
 import { ORDER_LABEL, withListCollapsed, withListOrder } from './listOrder'
 
@@ -78,7 +90,7 @@ export function ListHeader({ col, count, editing, setEditing, onArchiveOlder, cl
     if (!order) return
     // (A parent whose status follows its subtasks isn't placed by hand in a list.)
     const mine = Object.keys(data.tasks).filter((id) => idx.status.get(id) === col.id && data.tasks[id].status === col.id)
-    const list = byHand(idx, mine).sort(sortComparator(idx, { key: order, dir: 'asc' }, new Map()))
+    const list = byHand(idx, mine).sort(sortComparator(idx, listSort(order), new Map()))
     if (!run({ type: 'tasks.moveToList', ids: list, status: col.id, list })) return
     setOrder(undefined)
     const back = () => {
@@ -123,11 +135,11 @@ export function ListHeader({ col, count, editing, setEditing, onArchiveOlder, cl
       <span className={cn('text-xs tabular-nums', col.color ? 'text-foreground/70' : 'text-muted-foreground')}>{count}</span>
       {order && (
         <span
-          title={`Ordered by ${ORDER_LABEL[order][0].toLowerCase()}`}
+          title={`Ordered by ${ORDER_LABEL[listOrderKey(order)][0].toLowerCase()}: ${ORDER_LABEL[listOrderKey(order)][isReversed(order) ? 2 : 1].toLowerCase()}`}
           className={cn('flex items-center gap-1 text-xs', col.color ? 'text-foreground/70' : 'text-muted-foreground')}
         >
           <SortAscending className="size-3.5" />
-          {ORDER_LABEL[order][0]}
+          {ORDER_LABEL[listOrderKey(order)][0]}
         </span>
       )}
 
@@ -181,18 +193,32 @@ export function ListHeader({ col, count, editing, setEditing, onArchiveOlder, cl
                 <SortAscending /> Order cards by
               </DropdownMenuSubTrigger>
               <DropdownMenuSubContent className="w-60">
-                <DropdownMenuRadioGroup value={order ?? ''} onValueChange={(v) => setOrder((v || undefined) as ListOrder | undefined)}>
+                <DropdownMenuRadioGroup
+                  value={order ? listOrderKey(order) : ''}
+                  onValueChange={(v) => setOrder((v || undefined) as ListOrder | undefined)}
+                >
                   <DropdownMenuRadioItem value="">
                     By hand
                     <span className="ml-auto text-xs text-muted-foreground">As you dragged them</span>
                   </DropdownMenuRadioItem>
-                  {LIST_ORDERS.map((by) => (
+                  {LIST_ORDER_KEYS.map((by) => (
                     <DropdownMenuRadioItem key={by} value={by}>
                       {ORDER_LABEL[by][0]}
-                      <span className="ml-auto text-xs text-muted-foreground">{ORDER_LABEL[by][1]}</span>
+                      {/* (The one in use says which way round it is now.) */}
+                      <span className="ml-auto text-xs text-muted-foreground">
+                        {ORDER_LABEL[by][order && listOrderKey(order) === by && isReversed(order) ? 2 : 1]}
+                      </span>
                     </DropdownMenuRadioItem>
                   ))}
                 </DropdownMenuRadioGroup>
+                <DropdownMenuSeparator />
+                <DropdownMenuCheckboxItem
+                  checked={!!order && isReversed(order)}
+                  disabled={!order}
+                  onCheckedChange={() => order && setOrder(reversed(order))}
+                >
+                  Reverse the order
+                </DropdownMenuCheckboxItem>
                 {order && (
                   <>
                     <DropdownMenuSeparator />

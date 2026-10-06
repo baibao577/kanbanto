@@ -29,7 +29,7 @@ import { tone } from '@kanbanto/model/colors'
 import { ancestorsOf, statusCol } from '@kanbanto/model/indexer'
 import { filterCount, matchesFilter } from '@kanbanto/model/table'
 import type { TaskFields } from '@kanbanto/model/commands'
-import type { StatusColumn } from '@kanbanto/model/types'
+import { listOrderKey, type StatusColumn } from '@kanbanto/model/types'
 import { buildView, cellKey, groupCell, groupsSubtasks, NO_ROW, UNASSIGNED, type Lane } from '@kanbanto/model/view'
 import { ArchiveOlderDialog } from './ArchiveOlderDialog'
 import { cardIndexAt, cellAt, dragging, itemIndexAt, listIndexAt, zones, type DropZone, type GroupDrag } from './dnd'
@@ -47,7 +47,7 @@ import { GroupHeader } from './GroupHeader'
 import { numberText } from '@kanbanto/model/fields'
 import { numberOf, subtreeSums, sumOf } from '@kanbanto/model/totals'
 import { CollapsedList, ListHeader } from './ListHeader'
-import { ORDER_LABEL, withListOrder } from './listOrder'
+import { ORDER_WORDS, withListOrder } from './listOrder'
 import { QuickAdd } from './QuickAdd'
 import { TaskCard } from './TaskCard'
 
@@ -89,6 +89,9 @@ const laneTint = (col?: StatusColumn) =>
 
 export function BoardView({ search }: { search: string }) {
   const { prefs } = useBoard()
+  // Changing how the board is laid out starts it fresh (paging, drag state); the Display menu stays open. What is set
+  // from one list (its order, folding it, hiding it) isn't that: the board stays as it is, scrolled where it was.
+  const { listOrder: _order, collapsedColumns: _folded, hiddenColumns: _hidden, ...shape } = prefs.display.board
   return (
     <>
       <ViewActions>
@@ -96,8 +99,7 @@ export function BoardView({ search }: { search: string }) {
         <FilterMenu />
         <DisplayMenu />
       </ViewActions>
-      {/* Changing display settings starts the board fresh (paging, drag state); the Display menu stays open. */}
-      <Board key={JSON.stringify(prefs.display.board)} search={search} />
+      <Board key={JSON.stringify(shape)} search={search} />
     </>
   )
 }
@@ -202,7 +204,7 @@ function Board({ search }: { search: string }) {
   const orderedHint = (col: string) => {
     const by = statusLists ? config.listOrder?.[col] : undefined
     if (!by) return
-    toast(`This list is ordered by ${ORDER_LABEL[by][0].toLowerCase()}`, {
+    toast(`This list is ordered by ${ORDER_WORDS[listOrderKey(by)]}`, {
       id: 'ordered',
       description: 'Cards can’t be moved by hand here. Your own order is kept under “By hand”.',
       action: { label: 'Switch to By hand', onClick: () => setPrefs({ type: 'setDisplay', config: withListOrder(config, col, undefined) }) },

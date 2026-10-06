@@ -15,8 +15,11 @@ A list is a stage of the work. Each list has a menu, opened with its **⋯**.
 
 - **Rename.** Or just click the list's name.
 - **Color.** Tints the list's header.
-- **Order cards by.** By hand (as you dragged them), or sorted, for example by due date or priority. **Keep this
-  order** makes a sorted order the new order by hand.
+- **Order cards by.** By hand (as you dragged them), or sorted: by priority, due date or title, or by when the
+  cards were **created** or last **updated** (newest first). **Reverse the order** turns any of them round: oldest
+  first, least important first, Z to A. **Keep this order** makes a sorted order the new order by hand. (*Updated*
+  is the last real change to a card: its title, list, dates, description and so on. Dragging it to another place
+  doesn't count.)
 - **Move left / Move right.** Or drag the list by its header.
 - **Cards in this list are…** what the list counts as: **Backlog** (planned, not ready yet), **Not started**, **In
   progress** or **Done**. This is how Kanbanto knows which cards are finished, whatever you name your lists.

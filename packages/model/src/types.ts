@@ -198,9 +198,21 @@ export interface ViewConfig {
   listOrder?: Record<string, ListOrder>
 }
 
-/** What a list's cards can be ordered by: most important first, soonest due first, A to Z. Without one: last. */
-export const LIST_ORDERS = ['priority', 'due', 'title'] as const
+/**
+ * What a list's cards can be ordered by: most important first, soonest due first, A to Z, the newest made first, the
+ * latest changed first. Each can be turned round ("-rev": the oldest made first). Without one: last, either way.
+ */
+export const LIST_ORDER_KEYS = ['priority', 'due', 'title', 'created', 'updated'] as const
+export type ListOrderKey = (typeof LIST_ORDER_KEYS)[number]
+export const LIST_ORDERS = [...LIST_ORDER_KEYS, 'priority-rev', 'due-rev', 'title-rev', 'created-rev', 'updated-rev'] as const satisfies readonly (
+  ListOrderKey | `${ListOrderKey}-rev`
+)[]
 export type ListOrder = (typeof LIST_ORDERS)[number]
+/** What an order goes by, whichever way round it is. */
+export const listOrderKey = (by: ListOrder): ListOrderKey => by.replace(/-rev$/, '') as ListOrderKey
+export const isReversed = (by: ListOrder) => by.endsWith('-rev')
+/** The same order the other way round. */
+export const reversed = (by: ListOrder): ListOrder => (isReversed(by) ? listOrderKey(by) : `${listOrderKey(by)}-rev`)
 
 export type DoneLists = 'all' | 'recent'
 export const DONE_DAYS = 14

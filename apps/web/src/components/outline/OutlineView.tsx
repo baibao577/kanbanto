@@ -27,11 +27,22 @@ import { QuickAdd } from '@/components/board/QuickAdd'
 import { BarIconButton, ViewActions } from '@/components/shell/ViewBar'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { formatDay } from '@/lib/format'
+import { formatDay, formatMoment, formatShortDay } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { fieldIdOf, fieldKey, isFieldKey, numberText, type BoardField, type FieldType, type FieldValue } from '@kanbanto/model/fields'
 import { isBlocked, statusCol } from '@kanbanto/model/indexer'
-import { arrangeColumns, moveColumn, sortComparator, type BuiltInSortKey, type ColumnKey, type Sort, type SortKey } from '@kanbanto/model/table'
+import {
+  arrangeColumns,
+  changedAt,
+  isExtraColumn,
+  moveColumn,
+  OUTLINE_EXTRA,
+  sortComparator,
+  type BuiltInSortKey,
+  type ColumnKey,
+  type Sort,
+  type SortKey,
+} from '@kanbanto/model/table'
 import { subtreeSums, sumOf } from '@kanbanto/model/totals'
 import { afterSubtree, defaultExpanded, flattenTree, treeTop } from '@kanbanto/model/tree'
 import { FilterMenu } from '@/components/shell/FilterMenu'
@@ -63,6 +74,9 @@ const COLUMNS: (Column & { key: BuiltInSortKey })[] = [
   { key: 'start', label: 'Start', width: 6.5 },
   { key: 'due', label: 'Due', width: 6.5 },
   { key: 'labels', label: 'Labels', width: 11 },
+  // (Off until switched on in Display: see OUTLINE_EXTRA.)
+  { key: 'created', label: 'Created', width: 7 },
+  { key: 'updated', label: 'Updated', width: 7 },
 ]
 const COLUMN_LABEL = Object.fromEntries(COLUMNS.map((c) => [c.key, c.label])) as Record<BuiltInSortKey, string>
 /** How wide a field's column is, by its kind (in rem): wider for a long name, up to a point, so the heading reads. */
@@ -142,9 +156,9 @@ export function OutlineView({ search }: { search: string }) {
     const byKey = new Map(orderable.map((c) => [c.key as string, c]))
     const shown = arrangeColumns(allKeys, cfg.order)
       .map((k) => byKey.get(k)!)
-      .filter((c) => !hidden.has(c.key) && !(c.field && cfg.hideFields))
+      .filter((c) => (isExtraColumn(c.key) ? !!cfg.extra?.includes(c.key) : !hidden.has(c.key)) && !(c.field && cfg.hideFields))
     return [COLUMNS[0] as Column, ...shown]
-  }, [orderable, allKeys, cfg.order, hidden, cfg.hideFields])
+  }, [orderable, allKeys, cfg.order, cfg.extra, hidden, cfg.hideFields])
   /** Moves a column to just before another one that shows (null: after the last). */
   const moveBefore = (key: ColumnKey, before: ColumnKey | null) =>
     setPrefs({ type: 'setOutline', config: { ...cfg, order: moveColumn(allKeys, cfg.order, key, before) } })
@@ -320,6 +334,15 @@ export function OutlineView({ search }: { search: string }) {
                           </span>
                         )}
                         {t.due && <DueChip due={t.due} done={done} />}
+                        {/* When it was made or last changed, once that column is switched on or sorted by. */}
+                        {OUTLINE_EXTRA.map(
+                          (k) =>
+                            (cfg.extra?.includes(k) || cfg.sort?.key === k) && (
+                              <span key={k}>
+                                {COLUMN_LABEL[k]} <When at={k === 'created' ? t.createdAt : changedAt(t)} />
+                              </span>
+                            ),
+                        )}
                         {isBlocked(idx, id) && <Prohibit weight="bold" className="size-3.5 text-warning" aria-label="Waiting on another task" />}
                         {/* No columns here: the fields the board shows on its cards. */}
                         {t.custom &&
@@ -520,6 +543,8 @@ export function OutlineView({ search }: { search: string }) {
                               t.start && <span className="text-xs text-muted-foreground tabular-nums">{formatDay(t.start)}</span>
                             ) : c.key === 'due' ? (
                               t.due && <DueChip due={t.due} done={done} />
+                            ) : c.key === 'created' || c.key === 'updated' ? (
+                              <When at={c.key === 'created' ? t.createdAt : changedAt(t)} />
                             ) : (
                               labels.length > 0 && (
                                 <span className="flex min-w-0 gap-1 overflow-hidden">
@@ -628,6 +653,15 @@ function RowAction({ label, onClick, children }: { label: string; onClick: () =>
  * A property cell (empty ones stay blank, so what's filled in stands out). The first sits right after the pinned
  * Task column, which already draws the divider.
  */
+/** The day something happened (the year too, when it isn't this one); pointing at it says the time. */
+function When({ at }: { at: string }) {
+  return (
+    <span className="truncate text-xs text-muted-foreground tabular-nums" title={formatMoment(at)}>
+      {formatShortDay(at)}
+    </span>
+  )
+}
+
 function Cell({ children, first, height }: { children: ReactNode; first?: boolean; height: string }) {
   return (
     <div role="cell" className={cn('flex min-w-0 items-center border-border/60 px-3', height, !first && 'border-l')}>

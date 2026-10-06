@@ -1,6 +1,6 @@
 import { descendantsOf, isBlocked, isLeaf, type TaskIndex } from './indexer'
 import { comparePositions } from './position'
-import { sortComparator } from './table'
+import { listSort, sortComparator } from './table'
 import type { FieldDef } from './fields'
 import { DONE_DAYS, type Scope, type Task, type ViewConfig } from './types'
 
@@ -203,7 +203,7 @@ export function buildView(idx: TaskIndex, cfg: ViewConfig, scope: Scope = {}): B
     for (const [k, list] of cells) {
       const sorted = byHand(idx, list)
       const by = cfg.listOrder?.[idx.status.get(list[0])!]
-      cells.set(k, by ? [...sorted].sort(sortComparator(idx, { key: by, dir: 'asc' }, new Map())) : sorted)
+      cells.set(k, by ? [...sorted].sort(sortComparator(idx, listSort(by), new Map())) : sorted)
     }
   }
 

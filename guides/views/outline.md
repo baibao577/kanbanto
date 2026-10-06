@@ -26,7 +26,11 @@ Drag rows to put them in the order you want.
 
 ## Sort and filter
 
-- Click a column's heading to sort by it.
+- Click a column's heading to sort by it. Click again for the other way round, and once more to stop sorting.
+- To sort by when tasks were **created** or last **updated**, switch those two columns on first, in **Display**.
+  *Updated* is the last real change to a task: its title, list, dates, description and so on. Dragging it to
+  another place doesn't count.
+- **On a phone** there are no headings to click: choose what to sort by, and which way, under **Display → Sort by**.
 - **Filter** and search work as in the other views.
 
 ## Put the columns in your order
@@ -47,7 +51,8 @@ stays first.
 
 Click **Display**:
 
-- pick the **columns** you want, the board's own fields among them,
+- pick the **columns** you want, the board's own fields among them (**Created** and **Updated** are off until you
+  switch them on),
 - switch between **compact** and **comfortable** rows,
 - turn on **Hide done** to leave finished tasks out.
 
