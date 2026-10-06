@@ -33,6 +33,7 @@ export default defineConfig({
         items: [
           { text: 'Cards', link: '/everyday/cards' },
           { text: 'Your Inbox', link: '/everyday/inbox' },
+          { text: 'Add from anywhere', link: '/everyday/add-from-anywhere' },
           { text: 'Writing a description', link: '/everyday/descriptions' },
           { text: 'Tasks inside tasks', link: '/everyday/subtasks' },
           { text: 'Due dates and reminders', link: '/everyday/dates-and-reminders' },

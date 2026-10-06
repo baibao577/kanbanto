@@ -63,6 +63,11 @@ to another board…**, **Inbox**.
 
 From any board: click the card's **⋯**, then **Move to another board…**. Your Inbox is first in the list.
 
+## From any page, or your phone
+
+A button in your browser's bookmarks bar, and Share on an Android phone, put a page or a link in your Inbox in two
+clicks. See [Add from anywhere](/everyday/add-from-anywhere).
+
 ## From Telegram
 
 Give your Inbox a Telegram bot and whatever you send that bot is a card here: a thought, a photo, a forwarded

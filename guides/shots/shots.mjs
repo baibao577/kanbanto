@@ -1547,6 +1547,31 @@ await shot('telegram-4-news', async () => {
   return around([card], 16)
 })
 
+// ── Add from anywhere: the bookmark button's page, and the little window it opens (also what a phone's Share opens) ──
+await shot('add-1-button', async () => {
+  await page.goto(`${SITE}/#/account/add`)
+  await page.reload()
+  await page.getByText('Add to Kanbanto', { exact: true }).waitFor()
+  await page.waitForTimeout(500)
+})
+const HANDED = { title: 'Pricing – Acme', url: 'https://acme.example/pricing', text: 'Teams pay per seat, billed yearly.' }
+await shot('add-2-window', async () => {
+  await page.goto(`${SITE}/#/add?w=1&${new URLSearchParams(HANDED)}`)
+  await page.reload()
+  await page.getByLabel('Title').waitFor()
+  await page.waitForTimeout(500)
+  return around([page.getByRole('heading', { name: 'Add a card' }).locator('xpath=ancestor::div[contains(@class,"rounded-xl")][1]')], 28)
+})
+await shot('add-3-phone', async () => {
+  // (What Share sends from a phone: a link as text, which the page finds and files under the title.)
+  await page.setViewportSize({ width: 390, height: 720 })
+  await page.goto(`${SITE}/share?${new URLSearchParams({ title: 'Acme pricing', text: 'Look at this https://acme.example/pricing' })}`)
+  await page.getByLabel('Title').waitFor()
+  await page.waitForTimeout(500)
+  return { clip: { x: 0, y: 0, width: 390, height: 520 } }
+})
+await page.setViewportSize({ width: 1360, height: 860 })
+
 // ── Your Inbox: the panel beside the board (made last: it stays open from page to page, and files a card) ─────────
 const { boardId: inbox } = await api(ann, 'POST', '/inbox')
 let notes = 0

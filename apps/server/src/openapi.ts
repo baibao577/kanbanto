@@ -7,6 +7,7 @@ import { CommandSchema } from '@kanbanto/model/schema'
 import type { FastifyPluginAsync } from 'fastify'
 import { z } from 'zod'
 import { ACTIVITY_DAYS } from './boards/activityLog'
+import { NewCardBody } from './boards/newCards'
 import { siteUrl } from './http'
 
 /**
@@ -160,6 +161,19 @@ const schemas = {
     updatedAt: str,
   }),
   PlanCommand: { ...z.toJSONSchema(PlanCommandSchema, { unrepresentable: 'any' }), $schema: undefined },
+  NewCard: { ...z.toJSONSchema(NewCardBody, { unrepresentable: 'any' }), $schema: undefined },
+  AddedCard: obj({
+    board: obj({ id: str, name: str, inbox: { type: 'boolean', description: 'It went to your Inbox.' } }, ['id', 'name']),
+    card: obj(
+      {
+        id: str,
+        title: str,
+        url: { ...nullable(str), description: 'The card’s address in the app.' },
+        subtasks: { type: 'array', items: obj({ id: str, title: str }) },
+      },
+      ['id', 'title', 'url'],
+    ),
+  }),
   Error: obj({ error: str }),
 }
 
@@ -385,6 +399,27 @@ The answer lists the records that changed.
               }),
             ),
           },
+        },
+      },
+      '/api/inbox/cards': {
+        post: {
+          tags: ['Boards'],
+          summary: 'Add a card to your Inbox, in one call',
+          description:
+            'For a script, an automation tool or a shortcut: a card with plain names instead of a command. Your Inbox is made first, if you have none. A name that isn’t there adds nothing and says what there is.',
+          requestBody: { content: { 'application/json': { schema: ref('NewCard') } } },
+          responses: { 200: json(ref('AddedCard')) },
+        },
+      },
+      '/api/boards/{id}/cards': {
+        post: {
+          tags: ['Boards'],
+          summary: 'Add a card to a board, in one call',
+          description:
+            'The same for a board you can edit: its list, labels and assignee by name, the board’s own fields by theirs, under `parentId` if given.',
+          parameters: [id('id')],
+          requestBody: { content: { 'application/json': { schema: ref('NewCard') } } },
+          responses: { 200: json(ref('AddedCard')) },
         },
       },
       '/api/cards': {

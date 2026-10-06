@@ -1,4 +1,4 @@
-import { Bell, CalendarDots, Code, EnvelopeSimple, HardDrives, Key, Tag, UserCircle } from '@phosphor-icons/react'
+import { Bell, BookmarkSimple, CalendarDots, Code, EnvelopeSimple, HardDrives, Key, Tag, UserCircle } from '@phosphor-icons/react'
 import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import type { PublicUser } from '@kanbanto/model/api'
@@ -13,6 +13,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
+import { AddFromAnywhere } from './AddFromAnywhere'
 import { ApiTokensSection } from './ApiTokens'
 import { CalendarSection } from './Calendar'
 import { DesktopNotifications } from './DesktopNotifications'
@@ -29,6 +30,7 @@ const SECTIONS: (SettingsNavItem & { id: AccountSection })[] = [
   { id: 'email', label: 'Email sending', icon: EnvelopeSimple, href: { page: 'account', section: 'email' } },
   { id: 'storage', label: 'File storage', icon: HardDrives, href: { page: 'account', section: 'storage' } },
   { id: 'api', label: 'API & apps', icon: Code, href: { page: 'account', section: 'api' } },
+  { id: 'add', label: 'Add from anywhere', icon: BookmarkSimple, href: { page: 'account', section: 'add' } },
 ]
 
 /** Your account settings, laid out like the Platform console: a sidebar of sections, each on its own page. */
@@ -55,6 +57,7 @@ export function AccountView({ section = 'profile', problem }: { section?: Accoun
       {current.id === 'email' && <AccountEmailSection />}
       {current.id === 'storage' && <AccountStorageSection />}
       {current.id === 'api' && <ApiTokensSection />}
+      {current.id === 'add' && <AddFromAnywhere />}
     </SettingsLayout>
   )
 }

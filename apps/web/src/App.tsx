@@ -42,6 +42,7 @@ const MoveToBoardDialog = lazy(() => import('@/components/task/MoveToBoardDialog
 const CardsView = lazy(() => import('@/components/cards/CardsView').then((m) => ({ default: m.CardsView })))
 const ShareDialog = lazy(() => import('@/components/share/ShareDialog').then((m) => ({ default: m.ShareDialog })))
 const AccountView = lazy(() => import('@/components/account/AccountView').then((m) => ({ default: m.AccountView })))
+const AddView = lazy(() => import('@/components/add/AddView').then((m) => ({ default: m.AddView })))
 const AdminView = lazy(() => import('@/components/admin/AdminView').then((m) => ({ default: m.AdminView })))
 const AuthorizeView = lazy(() => import('@/components/auth/AuthorizeView').then((m) => ({ default: m.AuthorizeView })))
 const WorkspaceView = lazy(() => import('@/components/workspace/WorkspaceView').then((m) => ({ default: m.WorkspaceView })))
@@ -175,6 +176,14 @@ export default function App() {
       return (
         <Suspense fallback={null}>
           <AuthorizeView query={route.query} />
+        </Suspense>
+      )
+    case 'add':
+      // (Signing in comes back here, with what was handed over still in the address.)
+      if (!user) return <Redirect to={{ page: 'signin', next: here() }} />
+      return (
+        <Suspense fallback={null}>
+          <AddView route={route} />
         </Suspense>
       )
     case 'time':

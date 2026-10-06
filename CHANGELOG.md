@@ -122,6 +122,14 @@ then `git pull` (or download the new release) and `docker compose up -d --build`
   a reminder if you like) and in the Due and Start pickers.
 - **Webhooks** live in Board settings: each can send only some events (card changes, comments, reminders), and has a
   delivery log showing what was sent and what came back, with "Send again".
+- **Add from anywhere:** put something in your Inbox without opening Kanbanto first. A button for your browser's
+  bookmarks bar (Account settings → Add from anywhere) opens a small window with the page's title, its address and
+  the words you had selected; press Add, and it closes. On Android, Kanbanto installed from Chrome is in the list of
+  apps things are shared to. The window can also send the card to a board. Nothing is saved until you press Add,
+  and the button holds no password. For scripts and automation tools (n8n, Zapier, Make, a shortcut): one call adds
+  a card with plain names, `POST /api/inbox/cards` or `POST /api/boards/<id>/cards`, where a due date can be a day,
+  a moment or words ("tomorrow 3pm"). Fixed on the way: an assistant's `update_task` with `due: null` or
+  `start: null` now takes the date off, as its description says (it used to leave it).
 - **A Telegram bot for a board:** a board's owner makes a bot at @BotFather and adds it in Board settings →
   People & apps (the Telegram box), then connects one chat by sending the bot a code. That chat gets the board's news as sentences,
   and what is sent there becomes cards: every message in your own chat with the bot, `/card …` in a group, or

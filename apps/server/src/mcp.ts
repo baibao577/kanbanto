@@ -1,6 +1,6 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
-import { doneBefore, type Command, type TaskFields } from '@kanbanto/model/commands'
+import { doneBefore, type Command } from '@kanbanto/model/commands'
 import { BOARD_DESIGNS, COLORS, isBackground, LABEL_COLOR_CYCLE, type BoardBackground, type ColorName } from '@kanbanto/model/colors'
 import type { AttachmentView, FieldView, LinkedCard } from '@kanbanto/model/api'
 import {
@@ -9,13 +9,11 @@ import {
   linksOf,
   nameKey,
   parseRef,
-  parseValue,
   peopleOf,
   saidFilter,
   valuePlain,
   FIELD_TYPES,
   TEXT_FORMATS,
-  type BoardField,
   type FieldDef,
   type FieldType,
   type FieldValue,
@@ -43,6 +41,7 @@ import type { TokenAccess } from './auth/apiTokens'
 import { requireAccess, type Access, type BoardRow } from './boards/access'
 import { createField, editBoardFields, libraryOf, listLibrary, updateField, type FieldInput, type Library } from './boards/fields'
 import { linksToResolve, pickCards, resolveLinks } from './boards/links'
+import { addCards, fieldsSaid, personSaid, pick, type CardSaid, type NewCardSaid } from './boards/newCards'
 import { ACTIVITY_DAYS, parseMoment, readActivity, workSigns } from './boards/activityLog'
 import { attachments, comments, notifications, reminderSends, tasks, users, workspaceMembers, workspaces } from './db/schema'
 import { ensureInbox } from './boards/inbox'
@@ -238,14 +237,6 @@ function archivedBrief(data: BoardData, t: Task, linked?: Linked) {
   }
 }
 
-/** Finds a list, label or person by id or name (case doesn't matter), or says what there is. */
-function pick<T extends { id: string; name: string }>(items: T[], ref: string, what: string): T {
-  const r = ref.trim().toLowerCase()
-  const found = items.find((i) => i.id === ref) ?? items.find((i) => i.name.toLowerCase() === r)
-  if (!found) throw new HttpError(400, `There’s no ${what} “${ref}”. The ${what}s are: ${items.map((i) => i.name).join(', ') || 'none'}.`)
-  return found
-}
-
 function buildServer(app: FastifyInstance, me: SessionUser, token: TokenAccess, site: string) {
   const { scope } = token
   const server = new McpServer({ name: 'kanbanto', version: '1.0.0' }, { instructions: instructionsFor(me) })
@@ -275,45 +266,7 @@ function buildServer(app: FastifyInstance, me: SessionUser, token: TokenAccess, 
     const refs = linksToResolve(data)
     return refs.length ? resolveLinks(env, access.via === 'public' ? undefined : me.id, board, data, refs) : undefined
   }
-  /**
-   * The cards a link field should hold, as an assistant says them: by title (it has to be exactly one card the field
-   * may link, among the ones this person can open) or as links. Looked up before anything is changed.
-   */
-  const linksFor = async (board: BoardRow, def: BoardField, said: string[], taskId?: string): Promise<string[]> => {
-    const refs: string[] = []
-    for (const s of said) {
-      if (parseRef(s)) {
-        refs.push(s)
-        continue
-      }
-      const { cards, problem } = await pickCards(env, me.id, board, def, s, taskId)
-      const exact = cards.filter((c) => nameKey(c.title) === nameKey(s))
-      if (exact.length === 1) refs.push(exact[0].ref)
-      else if (exact.length)
-        throw new HttpError(
-          400,
-          `${def.name}: more than one card is called “${s}”. Say which by its link: ${exact.map((c) => `${c.ref} (on ${c.board.name}${c.path.length ? `, under “${c.path.at(-1)}”` : ''})`).join('; ')}.`,
-        )
-      else
-        throw new HttpError(
-          400,
-          `${def.name}: ${
-            problem ??
-            `there’s no card called “${s}” to link${
-              cards.length
-                ? ` (close: ${cards
-                    .slice(0, 5)
-                    .map((c) => `“${c.title}”`)
-                    .join(', ')})`
-                : ''
-            }.`
-          }`,
-        )
-    }
-    return refs
-  }
-  const person = (data: BoardData, ref: string | null | undefined) =>
-    ref == null ? ref : ref.trim().toLowerCase() === 'me' ? me.id : pick(data.members, ref, 'person').id
+  const person = (data: BoardData, ref: string | null | undefined) => personSaid(data, ref, me)
   const run = (boardId: string, command: Command) => app.engine.mutate(boardId, newId(), command, me.id, token.app)
 
   /** The boards you can open, each with where it lives: its workspace's name, "Personal" (yours), or "Shared with you". */
@@ -1476,50 +1429,11 @@ function buildServer(app: FastifyInstance, me: SessionUser, token: TokenAccess, 
           'The board’s own fields, by name (get_board lists them, with a choice’s options): {"Stage": "Won", "Value": 12000, "Signed": true, "Company": "Acme"}. A choice takes an option’s name, a date looks like due, a card link the title of the card to link, a person field a person’s name or "me" (either takes a list, when the field holds several), null clears one. Fields left out stay as they are.',
         ),
     }
-    type FieldArgs = {
-      description?: string
-      start?: string | null
-      due?: string | null
-      assignee?: string | null
-      priority?: Priority | null
-      labels?: string[]
-      list?: string
-      fields?: Record<string, string | number | boolean | null | string[]>
-    }
-    /** Values for the board's fields, as an assistant gives them (by name), checked before anything is changed. */
-    const customFrom = async (board: BoardRow, data: BoardData, given: NonNullable<FieldArgs['fields']>, taskId?: string) => {
-      const out: Record<string, FieldValue | null> = {}
-      for (const [name, value] of Object.entries(given)) {
-        const def = pick(data.fields, name, 'field')
-        if (def.type === 'link' && value !== null && value !== '') {
-          const refs = await linksFor(board, def, Array.isArray(value) ? value : [String(value)], taskId)
-          out[def.id] = refs.length ? refs : null
-          continue
-        }
-        if (def.type === 'person' && value !== null && value !== '') {
-          const said = Array.isArray(value) ? value : [String(value)]
-          if (said.length > 1 && !def.many) throw new HttpError(400, `${def.name} holds one person.`)
-          out[def.id] = [...new Set(said.map((who) => person(data, who)!))]
-          continue
-        }
-        if (Array.isArray(value)) throw new HttpError(400, `${def.name}: that takes one value, not a list.`)
-        const r = parseValue(def, value)
-        if ('error' in r) throw new HttpError(400, `${def.name}: ${r.error}`)
-        out[def.id] = r.value ?? null
-      }
-      return out
-    }
-    type NewTask = FieldArgs & { title: string }
-    const fieldsFrom = async (board: BoardRow, data: BoardData, idx: TaskIndex, a: FieldArgs, taskId?: string): Promise<TaskFields> => ({
-      ...(a.description !== undefined && { description: a.description }),
-      ...(a.start !== undefined && { start: a.start ?? undefined }),
-      ...(a.due !== undefined && { due: a.due ?? undefined }),
-      ...(a.assignee !== undefined && { assigneeId: person(data, a.assignee) ?? null }),
-      ...(a.priority !== undefined && { priority: a.priority }),
-      ...(a.labels && { labels: a.labels.map((l) => pick(data.labels, l, 'label').id) }),
-      ...(a.list && { status: pick(idx.columns, a.list, 'list').id }),
-      ...(a.fields && Object.keys(a.fields).length > 0 && { custom: await customFrom(board, data, a.fields, taskId) }),
-    })
+    type FieldArgs = CardSaid
+    type NewTask = NewCardSaid
+    /** (What an assistant says about a card, by name, is understood in one place: boards/newCards.ts.) */
+    const fieldsFrom = (board: BoardRow, data: BoardData, idx: TaskIndex, a: FieldArgs, taskId?: string) =>
+      fieldsSaid(app, me, board, data, idx, a, taskId)
 
     server.registerTool(
       'create_tasks',
@@ -1550,36 +1464,8 @@ function buildServer(app: FastifyInstance, me: SessionUser, token: TokenAccess, 
       tool(async (a: { board_id?: string; parent_id?: string; tasks: (NewTask & { subtasks?: NewTask[] })[] }) => {
         // No board named: their Inbox (made now, if this is the first time it's needed).
         const boardId = a.board_id ?? (await ensureInbox(app.db, me.id))
-        const { board, data, idx } = await open(boardId, 'editor')
-        if (a.parent_id && !data.tasks[a.parent_id]) throw new HttpError(404, 'There’s no such parent task on this board.')
-        // Every list, label and person is looked up before anything is added, so a wrong name adds nothing.
-        const plan: { id: string; title: string; fields: TaskFields; subtasks: { id: string; title: string; fields: TaskFields }[] }[] = []
-        for (const t of a.tasks) {
-          const subtasks = []
-          for (const k of t.subtasks ?? []) subtasks.push({ id: newId(), title: k.title, fields: await fieldsFrom(board, data, idx, k) })
-          plan.push({ id: newId(), title: t.title, fields: await fieldsFrom(board, data, idx, t), subtasks })
-        }
-        const made: { id: string; title: string; subtasks?: { id: string; title: string }[] }[] = []
-        try {
-          for (const t of plan) {
-            await run(boardId, { type: 'task.create', id: t.id, parentId: a.parent_id ?? null, fields: { title: t.title, ...t.fields } })
-            const row: (typeof made)[number] = { id: t.id, title: t.title }
-            made.push(row)
-            for (const k of t.subtasks) {
-              await run(boardId, { type: 'task.create', id: k.id, parentId: t.id, fields: { title: k.title, ...k.fields } })
-              ;(row.subtasks ??= []).push({ id: k.id, title: k.title })
-            }
-          }
-        } catch (e) {
-          // Refused part-way (a date that isn't one, say): what's already there mustn't be added twice.
-          const n = made.reduce((sum, t) => sum + 1 + (t.subtasks?.length ?? 0), 0)
-          if (!(e instanceof HttpError) || !n) throw e
-          throw new HttpError(
-            e.status,
-            `${e.message} ${n} of them ${n === 1 ? 'was' : 'were'} added before that (don’t add ${n === 1 ? 'it' : 'them'} again): ${made.map((t) => `“${t.title}” (${t.id})`).join(', ')}.`,
-          )
-        }
-        return { board: { id: boardId, name: data.board.name, ...(!a.board_id && { inbox: true }) }, created: made }
+        const { board, created } = await addCards(app, { me, via: token.app }, boardId, a.tasks, a.parent_id)
+        return { board: { ...board, ...(!a.board_id && { inbox: true }) }, created }
       }),
     )
 

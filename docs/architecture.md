@@ -122,7 +122,8 @@ The app uses hash routing, so any static host or proxy works without rewrite rul
 | `#/time?week=<monday>` | My week: your logged time on every board |
 | `#/signin`, `#/signup`, `#/forgot` | Signing in |
 | `#/verify/<token>`, `#/reset/<token>` | Links in emails |
-| `#/account/<section>` | Account settings: profile, password, notifications, calendar, email, storage, api |
+| `#/account/<section>` | Account settings: profile, password, notifications, calendar, email, storage, api, add |
+| `#/add?title=…&url=…&text=…&w=1` | The little "add a card" page, with what a page handed over (the bookmark button, a phone's Share). `w`: a window of its own, which closes when the card is added. `/share?…` (where a phone sends what was shared) becomes this. |
 | `#/admin/<section>` | Platform console: overview, accounts, email, storage, integrations |
 
 ## Accounts and sharing
@@ -198,6 +199,10 @@ The app uses hash routing, so any static host or proxy works without rewrite rul
   switch of its own: bots work whatever the setting for webhooks is, and have their own box in Board settings.
 - **MCP** is stateless: each POST to `/api/mcp` builds a server whose tools call the same functions the routes use
   (`requireAccess`, `engine.mutate`, `postComment`), as the token's person.
+- **Cards by name.** What someone says about a card in plain names (its list, labels, a person, the board's own
+  fields) is understood in one place, `boards/newCards.ts`: an assistant's `create_tasks` and `update_task` use it, and
+  so do `POST /api/inbox/cards` and `POST /api/boards/:id/cards`, the one-call way in for scripts and automation tools.
+  Every name is looked up before anything is added.
 - **Calendars** work from what should be there, not from what just happened. `calendarItems` (in the model) says
   which events a board gives a person; the calendar link renders them as an .ics file on request, and
   `CalendarSync` compares them with what it last sent to Google (`calendar_events`, by hash) and sends the

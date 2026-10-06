@@ -82,12 +82,17 @@ export type Route =
   | { page: 'signup'; next?: string }
   | { page: 'admin'; section?: AdminSection }
   | { page: 'account'; section?: AccountSection; problem?: string }
+  /**
+   * The little "add a card" page, with what a page handed over: its title, its address, and selected or shared words.
+   * `w`: opened as a small window of its own (by the bookmark button), which closes once the card is added.
+   */
+  | { page: 'add'; title?: string; url?: string; text?: string; w?: boolean }
 
 export const ADMIN_SECTIONS = ['overview', 'accounts', 'email', 'storage', 'integrations'] as const
 export type AdminSection = (typeof ADMIN_SECTIONS)[number]
 export const WORKSPACE_SECTIONS = ['people', 'planning', 'fields'] as const
 export type WorkspaceSection = Exclude<(typeof WORKSPACE_SECTIONS)[number], 'people'>
-export const ACCOUNT_SECTIONS = ['profile', 'password', 'notifications', 'calendar', 'fields', 'email', 'storage', 'api'] as const
+export const ACCOUNT_SECTIONS = ['profile', 'password', 'notifications', 'calendar', 'fields', 'email', 'storage', 'api', 'add'] as const
 export type AccountSection = (typeof ACCOUNT_SECTIONS)[number]
 
 export function parseRoute(hash: string): Route {
@@ -96,6 +101,14 @@ export function parseRoute(hash: string): Route {
   if (/^#\/forgot\/?$/.test(hash)) return { page: 'forgot' }
   const authorize = hash.match(/^#\/authorize\?(.*)$/)
   if (authorize) return { page: 'authorize', query: authorize[1] }
+  const add = hash.match(/^#\/add\/?(?:\?(.*))?$/)
+  if (add) {
+    const p = new URLSearchParams(add[1] ?? '')
+    // (Whatever a page hands over is cut to what a card can hold.)
+    const said = (key: string, most: number) => p.get(key)?.slice(0, most) || undefined
+    const [title, url, text] = [said('title', 500), said('url', 2000), said('text', 2000)]
+    return { page: 'add', ...(title && { title }), ...(url && { url }), ...(text && { text }), ...(p.get('w') === '1' && { w: true }) }
+  }
   const time = hash.match(/^#\/time\/?(?:\?(.*))?$/)
   if (time) {
     const week = new URLSearchParams(time[1] ?? '').get('week')
@@ -223,6 +236,15 @@ export function hrefFor(r: Route) {
     return `#/cards${qs ? `?${qs}` : ''}`
   }
   if (r.page === 'time') return `#/time${r.week ? `?week=${r.week}` : ''}`
+  if (r.page === 'add') {
+    const p = new URLSearchParams()
+    if (r.w) p.set('w', '1')
+    if (r.title) p.set('title', r.title)
+    if (r.url) p.set('url', r.url)
+    if (r.text) p.set('text', r.text)
+    const qs = p.toString()
+    return `#/add${qs ? `?${qs}` : ''}`
+  }
   if (r.page === 'authorize') return `#/authorize?${r.query}`
   if (r.page === 'join' || r.page === 'verify' || r.page === 'reset') return `#/${r.page}/${encodeURIComponent(r.token)}`
   if (r.page === 'signin' || r.page === 'signup') return `#/${r.page}${r.next ? `?next=${encodeURIComponent(r.next)}` : ''}`

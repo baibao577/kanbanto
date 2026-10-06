@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { eq, sql } from 'drizzle-orm'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
-import { boards, users } from '../src/db/schema'
+import { boardActivity, boards, tasks, users } from '../src/db/schema'
 import { mid, Person, reset, setPlatformAdmin, setup } from './helpers'
 
 let t: Awaited<ReturnType<typeof setup>>
@@ -180,5 +180,129 @@ describe('the board someone had chosen as their Inbox (migration 0034)', () => {
     expect((await state(guest, cases[0].board)).pointer).toBe(null)
     expect(await state(once.p, once.board)).toMatchObject({ inbox: true, visibility: 'private' })
     expect((await bob.ok('GET', '/api/boards')).boards.some((b: { id: string }) => b.id === cases[0].board)).toBe(true)
+  })
+})
+
+describe('adding a card in one call, with plain names', () => {
+  const tasksOf = async (boardId: string) => t.db.select().from(tasks).where(eq(tasks.boardId, boardId))
+  const tokenFor = async (p: Person, scope: 'read' | 'write') => {
+    const admin = await Person.signUp(t.app, 'Root')
+    await setPlatformAdmin(t.db, 'root@example.com', true)
+    await admin.ok('PATCH', '/api/admin/settings', { apiTokens: true })
+    const token = (await p.ok('POST', '/api/account/tokens', { name: 'script', scope, expiresInDays: null })).token as string
+    return (method: 'GET' | 'POST', url: string, body?: unknown) => new Person(t.app).request(method, url, body, { authorization: `Bearer ${token}` })
+  }
+
+  it('to your Inbox: made on first use, with a title alone or with what else is said', async () => {
+    const ann = await Person.signUp(t.app, 'Ann')
+    expect(await ann.ok('GET', '/api/inbox')).toEqual({ boardId: null, open: 0 })
+    const first = await ann.ok('POST', '/api/inbox/cards', { title: '  Call Sam  ' })
+    const { boardId: inbox } = await ann.ok('GET', '/api/inbox')
+    expect(first).toMatchObject({ board: { id: inbox, name: 'Inbox', inbox: true }, card: { title: 'Call Sam' } })
+    expect(first.card.url).toMatch(new RegExp(`/#/b/${inbox}\\?task=${first.card.id}$`))
+
+    const second = await ann.ok('POST', '/api/inbox/cards', {
+      title: 'Plan the trip',
+      description: 'Flights first',
+      list: 'doing',
+      priority: 'high',
+      due: '2026-12-01',
+      subtasks: [{ title: 'Book flights', due: '2026-11-20' }, { title: 'Find a hotel' }],
+    })
+    expect(second.card.subtasks.map((s: { title: string }) => s.title)).toEqual(['Book flights', 'Find a hotel'])
+    const all = await tasksOf(inbox)
+    expect(all.find((c) => c.id === second.card.id)).toMatchObject({
+      description: 'Flights first',
+      status: 'doing',
+      priority: 'high',
+      due: '2026-12-01',
+    })
+    expect(all.find((c) => c.title === 'Book flights')).toMatchObject({ parentId: second.card.id, due: '2026-11-20' })
+    // (Two cards wait in the Inbox: a card's subtasks aren't counted apart from it.)
+    expect((await ann.ok('GET', '/api/inbox')).open).toBe(2)
+
+    // Nothing it doesn't know is taken quietly, and a card needs a title.
+    expect((await ann.request('POST', '/api/inbox/cards', { title: 'x', colour: 'red' })).status).toBe(400)
+    expect((await ann.request('POST', '/api/inbox/cards', { title: '   ' })).status).toBe(400)
+    expect((await ann.request('POST', '/api/inbox/cards', { title: 'x', parentId: 'A' })).status).toBe(400)
+    expect((await new Person(t.app).request('POST', '/api/inbox/cards', { title: 'x' })).status).toBe(401)
+  })
+
+  it('to a board: its list, labels, person and fields by name; a wrong name adds nothing and says what there is', async () => {
+    const ann = await Person.signUp(t.app, 'Ann')
+    const [{ id }] = (await ann.ok('GET', '/api/boards')).boards
+    const before = (await tasksOf(id)).length
+    const made = await ann.ok('POST', `/api/boards/${id}/cards`, {
+      title: 'Fix the sign-up page',
+      list: 'Doing',
+      labels: ['ui', 'BRAND'],
+      assignee: 'me',
+      parentId: 'A',
+    })
+    const [card] = (await tasksOf(id)).filter((c) => c.id === made.card.id)
+    expect(card).toMatchObject({ title: 'Fix the sign-up page', status: 'doing', labels: ['ui', 'brand'], assigneeId: ann.user.id, parentId: 'A' })
+    expect(made.board).toEqual({ id, name: 'My first board' })
+
+    const wrong = await ann.request('POST', `/api/boards/${id}/cards`, { title: 'Nope', list: 'Later', subtasks: [{ title: 'Nor this' }] })
+    expect(wrong).toMatchObject({ status: 400, body: { error: expect.stringMatching(/There’s no list “Later”\. The lists are: .*To Do/) } })
+    expect((await ann.request('POST', `/api/boards/${id}/cards`, { title: 'Nope', labels: ['urgent!'] })).status).toBe(400)
+    expect((await ann.request('POST', `/api/boards/${id}/cards`, { title: 'Nope', assignee: 'Nobody Here' })).status).toBe(400)
+    expect((await ann.request('POST', `/api/boards/${id}/cards`, { title: 'Nope', parentId: 'no-such-card' })).status).toBe(404)
+    expect(await tasksOf(id)).toHaveLength(before + 1)
+
+    // Who may: people who can edit the board.
+    const bob = await Person.signUp(t.app, 'Bob')
+    expect((await bob.request('POST', `/api/boards/${id}/cards`, { title: 'Hello' })).status).toBe(404)
+    await ann.ok('POST', `/api/boards/${id}/invitations`, { email: 'bob@example.com', role: 'viewer' })
+    expect((await bob.request('POST', `/api/boards/${id}/cards`, { title: 'Hello' })).status).toBe(403)
+  })
+
+  it('a date as a day, a moment or words, read on the person’s clock; a time in the title only when asked', async () => {
+    const ann = await Person.signUp(t.app, 'Ann')
+    await ann.ok('PATCH', '/api/auth/me', { timeZone: 'Asia/Bangkok' })
+    const due = async (body: object) => {
+      const { card, board } = await ann.ok('POST', '/api/inbox/cards', body)
+      const [row] = (await tasksOf(board.id)).filter((c) => c.id === card.id)
+      return { title: row.title, due: row.due }
+    }
+    const bangkok = (n: number) => new Date(Date.now() + 7 * 3600_000 + n * 86_400_000).toISOString().slice(0, 10)
+
+    expect(await due({ title: 'A day', due: '2026-12-01' })).toEqual({ title: 'A day', due: '2026-12-01' })
+    expect((await due({ title: 'A moment', due: '2026-12-01T14:30:00+07:00' })).due).toMatch(/^2026-12-01T07:30:00/)
+    // Words: tomorrow at 3pm in Bangkok is 08:00 UTC; a day with no time is the whole day.
+    expect((await due({ title: 'Words', due: 'tomorrow 3pm' })).due).toMatch(new RegExp(`^${bangkok(1)}T08:00:00`))
+    expect((await due({ title: 'A whole day', due: 'tomorrow' })).due).toBe(bangkok(1))
+    // …or where the call says: 3pm in New York.
+    expect((await due({ title: 'Elsewhere', due: 'tomorrow 3pm', timeZone: 'America/New_York' })).due).toMatch(/T(19|20):00:00/)
+    expect(await ann.request('POST', '/api/inbox/cards', { title: 'x', due: 'whenever' })).toMatchObject({
+      status: 400,
+      body: { error: expect.stringMatching(/“whenever” isn’t a date I can read/) },
+    })
+    expect((await ann.request('POST', '/api/inbox/cards', { title: 'x', timeZone: 'Mars/Olympus' })).status).toBe(400)
+
+    // A time in the title stays in the title, unless the call asks for it to be read.
+    expect(await due({ title: 'Call Sam tomorrow 3pm' })).toEqual({ title: 'Call Sam tomorrow 3pm', due: null })
+    const read = await due({ title: 'Call Sam tomorrow 3pm', datesInTitle: true })
+    expect(read.title).toBe('Call Sam')
+    expect(read.due).toMatch(new RegExp(`^${bangkok(1)}T08:00:00`))
+    // (A date given outright wins.)
+    expect(await due({ title: 'Call Sam tomorrow 3pm', datesInTitle: true, due: '2026-12-01' })).toEqual({
+      title: 'Call Sam tomorrow 3pm',
+      due: '2026-12-01',
+    })
+  })
+
+  it('with an API token: one that can change things adds, and the board’s activity says it came through the API', async () => {
+    const ann = await Person.signUp(t.app, 'Ann')
+    const write = await tokenFor(ann, 'write')
+    const made = await write('POST', '/api/inbox/cards', { title: 'From a script' })
+    expect(made).toMatchObject({ status: 200, body: { card: { title: 'From a script' }, board: { inbox: true } } })
+    const [said] = await t.db.select().from(boardActivity).where(eq(boardActivity.boardId, made.body.board.id))
+    expect(said).toMatchObject({ actorId: ann.user.id, command: 'task.create', via: 'API' })
+    const [{ id }] = (await ann.ok('GET', '/api/boards')).boards.filter((b: { inbox?: boolean }) => !b.inbox)
+    expect((await write('POST', `/api/boards/${id}/cards`, { title: 'On the board' })).status).toBe(200)
+
+    const read = (await ann.ok('POST', '/api/account/tokens', { name: 'reader', scope: 'read', expiresInDays: null })).token as string
+    expect((await new Person(t.app).request('POST', '/api/inbox/cards', { title: 'x' }, { authorization: `Bearer ${read}` })).status).toBe(403)
   })
 })

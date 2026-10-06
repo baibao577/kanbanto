@@ -205,7 +205,12 @@ With `KANBANTO_URL` and `KANBANTO_TOKEN` set:
 ```bash
 curl "$KANBANTO_URL/api/boards" -H "Authorization: Bearer $KANBANTO_TOKEN"
 curl "$KANBANTO_URL/api/boards/<board id>" -H "Authorization: Bearer $KANBANTO_TOKEN"
-# Every change is a command:
+# A card in one call, with plain names (no board: the Inbox):
+curl -X POST "$KANBANTO_URL/api/inbox/cards" -H "Authorization: Bearer $KANBANTO_TOKEN" \
+  -H "content-type: application/json" -d '{"title":"Call Sam","due":"tomorrow 3pm"}'
+curl -X POST "$KANBANTO_URL/api/boards/<board id>/cards" -H "Authorization: Bearer $KANBANTO_TOKEN" \
+  -H "content-type: application/json" -d '{"title":"Write the brief","list":"Doing","labels":["ui"],"assignee":"me"}'
+# Every other change is a command:
 curl -X POST "$KANBANTO_URL/api/boards/<board id>/mutations" -H "Authorization: Bearer $KANBANTO_TOKEN" \
   -H "content-type: application/json" \
   -d '{"mutationId":"<unique>","command":{"type":"task.create","parentId":null,"fields":{"title":"Write the brief"}}}'

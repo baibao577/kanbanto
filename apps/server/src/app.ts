@@ -318,6 +318,8 @@ export async function buildApp(
         if (policy && path.basename(file) === 'index.html') res.header('content-security-policy', policy)
       },
     })
+    // Where a phone sends what was shared to Kanbanto (the manifest's share_target): the app, which shows its add page.
+    app.get('/share', (_req, reply) => reply.sendFile('index.html'))
     // The web app's pages (it routes with #/… addresses). Only for reading: anything else is a 404.
     app.setNotFoundHandler((req, reply) =>
       req.url.startsWith('/api/') || (req.method !== 'GET' && req.method !== 'HEAD')

@@ -997,6 +997,20 @@ describe('MCP', () => {
     ).toBe(false)
   })
 
+  it('update_task: null takes a date off, as its description says', async () => {
+    const { ann, id } = await site({ apiTokens: true })
+    const mcp = withToken(await makeToken(ann, 'write'))
+    const call = async (name: string, args: object) => toolResult(await rpc(mcp, 'tools/call', { name, arguments: args }))
+    await call('update_task', { board_id: id, task_id: 'A3', due: '2026-12-01', start: '2026-11-20' })
+    const dates = async () => (await t.db.select({ due: tasks.due, start: tasks.start }).from(tasks).where(eq(tasks.id, 'A3')))[0]
+    expect(await dates()).toEqual({ due: '2026-12-01', start: '2026-11-20' })
+    // (It used to leave the date where it was, and say nothing.)
+    expect((await call('update_task', { board_id: id, task_id: 'A3', due: null })).isError).toBe(false)
+    expect(await dates()).toEqual({ due: null, start: '2026-11-20' })
+    await call('update_task', { board_id: id, task_id: 'A3', start: null })
+    expect(await dates()).toEqual({ due: null, start: null })
+  })
+
   it('read-only tokens get the reading tools only', async () => {
     const { ann, id } = await site({ apiTokens: true })
     const mcp = withToken(await makeToken(ann, 'read'))

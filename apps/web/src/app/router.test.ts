@@ -86,3 +86,22 @@ describe('router', () => {
     expect(parseRoute('#/account/fields')).toEqual({ page: 'account', section: 'fields' })
   })
 })
+
+describe('the add page', () => {
+  it('keeps what a page handed over, there and back (and through signing in)', () => {
+    const route = { page: 'add' as const, w: true, title: 'Pricing – Acme', url: 'https://acme.example/p?a=1&b=2', text: 'Per seat\n& yearly' }
+    expect(parseRoute(hrefFor(route))).toEqual(route)
+    // (Signing in comes back to it: the whole address rides along as "next".)
+    const signin = parseRoute(hrefFor({ page: 'signin', next: hrefFor(route) }))
+    expect(signin).toEqual({ page: 'signin', next: hrefFor(route) })
+    expect(parseRoute((signin as { next: string }).next)).toEqual(route)
+    expect(parseRoute('#/add')).toEqual({ page: 'add' })
+  })
+
+  it('cuts what it is handed to what a card can hold', () => {
+    const r = parseRoute(`#/add?title=${'t'.repeat(900)}&text=${'x'.repeat(5000)}`)
+    expect(r).toMatchObject({ page: 'add' })
+    expect((r as { title: string }).title).toHaveLength(500)
+    expect((r as { text: string }).text).toHaveLength(2000)
+  })
+})

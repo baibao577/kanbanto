@@ -143,6 +143,59 @@ endpoints, and file a card with the move above. Only its owner can open it, and 
 workspace, archived or deleted (those answer 400 with `"code": "inbox"`). In `GET /api/boards` it is the one with
 `"inbox": true`.
 
+**Adding a card in one call.** For a script, an automation tool or a shortcut on a phone, there is a plainer way
+than a command: `POST /api/inbox/cards` adds a card to your Inbox (made first, if you have none), and
+`POST /api/boards/<id>/cards` to a board, with names instead of ids.
+
+```bash
+curl -X POST https://kanbanto.example.com/api/inbox/cards \
+  -H "Authorization: Bearer kbt_…" -H "Content-Type: application/json" \
+  -d '{ "title": "Call Sam about the invoice", "due": "tomorrow 3pm", "timeZone": "Asia/Bangkok" }'
+```
+
+```json
+{
+  "board": { "id": "01a11125-73e1-…", "name": "Inbox", "inbox": true },
+  "card": {
+    "id": "01a11125-73ea-…",
+    "title": "Call Sam about the invoice",
+    "url": "https://kanbanto.example.com/#/b/01a11125-73e1-…?task=01a11125-73ea-…"
+  }
+}
+```
+
+On a board, the same with what the board has, by name:
+
+```bash
+curl -X POST https://kanbanto.example.com/api/boards/<id>/cards \
+  -H "Authorization: Bearer kbt_…" -H "Content-Type: application/json" \
+  -d '{ "title": "Fix the sign-up page", "list": "Doing", "labels": ["ui"], "assignee": "me", "priority": "high",
+        "subtasks": [{ "title": "Reproduce it on a phone" }] }'
+```
+
+| Field | What it takes |
+|---|---|
+| `title` | Needed. |
+| `description` | Markdown. |
+| `list` | A list's name or id. Left out: the first list of not-started work. |
+| `due`, `start` | A day (`2026-10-31`), a moment with its time zone (`2026-10-31T14:30:00+07:00`), or words: `"tomorrow 3pm"`, `"friday"`. Words are read on the clock of `timeZone`, else the account's time zone, else UTC. |
+| `labels` | Names or ids. |
+| `assignee` | A person's name or id, or `"me"`. |
+| `priority` | `urgent`, `high`, `medium` or `low`. |
+| `fields` | The board's own fields by name: `{ "Stage": "Won", "Value": 12000 }`. |
+| `subtasks` | Cards under it, each with a `title` and any of the above. |
+| `parentId` | A card to put it under (boards only). |
+| `datesInTitle` | `true`: a time written in the title ("Call Sam tomorrow 3pm") is taken out of it and becomes the due date, as when typing in the app. Off unless asked for: nobody is there to say a guess was wrong. |
+
+A name that isn't on the board adds nothing and says what there is: `There’s no list “Later”. The lists are: Backlog,
+To Do, Doing, Done.` Anything the call doesn't know is refused, not ignored. The card's `url` opens it in the app.
+
+In **n8n**, this is an HTTP Request node: method `POST`, the address above, "Send Headers" with a header
+`Authorization` holding `Bearer kbt_…`, and "Send Body" as JSON, such as
+`{ "title": "A card from n8n", "due": "tomorrow" }`. (Tried with n8n itself: the node's answer is the card, and the
+board's activity says it came through the API.) Zapier ("Webhooks by
+Zapier", POST), Make ("HTTP", Make a request) and an iPhone Shortcut ("Get Contents of URL") take the same four things.
+
 **Reminders** live on a task (`reminders`: each `{ id, at }` or `{ id, beforeDue, tz }`, in minutes before its due
 date), set with `task.update`. When one goes off, the task's assignee (or whoever set it, if nobody is assigned) gets
 it under the bell and by email, and the board's webhooks get a `reminder.due` event.

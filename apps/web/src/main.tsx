@@ -15,6 +15,9 @@ window.addEventListener('vite:preloadError', (e) => {
   if (reloadForUpdate()) e.preventDefault()
 })
 
+// Something shared to Kanbanto from another app on a phone arrives at /share (see the manifest): that's the add page.
+if (location.pathname === '/share') history.replaceState(null, '', `/#/add${location.search}`)
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <ThemeProvider>

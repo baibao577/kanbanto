@@ -16,7 +16,8 @@ import { createBoard, createStarter, importBoard } from '../boards/service'
 import { requireWorkspace } from '../boards/workspaces'
 import type { Db } from '../db'
 import { boardFavorites, boards, workspaces } from '../db/schema'
-import { HttpError, parse } from '../http'
+import { addCardSaid, NewCardBody } from '../boards/newCards'
+import { HttpError, parse, siteUrl } from '../http'
 import { requireUser } from './auth'
 import { commentCounts, lastComments } from './comments'
 import { attachmentCounts, deleteBoardFiles } from './files'
@@ -282,6 +283,17 @@ export const boardRoutes: FastifyPluginAsync = async (app) => {
     await requireAccess(app.db, me, id, 'editor')
     const body = parse(Mutation, req.body)
     return app.engine.mutate(id, body.mutationId, body.command, me.id, req.apiToken?.app)
+  })
+
+  /**
+   * Adds a card (and its subtasks) to a board you can edit, in one call, with plain names: its list, labels and
+   * assignee by name, the board's own fields by theirs, a due date as a day, a moment or words ("tomorrow 3pm").
+   * A wrong name adds nothing, and the answer says what there is.
+   */
+  app.post('/boards/:id/cards', async (req) => {
+    const { id } = parse(Params, req.params)
+    const me = requireUser(req.user)
+    return addCardSaid(app, { me, via: req.apiToken?.app }, id, parse(NewCardBody, req.body), app.mail.siteUrl ?? siteUrl(req))
   })
 
   /**

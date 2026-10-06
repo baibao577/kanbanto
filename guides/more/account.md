@@ -19,8 +19,9 @@ dark, or following your device), and signing out. People who run the site also s
 | **Email sending** | Use your own email service for the invites you send. Optional. |
 | **File storage** | Keep the files you attach in your own storage. Optional. |
 | **API & apps** | Connect an AI assistant or another app. See [connect your assistant](/ai/connect). To have a board tell another app when it changes, see [webhooks](/more/webhooks). |
+| **Add from anywhere** | A button for your bookmarks bar, and Share on an Android phone, to put things in your Inbox. See [add from anywhere](/everyday/add-from-anywhere). |
 
-Most people only ever need the first four.
+Most people only ever need the first four, and perhaps the last.
 
 ## Your name and time zone
 
