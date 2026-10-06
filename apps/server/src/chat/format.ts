@@ -99,6 +99,34 @@ const slack = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').repl
 const googleChat = (s: string) => s.replace(/</g, '<​')
 const googleChatLabel = (s: string) => googleChat(s).replace(/>/g, '›')
 
+/**
+ * Telegram (its HTML): &, < and > written out, and an invisible joiner after each @, so "@someone" in a card's title
+ * is those characters and mentions nobody.
+ */
+export const telegramHtml = (s: string) =>
+  s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/@/g, '@\u2060')
+/**
+ * Telegram only makes a link of an address on the internet: one on this computer ("http://localhost:3000", a site
+ * being tried out) is shown as plain words, link or no link. So there the words stay words, and "Open" becomes the
+ * address itself, to tap and copy.
+ */
+const telegramLinks = (url: string) => {
+  try {
+    return new URL(url).hostname.includes('.')
+  } catch {
+    return false
+  }
+}
+/** Words that open an address, in Telegram's HTML (just the words, where Telegram wouldn't make the link). */
+export const telegramLink = (url: string | null, words: string) =>
+  url && telegramLinks(url) ? `<a href="${telegramHtml(url)}">${telegramHtml(words)}</a>` : telegramHtml(words)
+/** "Open ›" for an address (or the address itself to copy, where Telegram wouldn't make the link). */
+export const telegramOpen = (url: string | null, words = 'Open ›') =>
+  !url ? '' : telegramLinks(url) ? telegramLink(url, words) : `<code>${url.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</code>`
+
+/** A message for Telegram, from text already written in its HTML: no preview of the page a link goes to. */
+export const telegramText = (html: string) => ({ text: html, parse_mode: 'HTML', link_preview_options: { is_disabled: true } })
+
 /** Markdown (Discord, Teams): a backslash before every character that would start something. */
 const markdown = (s: string) => s.replace(/[\\*_~`|>#[\]()<]/g, '\\$&')
 
@@ -115,6 +143,8 @@ function write(format: ChatFormat, line: Line): string {
           return p.url ? `[${markdown(p.text)}](<${p.url}>)` : markdown(p.text)
         case 'teams':
           return p.url ? `[${markdown(p.text)}](${p.url})` : markdown(p.text)
+        case 'telegram':
+          return telegramLink(p.url ?? null, p.text)
       }
     })
     .join('')
@@ -138,6 +168,9 @@ export function chatBody(format: ChatFormat, message: ChatMessage): object {
     case 'discord':
       // No mention in the text tells anyone, whatever a card is called.
       return { content: discordContent(lines), allowed_mentions: { parse: [] } }
+    case 'telegram':
+      // (Sent through the board's bot, which adds the chat: see telegram/bots.ts.)
+      return telegramText(lines.join('\n'))
     case 'teams':
       // A channel's "Workflows" address takes a message holding an Adaptive Card.
       return {

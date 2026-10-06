@@ -5,6 +5,7 @@ import { and, desc, eq, gt, inArray, isNull, sql } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import type { Db, Tx } from '../db'
 import { notifications, taskFollowers } from '../db/schema'
+import { tellPerson } from '../tell'
 
 /** Changes to a card by the same person within this long are one line under the bell, not one each. */
 const TOGETHER_MS = 10 * 60_000
@@ -262,10 +263,12 @@ export async function afterBoardChange(
     }
   })
 
-  // Desktop notifications, for the people who want them.
+  // As it happens, for the people who want that: on their desktop, and through a Telegram bot of their own. (The
+  // board's webhooks were sent this change already: a bot of theirs on this very board that passes card changes
+  // on has told their chat, and isn't asked to again.)
   for (const p of pushes)
-    void (async () => {
-      if (!(await app.push.wants(p.userId, p.kind))) return
-      await app.push.toUser(p.userId, { title: p.title, body: p.body, url: url(p.taskId), tag: `${p.kind}:${boardId}:${p.taskId}` }, 24 * 3600)
-    })().catch((err) => app.log.error({ err: err instanceof Error ? err.message : err }, 'push'))
+    void tellPerson(app, p.userId, p.kind, { title: p.title, body: p.body, url: url(p.taskId), tag: `${p.kind}:${boardId}:${p.taskId}` }, 24 * 3600, {
+      boardId,
+      covered: 'board.changed',
+    }).catch((err) => app.log.error({ err: err instanceof Error ? err.message : err }, 'push'))
 }

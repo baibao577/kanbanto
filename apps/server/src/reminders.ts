@@ -6,6 +6,7 @@ import type { FastifyInstance } from 'fastify'
 import { accessOf } from './boards/access'
 import { boards, lists, notifications, reminderSends, tasks, users } from './db/schema'
 import { reminderMessage } from './chat/format'
+import { tellPerson } from './tell'
 import { emails } from './mail/templates'
 
 /** A reminder whose moment passed while the server was down still goes out, up to this late. */
@@ -92,17 +93,20 @@ async function deliver(
         }),
     })
 
-  if (u.pushReminders)
-    await app.push.toUser(
-      u.id,
-      {
-        title: `⏰ ${t.title}`,
-        body: `${board.name}${t.due ? ` · due ${dueInWords(t.due, r.tz)}` : ''}${by ? ` · set by ${by}` : ''}`,
-        url: `/#/b/${encodeURIComponent(t.boardId)}?task=${encodeURIComponent(t.id)}`,
-        tag: `reminder:${t.boardId}:${t.id}`,
-      },
-      3600,
-    )
+  // On their desktop, and through a Telegram bot they connected to their own chat, where they want reminders.
+  const told = await tellPerson(
+    app,
+    u.id,
+    'reminders',
+    {
+      title: `⏰ ${t.title}`,
+      body: `${board.name}${t.due ? ` · due ${dueInWords(t.due, r.tz)}` : ''}${by ? ` · set by ${by}` : ''}`,
+      url: `/#/b/${encodeURIComponent(t.boardId)}?task=${encodeURIComponent(t.id)}`,
+      tag: `reminder:${t.boardId}:${t.id}`,
+    },
+    3600,
+    { boardId: t.boardId },
+  )
 
   const [list] = await app.db
     .select({ name: lists.name })
@@ -122,12 +126,14 @@ async function deliver(
         { for: u.name, board: board.name, title: t.title, due: t.due ? dueInWords(t.due, r.tz) : null },
         app.webhooks.cardUrl(t.boardId, t.id),
       ),
+    // (A bot of their own on this board has just told them: its chat isn't sent the same as the board's news.)
+    told ?? undefined,
   )
   return true
 }
 
 /** "Fri 3 Oct" (a whole day), or "Fri 3 Oct, 14:30" in the setter's time zone (UTC when unknown). */
-function dueInWords(due: string, tz?: string): string {
+export function dueInWords(due: string, tz?: string): string {
   const whole = due.length <= 10
   const d = new Date(whole ? `${due}T00:00:00Z` : due)
   const opts: Intl.DateTimeFormatOptions = { weekday: 'short', day: 'numeric', month: 'short', timeZone: whole ? 'UTC' : tz || 'UTC' }

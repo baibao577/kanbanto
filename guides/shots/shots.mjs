@@ -1416,7 +1416,7 @@ await shot('hooks-1-add', async () => {
   const address = await listener()
   await openWebhooks()
   await page.getByLabel('Webhook address').fill(address)
-  await page.getByRole('button', { name: 'Add', exact: true }).click()
+  await page.getByLabel('Webhook address').press('Enter')
   await page.getByLabel('Signing secret').waitFor()
   await page.waitForTimeout(400)
   await asInTheGuide(address)
@@ -1457,7 +1457,7 @@ await shot('hooks-3-chat-add', async () => {
   await page.getByRole('combobox', { name: 'Send to' }).click()
   await page.getByRole('option', { name: 'Slack' }).click()
   await page.getByLabel('The channel’s address').fill(`${address}-chat`)
-  await page.getByRole('button', { name: 'Add', exact: true }).click()
+  await page.getByLabel('The channel’s address').press('Enter')
   await page.getByText('Added. Look in the channel').waitFor()
   await page.waitForTimeout(400)
   await chatAsInTheGuide(address)
@@ -1483,6 +1483,68 @@ await shot('hooks-4-chat-detail', async () => {
   await page.waitForTimeout(300)
   await chatAsInTheGuide(address)
   return page.getByRole('dialog')
+})
+
+// ── A board's Telegram bot. The site has to talk to a stand-in for Telegram (see telegram.mjs): GUIDES_TELEGRAM is
+// its address, and this script plays the people in the chat through it. Needs GUIDES_SQL too, for an admin. ─────────
+const TELEGRAM = process.env.GUIDES_TELEGRAM
+/** A bot as @BotFather would have made it: a token of the right shape, which the stand-in names after its end. */
+const botToken = (name, k) => `${String(stamp + k).slice(-9)}:AAHq3vT9LwA2pRZ8cYdN4hJ6sBf0uGe_bot_${name}`
+const inChat = (token, chat, from, text) =>
+  fetch(`${TELEGRAM}/say/${encodeURIComponent(token)}`, {
+    method: 'POST',
+    body: JSON.stringify({ message: { message_id: Date.now() % 1e6, date: Math.floor(Date.now() / 1000), chat, from, text } }),
+  })
+const ANN_TG = { id: 5010, first_name: 'Ann', last_name: 'Lee' }
+const telegramOn = async () => {
+  if (!TELEGRAM) throw new Error('set GUIDES_TELEGRAM to the stand-in the site talks to (node shots/telegram.mjs)')
+  await listener()
+  await api(ann, 'PATCH', '/admin/settings', { telegramBots: true })
+}
+const launchBot = botToken('acme_launch_bot', 1)
+await shot('telegram-1-add', async () => {
+  await telegramOn()
+  await openWebhooks()
+  await page.getByLabel('The bot’s token').fill(launchBot)
+  // (The whole Telegram box in view, and any webhooks above it with addresses as they'd be for real.)
+  await page.getByText('One bot serves one board.').scrollIntoViewIfNeeded()
+  await page.waitForTimeout(300)
+  await chatAsInTheGuide(await listener())
+  return page.getByRole('dialog')
+})
+await shot('telegram-2-connect', async () => {
+  await telegramOn()
+  await openWebhooks()
+  await page.getByLabel('The bot’s token').fill(launchBot)
+  await page.getByLabel('The bot’s token').press('Enter')
+  await page.getByText('Connect a chat: send the bot this code').waitFor()
+  await page.waitForTimeout(300)
+  return page.getByRole('dialog')
+})
+await shot('telegram-3-connected', async () => {
+  await telegramOn()
+  // (The bot's page is open from the picture before, its code on it; Ann sends it from the team's group.)
+  if (!(await page.getByLabel('The message that connects a chat').count())) throw new Error('take telegram-2-connect in the same run')
+  const start = await page.getByLabel('The message that connects a chat').inputValue()
+  await inChat(launchBot, { id: -90010, type: 'group', title: 'Launch team' }, ANN_TG, start.replace('/start', '/start@acme_launch_bot'))
+  await page.getByText('Connected to Launch team').waitFor({ timeout: 20_000 })
+  await page.waitForTimeout(400)
+  return page.getByRole('dialog')
+})
+await shot('telegram-4-news', async () => {
+  await telegramOn()
+  const mine = botToken('ann_inbox_bot', 2)
+  const { boardId } = await api(ann, 'POST', '/inbox')
+  const { connect } = await api(ann, 'POST', `/boards/${boardId}/webhooks`, { format: 'telegram', token: mine })
+  await inChat(mine, { id: ANN_TG.id, type: 'private', first_name: 'Ann' }, ANN_TG, `/start ${connect.code}`)
+  await page.waitForTimeout(3000)
+  await page.goto(`${SITE}/#/account/notifications`)
+  await page.reload()
+  await page.getByText('Through @ann_inbox_bot').waitFor({ timeout: 20_000 })
+  await page.waitForTimeout(500)
+  const card = page.getByText('Through @ann_inbox_bot').locator('xpath=ancestor::*[contains(@class,"rounded")][1]')
+  await card.scrollIntoViewIfNeeded()
+  return around([card], 16)
 })
 
 // ── Your Inbox: the panel beside the board (made last: it stays open from page to page, and files a card) ─────────

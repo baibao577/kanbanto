@@ -122,6 +122,19 @@ then `git pull` (or download the new release) and `docker compose up -d --build`
   a reminder if you like) and in the Due and Start pickers.
 - **Webhooks** live in Board settings: each can send only some events (card changes, comments, reminders), and has a
   delivery log showing what was sent and what came back, with "Send again".
+- **A Telegram bot for a board:** a board's owner makes a bot at @BotFather and adds it in Board settings →
+  People & apps (the Telegram box), then connects one chat by sending the bot a code. That chat gets the board's news as sentences,
+  and what is sent there becomes cards: every message in your own chat with the bot, `/card …` in a group, or
+  `/card` in reply to someone's message. The first line is the title, a time in it ("tomorrow 3pm") is the due
+  date by your clock, photos and files are attached. The bot answers with what it understood and two buttons, Undo
+  and No date; editing your message changes the card, and a reply to the bot's answer is a comment. The bot's menu has
+  `/list` (the cards waiting in the list), `/board` (a link to the board) and, in your own chat with a bot,
+  `/today` (what is overdue, due today and tomorrow, and your reminders in the next 24 hours). A bot connected to your
+  own chat also tells you your reminders and mentions, from every board (Account settings → Notifications →
+  Telegram); on your Inbox, what you send it lands in your Inbox. One bot serves one board; only the connected chat counts; the token is
+  kept encrypted. A platform admin allows bots or not (Platform console → Integrations, off to start). The site
+  needs no address Telegram can reach. Times in plain words are now read by the server too, in a person's time
+  zone.
 - **Webhooks to a chat channel:** a webhook can be sent to a channel in Slack, Google Chat, Microsoft Teams or
   Discord. Choose the app when adding it ("Send to") and paste the address the chat app gives for the channel. The
   channel then gets each change as a sentence, "Ann moved “Deploy” to Done on Launch", with the card's title opening

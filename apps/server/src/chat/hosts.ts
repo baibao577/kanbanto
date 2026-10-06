@@ -1,4 +1,4 @@
-import { WEBHOOK_FORMAT_NAMES, type ChatFormat } from '@kanbanto/model/api'
+import { WEBHOOK_FORMAT_NAMES, type AddressChatFormat } from '@kanbanto/model/api'
 import { HttpError } from '../http'
 
 /**
@@ -7,7 +7,7 @@ import { HttpError } from '../http'
  * can't do. So a chat webhook may only point at the chat app itself: there, the address is what a channel's owner
  * made for it, and whoever holds it may post.
  */
-const HOSTS: Record<ChatFormat, { hosts: string[]; suffixes?: string[]; path?: RegExp; example: string }> = {
+const HOSTS: Record<AddressChatFormat, { hosts: string[]; suffixes?: string[]; path?: RegExp; example: string }> = {
   slack: { hosts: ['hooks.slack.com', 'hooks.slack-gov.com'], example: 'https://hooks.slack.com/services/…' },
   discord: {
     hosts: ['discord.com', 'discordapp.com', 'ptb.discord.com', 'canary.discord.com'],
@@ -24,7 +24,7 @@ const HOSTS: Record<ChatFormat, { hosts: string[]; suffixes?: string[]; path?: R
 }
 
 /** Refuses an address that isn't the chat app's own. */
-export function checkChatAddress(format: ChatFormat, url: string) {
+export function checkChatAddress(format: AddressChatFormat, url: string) {
   const rule = HOSTS[format]
   const u = new URL(url)
   const host = u.hostname.toLowerCase()

@@ -57,6 +57,9 @@ export const publicUser = (u: SessionUser) => ({
   pushReminders: u.pushReminders,
   pushMentions: u.pushMentions,
   pushFollows: u.pushFollows,
+  telegramReminders: u.telegramReminders,
+  telegramMentions: u.telegramMentions,
+  telegramFollows: u.telegramFollows,
 })
 
 export { loadSettings as getSettings } from '../settings'
@@ -173,6 +176,9 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
         pushReminders: true,
         pushMentions: true,
         pushFollows: true,
+        telegramReminders: true,
+        telegramMentions: true,
+        telegramFollows: false,
       }
       await tx.insert(users).values({ id: user.id, email: user.email, name: user.name, passwordHash, emailVerifiedAt: verified ? new Date() : null })
       const joined = body.invite ? await acceptInvite(tx, { id: user.id, email: user.email }, body.invite) : null
@@ -244,6 +250,9 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
           pushReminders: z.boolean(),
           pushMentions: z.boolean(),
           pushFollows: z.boolean(),
+          telegramReminders: z.boolean(),
+          telegramMentions: z.boolean(),
+          telegramFollows: z.boolean(),
           timeZone: z.string().max(64).refine(validZone, 'That isn’t a time zone this server knows (e.g. Asia/Bangkok).').nullable(),
         })
         .partial(),

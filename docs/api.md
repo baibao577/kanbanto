@@ -253,6 +253,36 @@ What differs from a `json` webhook:
   `secret`, and the two secret routes answer 400.
 - **Sending one again** sends the same message. The format can't be changed afterwards: add another webhook.
 
+### Telegram
+
+A board's own Telegram bot is a webhook too, with `format: "telegram"` and the bot's `token` (from @BotFather) in
+place of `url`. (In the app it has a box of its own in Board settings, and its own switch for the site: a platform
+admin turns on "Boards can have a Telegram bot", whatever the setting for webhooks is.)
+
+```bash
+curl -X POST https://kanbanto.example.com/api/boards/<id>/webhooks \
+  -H "Authorization: Bearer kbt_…" -H "Content-Type: application/json" \
+  -d '{ "format": "telegram", "token": "123456789:AAH…" }'
+```
+
+The answer is `{ "id", "connect": { "code", "privateLink", "groupLink", "minutes" } }`: nothing is sent until a chat
+is connected, by sending the bot `/start <code>` from it (the links do that) within `minutes`. The first chat to do
+so becomes the board's; `POST /api/boards/<id>/webhooks/<webhook id>/telegram/code` makes a new code, for another
+chat to take its place. In `GET /api/boards/<id>/webhooks` such a webhook has `telegram`: `bot` (its @name), `chat`
+(`kind`: `private` or `group`, and `name`; null until connected), `takesCards`, `cardsTo` and `problem`.
+
+- The chat gets the same three events as sentences, like the chat apps above.
+- With `takesCards` (on to start), what is sent in the chat becomes cards on the board, in the list `cardsTo` (null:
+  the first list of not-started work): every message in someone's own chat with the bot, `/card …` in a group.
+  `PATCH /api/boards/<id>/webhooks/<webhook id>/telegram` changes both, or takes a new `token` for the same bot.
+- A card is added in the name of the person who added the bot, with "Telegram" as the app it came through
+  (`via` in the board's activity).
+- The token is kept encrypted and never returned. One bot serves one board (409 for a second).
+- Messages are asked for, not sent to this server: the site needs no address Telegram can reach.
+
+How it is used in the chat (the buttons, edits, replies, files, and the menu's `/list`, `/board` and `/today`) is in
+the guide, "Telegram: a bot for a board".
+
 The channel's address is the key to the channel: whoever has it can post there. Card titles, people's names and the
 start of comments are posted in the channel, for everyone in it to read.
 ## AI assistants (MCP)

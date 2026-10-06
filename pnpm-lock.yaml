@@ -150,9 +150,6 @@ importers:
       '@tiptap/starter-kit':
         specifier: 3.31.3
         version: 3.31.3
-      chrono-node:
-        specifier: ^2.10.1
-        version: 2.10.1
       class-variance-authority:
         specifier: ^0.7.1
         version: 0.7.1
@@ -220,6 +217,9 @@ importers:
 
   packages/model:
     dependencies:
+      chrono-node:
+        specifier: ^2.10.1
+        version: 2.10.1
       fractional-indexing:
         specifier: ^4.0.0
         version: 4.0.0

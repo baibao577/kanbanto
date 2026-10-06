@@ -13,17 +13,19 @@ import {
   PaperPlaneTilt,
   PlugsConnected,
   SlackLogo,
+  TelegramLogo,
   Trash,
   WebhooksLogo,
   type Icon,
 } from '@phosphor-icons/react'
 import { formatDistanceToNow, parseISO } from 'date-fns'
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import {
   WEBHOOK_EVENTS,
   WEBHOOK_FORMAT_NAMES,
   WEBHOOK_FORMATS,
+  type TelegramConnect,
   type WebhookDeliveryDetail,
   type WebhookEventName,
   type WebhookFormat,
@@ -82,8 +84,13 @@ const FORMAT: Record<WebhookFormat, { icon: Icon; placeholder: string; where?: s
     placeholder: 'https://discord.com/api/webhooks/…',
     where: 'In the channel’s settings: Integrations → Webhooks → New Webhook → Copy Webhook URL.',
   },
+  // (A bot of the board's own, not an address: what's pasted is the bot's token.)
+  telegram: { icon: TelegramLogo, placeholder: '123456789:AAH…' },
 }
 const isChat = (format: WebhookFormat) => format !== 'json'
+
+/** The code that connects a chat to a bot just added (or asked for again), until the chat is connected: by webhook. */
+const connecting = new Map<string, TelegramConnect>()
 
 /** The words of a message that went to a chat app, out of the body that app was sent (null: show the body itself). */
 function chatWords(payload: unknown): string | null {
@@ -93,6 +100,8 @@ function chatWords(payload: unknown): string | null {
   const blocks = p?.attachments?.[0]?.content?.body
   return Array.isArray(blocks) ? blocks.map((b) => (typeof b.text === 'string' ? b.text : '')).join('\n') : null
 }
+
+const notTelegram = (h: WebhookView) => !h.telegram
 
 /** A green, red or grey dot: working, failing, paused. */
 function StatusDot({ h }: { h: WebhookView }) {
@@ -107,7 +116,7 @@ function StatusDot({ h }: { h: WebhookView }) {
 function useWebhooks() {
   const { data } = useBoard()
   const base = `/boards/${data.board.id}/webhooks`
-  const [loaded, load] = useLoaded(useCallback(() => api<{ mode: WebhookMode; webhooks: WebhookView[] }>('GET', base), [base]))
+  const [loaded, load] = useLoaded(useCallback(() => api<{ mode: WebhookMode; telegramBots: boolean; webhooks: WebhookView[] }>('GET', base), [base]))
   const act = async <T,>(method: 'POST' | 'PATCH' | 'DELETE' | 'GET', path: string, body?: unknown) => {
     try {
       const r = await api<T>(method, `${base}${path}`, body)
@@ -150,7 +159,8 @@ export function WebhookList({ onOpen }: { onOpen: (id: string) => void }) {
 
   return (
     <div className="divide-y">
-      {loaded.webhooks.map((h) => (
+      {/* (A board's Telegram bot has a box of its own, below: see TelegramBots.) */}
+      {loaded.webhooks.filter(notTelegram).map((h) => (
         <button
           key={h.id}
           type="button"
@@ -189,7 +199,7 @@ export function WebhookList({ onOpen }: { onOpen: (id: string) => void }) {
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {WEBHOOK_FORMATS.map((f) => {
+              {WEBHOOK_FORMATS.filter((f) => f !== 'telegram').map((f) => {
                 const FormatIcon = FORMAT[f].icon
                 return (
                   <SelectItem key={f} value={f}>
@@ -236,6 +246,90 @@ export function WebhookList({ onOpen }: { onOpen: (id: string) => void }) {
   )
 }
 
+/**
+ * A board's Telegram bots, in a box of their own in Board settings (owners): each is a bot its owner made at
+ * @BotFather, connected to one chat, which gets the board's news and can add cards. Adding one takes the bot's token.
+ * Whether boards may have them is a platform admin's switch, apart from the one for webhooks.
+ */
+export function TelegramBots({ onOpen }: { onOpen: (id: string) => void }) {
+  const { loaded, act } = useWebhooks()
+  const [token, setToken] = useState('')
+
+  if (!loaded) return <div className="h-16" />
+  if (!loaded.telegramBots)
+    return (
+      <p className="p-4 text-xs text-muted-foreground">
+        Telegram bots are turned off on this site. A platform admin can turn them on (Platform console → Integrations).
+      </p>
+    )
+
+  const add = async () => {
+    // What comes back is the code that connects a chat to the bot, shown on the bot's own page.
+    const r = await act<{ id: string; connect: TelegramConnect }>('POST', '', { token: token.trim(), format: 'telegram' })
+    if (!r) return
+    connecting.set(r.id, r.connect)
+    setToken('')
+    onOpen(r.id)
+  }
+
+  return (
+    <div className="divide-y">
+      {loaded.webhooks.map(
+        (h) =>
+          h.telegram && (
+            <button
+              key={h.id}
+              type="button"
+              onClick={() => onOpen(h.id)}
+              className="flex w-full items-center gap-3 px-4 py-2.5 text-left hover:bg-accent/50"
+            >
+              <StatusDot h={h} />
+              <span className="min-w-0 flex-1">
+                <span className="block truncate font-mono text-xs">@{h.telegram.bot}</span>
+                <span className="block truncate text-[11px] text-muted-foreground">
+                  {h.telegram.problem ??
+                    (!h.active
+                      ? 'Paused'
+                      : h.telegram.chat
+                        ? `${h.telegram.chat.kind === 'group' ? `The group ${h.telegram.chat.name}` : `${h.telegram.chat.name}’s own chat with it`}${h.telegram.takesCards ? ' · messages there become cards' : ' · news only'}`
+                        : 'Not connected to a chat yet')}
+                </span>
+              </span>
+              <CaretRight className="size-4 shrink-0 text-muted-foreground" />
+            </button>
+          ),
+      )}
+      <form
+        className="space-y-1.5 p-4"
+        onSubmit={(e) => {
+          e.preventDefault()
+          void add()
+        }}
+      >
+        <div className="flex gap-2">
+          <Input
+            value={token}
+            onChange={(e) => setToken(e.target.value)}
+            placeholder="The bot’s token, like 123456789:AAH…"
+            aria-label="The bot’s token"
+            // (A bot's token is the bot: it isn't left readable on the screen, or remembered by the browser.)
+            type="password"
+            autoComplete="off"
+            className="h-8"
+          />
+          <Button type="submit" size="sm" disabled={!token.trim()}>
+            Add
+          </Button>
+        </div>
+        <p className="text-[11px] leading-relaxed text-muted-foreground">
+          Make a bot in Telegram: open @BotFather, send /newbot, and paste the token it gives you here. Next you connect it to your own chat with it,
+          or to a group. One bot serves one board.
+        </p>
+      </form>
+    </div>
+  )
+}
+
 function SecretBox({ secret, note }: { secret: string; note: string }) {
   return (
     <div className="space-y-2 rounded-lg border border-status-done/40 bg-status-done/8 p-3 text-xs">
@@ -255,7 +349,7 @@ function SecretBox({ secret, note }: { secret: string; note: string }) {
  * where each delivery shows what was sent and what came back, and can be sent again.
  */
 export function WebhookDetail({ id, onBack }: { id: string; onBack: () => void }) {
-  const { base, loaded, act } = useWebhooks()
+  const { base, loaded, load, act } = useWebhooks()
   const [secret, setSecret] = useState<string | null>(null)
   const [onlyFailed, setOnlyFailed] = useState(false)
   const [open, setOpen] = useState<string | null>(null)
@@ -269,7 +363,7 @@ export function WebhookDetail({ id, onBack }: { id: string; onBack: () => void }
 
   const header = (
     <button type="button" onClick={onBack} className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground">
-      <ArrowLeft className="size-3.5" /> Webhooks
+      <ArrowLeft className="size-3.5" /> {h?.telegram ? 'Telegram' : 'Webhooks'}
     </button>
   )
   if (!loaded) return header
@@ -277,7 +371,7 @@ export function WebhookDetail({ id, onBack }: { id: string; onBack: () => void }
     return (
       <div className="space-y-3">
         {header}
-        <p className="text-sm text-muted-foreground">This webhook was deleted.</p>
+        <p className="text-sm text-muted-foreground">This was deleted.</p>
       </div>
     )
 
@@ -302,8 +396,16 @@ export function WebhookDetail({ id, onBack }: { id: string; onBack: () => void }
         <div className="flex items-center gap-3 border-b px-4 py-3">
           <StatusDot h={h} />
           <span className="min-w-0 flex-1">
-            <span className="block truncate font-mono text-xs">{h.url}</span>
-            {chat && <span className="block text-[11px] text-muted-foreground">Sentences for a {WEBHOOK_FORMAT_NAMES[h.format]} channel</span>}
+            <span className="block truncate font-mono text-xs">{h.telegram ? `@${h.telegram.bot}` : h.url}</span>
+            {h.telegram ? (
+              <span className="block text-[11px] text-muted-foreground">
+                {h.telegram.chat
+                  ? `A Telegram bot, connected to ${h.telegram.chat.kind === 'group' ? `the group ${h.telegram.chat.name}` : `${h.telegram.chat.name}’s own chat with it`}`
+                  : 'A Telegram bot, not connected to a chat yet'}
+              </span>
+            ) : (
+              chat && <span className="block text-[11px] text-muted-foreground">Sentences for a {WEBHOOK_FORMAT_NAMES[h.format]} channel</span>
+            )}
           </span>
           <Switch
             checked={h.active}
@@ -334,6 +436,7 @@ export function WebhookDetail({ id, onBack }: { id: string; onBack: () => void }
             )
           })}
         </div>
+        {h.telegram && <TelegramBot h={h} act={act} reload={load} />}
         <div className="flex flex-wrap items-center gap-2 px-4 py-3">
           <Button variant="outline" size="sm" className="gap-1.5" onClick={() => void test()}>
             <PaperPlaneTilt /> Send a test
@@ -371,14 +474,17 @@ export function WebhookDetail({ id, onBack }: { id: string; onBack: () => void }
             size="sm"
             className="ml-auto gap-1.5 text-destructive hover:text-destructive"
             onClick={async () => {
-              if (!confirm('Delete this webhook? Nothing more is sent to it.')) return
+              const sure = h.telegram
+                ? 'Remove this bot from the board? Nothing more is sent to its chat, and messages there stop becoming cards.'
+                : 'Delete this webhook? Nothing more is sent to it.'
+              if (!confirm(sure)) return
               if (await act('DELETE', `/${h.id}`)) {
-                toast('Webhook deleted')
+                toast(h.telegram ? 'Bot removed' : 'Webhook deleted')
                 onBack()
               }
             }}
           >
-            <Trash /> Delete
+            <Trash /> {h.telegram ? 'Remove' : 'Delete'}
           </Button>
         </div>
         {secret && (
@@ -470,6 +576,138 @@ export function WebhookDetail({ id, onBack }: { id: string; onBack: () => void }
           </ul>
         )}
       </section>
+    </div>
+  )
+}
+
+/**
+ * A board's Telegram bot, on its webhook's page: connecting it to a chat (a code to send the bot, good for ten
+ * minutes), whether what's sent in that chat becomes cards and in which list, and a new token after a leak.
+ */
+function TelegramBot({
+  h,
+  act,
+  reload,
+}: {
+  h: WebhookView
+  act: <T>(method: 'POST' | 'PATCH' | 'DELETE' | 'GET', path: string, body?: unknown) => Promise<T | null>
+  reload: () => Promise<void>
+}) {
+  const { data } = useBoard()
+  const bot = h.telegram!
+  const [connect, setConnect] = useState<TelegramConnect | null>(() => connecting.get(h.id) ?? null)
+  // The chat as it was when the code was made: once another one shows up, the code has been used.
+  const [before] = useState(() => bot.chat?.name ?? null)
+  const waiting = !!connect && (bot.chat?.name ?? null) === before
+
+  // While a code is out, look every few seconds for the chat that used it.
+  useEffect(() => {
+    if (!waiting) return
+    const timer = setInterval(() => void reload(), 3000)
+    return () => clearInterval(timer)
+  }, [waiting, reload])
+  useEffect(() => {
+    if (connect && !waiting) connecting.delete(h.id)
+  }, [connect, waiting, h.id])
+
+  const newCode = async () => {
+    const r = await act<{ connect: TelegramConnect }>('POST', `/${h.id}/telegram/code`)
+    if (r) {
+      connecting.set(h.id, r.connect)
+      setConnect(r.connect)
+    }
+  }
+  const set = (body: object) => act('PATCH', `/${h.id}/telegram`, body)
+  const lists = data.columns.filter((c) => c.category !== 'done')
+
+  return (
+    <div className="space-y-3 border-b px-4 py-3 text-xs">
+      {bot.problem && <p className="rounded-md border border-destructive/40 bg-destructive/8 p-2 text-destructive">{bot.problem}</p>}
+      {waiting && connect ? (
+        <div className="space-y-2 rounded-lg border border-primary/30 bg-primary/5 p-3">
+          <p className="font-medium">Connect a chat: send the bot this code, within {connect.minutes} minutes.</p>
+          <p className="text-muted-foreground">
+            The chat that sends it becomes this board’s: it gets the board’s news, and what is sent there can become cards. The buttons open Telegram
+            with the code ready.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <Button asChild size="sm" className="gap-1.5">
+              <a href={connect.privateLink} target="_blank" rel="noreferrer">
+                <TelegramLogo /> My own chat with the bot
+              </a>
+            </Button>
+            <Button asChild variant="outline" size="sm" className="gap-1.5">
+              <a href={connect.groupLink} target="_blank" rel="noreferrer">
+                <TelegramLogo /> A group…
+              </a>
+            </Button>
+          </div>
+          <div className="flex items-center gap-2">
+            <Input
+              readOnly
+              value={`/start ${connect.code}`}
+              onFocus={(e) => e.target.select()}
+              className="h-8 font-mono text-xs"
+              aria-label="The message that connects a chat"
+            />
+            <Button variant="outline" size="sm" className="h-8 shrink-0 gap-1.5" onClick={() => void copy(`/start ${connect.code}`, 'Message')}>
+              <Copy /> Copy
+            </Button>
+          </div>
+          <p className="text-muted-foreground">Or send that message to @{bot.bot} yourself. Waiting for it…</p>
+        </div>
+      ) : (
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="min-w-0 flex-1 text-muted-foreground">
+            {bot.chat
+              ? connect
+                ? `Connected to ${bot.chat.name}. Kanbanto has said hello there.`
+                : `The board’s news goes to ${bot.chat.name}.`
+              : 'No chat is connected, so nothing is sent yet.'}
+          </span>
+          <Button variant="outline" size="sm" onClick={() => void newCode()}>
+            {bot.chat ? 'Connect another chat' : 'Connect a chat'}
+          </Button>
+        </div>
+      )}
+      <div className="flex flex-wrap items-center gap-2">
+        <label className="flex min-w-0 flex-1 items-center gap-2">
+          <Switch checked={bot.takesCards} aria-label="Messages there become cards" onCheckedChange={(on) => void set({ takesCards: on })} />
+          <span>Messages there become cards{bot.takesCards ? ' in' : ''}</span>
+        </label>
+        {bot.takesCards && (
+          <Select
+            value={bot.cardsTo && lists.some((c) => c.id === bot.cardsTo) ? bot.cardsTo : 'first'}
+            onValueChange={(v) => void set({ cardsTo: v === 'first' ? null : v })}
+          >
+            <SelectTrigger size="sm" className="w-48" aria-label="The list new cards go to">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="first">The first list</SelectItem>
+              {lists.map((c) => (
+                <SelectItem key={c.id} value={c.id}>
+                  {c.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
+      </div>
+      <p className="text-muted-foreground">
+        In your own chat with the bot, every message is a card. In a group, <span className="font-mono">/card Fix the sign-up page</span> is. Send{' '}
+        <span className="font-mono">/help</span> in the chat for the rest.{' '}
+        <button
+          type="button"
+          className="text-primary hover:underline"
+          onClick={async () => {
+            const token = prompt(`The new token of @${bot.bot}, from @BotFather (after /revoke). The chat stays connected.`)
+            if (token?.trim() && (await set({ token: token.trim() }))) toast('New token saved')
+          }}
+        >
+          Paste a new token
+        </button>
+      </p>
     </div>
   )
 }

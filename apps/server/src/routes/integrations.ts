@@ -1,8 +1,10 @@
 import {
   WEBHOOK_EVENTS,
   WEBHOOK_FORMATS,
+  type AddressChatFormat,
   type ApiTokenView,
   type ChatFormat,
+  type TelegramBotView,
   type WebhookDeliveryDetail,
   type WebhookEventName,
   type WebhookFormat,
@@ -16,13 +18,23 @@ import { MAX_TOKENS, newApiToken } from '../auth/apiTokens'
 import { requireAccess } from '../boards/access'
 import { checkChatAddress } from '../chat/hosts'
 import { decrypt, encrypt } from '../crypto'
-import { apiTokens, webhookDeliveries, webhooks } from '../db/schema'
+import { apiTokens, telegramBots, webhookDeliveries, webhooks } from '../db/schema'
+import { dbErrorCode } from '../errors'
 import { HttpError, parse } from '../http'
 import { loadSettings } from '../settings'
 import { checkWebhookUrl, newWebhookSecret } from '../webhooks'
 import { requireUser } from './auth'
 
 const MAX_WEBHOOKS = 10
+const ONE_BOARD = 'That bot is already connected to a board here. One bot serves one board: make another for this one at @BotFather.'
+
+const botView = (b: typeof telegramBots.$inferSelect): TelegramBotView => ({
+  bot: b.botName,
+  chat: b.chatId !== null && b.chatKind ? { kind: b.chatKind, name: b.chatName ?? '' } : null,
+  takesCards: b.takesCards,
+  cardsTo: b.cardsTo,
+  problem: b.problem,
+})
 const DAY = 24 * 60 * 60 * 1000
 
 const tokenView = (t: typeof apiTokens.$inferSelect): ApiTokenView => ({
@@ -89,6 +101,19 @@ export const integrationRoutes: FastifyPluginAsync = async (app) => {
     return { ok: true }
   })
 
+  /**
+   * The Telegram bots you connected to your own chat, on any board: the ones your reminders and mentions can come
+   * through (for the Telegram switches under Notifications). First the one used when a card's board has none of its own.
+   */
+  app.get('/account/telegram', async (req) => {
+    const me = requireUser(req.user)
+    const own = await app.telegram.ownBots(me.id)
+    return {
+      allowed: await app.telegram.allowed(),
+      bots: own.map((b) => ({ bot: b.bot.botName, board: b.board.name, inbox: b.board.inboxOf === me.id })),
+    }
+  })
+
   // ── A board's webhooks (its owners) ───────────────────────────────────────────
 
   const BoardParams = z.object({ id: z.string().min(1).max(100) })
@@ -128,10 +153,22 @@ export const integrationRoutes: FastifyPluginAsync = async (app) => {
           .orderBy(desc(webhookDeliveries.createdAt))
           .limit(hooks.length * 10)
       : []
+    const bots = hooks.some((h) => h.format === 'telegram')
+      ? await app.db
+          .select()
+          .from(telegramBots)
+          .where(
+            inArray(
+              telegramBots.webhookId,
+              hooks.map((h) => h.id),
+            ),
+          )
+      : []
     const list: WebhookView[] = hooks.map((h) => ({
       id: h.id,
       url: h.url,
       format: h.format as WebhookFormat,
+      ...(bots.some((b) => b.webhookId === h.id) && { telegram: botView(bots.find((b) => b.webhookId === h.id)!) }),
       active: h.active,
       events: (h.events ?? [...WEBHOOK_EVENTS]) as WebhookEventName[],
       createdAt: h.createdAt.toISOString(),
@@ -151,7 +188,8 @@ export const integrationRoutes: FastifyPluginAsync = async (app) => {
           createdAt: d.createdAt.toISOString(),
         })),
     }))
-    return { mode: (await loadSettings(app.db)).webhooks, webhooks: list }
+    const settings = await loadSettings(app.db)
+    return { mode: settings.webhooks, telegramBots: settings.telegramBots, webhooks: list }
   })
 
   /**
@@ -159,7 +197,7 @@ export const integrationRoutes: FastifyPluginAsync = async (app) => {
    * it (where the site only sends to public addresses). A chat app can't confirm anything: its address has to be the
    * chat app's own there, and the channel is sent a first message, which has to be taken.
    */
-  const checkAddress = async (format: WebhookFormat, url: string, board: { name: string }) => {
+  const checkAddress = async (format: 'json' | AddressChatFormat, url: string, board: { name: string }) => {
     const mode = await modeFor()
     checkWebhookUrl(url, mode)
     if (format === 'json') return () => app.webhooks.confirmAddress(url, mode)
@@ -177,23 +215,61 @@ export const integrationRoutes: FastifyPluginAsync = async (app) => {
     const me = requireUser(req.user)
     const { board } = await requireAccess(app.db, me, id, 'owner')
     const {
-      url,
+      url = '',
+      token = '',
       events,
       format = 'json',
     } = parse(
       z.object({
-        url: z.string().trim().min(1, 'Enter the address to send changes to.').max(2000),
+        url: z.string().trim().max(2000).optional(),
+        /** For Telegram, instead of an address: the token @BotFather gave for the board's bot. */
+        token: z.string().trim().max(200).optional(),
         events: Events.optional(),
         format: z.enum(WEBHOOK_FORMATS).optional(),
       }),
       req.body,
     )
+    const room = async () => {
+      const [{ n }] = await app.db
+        .select({ n: sql<number>`count(*)::int` })
+        .from(webhooks)
+        .where(eq(webhooks.boardId, id))
+      if (n >= MAX_WEBHOOKS) throw new HttpError(400, `A board can have up to ${MAX_WEBHOOKS} webhooks.`)
+    }
+    if (format === 'telegram') {
+      await telegramOn()
+      if (!token) throw new HttpError(400, 'Paste the token @BotFather gave for the bot.')
+      const bot = await app.telegram.whoIs(token)
+      const [taken] = await app.db.select({ id: telegramBots.webhookId }).from(telegramBots).where(eq(telegramBots.botId, bot.id))
+      if (taken) throw new HttpError(409, ONE_BOARD)
+      await room()
+      const hookId = newId()
+      try {
+        await app.db.transaction(async (tx) => {
+          await tx.insert(webhooks).values({
+            id: hookId,
+            boardId: id,
+            url: `https://t.me/${bot.username}`,
+            format,
+            // (On someone's own Inbox, card changes and comments would only tell them what they just did themselves:
+            // a bot there starts with reminders alone, and they can switch the rest on.)
+            events: eventsToStore(events ?? (board.inboxOf ? ['reminder.due'] : undefined)),
+            // (The token is what's kept secret here: it is the bot.)
+            secretEncrypted: encrypt(token),
+            createdBy: me.id,
+          })
+          await tx.insert(telegramBots).values({ webhookId: hookId, botId: bot.id, botName: bot.username })
+        })
+      } catch (e) {
+        if (dbErrorCode(e) === '23505') throw new HttpError(409, ONE_BOARD)
+        throw e
+      }
+      // Nothing is sent until a chat is connected: the code that does it is in the answer.
+      return { id: hookId, connect: app.telegram.newCode(hookId, bot.username) }
+    }
+    if (!url) throw new HttpError(400, 'Enter the address to send changes to.')
     const confirm = await checkAddress(format, url, board)
-    const [{ n }] = await app.db
-      .select({ n: sql<number>`count(*)::int` })
-      .from(webhooks)
-      .where(eq(webhooks.boardId, id))
-    if (n >= MAX_WEBHOOKS) throw new HttpError(400, `A board can have up to ${MAX_WEBHOOKS} webhooks.`)
+    await room()
     await confirm()
     const secret = newWebhookSecret()
     const hookId = newId()
@@ -214,12 +290,68 @@ export const integrationRoutes: FastifyPluginAsync = async (app) => {
       req.body,
     )
     if (body.url !== undefined) {
-      const confirm = await checkAddress(hook.format as WebhookFormat, body.url, board)
+      if (hook.format === 'telegram') throw new HttpError(400, 'A Telegram bot has no address to change. Connect another chat, or paste a new token.')
+      const confirm = await checkAddress(hook.format as 'json' | AddressChatFormat, body.url, board)
       if (body.url !== hook.url) await confirm()
     }
     const { events, ...rest } = body
     const set = { ...rest, ...(events && { events: eventsToStore(events) }) }
     if (Object.keys(set).length) await app.db.update(webhooks).set(set).where(eq(webhooks.id, hook.id))
+    if (hook.format === 'telegram') app.telegram.changed()
+    return { ok: true }
+  })
+
+  // ── A board's Telegram bot (a webhook whose format is Telegram) ────────────────
+
+  const telegramOn = async () => {
+    if (!(await loadSettings(app.db)).telegramBots)
+      throw new HttpError(403, 'Telegram bots are turned off on this site. A platform admin can turn them on.')
+  }
+  const ownBot = async (req: Parameters<typeof ownHook>[0]) => {
+    const { board, hook } = await ownHook(req)
+    const [bot] = await app.db.select().from(telegramBots).where(eq(telegramBots.webhookId, hook.id))
+    if (!bot) throw new HttpError(404, 'That webhook isn’t a Telegram bot.')
+    return { board, hook, bot }
+  }
+
+  /** A new code to connect a chat with: the first chat that sends it to the bot becomes the board's (in place of the one before). */
+  app.post('/boards/:id/webhooks/:hookId/telegram/code', async (req) => {
+    const { hook, bot } = await ownBot(req)
+    await telegramOn()
+    return { connect: app.telegram.newCode(hook.id, bot.botName) }
+  })
+
+  /**
+   * Whether messages in the chat become cards, and in which list; or a new token for the same bot (after `/revoke`
+   * at @BotFather): the chat stays connected.
+   */
+  app.patch('/boards/:id/webhooks/:hookId/telegram', async (req) => {
+    const { board, hook, bot } = await ownBot(req)
+    const body = parse(
+      z
+        .object({ takesCards: z.boolean(), cardsTo: z.string().min(1).max(100).nullable(), token: z.string().trim().min(1).max(200) })
+        .partial()
+        .strict(),
+      req.body,
+    )
+    if (body.cardsTo) {
+      const { data } = await app.engine.snapshot(board.id)
+      if (!data.columns.some((c) => c.id === body.cardsTo)) throw new HttpError(400, 'That list is no longer on the board.')
+    }
+    if (body.token !== undefined) {
+      await telegramOn()
+      const now = await app.telegram.whoIs(body.token)
+      if (now.id !== bot.botId) throw new HttpError(400, `That token is for another bot (@${now.username}). Paste the new token of @${bot.botName}.`)
+      await app.db
+        .update(webhooks)
+        .set({ secretEncrypted: encrypt(body.token) })
+        .where(eq(webhooks.id, hook.id))
+    }
+    const { token, ...rest } = body
+    const set = { ...rest, ...(token !== undefined && { problem: null }) }
+    if (Object.keys(set).length) await app.db.update(telegramBots).set(set).where(eq(telegramBots.webhookId, hook.id))
+    if (body.takesCards !== undefined) await app.telegram.refreshMenu(hook.id)
+    app.telegram.changed()
     return { ok: true }
   })
 
@@ -283,13 +415,14 @@ export const integrationRoutes: FastifyPluginAsync = async (app) => {
   /** Sends a test delivery now, and says how it went. */
   app.post('/boards/:id/webhooks/:hookId/test', async (req) => {
     const { board, hook } = await ownHook(req)
-    await modeFor()
+    if (hook.format !== 'telegram') await modeFor()
     return app.webhooks.ping(hook, { id: board.id, name: board.name })
   })
 
   app.delete('/boards/:id/webhooks/:hookId', async (req) => {
     const { hook } = await ownHook(req)
     await app.db.delete(webhooks).where(eq(webhooks.id, hook.id))
+    if (hook.format === 'telegram') app.telegram.changed()
     return { ok: true }
   })
 }

@@ -35,6 +35,10 @@ export interface PublicUser {
   pushMentions: boolean
   /** …and for news from cards they follow. */
   pushFollows: boolean
+  /** The same three through a Telegram bot they connected to their own chat, when they have one. */
+  telegramReminders: boolean
+  telegramMentions: boolean
+  telegramFollows: boolean
 }
 
 /** A link to one of the site's own pages (its privacy policy, terms…), or to anywhere else. */
@@ -849,22 +853,51 @@ export type WebhookEventName = (typeof WEBHOOK_EVENTS)[number]
  * How a webhook's messages are written: Kanbanto's own data, signed (`json`), or a short text that a chat app shows
  * in a channel.
  */
-export const WEBHOOK_FORMATS = ['json', 'slack', 'google-chat', 'teams', 'discord'] as const
+export const WEBHOOK_FORMATS = ['json', 'slack', 'google-chat', 'teams', 'discord', 'telegram'] as const
 export type WebhookFormat = (typeof WEBHOOK_FORMATS)[number]
 /** The formats that are text for a chat app. */
 export type ChatFormat = Exclude<WebhookFormat, 'json'>
+/** The chat apps that give a channel an address to paste. (Telegram is a bot of the board's own instead.) */
+export type AddressChatFormat = Exclude<ChatFormat, 'telegram'>
 export const WEBHOOK_FORMAT_NAMES: Record<WebhookFormat, string> = {
   json: 'Another app',
   slack: 'Slack',
   'google-chat': 'Google Chat',
   teams: 'Microsoft Teams',
   discord: 'Discord',
+  telegram: 'Telegram',
+}
+
+/** A board's Telegram bot (a webhook whose format is telegram). */
+export interface TelegramBotView {
+  /** The bot's @name, without the @. */
+  bot: string
+  /** The chat it's connected to: someone's own chat with it, or a group. Null: waiting for the code to be sent to it. */
+  chat: { kind: 'private' | 'group'; name: string } | null
+  /** Messages in the chat become cards on the board. */
+  takesCards: boolean
+  /** The list those cards go to (null: the board's first list of not-started work). */
+  cardsTo: string | null
+  /** Why it isn't working, when it isn't. */
+  problem: string | null
+}
+
+/** How a chat is connected to a board's Telegram bot: a code to send it, good for a few minutes, and links that send it. */
+export interface TelegramConnect {
+  code: string
+  /** Opens the bot in Telegram with the code ready to send (your own chat with it). */
+  privateLink: string
+  /** Lets you pick a group to add the bot to, and sends the code there. */
+  groupLink: string
+  minutes: number
 }
 
 export interface WebhookView {
   id: string
   url: string
   format: WebhookFormat
+  /** Its Telegram bot, when that is its format. */
+  telegram?: TelegramBotView
   active: boolean
   /** What it's sent. */
   events: WebhookEventName[]
@@ -890,6 +923,8 @@ export interface AdminSettings {
   oauthApps: OAuthMode
   /** People can make a private calendar link. */
   calendarLinks: boolean
+  /** Board owners can connect a Telegram bot of their own to a board. */
+  telegramBots: boolean
 }
 
 /** GET /api/admin/calendar/google: the site's Google app, for people's Google Calendar connections. */

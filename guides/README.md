@@ -39,4 +39,8 @@ throwaway site's database and it takes those too:
 GUIDES_SQL='docker exec my-throwaway-db psql -U kankan -d kankan -c' GUIDES_SITE=… pnpm shots
 ```
 
+The pictures of a board's Telegram bot need the site to talk to a stand-in for Telegram, so nothing leaves your
+computer: start `node shots/telegram.mjs 5998`, start the throwaway site with `TELEGRAM_API_URL=http://127.0.0.1:5998`,
+and give the script `GUIDES_TELEGRAM=http://127.0.0.1:5998` (with `GUIDES_SQL`, as above).
+
 To add a picture: add a `shot('name', …)` to the script, run it, and use `![what it shows](/images/name.webp)`.

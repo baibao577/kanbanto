@@ -61,6 +61,8 @@ export const env = {
    * On by default: only public https addresses are fetched, within the file size limit (see storage/download.ts).
    */
   filesFromUrl: process.env.FILES_FROM_URL?.trim().toLowerCase() !== 'off',
+  /** Where Telegram's bot API is. Only ever set to point at a stand-in (tests, the guides' pictures). */
+  telegramApiUrl: process.env.TELEGRAM_API_URL?.trim().replace(/\/+$/, '') || 'https://api.telegram.org',
   /** 'json': one JSON object per line (for log collectors). Default: short readable lines. */
   logFormat: process.env.LOG_FORMAT === 'json' ? ('json' as const) : ('pretty' as const),
   /** Folder for attachments kept on the server's disk (a Docker volume in production). */

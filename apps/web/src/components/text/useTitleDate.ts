@@ -1,11 +1,11 @@
 import { useMemo, useState } from 'react'
 import { useAuth } from '@/app/use-auth'
-import { parseWhen, type When } from '@/lib/when'
+import { parseWhen } from '@/lib/when'
 import type { TaskFields } from '@kanbanto/model/commands'
 import { newId } from '@kanbanto/model/ids'
+import { moment, stripWords } from '@kanbanto/model/when'
 
-/** A reminder's `at` / a due moment: UTC, to the minute. */
-export const moment = (d: Date) => new Date(Math.floor(d.getTime() / 60_000) * 60_000).toISOString().replace(/\.\d{3}Z$/, 'Z')
+export { moment }
 /** A whole day in the viewer's time zone. */
 export const localDay = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 
@@ -36,10 +36,4 @@ export function useTitleDate(value: string) {
     setRemind(false)
   }
   return { when, remind, setRemind, ignore: () => when && setIgnored(when.text), apply, reset }
-}
-
-/** The title with the time's words (and a leftover "on"/"at"/"by"/"due") taken out. */
-function stripWords(title: string, when: When): string {
-  const before = title.slice(0, when.index).replace(/\s+(on|at|by|due)\s*$/i, '')
-  return `${before} ${title.slice(when.index + when.text.length)}`.replace(/\s{2,}/g, ' ').replace(/^[\s,–-]+|[\s,–-]+$/g, '')
 }

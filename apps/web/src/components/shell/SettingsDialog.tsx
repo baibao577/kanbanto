@@ -1,11 +1,25 @@
-import { Archive, Desktop, Info, Moon, PaintBrush, Sun, Tag, Trash, User, UsersThree, type Icon } from '@phosphor-icons/react'
+import {
+  Archive,
+  Desktop,
+  Info,
+  Moon,
+  PaintBrush,
+  Sun,
+  Tag,
+  TelegramLogo,
+  Trash,
+  User,
+  UsersThree,
+  WebhooksLogo,
+  type Icon,
+} from '@phosphor-icons/react'
 import { toast } from 'sonner'
 import { useState, type ReactNode } from 'react'
 import { api, errorMessage } from '@/api/client'
 import { useBoard } from '@/app/board-context'
 import { navigate } from '@/app/router'
 import { useTheme } from '@/app/use-theme'
-import { WebhookDetail, WebhookList } from '@/components/board/Webhooks'
+import { TelegramBots, WebhookDetail, WebhookList } from '@/components/board/Webhooks'
 import { BoardFields } from '@/components/fields/BoardFields'
 import { Avatar, BackgroundSwatches } from '@/components/common/bits'
 import {
@@ -175,7 +189,7 @@ function Look() {
 
 function People({ onClose }: { onClose: () => void }) {
   const { data, access, openShare } = useBoard()
-  // A webhook's own page (its settings and delivery log), inside this tab.
+  // A webhook's own page, or a Telegram bot's (its settings and delivery log), inside this tab.
   const [hook, setHook] = useState<string | null>(null)
   if (hook) return <WebhookDetail id={hook} onBack={() => setHook(null)} />
   return (
@@ -218,9 +232,25 @@ function People({ onClose }: { onClose: () => void }) {
           </Row>
         </Card>
       )}
+      {/* What the board tells other apps, for its owners: each box as the People one is, with its icon and what it's for. */}
       {access.role === 'owner' && (
-        <Card title="Webhooks: send changes, comments and reminders to another app (n8n, Zapier…), or to a channel in Slack, Google Chat, Microsoft Teams or Discord">
+        <Card>
+          <Row
+            label="Webhooks"
+            icon={WebhooksLogo}
+            hint="Send changes, comments and reminders to another app (n8n, Zapier…), or to a channel in Slack, Google Chat, Microsoft Teams or Discord."
+          />
           <WebhookList onOpen={setHook} />
+        </Card>
+      )}
+      {access.role === 'owner' && (
+        <Card>
+          <Row
+            label="Telegram"
+            icon={TelegramLogo}
+            hint="A bot of this board’s own. Its chat gets the board’s news, and what is sent there can become cards."
+          />
+          <TelegramBots onOpen={setHook} />
         </Card>
       )}
     </Section>

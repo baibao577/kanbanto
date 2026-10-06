@@ -17,6 +17,8 @@ import { dbErrorCode, loggable } from './errors'
 import { HttpError, siteUrl } from './http'
 import type { SiteLink } from '@kanbanto/model/api'
 import { LiveHub } from './live'
+import { telegramApi, type TelegramApi } from './telegram/api'
+import { Telegram } from './telegram/bots'
 import { Webhooks } from './webhooks'
 import { google, type GoogleApi } from './calendar/google'
 import { CalendarSync } from './calendar/sync'
@@ -66,6 +68,8 @@ declare module 'fastify' {
     webhooks: Webhooks
     push: Push
     calendar: CalendarSync
+    /** Boards' own Telegram bots. */
+    telegram: Telegram
     /** Links to the site's own pages, shown under the sign-in form (see src/pages.ts). */
     siteLinks: SiteLink[]
     /** Where "Guides" in the account menu goes; null: no such item (GUIDES_URL). */
@@ -107,6 +111,8 @@ export async function buildApp(
     serverSender?: Sender | null
     /** Google, for calendar connections (tests pass a stand-in). */
     google?: GoogleApi
+    /** Telegram, for boards' bots (tests pass a stand-in). */
+    telegram?: TelegramApi
     /** The folder of the site's own pages (default: PAGES_DIR). */
     pagesDir?: string
     /** Where "Guides" in the account menu goes, or null for none (default: GUIDES_URL). */
@@ -144,15 +150,21 @@ export async function buildApp(
   app.decorate('webhooks', webhooks)
   app.decorate('push', new Push(db, () => mail.siteUrl ?? env.appUrl ?? null, app.log))
   app.decorate('calendar', calendar)
+  const telegram = new Telegram(app, opts.telegram ?? telegramApi(), () => mail.siteUrl ?? env.appUrl ?? null)
+  app.decorate('telegram', telegram)
+  // (A webhook whose format is Telegram is delivered through the board's bot.)
+  webhooks.telegram = (hook, payload) => telegram.deliver(hook, payload)
   if (opts.mailWorker) {
     await mail.start(app.log)
     webhooks.start(app.log)
     calendar.start(app.log)
+    telegram.start(app.log)
   } else await mail.refresh()
   app.addHook('onClose', async () => {
     mail.stop()
     webhooks.stop()
     calendar.stop()
+    telegram.stop()
   })
 
   await app.register(fastifyCookie)

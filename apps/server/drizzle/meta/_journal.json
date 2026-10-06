@@ -253,6 +253,13 @@
       "when": 1791272445549,
       "tag": "0035_webhook_format",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1791276020485,
+      "tag": "0036_telegram",
+      "breakpoints": true
     }
   ]
 }

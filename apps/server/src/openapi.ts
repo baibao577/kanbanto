@@ -893,7 +893,7 @@ The answer lists the records that changed.
           tags: ['Webhook settings'],
           summary: 'Add a webhook',
           description:
-            'The answer includes its signing secret. With a chat app as the `format`, `url` is a channel’s address in that app: the channel is sent a first message, which has to be taken for the webhook to be saved, and there is no secret.',
+            'The answer includes its signing secret. With a chat app as the `format`, `url` is a channel’s address in that app: the channel is sent a first message, which has to be taken for the webhook to be saved, and there is no secret. With `telegram`, give the `token` of a bot of the board’s own instead of `url`: the answer has `connect`, the code a chat sends the bot to become the board’s.',
           parameters: [id('id')],
           requestBody: {
             content: {
@@ -901,6 +901,10 @@ The answer lists the records that changed.
                 schema: obj(
                   {
                     url: { ...str, format: 'uri' },
+                    token: {
+                      ...str,
+                      description: 'For `telegram`, in place of `url`: the token @BotFather gave for the bot. Kept encrypted, never returned.',
+                    },
                     format: {
                       enum: [...WEBHOOK_FORMATS],
                       description:
@@ -912,12 +916,26 @@ The answer lists the records that changed.
                       description: 'What it’s sent. Default: all (including events added later).',
                     },
                   },
-                  ['url'],
+                  [],
                 ),
               },
             },
           },
-          responses: { 200: json(obj({ id: str, secret: { ...str, description: 'Only for the `json` format.' } }, ['id'])) },
+          responses: {
+            200: json(
+              obj(
+                {
+                  id: str,
+                  secret: { ...str, description: 'Only for the `json` format.' },
+                  connect: {
+                    ...obj({ code: str, privateLink: str, groupLink: str, minutes: { type: 'integer' } }),
+                    description: 'Only for `telegram`: send the bot `/start <code>` from the chat that should be the board’s (the links do that).',
+                  },
+                },
+                ['id'],
+              ),
+            ),
+          },
         },
       },
       '/api/boards/{id}/webhooks/{hookId}': {
@@ -942,6 +960,36 @@ The answer lists the records that changed.
           responses: ok,
         },
         delete: { tags: ['Webhook settings'], summary: 'Delete a webhook', parameters: [id('id'), id('hookId')], responses: ok },
+      },
+      '/api/boards/{id}/webhooks/{hookId}/telegram': {
+        patch: {
+          tags: ['Webhook settings'],
+          summary: 'A Telegram bot: whether messages in its chat become cards, in which list; or a new token for the same bot',
+          parameters: [id('id'), id('hookId')],
+          requestBody: {
+            content: {
+              'application/json': {
+                schema: obj(
+                  {
+                    takesCards: { type: 'boolean' },
+                    cardsTo: nullable({ ...str, description: 'A list’s id; null: the first list of not-started work.' }),
+                    token: str,
+                  },
+                  [],
+                ),
+              },
+            },
+          },
+          responses: ok,
+        },
+      },
+      '/api/boards/{id}/webhooks/{hookId}/telegram/code': {
+        post: {
+          tags: ['Webhook settings'],
+          summary: 'A Telegram bot: a new code, for another chat to become the board’s',
+          parameters: [id('id'), id('hookId')],
+          responses: { 200: json(obj({ connect: obj({ code: str, privateLink: str, groupLink: str, minutes: { type: 'integer' } }) })) },
+        },
       },
       '/api/boards/{id}/webhooks/{hookId}/test': {
         post: {

@@ -63,6 +63,12 @@ to another board…**, **Inbox**.
 
 From any board: click the card's **⋯**, then **Move to another board…**. Your Inbox is first in the list.
 
+## From Telegram
+
+Give your Inbox a Telegram bot and whatever you send that bot is a card here: a thought, a photo, a forwarded
+message. The same bot tells you your reminders and mentions. See
+[a bot on your Inbox](/more/telegram#a-bot-on-your-inbox).
+
 ## On a phone
 
 The tray opens the Inbox over the board. Press and hold a card to drag it between sections. To put a card on the

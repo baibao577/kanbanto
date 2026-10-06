@@ -5,12 +5,21 @@ import { MemoryGoogle } from '../src/calendar/google'
 import { createDb, migrateDb, type Db } from '../src/db'
 import { MemoryTransport } from '../src/mail/transport'
 import { forgetSignInFailures } from '../src/routes/auth'
+import { MemoryTelegram } from '../src/telegram/api'
+import { forgetChats } from '../src/telegram/cards'
 
-let shared: { app: FastifyInstance; db: Db; mail: MemoryTransport; google: MemoryGoogle; close: () => Promise<void> } | null = null
+let shared: {
+  app: FastifyInstance
+  db: Db
+  mail: MemoryTransport
+  google: MemoryGoogle
+  telegram: MemoryTelegram
+  close: () => Promise<void>
+} | null = null
 
 /**
  * One app + database for a test file; tables are emptied before each test with `reset()`. Emails are kept in `mail`,
- * and `google` stands in for Google Calendar (a new one for each test).
+ * and `google` stands in for Google Calendar, `telegram` for Telegram (a new one of each for each test).
  */
 export async function setup() {
   if (shared) return shared
@@ -18,13 +27,15 @@ export async function setup() {
   await migrateDb(db)
   const mail = new MemoryTransport()
   const google = new MemoryGoogle()
-  const app = await buildApp(db, { transport: mail, google })
+  const telegram = new MemoryTelegram()
+  const app = await buildApp(db, { transport: mail, google, telegram })
   await app.ready()
   shared = {
     app,
     db,
     mail,
     google,
+    telegram,
     close: async () => {
       await app.close()
       await client.end()
@@ -36,13 +47,16 @@ export async function setup() {
 
 export async function reset(db: Db) {
   await db.execute(
-    sql`truncate users, sessions, site_settings, boards, board_members, board_invites, lists, labels, tasks, email_senders, email_tokens, email_outbox, comments, notifications, task_followers, fields, board_fields, storage_backends, attachments, workspaces, workspace_members, workspace_invites, api_tokens, webhooks, webhook_deliveries, oauth_clients, oauth_codes, oauth_grants, board_activity, reminder_sends, push_devices, board_presets, board_favorites, planning_state, planning_roles, planning_people, planning_projects, planning_lines, planning_blocks, time_entries, calendar_feeds, calendar_connections, calendar_boards, calendar_events cascade`,
+    sql`truncate users, sessions, site_settings, boards, board_members, board_invites, lists, labels, tasks, email_senders, email_tokens, email_outbox, comments, notifications, task_followers, fields, board_fields, storage_backends, attachments, workspaces, workspace_members, workspace_invites, api_tokens, webhooks, webhook_deliveries, oauth_clients, oauth_codes, oauth_grants, board_activity, reminder_sends, push_devices, board_presets, board_favorites, planning_state, planning_roles, planning_people, planning_projects, planning_lines, planning_blocks, time_entries, calendar_feeds, calendar_connections, calendar_boards, calendar_events, telegram_bots, telegram_cards cascade`,
   )
   forgetSignInFailures()
   if (shared) {
     shared.mail.sent = []
     shared.mail.fail = null
     shared.app.calendar.google = shared.google = new MemoryGoogle()
+    shared.app.telegram.api = shared.telegram = new MemoryTelegram()
+    shared.app.telegram.forget()
+    forgetChats()
     await shared.app.mail.refresh()
   }
 }

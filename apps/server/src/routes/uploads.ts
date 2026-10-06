@@ -25,6 +25,8 @@ export interface Attach {
   comment?: string
   /** The app it came through, for the board's activity. */
   via?: string | null
+  /** A webhook that isn't sent the comment (see `postComment`). */
+  notToHook?: string
 }
 
 /**
@@ -41,7 +43,12 @@ export async function attachFile(app: FastifyInstance, a: Attach): Promise<{ fil
   try {
     const { board } = await mayUpload(app.db, a.me, a.boardId, true)
     const { data } = await app.engine.snapshot(a.boardId)
-    const comment = await postComment(app, board, a.me, a.taskId, { body: words, mentions: mentionsIn(data.members, words), attachments: [draft.id] })
+    const comment = await postComment(app, board, a.me, a.taskId, {
+      body: words,
+      mentions: mentionsIn(data.members, words),
+      attachments: [draft.id],
+      notToHook: a.notToHook,
+    })
     return { file: comment.attachments.find((f) => f.id === draft.id) ?? draft, comment }
   } catch (e) {
     await dropDraft(app.db, draft.id)

@@ -4,6 +4,7 @@ import { and, desc, eq, ilike, inArray, isNull, or, sql } from 'drizzle-orm'
 import type { FastifyInstance, FastifyPluginAsync } from 'fastify'
 import { z } from 'zod'
 import { commentMessage } from '../chat/format'
+import { tellPerson } from '../tell'
 import { openBoards, requireAccess, type BoardRow } from '../boards/access'
 import { follow, followersOf, isFollowing, mentionLine, setFollowing } from '../boards/follows'
 import { boardPeople } from '../boards/store'
@@ -154,7 +155,8 @@ export async function postComment(
   board: BoardRow,
   me: { id: string; name: string },
   taskId: string,
-  body: { body: string; mentions: string[]; attachments?: string[] },
+  /** `notToHook`: a webhook that isn't sent it (a Telegram bot whose own chat the comment came from: it was answered there). */
+  body: { body: string; mentions: string[]; attachments?: string[]; notToHook?: string },
 ) {
   const id = board.id
   const { data } = await app.engine.snapshot(id)
@@ -182,40 +184,46 @@ export async function postComment(
   })
   const [comment] = await commentViews(app.db, and(eq(comments.id, commentId)))
   app.hub.broadcast(id, { type: 'comment', taskId, action: 'added', commentId, comment })
-  // Desktop notifications for the people mentioned and the card's followers (who want them).
+  // As it happens, for the people mentioned and the card's followers who want that: on their desktop, and through
+  // a Telegram bot of their own. Then the board's webhooks, leaving out the bots that have just told their chat.
   const tell = (userId: string, kind: 'mentions' | 'follows') =>
-    void (async () => {
-      if (!(await app.push.wants(userId, kind))) return
-      await app.push.toUser(
-        userId,
-        {
-          title: kind === 'mentions' ? `${me.name} mentioned you` : `${me.name} commented on “${data.tasks[taskId].title}”`,
-          body: kind === 'mentions' ? `“${data.tasks[taskId].title}”: ${excerpt(body.body, 120)}` : excerpt(body.body, 120),
-          url: `/#/b/${encodeURIComponent(id)}?task=${encodeURIComponent(taskId)}`,
-          tag: `mention:${commentId}`,
-        },
-        24 * 3600,
-      )
-    })().catch((e) => app.log.error({ err: e instanceof Error ? e.message : e }, 'push'))
-  for (const userId of mentions) tell(userId, 'mentions')
-  for (const userId of followers) tell(userId, 'follows')
-  void app.webhooks
-    .emit(
-      id,
-      'comment.added',
+    tellPerson(
+      app,
+      userId,
+      kind,
       {
-        board: { id, name: board.name },
-        actor: { id: me.id, name: me.name },
-        task: { id: taskId, title: data.tasks[taskId].title },
-        comment: {
-          id: commentId,
-          body: body.body,
-          mentions,
-          // (The files posted with it: fetched with a token from /api/attachments/<id>.)
-          files: comment.attachments.map((f) => ({ id: f.id, name: f.name, size: f.size })),
-        },
+        title: kind === 'mentions' ? `${me.name} mentioned you` : `${me.name} commented on “${data.tasks[taskId].title}”`,
+        body: kind === 'mentions' ? `“${data.tasks[taskId].title}”: ${excerpt(body.body, 120)}` : excerpt(body.body, 120),
+        url: `/#/b/${encodeURIComponent(id)}?task=${encodeURIComponent(taskId)}`,
+        tag: `mention:${commentId}`,
       },
-      () => commentMessage({ actor: me.name, board: board.name, title: data.tasks[taskId].title, body: body.body }, app.webhooks.cardUrl(id, taskId)),
+      24 * 3600,
+      { boardId: id },
+    ).catch((e) => {
+      app.log.error({ err: e instanceof Error ? e.message : e }, 'push')
+      return null
+    })
+  void Promise.all([...mentions.map((userId) => tell(userId, 'mentions')), ...followers.map((userId) => tell(userId, 'follows'))])
+    .then((told) =>
+      app.webhooks.emit(
+        id,
+        'comment.added',
+        {
+          board: { id, name: board.name },
+          actor: { id: me.id, name: me.name },
+          task: { id: taskId, title: data.tasks[taskId].title },
+          comment: {
+            id: commentId,
+            body: body.body,
+            mentions,
+            // (The files posted with it: fetched with a token from /api/attachments/<id>.)
+            files: comment.attachments.map((f) => ({ id: f.id, name: f.name, size: f.size })),
+          },
+        },
+        () =>
+          commentMessage({ actor: me.name, board: board.name, title: data.tasks[taskId].title, body: body.body }, app.webhooks.cardUrl(id, taskId)),
+        [body.notToHook, ...told].filter((hook): hook is string => !!hook),
+      ),
     )
     .catch((e) => app.log.error({ err: e instanceof Error ? e.message : e }, 'queueing webhooks'))
   return comment

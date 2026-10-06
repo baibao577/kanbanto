@@ -16,6 +16,7 @@ import { Switch } from '@/components/ui/switch'
 import { ApiTokensSection } from './ApiTokens'
 import { CalendarSection } from './Calendar'
 import { DesktopNotifications } from './DesktopNotifications'
+import { TelegramNews } from './TelegramNews'
 import { AccountEmailSection } from './EmailSending'
 import { AccountStorageSection } from './FileStorage'
 
@@ -187,6 +188,7 @@ function Notifications() {
       </SettingsCard>
       <TimeZoneCard />
       <DesktopNotifications />
+      <TelegramNews />
       <SettingsCard
         title="Email me reminders"
         description="When a reminder on a card assigned to you goes off (or one you set on a card nobody is assigned to)."

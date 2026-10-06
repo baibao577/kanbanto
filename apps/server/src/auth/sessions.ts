@@ -24,6 +24,10 @@ export interface SessionUser {
   pushReminders: boolean
   pushMentions: boolean
   pushFollows: boolean
+  /** The same news through a Telegram bot they connected to their own chat, when they have one. */
+  telegramReminders: boolean
+  telegramMentions: boolean
+  telegramFollows: boolean
   /** Has to confirm their email before using the app (set per request: only once the site can send email). */
   mustVerify?: boolean
 }
@@ -68,6 +72,9 @@ export const sessionUser = (u: typeof users.$inferSelect): SessionUser => ({
   pushReminders: u.pushReminders,
   pushMentions: u.pushMentions,
   pushFollows: u.pushFollows,
+  telegramReminders: u.telegramReminders,
+  telegramMentions: u.telegramMentions,
+  telegramFollows: u.telegramFollows,
 })
 
 export async function endSession(db: Db, token: string) {

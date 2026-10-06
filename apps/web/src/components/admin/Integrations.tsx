@@ -151,6 +151,23 @@ export function IntegrationsSection() {
           </SettingsCard>
 
           <GoogleCalendar />
+
+          <SettingsCard
+            title="Boards can have a Telegram bot"
+            description="A board’s owner connects a bot of their own (made at @BotFather in Telegram) in Board settings → People & apps: one chat then gets the board’s news, and what is sent there can become cards. A bot someone connects to their own chat also tells them their reminders and mentions. Turning this off stops every bot at once."
+            action={
+              <Switch
+                checked={settings.telegramBots}
+                aria-label="Boards can have a Telegram bot"
+                onCheckedChange={(on) => void save({ telegramBots: on }, on ? 'Telegram bots turned on' : 'Telegram bots turned off')}
+              />
+            }
+          >
+            <p className="text-xs text-muted-foreground">
+              Each bot belongs to whoever made it: this site holds its token, encrypted. The server keeps one connection to Telegram open for each bot
+              that takes cards. Everything said in those chats passes through Telegram.
+            </p>
+          </SettingsCard>
         </>
       )}
     </div>

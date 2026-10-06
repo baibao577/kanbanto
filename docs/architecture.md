@@ -16,6 +16,7 @@ On start, it loads (or makes) the encryption key, runs database migrations, and 
 public development key onto the real one. Background jobs run inside the same process:
 - reminders whose moment has come, every minute; the morning summary email, checked every 10 minutes;
 - the email outbox, webhook deliveries and Google Calendar sync, every 5 seconds;
+- boards' Telegram bots: one open request to Telegram for each bot that takes cards (see Integrations);
 - clean-up (expired sessions, old trash, unused uploads), every 6 hours.
 
 ## Code layout
@@ -47,6 +48,9 @@ apps/server/      Fastify + Drizzle + PostgreSQL
   src/auth/apiTokens.ts   Bearer tokens: who they act as, and which routes they may use (TOKEN_ROUTES)
   src/webhooks.ts   Queues, signs and delivers webhooks (with retries), like the email outbox
   src/chat/         A webhook's news as text for a chat app: each app's body, and the hosts its addresses are on
+  src/telegram/     Boards' own Telegram bots: Telegram's API (api.ts), connecting and reading (bots.ts), messages
+                    into cards (cards.ts), and the words of /help (help.ts)
+  src/tell.ts       Telling one person their news as it happens: desktop notifications, a Telegram bot of their own
   src/calendar/     sync.ts (keeps people's Google calendars up to date), google.ts (Google's sign-in and calendar
                     calls, and a stand-in for tests), items.ts (which boards are in someone's calendar)
   src/mcp.ts        The MCP endpoint (/api/mcp): tools for AI assistants, over the same access checks and commands
@@ -176,6 +180,22 @@ The app uses hash routing, so any static host or proxy works without rewrite rul
   queues nothing for them. Two things differ, because nothing at a chat app can answer: instead of the code a new
   address has to send back, the channel is sent a first message that has to be taken, and on a site limited to public
   addresses the address must be the chat app's own (`chat/hosts.ts`); and deliveries carry no signature.
+- **A board's Telegram bot** is a webhook whose format is `telegram`: the row's encrypted secret is the bot's token
+  (the owner's own, from @BotFather), and `telegram_bots` says which bot it is, the one chat it's connected to, and
+  whether what's sent there becomes cards. News goes out through the same queue (`Webhooks.deliver` hands it to
+  `Telegram.deliver`, which adds the chat). Coming in, `telegram/bots.ts` asks Telegram for new messages (long
+  polling, `getUpdates`), so the site needs no address Telegram can reach; where reading left off (`read_from`) is
+  saved after each message, and a card's mutation id is the message's own, so a restart neither loses nor repeats
+  one. A bot is read only while it waits for its connecting code or takes cards. Only the connected chat counts:
+  a bot's name is public, and anyone can write to it. Cards are added by `engine.mutate` in the name of whoever
+  added the bot (checked again each time to be able to edit the board), `via` "Telegram"; `telegram_cards` remembers
+  for a week which message made which card, for Undo, No date, an edited message and a reply (a comment). The
+  connecting codes, the per-chat limits and albums in flight are in memory. Three shortcuts answer in the chat:
+  `/board` (a link), `/list` (the titles in the list new cards go to, read as whoever added the bot) and, in someone's own chat
+  with a bot, `/today` (what is theirs and due, and their reminders in the next 24 hours, on all their boards); each chat's menu (`setMyCommands` for that chat) lists the ones that work there.
+  Links are only written for a site address Telegram will link (not `localhost`): otherwise the address is shown. Someone's own news (`tell.ts`) goes through a bot they connected to their own chat: the one on the card's board, else the one on their Inbox, else another of theirs; that bot's chat is then left out of the board's news of the same thing. The token is in every address this code calls, so nothing in `telegram/api.ts`
+  puts an address in an error or a log line. Platform admins allow bots or not (`site_settings.telegram_bots`), a
+  switch of its own: bots work whatever the setting for webhooks is, and have their own box in Board settings.
 - **MCP** is stateless: each POST to `/api/mcp` builds a server whose tools call the same functions the routes use
   (`requireAccess`, `engine.mutate`, `postComment`), as the token's person.
 - **Calendars** work from what should be there, not from what just happened. `calendarItems` (in the model) says
@@ -417,6 +437,10 @@ process's memory, so two instances would not see each other's changes live. For 
 (about 1 GB of memory) with PostgreSQL next to it is the intended setup. The board cache is bounded (200 boards, and
 200,000 records in all), so large boards don't grow memory without limit. Long lists aren't virtualized: each list
 shows 100 cards at a time, with "show more".
+
+Each Telegram bot that takes cards holds one request to Telegram open (a few bytes a minute, one socket). Hundreds
+are fine on one instance; thousands would be better served by having Telegram send the messages to the site
+instead (its webhooks), which isn't built.
 
 ### How it holds up on a big board
 

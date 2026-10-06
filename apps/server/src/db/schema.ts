@@ -55,6 +55,13 @@ export const users = pgTable('users', {
   pushFollows: boolean('push_follows').notNull().default(true),
   /** Email reminders as they fire, as well as the bell (they can turn it off). */
   reminderEmails: boolean('reminder_emails').notNull().default(true),
+  /**
+   * The same news through a Telegram bot they connected to their own chat, when they have one (see telegram_bots): reminders and
+   * @mentions unless they turn them off, and news from cards they follow if they turn it on.
+   */
+  telegramReminders: boolean('telegram_reminders').notNull().default(true),
+  telegramMentions: boolean('telegram_mentions').notNull().default(true),
+  telegramFollows: boolean('telegram_follows').notNull().default(false),
   /** When the last daily summary went out (at most one per 24 hours). */
   lastDigestAt: at('last_digest_at'),
   /** No longer read: a person's Inbox is the board with `inboxOf` set to them. Kept until a later release drops it. */
@@ -110,6 +117,8 @@ export const siteSettings = pgTable('site_settings', {
   /** The site's Google app, for connecting people's Google Calendar (an OAuth client): its id, and its secret encrypted. */
   googleClientId: text('google_client_id'),
   googleClientSecretEncrypted: text('google_client_secret_encrypted'),
+  /** Board owners can connect a Telegram bot of their own to a board. Off until a platform admin turns it on. */
+  telegramBots: boolean('telegram_bots').notNull().default(SETTING_DEFAULTS.telegramBots),
 })
 
 // ── Email ──────────────────────────────────────────────────────────────────────
@@ -819,7 +828,10 @@ export const webhooks = pgTable(
       .notNull()
       .references(() => boards.id, { onDelete: 'cascade' }),
     url: text('url').notNull(),
-    /** How its messages are written: Kanbanto's own data (json), or text for a chat app (slack, google-chat, teams, discord). */
+    /**
+     * How its messages are written: Kanbanto's own data (json), or text for a chat app (slack, google-chat, teams,
+     * discord: `url` is the channel's address; telegram: a bot of the board's own, see telegram_bots).
+     */
     format: text('format').notNull().default('json'),
     /** For signing deliveries (HMAC-SHA256), encrypted like other secrets. (A chat webhook has one too, never used.) */
     secretEncrypted: text('secret_encrypted').notNull(),
@@ -859,6 +871,88 @@ export const webhookDeliveries = pgTable(
     sentAt: at('sent_at'),
   },
   (t) => [index('webhook_deliveries_due_idx').on(t.status, t.nextAttemptAt), index('webhook_deliveries_hook_idx').on(t.webhookId, t.createdAt)],
+)
+
+/**
+ * A board's own Telegram bot: a webhook whose format is `telegram` (its bot token is the webhook's encrypted secret).
+ * It is connected to one chat, which gets the board's news; what's sent there can become cards on the board.
+ */
+export const telegramBots = pgTable(
+  'telegram_bots',
+  {
+    webhookId: uuid('webhook_id')
+      .primaryKey()
+      .references(() => webhooks.id, { onDelete: 'cascade' }),
+    /** Which bot (Telegram's id for it, and its @name). One bot serves one board: only one place can read a bot's messages. */
+    botId: bigint('bot_id', { mode: 'number' }).notNull(),
+    botName: text('bot_name').notNull(),
+    /** The chat it's connected to (null until someone sends it the code): someone's own chat with it, or a group. */
+    chatId: bigint('chat_id', { mode: 'number' }),
+    chatKind: text('chat_kind', { enum: ['private', 'group'] }),
+    chatName: text('chat_name'),
+    /** The Telegram account that sent the code: the person who connected it, so what they write in a group is theirs. */
+    connectedBy: bigint('connected_by', { mode: 'number' }),
+    /** Messages in the chat become cards, in this list (null: the board's first list of not-started work). */
+    takesCards: boolean('takes_cards').notNull().default(true),
+    cardsTo: text('cards_to'),
+    /** Where reading its messages left off (Telegram's update id + 1). */
+    readFrom: bigint('read_from', { mode: 'number' }),
+    /** Why it isn't working, in words, when it isn't (a token Telegram no longer accepts, another server reading it). */
+    problem: text('problem'),
+  },
+  (t) => [uniqueIndex('telegram_bots_bot_idx').on(t.botId), index('telegram_bots_chat_idx').on(t.chatId)],
+)
+
+/** What a board's Telegram bot put on a card it made, and what its answer in the chat says about it. */
+export interface TelegramWrote {
+  title: string
+  description: string
+  due: string | null
+  /** The title as it was typed (with the words that were read as a date). */
+  typed: string
+  /** The words are the sender's own, typed in that message: an edit of the message changes the card. */
+  own: boolean
+  /** "From Ben", "Forwarded from Acme News": lines at the top of the description. */
+  notes: string[]
+  files: number
+  /** Why a file wasn't attached, when one wasn't. */
+  refused?: string
+  /** Who added it, said in a group. */
+  by?: string
+  /** The time zone its date was read in. */
+  zone: string
+}
+
+/**
+ * Which message made which card, for a week: what "Undo" and "No date" under the bot's answer act on, what an
+ * edited message changes, and where a reply to the answer is posted as a comment.
+ */
+export const telegramCards = pgTable(
+  'telegram_cards',
+  {
+    id: uuid('id').primaryKey(),
+    webhookId: uuid('webhook_id')
+      .notNull()
+      .references(() => webhooks.id, { onDelete: 'cascade' }),
+    chatId: bigint('chat_id', { mode: 'number' }).notNull(),
+    /** The message the card was made from, and the bot's answer to it. */
+    messageId: bigint('message_id', { mode: 'number' }).notNull(),
+    answerId: bigint('answer_id', { mode: 'number' }),
+    boardId: text('board_id').notNull(),
+    taskId: text('task_id').notNull(),
+    /** The Telegram account that sent it (in a group, the only one who can take the card back). */
+    writerId: bigint('writer_id', { mode: 'number' }).notNull(),
+    /** The person the card was added as. */
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    /** What the bot wrote on the card, to tell whether anyone changed it since; `typed`: the title as it was typed. */
+    wrote: jsonb('wrote').$type<TelegramWrote>().notNull(),
+    /** Taken back with "Undo". */
+    undone: boolean('undone').notNull().default(false),
+    createdAt: at('created_at').notNull().defaultNow(),
+  },
+  (t) => [index('telegram_cards_message_idx').on(t.webhookId, t.messageId), index('telegram_cards_answer_idx').on(t.webhookId, t.answerId)],
 )
 
 // ── Apps connected with sign-in (OAuth 2.1, for MCP) ────────────────────────────

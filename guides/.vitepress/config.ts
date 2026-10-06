@@ -80,6 +80,7 @@ export default defineConfig({
         items: [
           { text: 'Cards in your calendar', link: '/more/calendar' },
           { text: 'Webhooks: tell another app', link: '/more/webhooks' },
+          { text: 'Telegram: a bot for a board', link: '/more/telegram' },
           { text: 'Your account', link: '/more/account' },
         ],
       },

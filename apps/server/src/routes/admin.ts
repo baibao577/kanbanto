@@ -149,15 +149,16 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
   })
 
   const settings = async (): Promise<AdminSettings> => {
-    const { openSignup, apiTokens, webhooks, oauthApps, calendarLinks } = await getSettings(app.db)
-    return { openSignup, apiTokens, webhooks, oauthApps, calendarLinks }
+    const { openSignup, apiTokens, webhooks, oauthApps, calendarLinks, telegramBots } = await getSettings(app.db)
+    return { openSignup, apiTokens, webhooks, oauthApps, calendarLinks, telegramBots }
   }
 
   app.get('/settings', settings)
 
   /**
    * Sign-up, API tokens (turning them off stops every token working), where webhooks may go, which apps may connect,
-   * and calendar links (turning them off stops every link working).
+   * calendar links (turning them off stops every link working), and boards' own Telegram bots (turning them off
+   * stops them all: nothing is read from them or sent through them).
    */
   app.patch('/settings', async (req): Promise<AdminSettings> => {
     const body = parse(
@@ -168,6 +169,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
           webhooks: z.enum(['off', 'public', 'any']),
           oauthApps: z.enum(['off', 'known', 'any']),
           calendarLinks: z.boolean(),
+          telegramBots: z.boolean(),
         })
         .partial()
         .strict(),
@@ -178,6 +180,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         .insert(siteSettings)
         .values({ id: 1, ...body })
         .onConflictDoUpdate({ target: siteSettings.id, set: body })
+    app.telegram.changed()
     return settings()
   })
 

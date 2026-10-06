@@ -1,6 +1,6 @@
 # Notifications
 
-Kanbanto tells you when something needs you, in three places: the bell, your email, and your computer.
+Kanbanto tells you when something needs you: under the bell, by email, on your computer, and in Telegram if you set that up.
 
 ## The bell
 
@@ -63,6 +63,13 @@ running. Clicking one opens the card.
 
 This is set per computer and browser, so turn it on wherever you want it.
 
+## In Telegram
+
+Reminders and mentions can also reach you in Telegram, as they happen, through a bot you connected to your own
+chat with it, on any board or on your Inbox ([how](/more/telegram#your-own-reminders-and-mentions)); then choose
+what it tells you under **Account settings → Notifications → Telegram**: reminders and mentions are on to start, comments and
+changes on the cards you follow are off.
+
 ## Choose what you get
 
 **Account settings → Notifications** is where you:
@@ -73,6 +80,7 @@ This is set per computer and browser, so turn it on wherever you want it.
 - turn **reminder emails** on or off,
 - turn **desktop notifications** on for this computer, and choose which kinds you get there (reminders, mentions,
   cards you follow),
+- choose what a **Telegram** bot of your own tells you, once you have one,
 - set **your time zone**, which decides when your morning is. It is taken from your browser the first time and can be
   changed.
 

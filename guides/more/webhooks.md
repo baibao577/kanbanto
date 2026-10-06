@@ -80,6 +80,8 @@ Good to know:
   a site whose admin allows webhooks to any address. Where only public addresses are allowed, the address has to
   be the chat app's own.
 - To change the app, add another webhook and delete this one.
+- **Telegram** has a box of its own in Board settings: a board gets a bot of its own, whose chat can also add
+  cards. See [Telegram: a bot for a board](/more/telegram).
 
 The rest of this page is about the other kind: a webhook that sends the board's data to an app or a program.
 

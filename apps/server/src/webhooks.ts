@@ -1,6 +1,6 @@
 import { createHmac, randomBytes } from 'node:crypto'
 import type { ActivityItem } from '@kanbanto/model/activity'
-import { WEBHOOK_FORMAT_NAMES, type ChatFormat } from '@kanbanto/model/api'
+import { WEBHOOK_FORMAT_NAMES, type AddressChatFormat, type ChatFormat } from '@kanbanto/model/api'
 import { newId } from '@kanbanto/model/ids'
 import type { Change } from '@kanbanto/model/records'
 import { and, asc, eq, inArray, lt, lte, sql } from 'drizzle-orm'
@@ -11,7 +11,7 @@ import { changeMessage, chatBody, helloMessage, testMessage, type ChatMessage } 
 import { checkChatAddress } from './chat/hosts'
 import { decrypt } from './crypto'
 import type { Db } from './db'
-import { users, webhookDeliveries, webhooks } from './db/schema'
+import { telegramBots, users, webhookDeliveries, webhooks } from './db/schema'
 import { HttpError } from './http'
 import { loadSettings } from './settings'
 import { assertPublicEndpoint, PrivateAddressError, publicOnly } from './storage/egress'
@@ -98,6 +98,8 @@ export class Webhooks {
     })
     return { status: res.status, text: await readStart(res) }
   }
+  /** How a delivery goes through a board's Telegram bot (set by the app: see telegram/bots.ts). */
+  telegram: ((hook: Hook, payload: object) => Promise<{ status: number; text: string | null }>) | null = null
   /** How the address check is sent (replaced in tests). */
   ask: (url: string, body: string) => Promise<{ status: number; text: string }> = async (url, body) => {
     const res = await fetch(url, {
@@ -140,7 +142,7 @@ export class Webhooks {
    * A chat app can't answer the check above, so its channel is sent a first message instead: the webhook is only
    * saved when the chat app takes it.
    */
-  async greet(format: ChatFormat, url: string, board: { name: string }, mode: WebhookMode) {
+  async greet(format: AddressChatFormat, url: string, board: { name: string }, mode: WebhookMode) {
     const app = WEBHOOK_FORMAT_NAMES[format]
     let answer: { status: number }
     try {
@@ -178,17 +180,25 @@ export class Webhooks {
    * Queues an event for the board's active webhooks (if the site allows webhooks). `words`: the event as a chat
    * message, for the webhooks that send to a chat app; when it has nothing to say, they're sent nothing.
    */
-  async emit(boardId: string, event: WebhookEvent, data: object, words?: () => ChatMessage | null) {
+  async emit(boardId: string, event: WebhookEvent, data: object, words?: () => ChatMessage | null, except?: string | string[]) {
     const hooks = (
       await this.db
-        .select({ id: webhooks.id, events: webhooks.events, format: webhooks.format })
+        .select({ id: webhooks.id, events: webhooks.events, format: webhooks.format, chat: telegramBots.chatId })
         .from(webhooks)
+        .leftJoin(telegramBots, eq(telegramBots.webhookId, webhooks.id))
         .where(and(eq(webhooks.boardId, boardId), eq(webhooks.active, true)))
-    ).filter((h) => !h.events || h.events.includes(event))
-    if (!hooks.length || (await loadSettings(this.db)).webhooks === 'off') return
+    )
+      .filter((h) => !h.events || h.events.includes(event))
+      // (A Telegram bot that no chat is connected to yet has nowhere to say it; and a chat isn't told what it has
+      // been told already: what was just done from that chat, or someone's own news sent there a moment ago.)
+      .filter((h) => h.format !== 'telegram' || (h.chat !== null && !([] as (string | undefined)[]).concat(except).includes(h.id)))
+    // Each kind goes by its own switch for the site: webhooks to addresses, and boards' Telegram bots.
+    const site = hooks.length ? await loadSettings(this.db) : null
+    const allowed = hooks.filter((h) => (h.format === 'telegram' ? site!.telegramBots : site!.webhooks !== 'off'))
+    if (!allowed.length) return
     const at = new Date().toISOString()
     let message: ChatMessage | null | undefined
-    const rows = hooks.flatMap((h) => {
+    const rows = allowed.flatMap((h) => {
       const id = newId()
       const format = chatFormat(h)
       if (!format) return [{ id, webhookId: h.id, event, payload: { event, delivery: id, at, ...data } as object }]
@@ -207,7 +217,15 @@ export class Webhooks {
    */
   async boardChanged(
     boardId: string,
-    e: { board: { id: string; name: string }; userId: string; command: string; seq: number; changes: Change[]; items: ActivityItem[] },
+    e: {
+      board: { id: string; name: string }
+      userId: string
+      command: string
+      seq: number
+      changes: Change[]
+      items: ActivityItem[]
+      mutationId?: string
+    },
   ) {
     const [actor] = await this.db.select({ id: users.id, name: users.name }).from(users).where(eq(users.id, e.userId))
     await this.emit(
@@ -225,6 +243,8 @@ export class Webhooks {
         changeMessage({ actor: actor?.name ?? null, board: e.board.name, items: e.items, changes: e.changes }, (taskId) =>
           this.cardUrl(boardId, taskId),
         ),
+      // (A change made from a board's Telegram chat carries that bot's webhook in its id: see telegram/cards.ts.)
+      /^tg:([0-9a-f-]{36}):/.exec(e.mutationId ?? '')?.[1],
     )
   }
 
@@ -291,23 +311,36 @@ export class Webhooks {
     let error: string | null = null
     let answer: string | null = null
     try {
-      if (mode === 'off') throw new Error('Webhooks are turned off on this site.')
-      if (!h.active) throw new Error('This webhook is paused.')
-      checkWebhookUrl(h.url, mode)
       const format = chatFormat(h)
-      if (format && mode === 'public') checkChatAddress(format, h.url)
-      const res = await this.post(
-        h.url,
-        body,
-        // (A chat app gets the message and nothing else: it has no use for the event's name or a signature.)
-        format
-          ? HEADERS
-          : { ...HEADERS, 'x-kanbanto-event': d.event, 'x-kanbanto-delivery': d.id, 'x-kanbanto-signature': sign(decrypt(h.secretEncrypted), body) },
-        mode,
-      )
+      // (A Telegram bot goes by its own switch for the site, checked where it's sent: see telegram/bots.ts.)
+      if (mode === 'off' && format !== 'telegram') throw new Error('Webhooks are turned off on this site.')
+      if (!h.active) throw new Error(format === 'telegram' ? 'This bot is paused.' : 'This webhook is paused.')
+      let res: { status: number; text: string | null }
+      if (format === 'telegram') {
+        if (!this.telegram) throw new Error('Telegram bots aren’t set up on this server.')
+        res = await this.telegram(h, d.payload as object)
+      } else {
+        checkWebhookUrl(h.url, mode)
+        if (format && mode === 'public') checkChatAddress(format, h.url)
+        res = await this.post(
+          h.url,
+          body,
+          // (A chat app gets the message and nothing else: it has no use for the event's name or a signature.)
+          format
+            ? HEADERS
+            : {
+                ...HEADERS,
+                'x-kanbanto-event': d.event,
+                'x-kanbanto-delivery': d.id,
+                'x-kanbanto-signature': sign(decrypt(h.secretEncrypted), body),
+              },
+          mode,
+        )
+      }
       answer = res.text
       status = res.status
-      if (status < 200 || status >= 300) error = `The address answered ${status}.`
+      if (status < 200 || status >= 300)
+        error = format === 'telegram' ? `Telegram answered ${status}${answer ? `: ${answer}` : '.'}` : `The address answered ${status}.`
     } catch (e) {
       const cause = e instanceof PrivateAddressError ? e : (e as { cause?: unknown })?.cause
       error =

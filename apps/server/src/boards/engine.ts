@@ -51,7 +51,15 @@ export class BoardEngine {
   onChanged:
     | ((
         boardId: string,
-        e: { board: { id: string; name: string }; userId: string; command: string; seq: number; changes: Change[]; items: ActivityItem[] },
+        e: {
+          board: { id: string; name: string }
+          userId: string
+          command: string
+          seq: number
+          changes: Change[]
+          items: ActivityItem[]
+          mutationId?: string
+        },
       ) => void)
     | null = null
 
@@ -177,7 +185,7 @@ export class BoardEngine {
       // (What was written isn't quite what the person's own copy did: it fetches the board again.)
       if (result.stripped) this.hub.broadcast(boardId, { type: 'reload' })
       const board = { id: boardId, name: result.data.board.name }
-      this.onChanged?.(boardId, { board, userId, command: command.type, seq: out.seq, changes: out.changes, items: result.said })
+      this.onChanged?.(boardId, { board, userId, command: command.type, seq: out.seq, changes: out.changes, items: result.said, mutationId })
       await this.afterChange?.(boardId, { userId, command: command.type, changes: out.changes, data: result.data })
     }
     return out
