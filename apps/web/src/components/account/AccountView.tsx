@@ -102,12 +102,23 @@ function Profile() {
 }
 
 function Password() {
+  const { user, setUser } = useAuth()
   const [current, setCurrent] = useState('')
   const [next, setNext] = useState('')
+  if (!user) return null
+  // Someone who only ever signed in with Google has no password yet: they add one, with no current one to give.
+  const adding = !user.hasPassword
   return (
     <div className="space-y-6">
       <PageTitle title="Password" />
-      <SettingsCard title="Change your password" description="You’ll stay signed in here; your other devices will be signed out.">
+      <SettingsCard
+        title={adding ? 'Add a password' : 'Change your password'}
+        description={
+          adding
+            ? 'You sign in with Google. With a password you can also sign in with your email address.'
+            : 'You’ll stay signed in here; your other devices will be signed out.'
+        }
+      >
         <form
           className="max-w-sm space-y-3"
           onSubmit={async (e) => {
@@ -115,26 +126,33 @@ function Password() {
             try {
               // (This browser keeps its desktop notifications; the others are signed out and lose theirs.)
               const push = await currentSubscription().catch(() => null)
-              await api('POST', '/auth/password', { current, next, ...(push && { pushEndpoint: push.endpoint }) })
+              await api('POST', '/auth/password', { ...(!adding && { current }), next, ...(push && { pushEndpoint: push.endpoint }) })
               setCurrent('')
               setNext('')
-              toast('Password changed. You’ve been signed out on your other devices.')
+              setUser({ ...user, hasPassword: true })
+              toast(
+                adding
+                  ? 'Password added. You’ve been signed out on your other devices.'
+                  : 'Password changed. You’ve been signed out on your other devices.',
+              )
             } catch (err) {
               toast.error(errorMessage(err))
             }
           }}
         >
-          <div className="space-y-1.5">
-            <Label htmlFor="pw-current">Current password</Label>
-            <Input
-              id="pw-current"
-              type="password"
-              autoComplete="current-password"
-              value={current}
-              onChange={(e) => setCurrent(e.target.value)}
-              required
-            />
-          </div>
+          {!adding && (
+            <div className="space-y-1.5">
+              <Label htmlFor="pw-current">Current password</Label>
+              <Input
+                id="pw-current"
+                type="password"
+                autoComplete="current-password"
+                value={current}
+                onChange={(e) => setCurrent(e.target.value)}
+                required
+              />
+            </div>
+          )}
           <div className="space-y-1.5">
             <Label htmlFor="pw-next">New password</Label>
             <Input
@@ -149,7 +167,7 @@ function Password() {
             <p className="text-xs text-muted-foreground">At least 8 characters.</p>
           </div>
           <Button type="submit" size="sm">
-            Change password
+            {adding ? 'Add password' : 'Change password'}
           </Button>
         </form>
       </SettingsCard>

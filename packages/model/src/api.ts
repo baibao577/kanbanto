@@ -24,6 +24,8 @@ export interface PublicUser {
   isAdmin: boolean
   /** Confirmed their email address, or a platform admin vouched for it (required once the site can send email). */
   emailVerified: boolean
+  /** Has a password to sign in with. Someone who only ever signed in with Google has none, and can add one. */
+  hasPassword: boolean
   /** Gets the daily email summary of @mentions. */
   mentionEmails: boolean
   /** Gets reminders by email as well as under the bell. */
@@ -54,6 +56,8 @@ export interface Me {
   openSignup: boolean
   /** The site can send email: password reset works, and new accounts must confirm their email. */
   emailEnabled: boolean
+  /** People can sign in, and sign up, with Google here. */
+  googleSignIn: boolean
   /** Links the site's operator shows under the sign-in form (none by default). */
   links: SiteLink[]
   /** Where "Guides" in the account menu goes: how to use Kanbanto. Null: the site has taken the item out. */
@@ -925,15 +929,19 @@ export interface AdminSettings {
   calendarLinks: boolean
   /** Board owners can connect a Telegram bot of their own to a board. */
   telegramBots: boolean
+  /** People can sign in, and sign up, with Google (needs the site's Google app). */
+  googleSignIn: boolean
 }
 
-/** GET /api/admin/calendar/google: the site's Google app, for people's Google Calendar connections. */
+/** GET /api/admin/calendar/google: the site's Google app, for people's Google Calendar connections and for signing in with Google. */
 export interface AdminGoogleCalendar {
   clientId: string | null
   /** An ID and a secret are saved (the secret is never shown). */
   configured: boolean
   /** The address to add to the Google app, under "Authorized redirect URIs". */
   redirectUri: string
+  /** A second address to add there, for signing in with Google. */
+  signInRedirectUri: string
   /** How many people have connected their Google Calendar. */
   connections: number
 }

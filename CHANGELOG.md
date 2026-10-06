@@ -91,6 +91,14 @@ then `git pull` (or download the new release) and `docker compose up -d --build`
   for Apple Calendar, Outlook and others. Your cards are the ones assigned to you, plus nobody's cards on boards
   only you are on; you choose which boards are in it. Platform admins turn each on in the console (Google Calendar
   needs a Google app, see [Calendar](docs/calendar.md)).
+- **Sign in with Google:** "Continue with Google" on the sign-in and sign-up pages, once a platform admin turns it on
+  (Platform console → Integrations; it uses the Google app made for Google Calendar, with a second redirect address).
+  Someone new gets an account at once, with their name from Google and no confirmation email, since Google has
+  checked the address. Someone whose address already has an account gets that same account, and their password keeps
+  working (for Gmail and Google Workspace addresses; an account that never confirmed its address is confirmed by it
+  and loses its old password). An account made this way has no password until one is added in Account settings →
+  Password. Closed sign-up still needs an invite. See
+  [Signing in with Google](docs/self-hosting.md#signing-in-with-google).
 - **Your site's own pages:** a `pages` folder (an about page, a privacy policy, terms) is served next to the app,
   with links to them under the sign-in form. See [Your own pages](docs/configuration.md#your-own-pages).
 - **Priorities** (urgent, high, medium, low) on tasks: shown on cards, and in the Outline, filters and sorting. Boards

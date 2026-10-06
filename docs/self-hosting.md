@@ -170,6 +170,37 @@ workspaces it runs (see [SECURITY.md](../SECURITY.md)).
 **What to send your team:** the [guides](../guides/) explain Kanbanto to the people using it. **Guides** in the account
 menu opens them (`GUIDES_URL` points it at your own copy, or takes it out).
 
+## Signing in with Google
+
+Optional, and off until you turn it on. It puts **Continue with Google** on the sign-in and sign-up pages, beside
+email and password.
+
+1. Make a Google app, or use the one you made for Google Calendar: steps 1 to 4 of
+   [Calendar → Google Calendar](calendar.md#google-calendar). For signing in alone, the Google Calendar API and its
+   scope aren't needed.
+2. In Google Cloud, on that app's consent screen (**Data access**), add the scope
+   `https://www.googleapis.com/auth/userinfo.profile` beside `openid` and `…/userinfo.email` (non-sensitive, like
+   them). On its client, add a second **authorized redirect URI**, the one the console shows: your site's address
+   followed by `/api/auth/google/callback`.
+3. Turn on **Platform console → Integrations → People can sign in with Google**.
+
+What it does with accounts:
+
+- **Someone new** gets an account at once, with their name from Google. Google has checked the address, so no
+  confirmation email is sent. They have no password until they add one (Account settings → Password).
+- **Someone whose address already has an account** gets that account: the same boards and rights, and their password
+  keeps working. This is only done for addresses whose mailbox Google runs (Gmail, or a Google Workspace domain);
+  with any other address they sign in with their password.
+- **An account that never confirmed its address** is confirmed by this, and loses its password and its sessions:
+  someone else could have made it with that address. On a site that sends no email, no account is confirmed, so this
+  happens at each account's first Google sign-in; the person adds a password again in Account settings if they want
+  one. To avoid it for an account you know, confirm it first (Platform console → Accounts → ⋯ → Confirm email).
+- **Closed sign-up stays closed:** Google lets in people who have an account or an invite.
+- **Turned off later,** people who signed up with Google get back in with **Forgot password**, a reset link from
+  you, or `user password`.
+
+Kanbanto keeps nothing from Google but Google's ID for the account.
+
 ## Email
 
 Optional, but it enables confirming new accounts' addresses, **forgot password**, **invites by email**, **reminders by email**, and a **morning

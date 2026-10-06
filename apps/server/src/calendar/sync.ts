@@ -61,6 +61,12 @@ export async function googleApp(db: Db): Promise<GoogleApp | null> {
   }
 }
 
+/** The site's Google app, when people may also sign in to Kanbanto with it (a platform admin turned that on). */
+export async function googleSignInApp(db: Db): Promise<GoogleApp | null> {
+  const [s] = await db.select({ on: siteSettings.googleSignIn }).from(siteSettings)
+  return s?.on ? googleApp(db) : null
+}
+
 export function toGoogleEvent(item: CalendarItem, boardName: string, url: string | null): GoogleEvent {
   return {
     summary: item.title,

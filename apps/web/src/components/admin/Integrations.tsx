@@ -48,6 +48,8 @@ const OAUTH: { value: OAuthMode; title: string; hint: string }[] = [
  */
 export function IntegrationsSection() {
   const [settings, load] = useLoaded(fetchSettings)
+  /** Goes up when the Google app is saved or taken away, so what depends on it is read again. */
+  const [googleApp, setGoogleApp] = useState(0)
 
   const save = async (fields: Partial<AdminSettings>, done: string) => {
     try {
@@ -150,7 +152,17 @@ export function IntegrationsSection() {
             </p>
           </SettingsCard>
 
-          <GoogleCalendar />
+          <GoogleCalendar
+            onChange={() => {
+              setGoogleApp((n) => n + 1)
+              void load()
+            }}
+          />
+          <GoogleSignIn
+            key={googleApp}
+            on={settings.googleSignIn}
+            onChange={(on) => void save({ googleSignIn: on }, on ? 'Signing in with Google turned on' : 'Signing in with Google turned off')}
+          />
 
           <SettingsCard
             title="Boards can have a Telegram bot"
@@ -180,7 +192,7 @@ const fetchGoogle = () => api<AdminGoogleCalendar>('GET', '/admin/calendar/googl
  * The site's Google app, which lets people connect their Google Calendar: its client ID and secret, made once in
  * Google Cloud. The secret is kept encrypted and never shown again.
  */
-function GoogleCalendar() {
+function GoogleCalendar({ onChange }: { onChange: () => void }) {
   const [loaded, load] = useLoaded(fetchGoogle)
   const [clientId, setClientId] = useState<string | null>(null)
   const [secret, setSecret] = useState('')
@@ -195,6 +207,7 @@ function GoogleCalendar() {
       setSecret('')
       setClientId(null)
       await load()
+      onChange()
     } catch (e) {
       toast.error(errorMessage(e))
     }
@@ -282,7 +295,7 @@ function GoogleCalendar() {
                 setConfirm({
                   title: 'Stop using this Google app?',
                   description:
-                    'Nobody can connect Google Calendar, and calendars already connected stop updating, until a Google app is saved again.',
+                    'Nobody can connect Google Calendar, and calendars already connected stop updating, until a Google app is saved again. Signing in with Google is turned off too.',
                   confirmLabel: 'Stop using it',
                   destructive: true,
                   onConfirm: () =>
@@ -291,6 +304,7 @@ function GoogleCalendar() {
                         toast('Google Calendar turned off')
                         setClientId(null)
                         void load()
+                        onChange()
                       },
                       (e) => toast.error(errorMessage(e)),
                     ),
@@ -308,6 +322,51 @@ function GoogleCalendar() {
         </div>
       </form>
       <ConfirmDialog request={confirm} onClose={() => setConfirm(null)} />
+    </SettingsCard>
+  )
+}
+
+/**
+ * "Continue with Google" on the sign-in and sign-up pages, through the same Google app: a switch, and the second
+ * address that app has to allow.
+ */
+function GoogleSignIn({ on, onChange }: { on: boolean; onChange: (on: boolean) => void }) {
+  const [loaded] = useLoaded(fetchGoogle)
+  if (!loaded) return null
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(loaded.signInRedirectUri)
+      toast('Address copied')
+    } catch {
+      toast.error('Couldn’t copy. Select it and copy it yourself.')
+    }
+  }
+  return (
+    <SettingsCard
+      title="People can sign in with Google"
+      description="Adds “Continue with Google” to the sign-in and sign-up pages, through the Google app above. Google has already checked the address, so an account made this way needs no confirmation email, and someone whose address already has an account here gets that account."
+      action={<Switch checked={on} disabled={!loaded.configured && !on} aria-label="People can sign in with Google" onCheckedChange={onChange} />}
+    >
+      <div className="space-y-1.5">
+        <Label htmlFor="google-signin-redirect">A second authorized redirect URI (add it to the same client at Google first)</Label>
+        <div className="flex items-center gap-2">
+          <Input
+            id="google-signin-redirect"
+            readOnly
+            value={loaded.signInRedirectUri}
+            onFocus={(e) => e.target.select()}
+            className="h-8 font-mono text-xs"
+          />
+          <Button variant="outline" size="sm" className="h-8 shrink-0 gap-1.5" onClick={() => void copy()}>
+            <Copy /> Copy
+          </Button>
+        </div>
+      </div>
+      <p className="text-xs text-muted-foreground">
+        {loaded.configured
+          ? 'While sign-up is closed, Google only lets in people who have an account or an invite. Turned off later, people who signed up with Google get back in with “Forgot password”, or a reset link from you.'
+          : 'Save the Google app above first.'}
+      </p>
     </SettingsCard>
   )
 }

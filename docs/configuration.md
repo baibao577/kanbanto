@@ -114,8 +114,9 @@ Open it from the menu under your initials (platform admins only). Each section h
 | | **Boards can have a Telegram bot:** a board's owner connects a bot of their own (from @BotFather) in Board settings; its chat gets the board's news and can add cards. A switch of its own, apart from webhooks. Turning it off stops every bot. | Off |
 | | **People can make calendar links** (a private address calendar apps subscribe to; turning it off stops every link). See [Calendar](calendar.md). | Off |
 | | **Google Calendar:** the client ID and secret of a Google app you make once, so people can connect their Google Calendar. The secret is write-only and encrypted. See [Calendar](calendar.md). | Not set up |
+| | **People can sign in with Google:** adds "Continue with Google" to the sign-in and sign-up pages, through that Google app (which needs a second redirect address, shown there). See [Signing in with Google](self-hosting.md#signing-in-with-google). | Off |
 
-Things each person sets for themselves in **Account settings** (`#/account`): name, password, their
+Things each person sets for themselves in **Account settings** (`#/account`): name, password (or adding one, after signing up with Google), their
 notifications (the morning summary email, reminder emails, desktop notifications, their time zone), their calendar (Google Calendar, a calendar link, and which boards are in it), their own Resend
 key for invites, their own storage bucket (at a public `https://` address), and their API tokens. Board owners add
 webhooks in Board settings. See [API, webhooks and AI](api.md).

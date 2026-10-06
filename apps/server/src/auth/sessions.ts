@@ -14,6 +14,8 @@ export interface SessionUser {
   name: string
   isAdmin: boolean
   emailVerified: boolean
+  /** Has a password to sign in with (someone who only ever signed in with Google has none). */
+  hasPassword: boolean
   /** Wants the daily email summary of @mentions. */
   mentionEmails: boolean
   /** Wants reminders by email too. */
@@ -66,6 +68,7 @@ export const sessionUser = (u: typeof users.$inferSelect): SessionUser => ({
   name: u.name,
   isAdmin: u.isAdmin,
   emailVerified: !!u.emailVerifiedAt,
+  hasPassword: u.passwordHash !== null,
   mentionEmails: u.mentionEmails,
   reminderEmails: u.reminderEmails,
   timeZone: u.timeZone,

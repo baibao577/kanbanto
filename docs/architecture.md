@@ -128,7 +128,10 @@ The app uses hash routing, so any static host or proxy works without rewrite rul
 
 ## Accounts and sharing
 
-- **Sign-in** is email and password (scrypt hashes). Sessions are random tokens in an httpOnly, SameSite=Lax cookie
+- **Sign-in** is email and password (scrypt hashes), and, when a platform admin turns it on, Google (OpenID Connect
+  through the site's Google app, `routes/google-auth.ts`: the account is found by Google's ID for the person, then by
+  a checked address Google runs the mailbox of, else made; such an account has no password until one is added, and
+  only that ID is kept). Sessions are random tokens in an httpOnly, SameSite=Lax cookie
   (Secure over HTTPS); only their SHA-256 is stored. Changing a password signs out other devices and closes their live
   connections. Sign-in is limited per IP address and per account (10 wrong passwords in 15 minutes).
 - **Behind proxies:** `X-Forwarded-*` headers count only from the proxies named in `TRUST_PROXY`; links in emails are
@@ -236,7 +239,8 @@ The app uses hash routing, so any static host or proxy works without rewrite rul
 - **Confirming email** is required once the site can send email, for accounts that haven't confirmed yet (platform
   admins are exempt). New sign-ups get the same answer whether or not the address has an account; the link in the
   confirmation email confirms the address in the browser signed in to the account, or with the account's password
-  (and then signs in). A platform admin can vouch for an address. Accounts aren't confirmed
+  (and then signs in). A platform admin can vouch for an address, and signing in with Google confirms it (taking
+  the password and sessions of an account that wasn't confirmed, as "Forgot password" would). Accounts aren't confirmed
   automatically, because email invites go to the account with that address.
 - Sent emails keep only what the limits need: their contents (with any sign-in link) are removed once sent.
 - **Templates** are React components rendered with `@react-email/render`: `src/mail/templates.tsx` has one shared

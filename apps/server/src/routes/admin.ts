@@ -22,7 +22,9 @@ import { endEmailTokens } from '../auth/email-tokens'
 import { HttpError, parse, siteUrl } from '../http'
 import { emails } from '../mail/templates'
 import { getSettings, requireUser } from './auth'
+import { googleApp } from '../calendar/sync'
 import { googleRedirectUri } from './calendar'
+import { googleSignInRedirectUri } from './google-auth'
 
 const UserParams = z.object({ id: z.uuid() })
 
@@ -149,16 +151,17 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
   })
 
   const settings = async (): Promise<AdminSettings> => {
-    const { openSignup, apiTokens, webhooks, oauthApps, calendarLinks, telegramBots } = await getSettings(app.db)
-    return { openSignup, apiTokens, webhooks, oauthApps, calendarLinks, telegramBots }
+    const { openSignup, apiTokens, webhooks, oauthApps, calendarLinks, telegramBots, googleSignIn } = await getSettings(app.db)
+    return { openSignup, apiTokens, webhooks, oauthApps, calendarLinks, telegramBots, googleSignIn }
   }
 
   app.get('/settings', settings)
 
   /**
    * Sign-up, API tokens (turning them off stops every token working), where webhooks may go, which apps may connect,
-   * calendar links (turning them off stops every link working), and boards' own Telegram bots (turning them off
-   * stops them all: nothing is read from them or sent through them).
+   * calendar links (turning them off stops every link working), boards' own Telegram bots (turning them off
+   * stops them all: nothing is read from them or sent through them), and signing in with Google (which needs the
+   * site's Google app; turned off, accounts made with Google get back in with "Forgot password").
    */
   app.patch('/settings', async (req): Promise<AdminSettings> => {
     const body = parse(
@@ -170,11 +173,14 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
           oauthApps: z.enum(['off', 'known', 'any']),
           calendarLinks: z.boolean(),
           telegramBots: z.boolean(),
+          googleSignIn: z.boolean(),
         })
         .partial()
         .strict(),
       req.body,
     )
+    if (body.googleSignIn && !(await googleApp(app.db)))
+      throw new HttpError(400, 'Save the Google app’s client ID and secret first: signing in with Google goes through it.')
     if (Object.keys(body).length)
       await app.db
         .insert(siteSettings)
@@ -184,12 +190,18 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     return settings()
   })
 
-  // ── The site's Google app, for people's Google Calendar connections ───────────
+  // ── The site's Google app, for people's Google Calendar connections and for signing in with Google ──
 
   const googleCalendar = async (req: FastifyRequest): Promise<AdminGoogleCalendar> => {
     const [s] = await app.db.select({ id: siteSettings.googleClientId, secret: siteSettings.googleClientSecretEncrypted }).from(siteSettings)
     const [{ n }] = await app.db.select({ n: sql<number>`count(*)::int` }).from(calendarConnections)
-    return { clientId: s?.id ?? null, configured: !!(s?.id && s.secret), redirectUri: googleRedirectUri(req), connections: n }
+    return {
+      clientId: s?.id ?? null,
+      configured: !!(s?.id && s.secret),
+      redirectUri: googleRedirectUri(req),
+      signInRedirectUri: googleSignInRedirectUri(req),
+      connections: n,
+    }
   }
 
   app.get('/calendar/google', googleCalendar)
@@ -236,9 +248,12 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     return googleCalendar(req)
   })
 
-  /** Stops using the Google app: calendars already connected stop updating, until one is set up again. */
+  /**
+   * Stops using the Google app: calendars already connected stop updating, until one is set up again, and signing
+   * in with Google is turned off.
+   */
   app.delete('/calendar/google', async (req) => {
-    await app.db.update(siteSettings).set({ googleClientId: null, googleClientSecretEncrypted: null })
+    await app.db.update(siteSettings).set({ googleClientId: null, googleClientSecretEncrypted: null, googleSignIn: false })
     return googleCalendar(req)
   })
 }

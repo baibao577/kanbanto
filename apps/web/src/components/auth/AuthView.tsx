@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { hrefFor, navigate, parseRoute } from '@/app/router'
 import { useAuth } from '@/app/use-auth'
-import { errorMessage } from '@/api/client'
+import { api, errorMessage } from '@/api/client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -16,9 +16,46 @@ const inviteIn = (next?: string) => {
   return r?.page === 'join' ? r.token : undefined
 }
 
-/** Sign in, or create an account. */
-export function AuthView({ mode, next }: { mode: Mode; next?: string }) {
-  const { signIn, signUp, openSignup } = useAuth()
+/** Why signing in with Google didn't work (Google sends people back with ?problem=…, see the server's routes/google-auth.ts). */
+const GOOGLE_PROBLEMS: Record<string, string> = {
+  expired: 'That took too long, or was started in another browser. Try again.',
+  unverified: 'Google hasn’t confirmed that email address yet. Confirm it with Google, or use your email and password here.',
+  password: 'That email address already has an account here, and Google can’t vouch that it’s yours. Sign in with your password.',
+  disabled: 'This account has been turned off. Ask your admin.',
+  closed: 'No account uses that Google address, and sign-up is closed on this site. Ask a board owner for an invite link.',
+  invite: 'That invite doesn’t work for this Google address. Ask for a new link.',
+  off: 'Signing in with Google isn’t turned on for this site.',
+  setup: 'Google doesn’t accept this site’s Google app. Tell the people who run this site.',
+  failed: 'Signing in with Google didn’t work. Try again.',
+}
+
+/** Google's "G", in its own colours, as its sign-in button has to show it. */
+function GoogleMark() {
+  return (
+    <svg viewBox="0 0 48 48" aria-hidden className="size-[18px]">
+      <path
+        fill="#EA4335"
+        d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"
+      />
+      <path
+        fill="#4285F4"
+        d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"
+      />
+      <path
+        fill="#FBBC05"
+        d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"
+      />
+      <path
+        fill="#34A853"
+        d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"
+      />
+    </svg>
+  )
+}
+
+/** Sign in, or create an account. `problem`: why coming back from Google didn't sign them in. */
+export function AuthView({ mode, next, problem }: { mode: Mode; next?: string; problem?: string }) {
+  const { signIn, signUp, openSignup, googleSignIn } = useAuth()
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -53,6 +90,18 @@ export function AuthView({ mode, next }: { mode: Mode; next?: string }) {
     }
   }
 
+  /** Off to Google; it sends them back signed in (or to this page, with why not). */
+  const withGoogle = async () => {
+    setBusy(true)
+    setError(null)
+    try {
+      location.href = (await api<{ url: string }>('POST', '/auth/google/start', { next, invite })).url
+    } catch (e) {
+      setBusy(false)
+      setError(errorMessage(e))
+    }
+  }
+
   const other = (page: 'signin' | 'signup') => hrefFor({ page, next })
 
   const title = signingUp ? 'Create your account' : 'Sign in'
@@ -70,6 +119,28 @@ export function AuthView({ mode, next }: { mode: Mode; next?: string }) {
 
   return (
     <AuthLayout title={title} subtitle={subtitle}>
+      {googleSignIn && (
+        <div className="mb-4 space-y-4">
+          {problem && (
+            <p role="alert" className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
+              {GOOGLE_PROBLEMS[problem] ?? GOOGLE_PROBLEMS.failed}
+            </p>
+          )}
+          {/* Google's own colours for its button, in light and dark, rather than the theme's. */}
+          <Button
+            type="button"
+            variant="outline"
+            className="w-full gap-2.5 border-[#747775] bg-white text-[#1f1f1f] shadow-none hover:bg-[#f2f2f2] hover:text-[#1f1f1f] dark:border-[#8e918f] dark:bg-[#131314] dark:text-[#e3e3e3] dark:hover:bg-[#28292a] dark:hover:text-[#e3e3e3]"
+            disabled={busy}
+            onClick={() => void withGoogle()}
+          >
+            <GoogleMark /> Continue with Google
+          </Button>
+          <div className="flex items-center gap-3 text-xs text-muted-foreground before:h-px before:flex-1 before:bg-border after:h-px after:flex-1 after:bg-border">
+            or
+          </div>
+        </div>
+      )}
       <form
         className="space-y-4"
         onSubmit={(e) => {

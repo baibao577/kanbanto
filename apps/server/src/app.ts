@@ -32,6 +32,7 @@ import { serverSender, type Sender } from './mail/senders'
 import { providerTransport, type Transport } from './mail/transport'
 import { adminRoutes } from './routes/admin'
 import { authRoutes } from './routes/auth'
+import { googleAuthRoutes } from './routes/google-auth'
 import { fieldRoutes } from './routes/fields'
 import { linkRoutes } from './routes/links'
 import { boardRoutes } from './routes/boards'
@@ -84,6 +85,7 @@ export const redactUrl = (url: string) =>
     .replace(/(\/api\/calendar\/feed\/)[^/?#]+/, '$1[token]')
     .replace(/(\/api\/uploads\/)[^/?#]+/, '$1[token]')
     .replace(/(\/api\/account\/calendar\/google\/callback)\?.*/, '$1?[…]')
+    .replace(/(\/api\/auth\/google\/callback)\?.*/, '$1?[…]')
 
 /**
  * Log lines: short and readable by default (LOG_FORMAT=json for log collectors). Each API request is one line;
@@ -274,6 +276,7 @@ export async function buildApp(
   })
 
   await app.register(authRoutes, { prefix: '/api/auth' })
+  await app.register(googleAuthRoutes, { prefix: '/api/auth/google' })
   await app.register(boardRoutes, { prefix: '/api' })
   await app.register(cardRoutes, { prefix: '/api' })
   await app.register(inboxRoutes, { prefix: '/api' })

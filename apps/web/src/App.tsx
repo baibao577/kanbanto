@@ -152,7 +152,7 @@ export default function App() {
     case 'signin':
     case 'signup':
       if (user) return <Redirect to={route.next ? parseNext(route.next) : { page: 'home' }} />
-      return <AuthView mode={route.page} next={route.next} />
+      return <AuthView mode={route.page} next={route.next} problem={route.page === 'signin' ? route.problem : undefined} />
     case 'forgot':
       if (user) return <Redirect to={{ page: 'home' }} />
       return <ForgotView />

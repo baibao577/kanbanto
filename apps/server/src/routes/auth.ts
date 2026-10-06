@@ -1,12 +1,15 @@
 import { newId } from '@kanbanto/model/ids'
 import { and, eq, gte, sql } from 'drizzle-orm'
+import type { JoinResult } from '@kanbanto/model/api'
 import type { FastifyInstance, FastifyPluginAsync, FastifyReply, FastifyRequest } from 'fastify'
 import { z } from 'zod'
 import { createEmailToken, endEmailTokens, lastEmailToken, peekEmailToken, useEmailToken } from '../auth/email-tokens'
 import { hashPassword, verifyPassword } from '../auth/password'
-import { createSession, endAllSessions, endSession, SESSION_COOKIE, type SessionUser } from '../auth/sessions'
+import { createSession, endAllSessions, endSession, SESSION_COOKIE, sessionUser, type SessionUser } from '../auth/sessions'
 import { acceptInvite, checkInviteFor, findAnyInvite, provesEmail } from '../boards/invites'
 import { createBoard } from '../boards/service'
+import { googleApp } from '../calendar/sync'
+import type { Tx } from '../db'
 import { emailOutbox, users } from '../db/schema'
 import { env } from '../env'
 import { HttpError, parse, siteUrl } from '../http'
@@ -32,7 +35,7 @@ const token = z.string().min(10).max(200)
 
 const SignUp = z.object({ name, email, password, invite: z.string().max(200).optional() })
 const SignIn = z.object({ email, password: z.string().min(1, 'Enter your password.').max(200) })
-const ChangePassword = z.object({ current: z.string().max(200), next: password, pushEndpoint: z.string().max(2000).optional() })
+const ChangePassword = z.object({ current: z.string().max(200).optional(), next: password, pushEndpoint: z.string().max(2000).optional() })
 
 /** A time zone name the server can use (IANA, e.g. Asia/Bangkok). */
 const validZone = (tz: string | null) => {
@@ -51,6 +54,7 @@ export const publicUser = (u: SessionUser) => ({
   name: u.name,
   isAdmin: u.isAdmin,
   emailVerified: u.emailVerified,
+  hasPassword: u.hasPassword,
   mentionEmails: u.mentionEmails,
   reminderEmails: u.reminderEmails,
   timeZone: u.timeZone,
@@ -65,7 +69,7 @@ export const publicUser = (u: SessionUser) => ({
 export { loadSettings as getSettings } from '../settings'
 
 // Sign-in attempts per address, per minute: slows down password guessing.
-const LIMIT = { config: { rateLimit: { max: env.test ? 1000 : 10, timeWindow: '1 minute' } } }
+export const LIMIT = { config: { rateLimit: { max: env.test ? 1000 : 10, timeWindow: '1 minute' } } }
 /** How often someone can ask for another confirmation or reset email. */
 const RESEND_AFTER_MS = 60_000
 
@@ -122,12 +126,54 @@ async function accountExistsNotice(app: FastifyInstance, req: FastifyRequest, us
   })
 }
 
-export const authRoutes: FastifyPluginAsync = async (app) => {
-  // Secure (HTTPS-only) whenever the request came over HTTPS — including behind a host's proxy — so a local
-  // production container on http://localhost still works.
-  const setCookie = (reply: FastifyReply, token: string, expires: Date) =>
-    reply.setCookie(SESSION_COOKIE, token, { path: '/', httpOnly: true, sameSite: 'lax', secure: reply.request.protocol === 'https', expires })
+// Secure (HTTPS-only) whenever the request came over HTTPS — including behind a host's proxy — so a local
+// production container on http://localhost still works.
+export const setSessionCookie = (reply: FastifyReply, token: string, expires: Date) =>
+  reply.setCookie(SESSION_COOKIE, token, { path: '/', httpOnly: true, sameSite: 'lax', secure: reply.request.protocol === 'https', expires })
 
+/**
+ * The invite someone signing up arrived with, or null without one. Refused: signing up without one while sign-up is
+ * closed, and an invite that `email` can't use, whether or not the address has an account (so the answer doesn't tell).
+ */
+export async function inviteForSignUp(tx: Tx, token: string | undefined, email: string) {
+  const invite = token ? await findAnyInvite(tx, token) : null
+  if (!(await getSettings(tx)).openSignup && !invite) throw new HttpError(403, 'Sign-up is closed. Ask a board owner for an invite link.')
+  if (token) checkInviteFor(invite, email)
+  return invite
+}
+
+/**
+ * Makes an account, and joins what its invite is for. `passwordHash` null: they signed up with Google. Signing up
+ * never makes anyone a platform admin: that's granted on the server (see src/cli.ts).
+ */
+export async function insertAccount(
+  tx: Tx,
+  fields: { email: string; name: string; passwordHash: string | null; googleSub?: string; verified: boolean; invite?: string },
+) {
+  const [row] = await tx
+    .insert(users)
+    .values({
+      id: newId(),
+      email: fields.email,
+      name: fields.name,
+      passwordHash: fields.passwordHash,
+      googleSub: fields.googleSub ?? null,
+      emailVerifiedAt: fields.verified ? new Date() : null,
+    })
+    .returning()
+  const user = sessionUser(row)
+  const joined = fields.invite ? await acceptInvite(tx, { id: user.id, email: user.email }, fields.invite) : null
+  return { user, joined }
+}
+
+/** Everyone starts with the example board, except people who came to join someone else's board or workspace. */
+export async function setUpAccount(app: FastifyInstance, userId: string, joined: JoinResult | null) {
+  if (joined?.kind === 'board') await announceSharingChange(app, joined.boardId)
+  else if (joined) await announceWorkspaceChange(app, joined.workspaceId)
+  else await createBoard(app.db, userId, { name: 'My first board', template: 'example' })
+}
+
+export const authRoutes: FastifyPluginAsync = async (app) => {
   app.get('/me', async (req) => {
     const settings = await getSettings(app.db)
     return {
@@ -135,6 +181,7 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
       openSignup: settings.openSignup,
       /** The site can send email (so password reset works, and new accounts confirm their email). */
       emailEnabled: app.mail.platformReady,
+      googleSignIn: settings.googleSignIn && !!(await googleApp(app.db)),
       links: app.siteLinks,
       guidesUrl: app.guidesUrl,
     }
@@ -151,11 +198,7 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
     // Hashed whether or not the account gets made, so both answers take about as long.
     const passwordHash = await hashPassword(body.password)
     const result = await app.db.transaction(async (tx) => {
-      // Signing up never makes anyone a platform admin: that's granted on the server (see src/cli.ts).
-      const invite = body.invite ? await findAnyInvite(tx, body.invite) : null
-      if (!(await getSettings(tx)).openSignup && !invite) throw new HttpError(403, 'Sign-up is closed. Ask a board owner for an invite link.')
-      // An invite that this address can't use is refused here, whether or not the address has an account.
-      if (body.invite) checkInviteFor(invite, body.email)
+      const invite = await inviteForSignUp(tx, body.invite, body.email)
       const [taken] = await tx.select().from(users).where(eq(users.email, body.email))
       if (taken) {
         if (!app.mail.platformReady) throw new HttpError(409, 'There’s already an account with that email. Sign in instead.')
@@ -164,47 +207,26 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
       // Arriving through an invite emailed to this address proves the address is theirs — unless the inviter was
       // shown the link (the email couldn't be sent), since then the inviter could be the one using it.
       const verified = provesEmail(invite, body.email)
-      const user = {
-        id: newId(),
-        email: body.email,
-        name: body.name,
-        isAdmin: false,
-        emailVerified: verified,
-        mentionEmails: true,
-        reminderEmails: true,
-        timeZone: null,
-        pushReminders: true,
-        pushMentions: true,
-        pushFollows: true,
-        telegramReminders: true,
-        telegramMentions: true,
-        telegramFollows: false,
+      return {
+        kind: 'created' as const,
+        ...(await insertAccount(tx, { email: body.email, name: body.name, passwordHash, verified, invite: body.invite })),
       }
-      await tx.insert(users).values({ id: user.id, email: user.email, name: user.name, passwordHash, emailVerifiedAt: verified ? new Date() : null })
-      const joined = body.invite ? await acceptInvite(tx, { id: user.id, email: user.email }, body.invite) : null
-      return { kind: 'created' as const, user, joined }
     })
     if (result.kind === 'existing') {
       if (!result.disabled) await accountExistsNotice(app, req, result)
       return { checkEmail: true }
     }
     const { user, joined } = result
-    // Everyone starts with the example board, except people who came to join someone else's board or workspace.
-    const setUp = async () => {
-      if (joined?.kind === 'board') await announceSharingChange(app, joined.boardId)
-      else if (joined) await announceWorkspaceChange(app, joined.workspaceId)
-      else await createBoard(app.db, user.id, { name: 'My first board', template: 'example' })
-    }
     if (!user.emailVerified && app.mail.platformReady) {
       await sendVerification(app, req, user)
       // Not needed until they've confirmed, so it doesn't hold up (or give away) this answer.
-      void setUp().catch((e) => req.log.error({ err: loggable(e) }, 'setting up a new account'))
+      void setUpAccount(app, user.id, joined).catch((e) => req.log.error({ err: loggable(e) }, 'setting up a new account'))
       return { checkEmail: true }
     }
-    await setUp()
+    await setUpAccount(app, user.id, joined)
     const session = await createSession(app.db, user.id)
-    setCookie(reply, session.token, session.expiresAt)
-    return { user, boardId: joined?.kind === 'board' ? joined.boardId : null }
+    setSessionCookie(reply, session.token, session.expiresAt)
+    return { user: publicUser(user), boardId: joined?.kind === 'board' ? joined.boardId : null }
   })
 
   app.post('/signin', LIMIT, async (req, reply) => {
@@ -213,8 +235,8 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
     // Counted before the password is checked (and forgotten if it's right), so tries made all at once count too.
     recordFailure(body.email)
     const [u] = await app.db.select().from(users).where(eq(users.email, body.email))
-    // Same answer for an unknown email and a wrong password, so accounts can't be discovered.
-    const ok = u ? await verifyPassword(body.password, u.passwordHash) : await verifyPassword(body.password, DUMMY_HASH)
+    // Same answer for an unknown email, a wrong password and an account without one, so accounts can't be discovered.
+    const ok = await verifyPassword(body.password, u?.passwordHash ?? null)
     if (!u || !ok) throw new HttpError(401, 'Wrong email or password.')
     failures.delete(body.email)
     if (u.disabledAt) throw new HttpError(403, 'This account has been turned off. Ask your admin.')
@@ -222,8 +244,8 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
     const [still] = await app.db.select({ hash: users.passwordHash }).from(users).where(eq(users.id, u.id))
     if (still?.hash !== u.passwordHash) throw new HttpError(401, 'Wrong email or password.')
     const session = await createSession(app.db, u.id)
-    setCookie(reply, session.token, session.expiresAt)
-    return { user: publicUser({ ...u, emailVerified: !!u.emailVerifiedAt }) }
+    setSessionCookie(reply, session.token, session.expiresAt)
+    return { user: publicUser(sessionUser(u)) }
   })
 
   /** Signing out also stops this browser's desktop notifications (it says which browser it is). */
@@ -265,11 +287,13 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
     return { user: { ...publicUser(user), ...body } }
   })
 
+  /** Changes your password, or adds one when you have none (you signed up with Google): then there's no current one to give. */
   app.post('/password', LIMIT, async (req) => {
     const user = requireUser(req.user, { allowUnverified: true })
     const body = parse(ChangePassword, req.body)
     const [u] = await app.db.select().from(users).where(eq(users.id, user.id))
-    if (!(await verifyPassword(body.current, u.passwordHash))) throw new HttpError(400, 'Your current password isn’t right.')
+    if (u.passwordHash !== null && !(await verifyPassword(body.current ?? '', u.passwordHash)))
+      throw new HttpError(400, 'Your current password isn’t right.')
     await app.db
       .update(users)
       .set({ passwordHash: await hashPassword(body.next), updatedAt: new Date() })
@@ -336,9 +360,9 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
     if (!u || u.disabledAt) return { ok: true, user: null }
     if (req.user?.id !== u.id) {
       const session = await createSession(app.db, u.id)
-      setCookie(reply, session.token, session.expiresAt)
+      setSessionCookie(reply, session.token, session.expiresAt)
     }
-    return { ok: true, user: publicUser({ ...u, emailVerified: true }) }
+    return { ok: true, user: publicUser(sessionUser(u)) }
   })
 
   // ── Forgot password ────────────────────────────────────────────────────
@@ -385,13 +409,10 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
     app.hub.signOut(u.id)
     failures.delete(u.email)
     const session = await createSession(app.db, u.id)
-    setCookie(reply, session.token, session.expiresAt)
-    return { user: publicUser({ ...u, emailVerified: !!u.emailVerifiedAt }) }
+    setSessionCookie(reply, session.token, session.expiresAt)
+    return { user: publicUser(sessionUser(u)) }
   })
 }
-
-/** Checked against when the email is unknown, so both cases take the same time. */
-const DUMMY_HASH = await hashPassword('not-a-real-password')
 
 /** The signed-in person. Unless `allowUnverified`, they must have confirmed their email (when the site requires it). */
 export function requireUser(user: SessionUser | null, opts: { allowUnverified?: boolean } = {}): SessionUser {

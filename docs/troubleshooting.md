@@ -114,11 +114,30 @@ If the address can't receive email (for example a made-up address on a family in
 it for them: **Platform console → Accounts → ⋯ → Confirm email**.
 
 ### I forgot my password
+- Signed up with Google? You have no password: use **Continue with Google**. (The steps below give you one too.)
 - Email is set up: use **Forgot password?** on the sign-in page.
 - Otherwise, a platform admin can give you a reset link (Platform console → Accounts → ⋯ → Password reset link).
   It works once, for 24 hours. (When the site sends email, you're also told by email that a link was made.)
 - **You are the only admin?** On the server:
   `docker compose exec app node dist/cli.js user password you@example.com` prints a temporary password.
+
+### Signing in with Google sends me back to the sign-in page
+The page says why. The ones that need doing something:
+- **"That email address already has an account here, and Google can't vouch that it's yours":** the address isn't a
+  Gmail or Google Workspace one, or the account is tied to another Google account. Sign in with your password (or
+  **Forgot password?**).
+- **"No account uses that Google address, and sign-up is closed":** you need an invite, or you have an account under
+  another address.
+- **"Google hasn't confirmed that email address yet":** confirm the address in your Google account first.
+- **"Google doesn't accept this site's Google app":** for whoever runs the site: the client ID or secret no longer
+  works (Platform console → Integrations).
+- **Google's own page says `redirect_uri_mismatch`:** for whoever runs the site: the Google app is missing the
+  second redirect address the console shows (see
+  [Signing in with Google](self-hosting.md#signing-in-with-google)).
+
+### My password stopped working after I signed in with Google
+Your account had never confirmed its email address, so the Google sign-in confirmed it and removed the old password
+(someone else could have set it). Sign in with Google and add a password in **Account settings → Password**.
 
 ### I don't see "Platform console"
 Only platform admins see it. Run `docker compose exec app node dist/cli.js admin grant you@example.com`, then reload

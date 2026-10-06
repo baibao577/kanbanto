@@ -184,8 +184,7 @@ export function AccountsSection() {
           <DialogHeader>
             <DialogTitle>Password reset link for {reset?.name}</DialogTitle>
             <DialogDescription>
-              Send it to them privately. It works once, for 24 hours, and lets them choose a new password. Until they use it, their current password
-              keeps working.
+              Send it to them privately. It works once, for 24 hours, and lets them choose a new password. Until they use it, they sign in as before.
             </DialogDescription>
           </DialogHeader>
           <div className="flex min-w-0 items-center gap-2">

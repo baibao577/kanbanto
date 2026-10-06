@@ -78,7 +78,8 @@ export type Route =
   | { page: 'verify'; token: string }
   | { page: 'reset'; token: string }
   | { page: 'forgot' }
-  | { page: 'signin'; next?: string }
+  /** `problem`: why signing in with Google didn't work (the server sends people back with it, see its routes/google-auth.ts). */
+  | { page: 'signin'; next?: string; problem?: string }
   | { page: 'signup'; next?: string }
   | { page: 'admin'; section?: AdminSection }
   | { page: 'account'; section?: AccountSection; problem?: string }
@@ -163,8 +164,10 @@ export function parseRoute(hash: string): Route {
   }
   const auth = hash.match(/^#\/(signin|signup)(?:\?(.*))?$/)
   if (auth) {
-    const next = new URLSearchParams(auth[2] ?? '').get('next')
-    return { page: auth[1] as 'signin' | 'signup', ...(next && { next }) }
+    const q = new URLSearchParams(auth[2] ?? '')
+    const [next, problem] = [q.get('next'), q.get('problem')]
+    if (auth[1] === 'signup') return { page: 'signup', ...(next && { next }) }
+    return { page: 'signin', ...(next && { next }), ...(problem && { problem }) }
   }
   const account = hash.match(/^#\/account(?:\/([a-z]+))?\/?(?:\?(.*))?$/)
   if (account) {
@@ -247,7 +250,11 @@ export function hrefFor(r: Route) {
   }
   if (r.page === 'authorize') return `#/authorize?${r.query}`
   if (r.page === 'join' || r.page === 'verify' || r.page === 'reset') return `#/${r.page}/${encodeURIComponent(r.token)}`
-  if (r.page === 'signin' || r.page === 'signup') return `#/${r.page}${r.next ? `?next=${encodeURIComponent(r.next)}` : ''}`
+  if (r.page === 'signin' || r.page === 'signup') {
+    const problem = r.page === 'signin' && r.problem ? `problem=${encodeURIComponent(r.problem)}` : ''
+    const qs = [problem, r.next ? `next=${encodeURIComponent(r.next)}` : ''].filter(Boolean).join('&')
+    return `#/${r.page}${qs ? `?${qs}` : ''}`
+  }
   const q = new URLSearchParams()
   if (r.focus) q.set('focus', r.focus)
   if (r.task) q.set('task', r.task)

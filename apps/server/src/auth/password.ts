@@ -17,13 +17,21 @@ export async function hashPassword(password: string): Promise<string> {
   return ['scrypt', PARAMS.N, PARAMS.r, PARAMS.p, salt.toString('base64'), key.toString('base64')].join('$')
 }
 
-export async function verifyPassword(password: string, stored: string): Promise<boolean> {
+/** `stored` null: the account has no password (it signs in with Google). Nothing matches, and it takes as long as a wrong one. */
+export async function verifyPassword(password: string, stored: string | null): Promise<boolean> {
+  if (stored === null) {
+    await verifyPassword(password, DUMMY_HASH)
+    return false
+  }
   const [algo, N, r, p, salt, hash] = stored.split('$')
   if (algo !== 'scrypt' || !hash) return false
   const expected = Buffer.from(hash, 'base64')
   const key = await derive(password, Buffer.from(salt, 'base64'), { N: Number(N), r: Number(r), p: Number(p) })
   return key.length === expected.length && timingSafeEqual(key, expected)
 }
+
+/** Checked against when there's no password to check (an unknown email, an account without one), so every answer takes the same time. */
+const DUMMY_HASH = await hashPassword('not-a-real-password')
 
 /** A readable temporary password (for admin resets): no look-alike characters. */
 export function temporaryPassword() {

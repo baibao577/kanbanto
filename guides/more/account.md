@@ -12,7 +12,7 @@ dark, or following your device), and signing out. People who run the site also s
 | Section | What is there |
 |---|---|
 | **Profile** | Your name as others see it, and the email address you sign in with. |
-| **Password** | Change your password. |
+| **Password** | Change your password, or add one if you signed up with Google. |
 | **Notifications** | The morning summary, reminder emails, desktop notifications, and your time zone. See [notifications](/people/notifications). |
 | **Calendar** | Google Calendar and the calendar link. See [calendar](/more/calendar). |
 | **Fields** | Extra fields for the cards on your own boards. See [your own fields](/everyday/fields). |
@@ -37,6 +37,15 @@ Switch between light, dark, or your device's own setting from the account menu. 
 
 On a phone, tablet or computer, your browser can install Kanbanto ("Install" or "Add to Home Screen"). It then has
 its own icon and window. It still needs an internet connection.
+
+## Signing in with Google
+
+If your site offers it, **Continue with Google** on the sign-in page signs you in with your Google account. It is
+the same account either way: when your Google address is the one your account uses, you get your boards as they
+are, and your password keeps working.
+
+If you only ever signed in with Google, you have no password. Add one under **Password** if you also want to sign in
+with your email address.
 
 ## If you forget your password
 

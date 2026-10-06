@@ -29,7 +29,12 @@ Fixes go into the latest version. If you run Kanbanto yourself, keep it up to da
   (Without email, sign-up says when an address is taken.)
 - **An address counts as confirmed** only when proved by email: a confirmation link, a password reset link, or an
   invite emailed to it (not one whose link the inviter was shown, or that went out through the inviter's own email
-  service). Email invites go straight to an account only if its address is confirmed.
+  service). Or by its owner signing in with Google, when the site offers that. Email invites go straight to an
+  account only if its address is confirmed.
+- **Signing in with Google** (off until a platform admin turns it on) asks Google only who the person is, and keeps
+  only Google's ID for them. It reaches an existing account by address only when Google has checked the address and
+  runs its mailbox (Gmail or Google Workspace). If that account never confirmed its address, its password and
+  sessions are removed as it is joined, so whoever made it can't stay in. Closed sign-up applies to it too.
 - **A confirmation link works with the account's password**, or in the browser already signed in to it: reading the
   inbox isn't enough, so nobody can make an account for your address and have you confirm it for them. If someone
   did, "Forgot password" makes the account yours: your password, everyone else signed out.

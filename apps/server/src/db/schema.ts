@@ -37,7 +37,10 @@ export const users = pgTable('users', {
   /** Stored lowercased, so sign-in doesn't depend on how the address was typed. */
   email: text('email').notNull().unique(),
   name: text('name').notNull(),
-  passwordHash: text('password_hash').notNull(),
+  /** Null: they have none (they sign in with Google, and can add one). */
+  passwordHash: text('password_hash'),
+  /** Who they are at Google (the ID token's `sub`), once they've signed in with Google: it stays the same if their address changes. */
+  googleSub: text('google_sub').unique(),
   isAdmin: boolean('is_admin').notNull().default(false),
   /**
    * When they proved they own the address (a link in an email), or a platform admin vouched for them. Required
@@ -114,9 +117,11 @@ export const siteSettings = pgTable('site_settings', {
   vapidPrivateKeyEncrypted: text('vapid_private_key_encrypted'),
   /** People can make a private calendar link (an address calendar apps subscribe to). Off until a platform admin turns it on. */
   calendarLinks: boolean('calendar_links').notNull().default(SETTING_DEFAULTS.calendarLinks),
-  /** The site's Google app, for connecting people's Google Calendar (an OAuth client): its id, and its secret encrypted. */
+  /** The site's Google app (an OAuth client), for connecting people's Google Calendar and for signing in with Google: its id, and its secret encrypted. */
   googleClientId: text('google_client_id'),
   googleClientSecretEncrypted: text('google_client_secret_encrypted'),
+  /** People can sign in, and sign up, with Google (through the Google app above). Off until a platform admin turns it on. */
+  googleSignIn: boolean('google_sign_in').notNull().default(SETTING_DEFAULTS.googleSignIn),
   /** Board owners can connect a Telegram bot of their own to a board. Off until a platform admin turns it on. */
   telegramBots: boolean('telegram_bots').notNull().default(SETTING_DEFAULTS.telegramBots),
 })

@@ -260,6 +260,13 @@
       "when": 1791276020485,
       "tag": "0036_telegram",
       "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1791309023621,
+      "tag": "0037_google_sign_in",
+      "breakpoints": true
     }
   ]
 }

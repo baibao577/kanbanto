@@ -26,6 +26,8 @@ export const SETTING_DEFAULTS = {
   oauthApps: 'off' as 'off' | 'known' | 'any',
   /** People can make a private calendar link (an address calendar apps subscribe to). Off until a platform admin turns it on. */
   calendarLinks: false,
+  /** People can sign in, and sign up, with Google (needs the site's Google app). Off until a platform admin turns it on. */
+  googleSignIn: false,
   /** Board owners can connect a Telegram bot of their own to a board. Off until a platform admin turns it on. */
   telegramBots: false,
 }

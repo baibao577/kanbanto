@@ -4,10 +4,15 @@
  *
  * The permission asked for (`calendar.app.created`) only covers calendars Kanbanto made: it can't see or change the
  * person's other calendars. `openid email` is for showing which Google account is connected.
+ *
+ * And as signing in to Kanbanto with Google uses it (routes/google-auth.ts): the same Google app, asked only who the
+ * person is (`openid email profile`), with nothing kept from Google afterwards.
  */
 
 export const GOOGLE_SCOPES = ['https://www.googleapis.com/auth/calendar.app.created', 'openid', 'email']
 const CALENDAR_SCOPE = GOOGLE_SCOPES[0]
+/** What signing in with Google asks for: who they are, and nothing of theirs. */
+export const SIGN_IN_SCOPES = ['openid', 'email', 'profile']
 const TIMEOUT_MS = 15_000
 const API = 'https://www.googleapis.com/calendar/v3'
 
@@ -15,6 +20,21 @@ const API = 'https://www.googleapis.com/calendar/v3'
 export interface GoogleApp {
   clientId: string
   clientSecret: string
+}
+
+/** Who signed in with Google, as Google says. */
+export interface GoogleIdentity {
+  /** Google's own id for the account: it never changes, and no two accounts share one. */
+  sub: string
+  email: string
+  /** Google has checked the address is theirs. */
+  emailVerified: boolean
+  /**
+   * Google runs the mailbox (Gmail, or an organisation's Google Workspace), so it knows whose the address is today.
+   * For any other address it only knows who had it when the Google account was made.
+   */
+  hosted: boolean
+  name: string | null
 }
 
 /** A day (all-day events end the day after), or a moment in UTC. */
@@ -58,6 +78,10 @@ export interface GoogleApi {
   authUrl(app: GoogleApp, redirectUri: string, state: string): string
   /** Swaps the code Google sent them back with for a refresh token (kept) and who they are. */
   exchange(app: GoogleApp, redirectUri: string, code: string): Promise<{ refreshToken: string; email: string | null; calendar: boolean }>
+  /** Where to send the person to sign in to Kanbanto with Google: asks who they are, and for nothing lasting. */
+  signInUrl(app: GoogleApp, redirectUri: string, state: string): string
+  /** Swaps the code Google sent them back with for who they are. */
+  identify(app: GoogleApp, redirectUri: string, code: string): Promise<GoogleIdentity>
   /** A short-lived access token. */
   refresh(app: GoogleApp, refreshToken: string): Promise<{ accessToken: string; expiresIn: number }>
   /** Ends the connection on Google's side. */
@@ -120,16 +144,24 @@ async function token(params: Record<string, string>): Promise<Record<string, unk
   throw new GoogleError(res.status, message, reason === 'invalid_grant' || reason === 'invalid_client' || reason === 'unauthorized_client', reason)
 }
 
-/** The email in an ID token. It came straight from Google over HTTPS, so its signature isn't checked again. */
-function emailIn(idToken: unknown): string | null {
+/** What an ID token says. It came straight from Google over HTTPS, so its signature isn't checked again. */
+function claimsIn(idToken: unknown): Record<string, unknown> | null {
   if (typeof idToken !== 'string') return null
   try {
-    const claims = JSON.parse(Buffer.from(idToken.split('.')[1], 'base64url').toString('utf8')) as { email?: unknown }
-    return typeof claims.email === 'string' ? claims.email : null
+    const claims: unknown = JSON.parse(Buffer.from(idToken.split('.')[1], 'base64url').toString('utf8'))
+    return claims && typeof claims === 'object' ? (claims as Record<string, unknown>) : null
   } catch {
     return null
   }
 }
+
+function emailIn(idToken: unknown): string | null {
+  const email = claimsIn(idToken)?.email
+  return typeof email === 'string' ? email : null
+}
+
+const GOOGLE_ISSUERS = ['https://accounts.google.com', 'accounts.google.com']
+const GMAIL = /@(gmail|googlemail)\.com$/i
 
 const cal = (id: string) => encodeURIComponent(id)
 
@@ -179,6 +211,41 @@ export const google: GoogleApi = {
     // People can untick a permission on Google's page.
     const calendar = typeof t.scope === 'string' && t.scope.split(' ').includes(CALENDAR_SCOPE)
     return { refreshToken: t.refresh_token, email: emailIn(t.id_token), calendar }
+  },
+
+  signInUrl(app, redirectUri, state) {
+    const q = new URLSearchParams({
+      client_id: app.clientId,
+      redirect_uri: redirectUri,
+      response_type: 'code',
+      scope: SIGN_IN_SCOPES.join(' '),
+      state,
+      // Someone signed in to several Google accounts picks which one, every time.
+      prompt: 'select_account',
+    })
+    return `https://accounts.google.com/o/oauth2/v2/auth?${q}`
+  },
+
+  async identify(app, redirectUri, code) {
+    const t = await token({
+      client_id: app.clientId,
+      client_secret: app.clientSecret,
+      redirect_uri: redirectUri,
+      grant_type: 'authorization_code',
+      code,
+    })
+    const claims = claimsIn(t.id_token)
+    // Made by Google, for this app: anything else isn't an answer to our question.
+    if (!claims || claims.aud !== app.clientId || !GOOGLE_ISSUERS.includes(String(claims.iss)) || typeof claims.sub !== 'string' || !claims.sub)
+      throw new GoogleError(502, 'Google didn’t say who signed in.')
+    if (typeof claims.email !== 'string' || !claims.email) throw new GoogleError(502, 'Google didn’t give an email address.')
+    return {
+      sub: claims.sub,
+      email: claims.email,
+      emailVerified: claims.email_verified === true || claims.email_verified === 'true',
+      hosted: GMAIL.test(claims.email) || (typeof claims.hd === 'string' && claims.hd !== ''),
+      name: typeof claims.name === 'string' && claims.name.trim() ? claims.name : null,
+    }
   },
 
   async refresh(app, refreshToken) {
@@ -237,6 +304,8 @@ export class MemoryGoogle implements GoogleApi {
   badApp: string | null = null
   /** What signing in gives: the account, and whether they left the calendar permission ticked. */
   account = { email: 'someone@gmail.com', calendar: true }
+  /** Who signing in to Kanbanto with Google says they are. */
+  person: GoogleIdentity = { sub: 'google-1', email: 'someone@gmail.com', emailVerified: true, hosted: true, name: 'Some One' }
   private n = 0
 
   private step() {
@@ -267,6 +336,15 @@ export class MemoryGoogle implements GoogleApi {
     const refreshToken = `refresh-${++this.n}`
     this.grants.set(refreshToken, this.account.email)
     return { refreshToken, email: this.account.email, calendar: this.account.calendar }
+  }
+  signInUrl(app: GoogleApp, redirectUri: string, state: string) {
+    return `https://accounts.google.com/o/oauth2/v2/auth?${new URLSearchParams({ client_id: app.clientId, redirect_uri: redirectUri, state, scope: SIGN_IN_SCOPES.join(' ') })}`
+  }
+  async identify(_app: GoogleApp, _redirectUri: string, code: string) {
+    this.step()
+    if (this.badApp) throw new GoogleError(401, this.badApp, true, 'invalid_client')
+    if (code !== 'good-code') throw new GoogleError(400, 'Bad Request', true)
+    return { ...this.person }
   }
   async refresh(_app: GoogleApp, refreshToken: string) {
     this.step()

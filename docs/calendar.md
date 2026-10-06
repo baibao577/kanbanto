@@ -54,6 +54,9 @@ People now see **Connect Google Calendar** in Account settings → Calendar. Dis
 from their Google account. "Stop using it" in the console stops every connected calendar from updating until a Google
 app is saved again.
 
+The same Google app can also let people sign in to Kanbanto with Google: see
+[Self-hosting → Signing in with Google](self-hosting.md#signing-in-with-google).
+
 Your site doesn't need to be reachable from the internet for this: Kanbanto calls Google, and people's own browsers
 carry them to Google and back. Google does require the redirect address to be `https://` on a real domain name (not
 a bare IP address); `http://localhost` is allowed for trying it out.
