@@ -3,7 +3,7 @@
 What changed in each release, newest first. Upgrading? See [Upgrades](docs/self-hosting.md#upgrades): back up first,
 then `git pull` (or download the new release) and `docker compose up -d --build`. Database updates run by themselves.
 
-## 0.1.0 — first public release
+## 0.1.0 — first public release (2026-10-07)
 
 - **Boards of tasks inside tasks**, as deep as you like, shown as a **Board** (lists you name), a **Timeline** and an
   **Outline** (a table you can sort, filter and rearrange). Undo and redo, filters, search, zooming into a task.
