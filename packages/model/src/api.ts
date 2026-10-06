@@ -845,9 +845,26 @@ export interface WebhookDeliveryDetail extends WebhookDeliveryView {
 export const WEBHOOK_EVENTS = ['board.changed', 'comment.added', 'reminder.due'] as const
 export type WebhookEventName = (typeof WEBHOOK_EVENTS)[number]
 
+/**
+ * How a webhook's messages are written: Kanbanto's own data, signed (`json`), or a short text that a chat app shows
+ * in a channel.
+ */
+export const WEBHOOK_FORMATS = ['json', 'slack', 'google-chat', 'teams', 'discord'] as const
+export type WebhookFormat = (typeof WEBHOOK_FORMATS)[number]
+/** The formats that are text for a chat app. */
+export type ChatFormat = Exclude<WebhookFormat, 'json'>
+export const WEBHOOK_FORMAT_NAMES: Record<WebhookFormat, string> = {
+  json: 'Another app',
+  slack: 'Slack',
+  'google-chat': 'Google Chat',
+  teams: 'Microsoft Teams',
+  discord: 'Discord',
+}
+
 export interface WebhookView {
   id: string
   url: string
+  format: WebhookFormat
   active: boolean
   /** What it's sent. */
   events: WebhookEventName[]

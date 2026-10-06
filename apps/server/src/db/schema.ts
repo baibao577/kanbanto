@@ -819,7 +819,9 @@ export const webhooks = pgTable(
       .notNull()
       .references(() => boards.id, { onDelete: 'cascade' }),
     url: text('url').notNull(),
-    /** For signing deliveries (HMAC-SHA256), encrypted like other secrets. */
+    /** How its messages are written: Kanbanto's own data (json), or text for a chat app (slack, google-chat, teams, discord). */
+    format: text('format').notNull().default('json'),
+    /** For signing deliveries (HMAC-SHA256), encrypted like other secrets. (A chat webhook has one too, never used.) */
     secretEncrypted: text('secret_encrypted').notNull(),
     active: boolean('active').notNull().default(true),
     /** The events it's sent (board.changed, comment.added, reminder.due); null: all of them. */

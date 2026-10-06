@@ -1,9 +1,14 @@
 import { createHmac, randomBytes } from 'node:crypto'
+import type { ActivityItem } from '@kanbanto/model/activity'
+import { WEBHOOK_FORMAT_NAMES, type ChatFormat } from '@kanbanto/model/api'
 import { newId } from '@kanbanto/model/ids'
 import type { Change } from '@kanbanto/model/records'
 import { and, asc, eq, inArray, lt, lte, sql } from 'drizzle-orm'
 import type { FastifyBaseLogger } from 'fastify'
 import { fetch } from 'undici'
+import { taskUrl } from './calendar/items'
+import { changeMessage, chatBody, helloMessage, testMessage, type ChatMessage } from './chat/format'
+import { checkChatAddress } from './chat/hosts'
 import { decrypt } from './crypto'
 import type { Db } from './db'
 import { users, webhookDeliveries, webhooks } from './db/schema'
@@ -19,6 +24,9 @@ import { assertPublicEndpoint, PrivateAddressError, publicOnly } from './storage
  *
  * Deliveries wait in a queue (webhook_deliveries) and are retried with growing delays when the address doesn't answer
  * with 2xx. Platform admins choose whether webhooks may go to public addresses only, or anywhere (a company network).
+ *
+ * A webhook with a chat format (Slack, Google Chat, Microsoft Teams, Discord) is sent the same events as text the
+ * chat app shows in a channel (see chat/format.ts), unsigned: there's nobody at that end to check a signature.
  */
 
 export type WebhookEvent = 'board.changed' | 'comment.added' | 'reminder.due' | 'ping'
@@ -61,12 +69,35 @@ export function sign(secret: string, body: string, time = Math.floor(Date.now() 
 type Hook = typeof webhooks.$inferSelect
 type Delivery = typeof webhookDeliveries.$inferSelect
 
+const chatFormat = (h: { format: string }): ChatFormat | null => (h.format === 'json' ? null : (h.format as ChatFormat))
+const HEADERS = { 'content-type': 'application/json', 'user-agent': 'Kanbanto-Webhooks' }
+
 export class Webhooks {
   private timer: ReturnType<typeof setInterval> | null = null
   private busy = false
   private log: FastifyBaseLogger | null = null
 
   private readonly db: Db
+  /** The site's own address, for links to cards in chat messages (null while it isn't known). */
+  private readonly site: () => string | null
+  /** How a delivery is sent (replaced in tests). `mode`: "public" only connects to public addresses. */
+  post: (url: string, body: string, headers: Record<string, string>, mode: WebhookMode) => Promise<{ status: number; text: string | null }> = async (
+    url,
+    body,
+    headers,
+    mode,
+  ) => {
+    const res = await fetch(url, {
+      method: 'POST',
+      body,
+      headers,
+      // An address that sends us elsewhere could point the server anywhere: redirects aren't followed.
+      redirect: 'manual',
+      dispatcher: mode === 'public' ? publicOnly : undefined,
+      signal: AbortSignal.timeout(TIMEOUT_MS),
+    })
+    return { status: res.status, text: await readStart(res) }
+  }
   /** How the address check is sent (replaced in tests). */
   ask: (url: string, body: string) => Promise<{ status: number; text: string }> = async (url, body) => {
     const res = await fetch(url, {
@@ -105,8 +136,31 @@ export class Webhooks {
       )
   }
 
-  constructor(db: Db) {
+  /**
+   * A chat app can't answer the check above, so its channel is sent a first message instead: the webhook is only
+   * saved when the chat app takes it.
+   */
+  async greet(format: ChatFormat, url: string, board: { name: string }, mode: WebhookMode) {
+    const app = WEBHOOK_FORMAT_NAMES[format]
+    let answer: { status: number }
+    try {
+      answer = await this.post(url, JSON.stringify(chatBody(format, helloMessage(board.name))), HEADERS, mode)
+    } catch {
+      throw new HttpError(400, `Couldn’t reach that address. Copy it again from ${app}.`)
+    }
+    if (answer.status < 200 || answer.status >= 300)
+      throw new HttpError(400, `${app} didn’t take a message at that address (it answered ${answer.status}). Copy the address again from ${app}.`)
+  }
+
+  constructor(db: Db, site: () => string | null = () => null) {
     this.db = db
+    this.site = site
+  }
+
+  /** A card's address, for a link in a chat message. */
+  cardUrl(boardId: string, taskId: string): string | null {
+    const site = this.site()
+    return site ? taskUrl(site, boardId, taskId) : null
   }
 
   /** Sends due deliveries in the background (the server does this; tests call `process` themselves). */
@@ -120,36 +174,58 @@ export class Webhooks {
     this.timer = null
   }
 
-  /** Queues an event for the board's active webhooks (if the site allows webhooks). */
-  async emit(boardId: string, event: WebhookEvent, data: object) {
+  /**
+   * Queues an event for the board's active webhooks (if the site allows webhooks). `words`: the event as a chat
+   * message, for the webhooks that send to a chat app; when it has nothing to say, they're sent nothing.
+   */
+  async emit(boardId: string, event: WebhookEvent, data: object, words?: () => ChatMessage | null) {
     const hooks = (
       await this.db
-        .select({ id: webhooks.id, events: webhooks.events })
+        .select({ id: webhooks.id, events: webhooks.events, format: webhooks.format })
         .from(webhooks)
         .where(and(eq(webhooks.boardId, boardId), eq(webhooks.active, true)))
     ).filter((h) => !h.events || h.events.includes(event))
     if (!hooks.length || (await loadSettings(this.db)).webhooks === 'off') return
     const at = new Date().toISOString()
-    await this.db.insert(webhookDeliveries).values(
-      hooks.map((h) => {
-        const id = newId()
-        return { id, webhookId: h.id, event, payload: { event, delivery: id, at, ...data } }
-      }),
-    )
+    let message: ChatMessage | null | undefined
+    const rows = hooks.flatMap((h) => {
+      const id = newId()
+      const format = chatFormat(h)
+      if (!format) return [{ id, webhookId: h.id, event, payload: { event, delivery: id, at, ...data } as object }]
+      // What's kept (and shown in the log) is the message itself, as the chat app gets it.
+      if (message === undefined) message = words?.() ?? null
+      return message ? [{ id, webhookId: h.id, event, payload: chatBody(format, message) }] : []
+    })
+    if (!rows.length) return
+    await this.db.insert(webhookDeliveries).values(rows)
     if (this.timer) setImmediate(() => void this.process())
   }
 
-  /** A command changed a board: what changed, who did it, and the board's new change number. */
-  async boardChanged(boardId: string, e: { board: { id: string; name: string }; userId: string; command: string; seq: number; changes: Change[] }) {
+  /**
+   * A command changed a board: what changed, who did it, and the board's new change number. `items`: the same in
+   * words, as the activity log has it (none when things were only reordered).
+   */
+  async boardChanged(
+    boardId: string,
+    e: { board: { id: string; name: string }; userId: string; command: string; seq: number; changes: Change[]; items: ActivityItem[] },
+  ) {
     const [actor] = await this.db.select({ id: users.id, name: users.name }).from(users).where(eq(users.id, e.userId))
-    await this.emit(boardId, 'board.changed', {
-      board: e.board,
-      actor: actor ?? null,
-      command: e.command,
-      seq: e.seq,
-      changes: e.changes.slice(0, MAX_CHANGES),
-      ...(e.changes.length > MAX_CHANGES && { truncated: true }),
-    })
+    await this.emit(
+      boardId,
+      'board.changed',
+      {
+        board: e.board,
+        actor: actor ?? null,
+        command: e.command,
+        seq: e.seq,
+        changes: e.changes.slice(0, MAX_CHANGES),
+        ...(e.changes.length > MAX_CHANGES && { truncated: true }),
+      },
+      () =>
+        changeMessage({ actor: actor?.name ?? null, board: e.board.name, items: e.items, changes: e.changes }, (taskId) =>
+          this.cardUrl(boardId, taskId),
+        ),
+    )
   }
 
   /** Sends what's due now. Returns how many were tried. */
@@ -202,7 +278,8 @@ export class Webhooks {
   /** Sends a test ("ping") delivery right away, and says how it went. */
   async ping(hook: Hook, board: { id: string; name: string }) {
     const id = newId()
-    const payload = { event: 'ping', delivery: id, at: new Date().toISOString(), board }
+    const format = chatFormat(hook)
+    const payload = format ? chatBody(format, testMessage(board.name)) : { event: 'ping', delivery: id, at: new Date().toISOString(), board }
     const [d] = await this.db.insert(webhookDeliveries).values({ id, webhookId: hook.id, event: 'ping', payload }).returning()
     return this.deliver(d, hook, (await loadSettings(this.db)).webhooks, { retry: false })
   }
@@ -217,22 +294,18 @@ export class Webhooks {
       if (mode === 'off') throw new Error('Webhooks are turned off on this site.')
       if (!h.active) throw new Error('This webhook is paused.')
       checkWebhookUrl(h.url, mode)
-      const res = await fetch(h.url, {
-        method: 'POST',
+      const format = chatFormat(h)
+      if (format && mode === 'public') checkChatAddress(format, h.url)
+      const res = await this.post(
+        h.url,
         body,
-        headers: {
-          'content-type': 'application/json',
-          'user-agent': 'Kanbanto-Webhooks',
-          'x-kanbanto-event': d.event,
-          'x-kanbanto-delivery': d.id,
-          'x-kanbanto-signature': sign(decrypt(h.secretEncrypted), body),
-        },
-        // An address that sends us elsewhere could point the server anywhere: redirects aren't followed.
-        redirect: 'manual',
-        dispatcher: mode === 'public' ? publicOnly : undefined,
-        signal: AbortSignal.timeout(TIMEOUT_MS),
-      })
-      answer = await readStart(res)
+        // (A chat app gets the message and nothing else: it has no use for the event's name or a signature.)
+        format
+          ? HEADERS
+          : { ...HEADERS, 'x-kanbanto-event': d.event, 'x-kanbanto-delivery': d.id, 'x-kanbanto-signature': sign(decrypt(h.secretEncrypted), body) },
+        mode,
+      )
+      answer = res.text
       status = res.status
       if (status < 200 || status >= 300) error = `The address answered ${status}.`
     } catch (e) {
@@ -269,7 +342,10 @@ export class Webhooks {
   /** Sends a delivery again (a new one, with the same event and data), right away. */
   async resend(d: Delivery, h: Hook) {
     const id = newId()
-    const payload = { ...(d.payload as object), delivery: id, at: new Date().toISOString(), resent_from: d.id }
+    // (A chat message goes again exactly as it was: the chat app may refuse a body with anything added.)
+    const payload = chatFormat(h)
+      ? (d.payload as object)
+      : { ...(d.payload as object), delivery: id, at: new Date().toISOString(), resent_from: d.id }
     const [fresh] = await this.db.insert(webhookDeliveries).values({ id, webhookId: h.id, event: d.event, payload }).returning()
     return this.deliver(fresh, h, (await loadSettings(this.db)).webhooks, { retry: true })
   }

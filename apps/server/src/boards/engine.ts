@@ -1,4 +1,4 @@
-import { describeChanges, type ActivityItem } from '@kanbanto/model/activity'
+import { cutItems, describeAllChanges, type ActivityItem } from '@kanbanto/model/activity'
 import { planMove, type MovePlan, type MoveTarget } from '@kanbanto/model/moveBoard'
 import { applyChanges } from '@kanbanto/model/changes'
 import { execute, type Command } from '@kanbanto/model/commands'
@@ -47,10 +47,13 @@ export class BoardEngine {
   private readonly db: Db
   private readonly hub: LiveHub
 
-  /** Told after each command that changed something (webhooks). */
+  /** Told after each command that changed something (webhooks). `items`: the change in words, every line of it. */
   onChanged:
-    ((boardId: string, e: { board: { id: string; name: string }; userId: string; command: string; seq: number; changes: Change[] }) => void) | null =
-    null
+    | ((
+        boardId: string,
+        e: { board: { id: string; name: string }; userId: string; command: string; seq: number; changes: Change[]; items: ActivityItem[] },
+      ) => void)
+    | null = null
 
   /**
    * Run after each command that changed something, before its answer goes back (following cards and telling people):
@@ -135,7 +138,7 @@ export class BoardEngine {
         throw Object.assign(new HttpError(422, 'That change couldn’t be applied to this board.'), { cause: e })
       }
       if ('error' in r) throw new HttpError(422, r.error)
-      if (!r.changes.length) return { seq: row.seq, changes: [], data, stripped: false }
+      if (!r.changes.length) return { seq: row.seq, changes: [], data, stripped: false, said: [] }
       // Links to cards on other boards: what this board can't check by itself (see links.ts). A new link that fails
       // is refused. An undo that would bring one back goes through without it: the rest of it is still wanted.
       let changes = r.changes
@@ -156,12 +159,13 @@ export class BoardEngine {
         data.fields.map((f) => f.id),
       )
       // The activity log: what this change did, in words (reordering alone isn't logged).
-      const items = describeChanges(data, changes, command)
+      const said = describeAllChanges(data, changes, command)
+      const items = cutItems(said)
       if (items.length)
         await tx.insert(boardActivity).values({ id: newId(), boardId, actorId: userId, command: command.type, items, via: via ?? null })
       const seq = row.seq + 1
       await tx.update(boards).set({ seq, activityAt: new Date() }).where(eq(boards.id, boardId))
-      return { seq, changes, data: applyChanges(data, changes), stripped }
+      return { seq, changes, data: applyChanges(data, changes), stripped, said }
     })
 
     this.remember(boardId, { seq: result.seq, data: result.data })
@@ -173,7 +177,7 @@ export class BoardEngine {
       // (What was written isn't quite what the person's own copy did: it fetches the board again.)
       if (result.stripped) this.hub.broadcast(boardId, { type: 'reload' })
       const board = { id: boardId, name: result.data.board.name }
-      this.onChanged?.(boardId, { board, userId, command: command.type, seq: out.seq, changes: out.changes })
+      this.onChanged?.(boardId, { board, userId, command: command.type, seq: out.seq, changes: out.changes, items: result.said })
       await this.afterChange?.(boardId, { userId, command: command.type, changes: out.changes, data: result.data })
     }
     return out
@@ -257,8 +261,10 @@ export class BoardEngine {
       const q = `“${plan.summary.title}”`
       const log = (boardId: string, items: ActivityItem[]) =>
         tx.insert(boardActivity).values({ id: newId(), boardId, actorId: userId, command: 'task.moveToBoard', items, via: via ?? null })
-      await log(fromId, [{ taskId, text: `moved ${q}${more} to another board` }])
-      await log(toId, [{ taskId: plan.ids.get(taskId)!, text: `moved ${q}${more} here from another board` }])
+      const left: ActivityItem[] = [{ taskId, text: `moved ${q}${more} to another board` }]
+      const arrived: ActivityItem[] = [{ taskId: plan.ids.get(taskId)!, text: `moved ${q}${more} here from another board` }]
+      await log(fromId, left)
+      await log(toId, arrived)
       const bump = async (id: string) => {
         const seq = locked.get(id)! + 1
         await tx.update(boards).set({ seq, activityAt: new Date() }).where(eq(boards.id, id))
@@ -266,8 +272,8 @@ export class BoardEngine {
       }
       return {
         plan,
-        from: { seq: await bump(fromId), data: applyChanges(source, plan.source) },
-        to: { seq: await bump(toId), data: applyChanges(target, plan.target) },
+        from: { seq: await bump(fromId), data: applyChanges(source, plan.source), said: left },
+        to: { seq: await bump(toId), data: applyChanges(target, plan.target), said: arrived },
       }
     })
 
@@ -278,7 +284,14 @@ export class BoardEngine {
     ] as const) {
       this.remember(id, side)
       this.hub.broadcast(id, { type: 'changes', seq: side.seq, changes })
-      this.onChanged?.(id, { board: { id, name: side.data.board.name }, userId, command: 'task.moveToBoard', seq: side.seq, changes })
+      this.onChanged?.(id, {
+        board: { id, name: side.data.board.name },
+        userId,
+        command: 'task.moveToBoard',
+        seq: side.seq,
+        changes,
+        items: side.said,
+      })
     }
     // The other board's comment and file counts changed too.
     this.hub.broadcast(toId, { type: 'reload' })

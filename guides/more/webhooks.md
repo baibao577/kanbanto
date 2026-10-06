@@ -4,11 +4,15 @@ A webhook is a message Kanbanto sends to an address of yours the moment somethin
 moved, a comment is written, a reminder goes off. At the other end can be a chat channel, an automation tool (n8n,
 Make, Zapier and the like), or a small program of your own.
 
-People use them to post finished cards to a team chat, to add a row to a spreadsheet for every new card, or to start
-work in another system when a card reaches a list.
+People use them to tell a team chat what is happening on a board, to add a row to a spreadsheet for every new card,
+or to start work in another system when a card reaches a list.
 
-This page is for whoever sets that up. It has two halves: turning a webhook on, which takes a minute in the app, and
-receiving it safely, with the **signing secret** and an example to copy.
+This page is for whoever sets that up. It has three parts:
+
+- [Send to a chat channel](#send-to-a-chat-channel): Slack, Google Chat, Microsoft Teams or Discord. Nothing to
+  write: the channel gets sentences.
+- [Add a webhook](#add-a-webhook) for another app or a program of your own, which gets the data.
+- Receiving that data safely, with the **signing secret** and an example to copy.
 
 ## Before you start
 
@@ -19,10 +23,70 @@ receiving it safely, with the **signing secret** and an example to copy.
 - **You have an address that can receive them:** an `https://` address on the internet with something listening.
   (A site set to "any address" also takes `http://` and addresses inside its own network.)
 
+## Send to a chat channel
+
+A channel in **Slack**, **Google Chat**, **Microsoft Teams** or **Discord** can be told what happens on a board, in
+words:
+
+> Ann moved “Deploy” to Done on Launch
+
+The card's title opens the card. A comment comes with how it starts ("Ann commented on “Deploy” on Launch: Shipped
+this morning."), and a reminder with who it is for.
+
+1. In the chat app, get the channel's address (below, for each app).
+2. In Kanbanto, open the board, then **⋯ → Board settings → People & apps**.
+3. Under **Webhooks**, choose the chat app in **Send to**, paste the address and click **Add**.
+
+![Board settings, People & apps: Slack chosen in "Send to", with where Slack gives out the address](/images/hooks-3-chat-add.webp){.medium}
+
+The channel gets a first message straight away: "Kanbanto will post news from Launch here." If it doesn't arrive,
+the webhook isn't saved, and Kanbanto says what the chat app answered: copy the address again.
+
+### Where each app gives out the address
+
+| App | Where |
+|---|---|
+| **Slack** | Slack gives addresses out through an app of your own, which takes a few minutes once. Go to [api.slack.com/apps](https://api.slack.com/apps), **Create New App → From scratch**, name it (say, "Kanbanto") and pick your workspace. Open **Incoming Webhooks**, switch it on, click **Add New Webhook to Workspace**, pick the channel and allow it. Copy the address that appears: it starts with `https://hooks.slack.com/services/`. For another channel later, add another webhook to the same app. |
+| **Google Chat** | In the space, click its name at the top, then **Apps & integrations → Webhooks → Add webhook**. Name it and copy the address: it starts with `https://chat.googleapis.com/`. (Spaces in a work or school account; the admin may have to allow webhooks.) |
+| **Microsoft Teams** | On the channel, click **⋯ → Workflows**, and pick the one that posts to a channel when a webhook request is received (it has been called "Post to a channel when a webhook request is received" and "Send webhook alerts to a channel"). Follow its steps and copy the address at the end. Messages arrive from "Workflows". |
+| **Discord** | Open the channel's settings (the cog beside its name), then **Integrations → Webhooks → New Webhook**, and **Copy Webhook URL**: it starts with `https://discord.com/api/webhooks/`. |
+
+### What the channel hears
+
+Click the webhook in the list to open it. The same three switches as for any webhook decide what is sent:
+
+![A webhook to Slack: its switches and the messages it sent](/images/hooks-4-chat-detail.webp){.medium}
+
+| Switch | The channel is told |
+|---|---|
+| **Card changes** | What the board's activity says: a card added, moved to another list, assigned, renamed, given a date, archived or deleted, and so on. Several things changed at once are one message. Putting cards in another order says nothing. |
+| **Comments** | Who commented, on which card, and the first 200 characters. |
+| **Reminders** | Who the reminder is for, the card, and when it is due. |
+
+**Send a test** posts "A test from Kanbanto for Launch." **Deliveries** shows each message as it went, and **Send
+again** posts it again.
+
+::: warning Everyone in the channel can read it
+Card titles, people's names and the start of comments are posted in the channel and stay in its history, for
+everyone there, including people who aren't on the board. Pick the channel with that in mind.
+:::
+
+Good to know:
+
+- **The address is the key to the channel.** Whoever has it can post there. It is shown to the board's owners only.
+- **Nothing a card says can mention anyone.** A card called "@everyone" arrives as those words and pings nobody.
+- **There is no signing secret** for a chat webhook: nothing at the chat app would check it.
+- **Another chat app that takes Slack's messages** (a Mattermost of your own, for one) works with "Slack" chosen, on
+  a site whose admin allows webhooks to any address. Where only public addresses are allowed, the address has to
+  be the chat app's own.
+- To change the app, add another webhook and delete this one.
+
+The rest of this page is about the other kind: a webhook that sends the board's data to an app or a program.
+
 ## Add a webhook
 
 1. Open the board, then **⋯ → Board settings → People & apps**. Webhooks are under the people.
-2. Paste the address and click **Add**.
+2. Leave **Send to** on **Another app**, paste the address and click **Add**.
 3. A box shows the **signing secret**. It starts with `whsec_`. Copy it for the receiving end: it is how that end
    knows a message really came from Kanbanto (see [The signing secret](#the-signing-secret)). You can look it up
    again later.
@@ -66,7 +130,7 @@ Each message is a `POST` with a JSON body, and three headers:
 | In the app | Event | Sent when | What it holds |
 |---|---|---|---|
 | **Card changes** | `board.changed` | Anything on the board changes: a card is added, edited, moved, archived or deleted, or a list or label changes | `board`, `actor` (who did it), `command` (what they did), `seq`, and `changes`: each record `before` and `after` |
-| **Comments** | `comment.added` | Someone comments on a card | `board`, `actor`, `task` (its id and title), and `comment` (its text, and who it mentions) |
+| **Comments** | `comment.added` | Someone comments on a card | `board`, `actor`, `task` (its id and title), and `comment` (its text, who it mentions, and the `id`, `name` and `size` of each file posted with it) |
 | **Reminders** | `reminder.due` | A card's reminder goes off | `board`, `task` (id, title, due date, list), `reminder`, and `for` (who it is for) |
 
 Every message also has `event`, `delivery` and `at` (when it happened).
@@ -103,7 +167,7 @@ A comment:
   "board": { "id": "01a10d0f-45b2-7065-b99a-7dfc03c68c7c", "name": "Launch" },
   "actor": { "id": "01a10d0f-4559-745a-b5e3-85f35b930a2d", "name": "Ann Lee" },
   "task": { "id": "A3", "title": "Deploy" },
-  "comment": { "id": "01a10d0f-48bb-72c5-9f10-4d8e70ed31e3", "body": "Shipped this morning.", "mentions": [] }
+  "comment": { "id": "01a10d0f-48bb-72c5-9f10-4d8e70ed31e3", "body": "Shipped this morning.", "mentions": [], "files": [] }
 }
 ```
 
@@ -275,19 +339,8 @@ Three things about it:
 
 - **It needs an address Kanbanto can reach**: run it on a server of yours, behind `https://`. To try it from your own
   computer, a tunnelling tool can give it a public address for a while.
-- **To post to a chat instead of printing**, change `say`. Slack, for one, gives a channel an address (an "incoming
-  webhook") that takes a message like this:
-
-  ```js
-  async function say(text) {
-    await fetch(process.env.SLACK_WEBHOOK_URL, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ text }),
-    })
-  }
-  ```
-
+- **To tell a chat channel**, no program is needed: see [Send to a chat channel](#send-to-a-chat-channel). Write
+  one only when the channel should hear something else than Kanbanto's own sentences.
 - **It forgets what it has handled when it restarts.** For something that must never happen twice, keep the
   delivery ids somewhere that lasts.
 

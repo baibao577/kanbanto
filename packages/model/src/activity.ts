@@ -24,6 +24,17 @@ const short = (s: string) => (s.length > 60 ? `${s.slice(0, 59).trimEnd()}…` :
  * line, so a change that only moves things around its list says nothing.
  */
 export function describeChanges(before: BoardData, changes: Change[], command?: Command): ActivityItem[] {
+  return cutItems(describeAllChanges(before, changes, command))
+}
+
+/** The lines the log keeps of one change: the first ones, and how many more there were. */
+export function cutItems(items: ActivityItem[]): ActivityItem[] {
+  if (items.length <= MAX_ITEMS) return items
+  return [...items.slice(0, MAX_ITEMS - 1), { text: `and made ${items.length - MAX_ITEMS + 1} more changes` }]
+}
+
+/** Every line of a change, however many (a chat webhook counts them itself). */
+export function describeAllChanges(before: BoardData, changes: Change[], command?: Command): ActivityItem[] {
   // Clearing a field on every card is one thing that happened, not one per card.
   if (command?.type === 'tasks.clearField') {
     const n = changes.filter((c) => c.entity === 'task').length
@@ -108,8 +119,7 @@ export function describeChanges(before: BoardData, changes: Change[], command?: 
       if (a && b && a.description !== b.description) items.push({ text: 'changed what the board is for' })
     }
   }
-  if (items.length <= MAX_ITEMS) return items
-  return [...items.slice(0, MAX_ITEMS - 1), { text: `and made ${items.length - MAX_ITEMS + 1} more changes` }]
+  return items
 }
 
 /**

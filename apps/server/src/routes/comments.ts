@@ -3,6 +3,7 @@ import { newId } from '@kanbanto/model/ids'
 import { and, desc, eq, ilike, inArray, isNull, or, sql } from 'drizzle-orm'
 import type { FastifyInstance, FastifyPluginAsync } from 'fastify'
 import { z } from 'zod'
+import { commentMessage } from '../chat/format'
 import { openBoards, requireAccess, type BoardRow } from '../boards/access'
 import { follow, followersOf, isFollowing, mentionLine, setFollowing } from '../boards/follows'
 import { boardPeople } from '../boards/store'
@@ -199,18 +200,23 @@ export async function postComment(
   for (const userId of mentions) tell(userId, 'mentions')
   for (const userId of followers) tell(userId, 'follows')
   void app.webhooks
-    .emit(id, 'comment.added', {
-      board: { id, name: board.name },
-      actor: { id: me.id, name: me.name },
-      task: { id: taskId, title: data.tasks[taskId].title },
-      comment: {
-        id: commentId,
-        body: body.body,
-        mentions,
-        // (The files posted with it: fetched with a token from /api/attachments/<id>.)
-        files: comment.attachments.map((f) => ({ id: f.id, name: f.name, size: f.size })),
+    .emit(
+      id,
+      'comment.added',
+      {
+        board: { id, name: board.name },
+        actor: { id: me.id, name: me.name },
+        task: { id: taskId, title: data.tasks[taskId].title },
+        comment: {
+          id: commentId,
+          body: body.body,
+          mentions,
+          // (The files posted with it: fetched with a token from /api/attachments/<id>.)
+          files: comment.attachments.map((f) => ({ id: f.id, name: f.name, size: f.size })),
+        },
       },
-    })
+      () => commentMessage({ actor: me.name, board: board.name, title: data.tasks[taskId].title, body: body.body }, app.webhooks.cardUrl(id, taskId)),
+    )
     .catch((e) => app.log.error({ err: e instanceof Error ? e.message : e }, 'queueing webhooks'))
   return comment
 }

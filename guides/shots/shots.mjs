@@ -1396,14 +1396,14 @@ async function listener() {
   return (hooked = `http://127.0.0.1:${server.address().port}/kanbanto`)
 }
 /** The pictures show an address and a secret that could be anyone's, not this run's. */
-const asInTheGuide = (address) =>
+const asInTheGuide = (address, shown = 'https://hooks.example.com/kanbanto') =>
   page.evaluate(
     ([from, to]) => {
       const walk = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT)
       for (let n = walk.nextNode(); n; n = walk.nextNode()) if (n.nodeValue.includes(from)) n.nodeValue = n.nodeValue.replaceAll(from, to)
       for (const el of document.querySelectorAll('input')) if (el.value.startsWith('whsec_')) el.value = 'whsec_Xk3v9QmT7LwA2pRZ8cYdN4hJ6sBf0uGe'
     },
-    [address, 'https://hooks.example.com/kanbanto'],
+    [address, shown],
   )
 const openWebhooks = async () => {
   await openBoard()
@@ -1439,6 +1439,49 @@ await shot('hooks-2-detail', async () => {
   await page.getByRole('button', { name: 'Send again' }).waitFor()
   await page.waitForTimeout(300)
   await asInTheGuide(address)
+  return page.getByRole('dialog')
+})
+
+// A webhook to a chat channel: Slack's words on the screen, the little server above at the other end (the site
+// allows any address for these pictures, so a chat webhook's address needn't be the chat app's own).
+const SLACK = 'https://hooks.slack.com/services/T024BE7LD/B08N3QX4Z/…'
+/** The addresses on the screen as they'd be for real: Slack's for the chat webhook, a made-up one for the other, and a made-up site. */
+const chatAsInTheGuide = async (address) => {
+  await asInTheGuide(`${address}-chat`, SLACK)
+  await asInTheGuide(address)
+  await asInTheGuide(SITE, 'https://kanbanto.example.com')
+}
+await shot('hooks-3-chat-add', async () => {
+  const address = await listener()
+  await openWebhooks()
+  await page.getByRole('combobox', { name: 'Send to' }).click()
+  await page.getByRole('option', { name: 'Slack' }).click()
+  await page.getByLabel('The channel’s address').fill(`${address}-chat`)
+  await page.getByRole('button', { name: 'Add', exact: true }).click()
+  await page.getByText('Added. Look in the channel').waitFor()
+  await page.waitForTimeout(400)
+  await chatAsInTheGuide(address)
+  return page.getByRole('dialog')
+})
+await shot('hooks-4-chat-detail', async () => {
+  const address = await listener()
+  const chat = `${address}-chat`
+  if (!(await api(ann, 'GET', `/boards/${board}/webhooks`)).webhooks.some((h) => h.url === chat))
+    await api(ann, 'POST', `/boards/${board}/webhooks`, { url: chat, format: 'slack' })
+  // (Something to have said: a card moved along, and a comment on it.)
+  await run({ type: 'task.update', id: 'pricing', fields: { status: 'doing' } })
+  await api(ann, 'POST', `/boards/${board}/tasks/pricing/comments`, { body: 'The three plans are in. Numbers still to check.' })
+  await page.waitForTimeout(6500)
+  await openWebhooks()
+  await page.getByRole('button', { name: /-chat/ }).click()
+  await page.getByText('Delivered (200)').first().waitFor()
+  await page
+    .getByRole('button', { name: /board\.changed/ })
+    .first()
+    .click()
+  await page.getByRole('button', { name: 'Send again' }).waitFor()
+  await page.waitForTimeout(300)
+  await chatAsInTheGuide(address)
   return page.getByRole('dialog')
 })
 

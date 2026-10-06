@@ -1,10 +1,20 @@
-import { WEBHOOK_EVENTS, type ApiTokenView, type WebhookDeliveryDetail, type WebhookEventName, type WebhookView } from '@kanbanto/model/api'
+import {
+  WEBHOOK_EVENTS,
+  WEBHOOK_FORMATS,
+  type ApiTokenView,
+  type ChatFormat,
+  type WebhookDeliveryDetail,
+  type WebhookEventName,
+  type WebhookFormat,
+  type WebhookView,
+} from '@kanbanto/model/api'
 import { newId } from '@kanbanto/model/ids'
 import { and, desc, eq, inArray, sql } from 'drizzle-orm'
 import type { FastifyPluginAsync } from 'fastify'
 import { z } from 'zod'
 import { MAX_TOKENS, newApiToken } from '../auth/apiTokens'
 import { requireAccess } from '../boards/access'
+import { checkChatAddress } from '../chat/hosts'
 import { decrypt, encrypt } from '../crypto'
 import { apiTokens, webhookDeliveries, webhooks } from '../db/schema'
 import { HttpError, parse } from '../http'
@@ -121,6 +131,7 @@ export const integrationRoutes: FastifyPluginAsync = async (app) => {
     const list: WebhookView[] = hooks.map((h) => ({
       id: h.id,
       url: h.url,
+      format: h.format as WebhookFormat,
       active: h.active,
       events: (h.events ?? [...WEBHOOK_EVENTS]) as WebhookEventName[],
       createdAt: h.createdAt.toISOString(),
@@ -143,34 +154,58 @@ export const integrationRoutes: FastifyPluginAsync = async (app) => {
     return { mode: (await loadSettings(app.db)).webhooks, webhooks: list }
   })
 
-  /** Adds a webhook. Its signing secret is in the answer (and can be shown again later by the board's owners). */
+  /**
+   * Checks a new address, in the way its format allows. Kanbanto's own data goes to an address that confirms it wants
+   * it (where the site only sends to public addresses). A chat app can't confirm anything: its address has to be the
+   * chat app's own there, and the channel is sent a first message, which has to be taken.
+   */
+  const checkAddress = async (format: WebhookFormat, url: string, board: { name: string }) => {
+    const mode = await modeFor()
+    checkWebhookUrl(url, mode)
+    if (format === 'json') return () => app.webhooks.confirmAddress(url, mode)
+    if (mode === 'public') checkChatAddress(format, url)
+    return () => app.webhooks.greet(format, url, board, mode)
+  }
+  const chatOf = (hook: { format: string }) => (hook.format === 'json' ? null : (hook.format as ChatFormat))
+
+  /**
+   * Adds a webhook. With Kanbanto's own data as the format, its signing secret is in the answer (and can be shown
+   * again later by the board's owners). One that sends to a chat app has none.
+   */
   app.post('/boards/:id/webhooks', async (req) => {
     const { id } = parse(BoardParams, req.params)
     const me = requireUser(req.user)
-    await requireAccess(app.db, me, id, 'owner')
-    const mode = await modeFor()
-    const { url, events } = parse(
-      z.object({ url: z.string().trim().min(1, 'Enter the address to send changes to.').max(2000), events: Events.optional() }),
+    const { board } = await requireAccess(app.db, me, id, 'owner')
+    const {
+      url,
+      events,
+      format = 'json',
+    } = parse(
+      z.object({
+        url: z.string().trim().min(1, 'Enter the address to send changes to.').max(2000),
+        events: Events.optional(),
+        format: z.enum(WEBHOOK_FORMATS).optional(),
+      }),
       req.body,
     )
-    checkWebhookUrl(url, mode)
+    const confirm = await checkAddress(format, url, board)
     const [{ n }] = await app.db
       .select({ n: sql<number>`count(*)::int` })
       .from(webhooks)
       .where(eq(webhooks.boardId, id))
     if (n >= MAX_WEBHOOKS) throw new HttpError(400, `A board can have up to ${MAX_WEBHOOKS} webhooks.`)
-    await app.webhooks.confirmAddress(url, mode)
+    await confirm()
     const secret = newWebhookSecret()
     const hookId = newId()
     await app.db
       .insert(webhooks)
-      .values({ id: hookId, boardId: id, url, events: eventsToStore(events), secretEncrypted: encrypt(secret), createdBy: me.id })
-    return { id: hookId, secret }
+      .values({ id: hookId, boardId: id, url, format, events: eventsToStore(events), secretEncrypted: encrypt(secret), createdBy: me.id })
+    return format === 'json' ? { id: hookId, secret } : { id: hookId }
   })
 
-  /** Pauses or resumes a webhook, or changes its address. */
+  /** Pauses or resumes a webhook, or changes its address or what it's sent. (Its format stays what it was made with.) */
   app.patch('/boards/:id/webhooks/:hookId', async (req) => {
-    const { hook } = await ownHook(req)
+    const { board, hook } = await ownHook(req)
     const body = parse(
       z
         .object({ active: z.boolean(), url: z.string().trim().min(1).max(2000), events: Events })
@@ -179,9 +214,8 @@ export const integrationRoutes: FastifyPluginAsync = async (app) => {
       req.body,
     )
     if (body.url !== undefined) {
-      const mode = await modeFor()
-      checkWebhookUrl(body.url, mode)
-      if (body.url !== hook.url) await app.webhooks.confirmAddress(body.url, mode)
+      const confirm = await checkAddress(hook.format as WebhookFormat, body.url, board)
+      if (body.url !== hook.url) await confirm()
     }
     const { events, ...rest } = body
     const set = { ...rest, ...(events && { events: eventsToStore(events) }) }
@@ -189,8 +223,11 @@ export const integrationRoutes: FastifyPluginAsync = async (app) => {
     return { ok: true }
   })
 
+  const NO_SECRET = 'A webhook that sends to a chat app has no signing secret: nothing at that end checks one.'
+
   app.get('/boards/:id/webhooks/:hookId/secret', async (req) => {
     const { hook } = await ownHook(req)
+    if (chatOf(hook)) throw new HttpError(400, NO_SECRET)
     return { secret: decrypt(hook.secretEncrypted) }
   })
 
@@ -234,6 +271,7 @@ export const integrationRoutes: FastifyPluginAsync = async (app) => {
   /** A new signing secret: the old one stops working at once. */
   app.post('/boards/:id/webhooks/:hookId/secret', async (req) => {
     const { hook } = await ownHook(req)
+    if (chatOf(hook)) throw new HttpError(400, NO_SECRET)
     const secret = newWebhookSecret()
     await app.db
       .update(webhooks)

@@ -122,6 +122,14 @@ then `git pull` (or download the new release) and `docker compose up -d --build`
   a reminder if you like) and in the Due and Start pickers.
 - **Webhooks** live in Board settings: each can send only some events (card changes, comments, reminders), and has a
   delivery log showing what was sent and what came back, with "Send again".
+- **Webhooks to a chat channel:** a webhook can be sent to a channel in Slack, Google Chat, Microsoft Teams or
+  Discord. Choose the app when adding it ("Send to") and paste the address the chat app gives for the channel. The
+  channel then gets each change as a sentence, "Ann moved “Deploy” to Done on Launch", with the card's title opening
+  the card; comments come with how they start, reminders with who they're for. The same three switches decide what
+  is sent, and the log shows each message. Putting cards in another order says nothing. Nothing people typed can
+  mention anyone in the chat. The channel is sent a first message when the webhook is added, and the webhook is
+  only saved if the chat app takes it; these webhooks have no signing secret. Remember that card titles, names and
+  the start of comments are then readable by everyone in that channel. For apps: `format` when adding a webhook.
 - **Outline** uses the full width, with columns you choose and compact (or comfortable) rows (Display), indent guides
   and lightly tinted projects; on phones it's a nested list with each task's details underneath.
 - **Card age** (Display → Card age): a chip with the days since anything happened on a card (moved to another list,

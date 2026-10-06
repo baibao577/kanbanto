@@ -6,19 +6,35 @@ import {
   CaretRight,
   Check,
   Copy,
+  DiscordLogo,
+  GoogleLogo,
   Key,
+  MicrosoftTeamsLogo,
   PaperPlaneTilt,
   PlugsConnected,
+  SlackLogo,
   Trash,
+  WebhooksLogo,
+  type Icon,
 } from '@phosphor-icons/react'
 import { formatDistanceToNow, parseISO } from 'date-fns'
 import { useCallback, useState } from 'react'
 import { toast } from 'sonner'
-import { WEBHOOK_EVENTS, type WebhookDeliveryDetail, type WebhookEventName, type WebhookMode, type WebhookView } from '@kanbanto/model/api'
+import {
+  WEBHOOK_EVENTS,
+  WEBHOOK_FORMAT_NAMES,
+  WEBHOOK_FORMATS,
+  type WebhookDeliveryDetail,
+  type WebhookEventName,
+  type WebhookFormat,
+  type WebhookMode,
+  type WebhookView,
+} from '@kanbanto/model/api'
 import { api, errorMessage } from '@/api/client'
 import { useBoard } from '@/app/board-context'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { useLoaded } from '@/data/useLoaded'
 import { cn } from '@/lib/utils'
@@ -38,6 +54,44 @@ const EVENT_LABEL: Record<WebhookEventName, string> = {
   'board.changed': 'Card changes',
   'comment.added': 'Comments',
   'reminder.due': 'Reminders',
+}
+
+/**
+ * Each format: its icon, what its addresses look like, and where the chat app gives one out. (Kanbanto's own data
+ * goes to any address; the hint for that depends on the site, see below.)
+ */
+const FORMAT: Record<WebhookFormat, { icon: Icon; placeholder: string; where?: string }> = {
+  json: { icon: WebhooksLogo, placeholder: 'https://example.com/kanbanto-hook' },
+  slack: {
+    icon: SlackLogo,
+    placeholder: 'https://hooks.slack.com/services/…',
+    where: 'Slack gives a channel an address from an app of your own: api.slack.com/apps → Create New App → Incoming Webhooks.',
+  },
+  'google-chat': {
+    icon: GoogleLogo,
+    placeholder: 'https://chat.googleapis.com/v1/spaces/…',
+    where: 'In the space, click its name → Apps & integrations → Webhooks, and copy the address it makes.',
+  },
+  teams: {
+    icon: MicrosoftTeamsLogo,
+    placeholder: 'https://….api.powerplatform.com/…',
+    where: 'On the channel, click ⋯ → Workflows, pick the one that posts when a webhook request is received, and copy its address.',
+  },
+  discord: {
+    icon: DiscordLogo,
+    placeholder: 'https://discord.com/api/webhooks/…',
+    where: 'In the channel’s settings: Integrations → Webhooks → New Webhook → Copy Webhook URL.',
+  },
+}
+const isChat = (format: WebhookFormat) => format !== 'json'
+
+/** The words of a message that went to a chat app, out of the body that app was sent (null: show the body itself). */
+function chatWords(payload: unknown): string | null {
+  const p = payload as { text?: unknown; content?: unknown; attachments?: { content?: { body?: { text?: unknown }[] } }[] } | null
+  if (typeof p?.text === 'string') return p.text
+  if (typeof p?.content === 'string') return p.content
+  const blocks = p?.attachments?.[0]?.content?.body
+  return Array.isArray(blocks) ? blocks.map((b) => (typeof b.text === 'string' ? b.text : '')).join('\n') : null
 }
 
 /** A green, red or grey dot: working, failing, paused. */
@@ -74,7 +128,9 @@ function useWebhooks() {
 export function WebhookList({ onOpen }: { onOpen: (id: string) => void }) {
   const { loaded, act } = useWebhooks()
   const [url, setUrl] = useState('')
-  const [secret, setSecret] = useState<string | null>(null)
+  const [format, setFormat] = useState<WebhookFormat>('json')
+  // What was just added: a signing secret to copy, or (for a chat) the app the first message went to.
+  const [added, setAdded] = useState<{ secret: string } | { chat: WebhookFormat } | null>(null)
 
   if (!loaded) return <div className="h-16" />
   if (loaded.mode === 'off')
@@ -85,9 +141,9 @@ export function WebhookList({ onOpen }: { onOpen: (id: string) => void }) {
     )
 
   const add = async () => {
-    const r = await act<{ id: string; secret: string }>('POST', '', { url: url.trim() })
+    const r = await act<{ id: string; secret?: string }>('POST', '', { url: url.trim(), format })
     if (r) {
-      setSecret(r.secret)
+      setAdded(r.secret ? { secret: r.secret } : { chat: format })
       setUrl('')
     }
   }
@@ -105,6 +161,7 @@ export function WebhookList({ onOpen }: { onOpen: (id: string) => void }) {
           <span className="min-w-0 flex-1">
             <span className="block truncate font-mono text-xs">{h.url}</span>
             <span className="block truncate text-[11px] text-muted-foreground">
+              {isChat(h.format) && `${WEBHOOK_FORMAT_NAMES[h.format]} · `}
               {!h.active ? 'Paused' : h.events.map((e) => EVENT_LABEL[e]).join(' · ')}
               {h.active && h.lastDeliveryAt && ` · last ${ago(h.lastDeliveryAt)}`}
             </span>
@@ -119,25 +176,61 @@ export function WebhookList({ onOpen }: { onOpen: (id: string) => void }) {
           void add()
         }}
       >
-        <div className="flex gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-xs text-muted-foreground">Send to</span>
+          <Select
+            value={format}
+            onValueChange={(v) => {
+              setFormat(v as WebhookFormat)
+              setAdded(null)
+            }}
+          >
+            <SelectTrigger size="sm" className="w-40" aria-label="Send to">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {WEBHOOK_FORMATS.map((f) => {
+                const FormatIcon = FORMAT[f].icon
+                return (
+                  <SelectItem key={f} value={f}>
+                    <FormatIcon /> {WEBHOOK_FORMAT_NAMES[f]}
+                  </SelectItem>
+                )
+              })}
+            </SelectContent>
+          </Select>
           <Input
             value={url}
             onChange={(e) => setUrl(e.target.value)}
-            placeholder="https://example.com/kanbanto-hook"
-            aria-label="Webhook address"
-            className="h-8"
+            placeholder={FORMAT[format].placeholder}
+            aria-label={isChat(format) ? 'The channel’s address' : 'Webhook address'}
+            className="h-8 min-w-36 flex-1"
           />
           <Button type="submit" size="sm" disabled={!url.trim()}>
             Add
           </Button>
         </div>
-        <p className="text-[11px] text-muted-foreground">
-          {loaded.mode === 'public' ? 'An https:// address on the internet.' : 'An http:// or https:// address, on the internet or your network.'}{' '}
-          <a href="/api/docs#webhooks" target="_blank" rel="noreferrer" className="inline-flex items-center gap-0.5 text-primary hover:underline">
-            What’s sent <ArrowSquareOut className="size-3" />
-          </a>
-        </p>
-        {secret && <SecretBox secret={secret} note="Added. Deliveries are signed with this secret, so the receiver can check they came from here." />}
+        {isChat(format) ? (
+          <p className="text-[11px] leading-relaxed text-muted-foreground">
+            {FORMAT[format].where} The channel gets each change as a sentence. Card titles, people’s names and the start of comments are posted there,
+            for everyone in that channel to read.
+          </p>
+        ) : (
+          <p className="text-[11px] text-muted-foreground">
+            {loaded.mode === 'public' ? 'An https:// address on the internet.' : 'An http:// or https:// address, on the internet or your network.'}{' '}
+            <a href="/api/docs#webhooks" target="_blank" rel="noreferrer" className="inline-flex items-center gap-0.5 text-primary hover:underline">
+              What’s sent <ArrowSquareOut className="size-3" />
+            </a>
+          </p>
+        )}
+        {added && 'secret' in added && (
+          <SecretBox secret={added.secret} note="Added. Deliveries are signed with this secret, so the receiver can check they came from here." />
+        )}
+        {added && 'chat' in added && (
+          <p className="rounded-lg border border-status-done/40 bg-status-done/8 p-3 text-xs">
+            Added. Look in the channel: Kanbanto has said hello there in {WEBHOOK_FORMAT_NAMES[added.chat]}.
+          </p>
+        )}
       </form>
     </div>
   )
@@ -188,9 +281,10 @@ export function WebhookDetail({ id, onBack }: { id: string; onBack: () => void }
       </div>
     )
 
+  const chat = isChat(h.format)
   const test = async () => {
     const r = await act<{ ok: boolean; status: number | null; error: string | null }>('POST', `/${h.id}/test`)
-    if (r?.ok) toast('Test delivered', { description: `The address answered ${r.status}.` })
+    if (r?.ok) toast('Test delivered', { description: chat ? 'Look in the channel.' : `The address answered ${r.status}.` })
     else if (r) toast.error('The test didn’t go through', { description: r.error ?? undefined })
     await reloadLog()
   }
@@ -207,7 +301,10 @@ export function WebhookDetail({ id, onBack }: { id: string; onBack: () => void }
       <div className="overflow-hidden rounded-xl border bg-card">
         <div className="flex items-center gap-3 border-b px-4 py-3">
           <StatusDot h={h} />
-          <span className="min-w-0 flex-1 truncate font-mono text-xs">{h.url}</span>
+          <span className="min-w-0 flex-1">
+            <span className="block truncate font-mono text-xs">{h.url}</span>
+            {chat && <span className="block text-[11px] text-muted-foreground">Sentences for a {WEBHOOK_FORMAT_NAMES[h.format]} channel</span>}
+          </span>
           <Switch
             checked={h.active}
             aria-label={h.active ? 'Pause' : 'Resume'}
@@ -241,29 +338,34 @@ export function WebhookDetail({ id, onBack }: { id: string; onBack: () => void }
           <Button variant="outline" size="sm" className="gap-1.5" onClick={() => void test()}>
             <PaperPlaneTilt /> Send a test
           </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            className="gap-1.5"
-            onClick={async () => {
-              const r = await act<{ secret: string }>('GET', `/${h.id}/secret`)
-              if (r) setSecret(r.secret)
-            }}
-          >
-            <Key /> Show the secret
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="gap-1.5 text-muted-foreground"
-            onClick={async () => {
-              if (!confirm('Make a new secret? The old one stops working at once.')) return
-              const r = await act<{ secret: string }>('POST', `/${h.id}/secret`)
-              if (r) setSecret(r.secret)
-            }}
-          >
-            <ArrowClockwise /> New secret
-          </Button>
+          {/* (A chat app checks no signature, so there's no secret to show.) */}
+          {!chat && (
+            <>
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-1.5"
+                onClick={async () => {
+                  const r = await act<{ secret: string }>('GET', `/${h.id}/secret`)
+                  if (r) setSecret(r.secret)
+                }}
+              >
+                <Key /> Show the secret
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="gap-1.5 text-muted-foreground"
+                onClick={async () => {
+                  if (!confirm('Make a new secret? The old one stops working at once.')) return
+                  const r = await act<{ secret: string }>('POST', `/${h.id}/secret`)
+                  if (r) setSecret(r.secret)
+                }}
+              >
+                <ArrowClockwise /> New secret
+              </Button>
+            </>
+          )}
           <Button
             variant="ghost"
             size="sm"
@@ -341,9 +443,16 @@ export function WebhookDetail({ id, onBack }: { id: string; onBack: () => void }
                   {expanded && (
                     <div className="space-y-2 border-t bg-muted/30 px-3 py-3">
                       <p className="font-medium">Sent</p>
-                      <pre className="max-h-56 overflow-auto rounded-md bg-background p-2 font-mono text-[11px] leading-snug">
-                        {JSON.stringify(d.payload, null, 2)}
-                      </pre>
+                      {/* (A chat webhook's message, as words that wrap; anything else, the data as it went.) */}
+                      {chat && chatWords(d.payload) !== null ? (
+                        <pre className="max-h-56 overflow-auto rounded-md bg-background p-2 font-mono text-[11px] leading-snug break-words whitespace-pre-wrap">
+                          {chatWords(d.payload)}
+                        </pre>
+                      ) : (
+                        <pre className="max-h-56 overflow-auto rounded-md bg-background p-2 font-mono text-[11px] leading-snug">
+                          {JSON.stringify(d.payload, null, 2)}
+                        </pre>
+                      )}
                       <p className="font-medium">
                         Answer {d.responseStatus !== null && <span className="font-normal text-muted-foreground">· {d.responseStatus}</span>}
                       </p>

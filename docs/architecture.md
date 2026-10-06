@@ -46,6 +46,7 @@ apps/server/      Fastify + Drizzle + PostgreSQL
                     Calendar, the .ics feed)
   src/auth/apiTokens.ts   Bearer tokens: who they act as, and which routes they may use (TOKEN_ROUTES)
   src/webhooks.ts   Queues, signs and delivers webhooks (with retries), like the email outbox
+  src/chat/         A webhook's news as text for a chat app: each app's body, and the hosts its addresses are on
   src/calendar/     sync.ts (keeps people's Google calendars up to date), google.ts (Google's sign-in and calendar
                     calls, and a stand-in for tests), items.ts (which boards are in someone's calendar)
   src/mcp.ts        The MCP endpoint (/api/mcp): tools for AI assistants, over the same access checks and commands
@@ -168,6 +169,13 @@ The app uses hash routing, so any static host or proxy works without rewrite rul
   `board.changed` delivery for the board's webhooks (and posting a comment queues `comment.added`). A worker sends them,
   signed (HMAC-SHA256 of `<time>.<body>`), with retries. Admins choose where they may go: off, public addresses only
   (checked after every name lookup, like people's buckets), or anywhere.
+- **A webhook to a chat app** (`webhooks.format`: slack, google-chat, teams, discord) is the same webhook with another
+  body. The engine hands `onChanged` the change in words, the lines it writes to the activity log (`describeAllChanges`),
+  and `chat/format.ts` turns them into the body that app reads, escaping what people typed. That body is what's queued,
+  so the queue, the retries, the log and "Send again" don't know the difference; a change with no words (a reorder)
+  queues nothing for them. Two things differ, because nothing at a chat app can answer: instead of the code a new
+  address has to send back, the channel is sent a first message that has to be taken, and on a site limited to public
+  addresses the address must be the chat app's own (`chat/hosts.ts`); and deliveries carry no signature.
 - **MCP** is stateless: each POST to `/api/mcp` builds a server whose tools call the same functions the routes use
   (`requireAccess`, `engine.mutate`, `postComment`), as the token's person.
 - **Calendars** work from what should be there, not from what just happened. `calendarItems` (in the model) says
@@ -398,6 +406,7 @@ The app uses hash routing, so any static host or proxy works without rewrite rul
 | A view (tab) | Its id in `LAYOUTS` (`packages/model/src/types.ts`), then its label, icon and component in `apps/web/src/components/views.ts`. Saved preferences and addresses pick it up. |
 | An email | Its wording in `emails` (`apps/server/src/mail/templates.tsx`), its kind in `EMAIL_KINDS` (`db/schema.ts`) and a sample for the console's previews. It's then sent with `app.mail.queue(…)`. |
 | An email provider | A branch in `sendWith…` (`src/mail/transport.ts`), its settings in `senders.ts`, and the form in `EmailKeyForm.tsx`. |
+| A chat app a webhook can send to | Its name in `WEBHOOK_FORMATS` (`packages/model/src/api.ts`), its body and escaping in `src/chat/format.ts`, the hosts its addresses are on in `src/chat/hosts.ts`, its icon and where its address comes from in `Webhooks.tsx`, and a row in the guide and the API docs. |
 | A site setting | A column in `site_settings` (with a new migration), its default in `src/db/defaults.ts`, and the console page that changes it. Read it with `loadSettings()`. |
 | Storage somewhere other than S3 | An `ObjectStore` (`src/storage/stores.ts`: put, get and delete, plus how downloads are served) and where `storeOf` picks it. |
 

@@ -112,7 +112,7 @@ export function IntegrationsSection() {
 
           <SettingsCard
             title="Webhooks"
-            description="Board owners can have each change on their board sent to another app, as it happens (Board settings → Webhooks)."
+            description="Board owners can have each change on their board sent to another app or a chat channel, as it happens (Board settings → People & apps)."
           >
             <RadioGroup
               value={settings.webhooks}

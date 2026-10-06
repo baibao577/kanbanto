@@ -5,6 +5,7 @@ import { and, eq, isNotNull, isNull } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import { accessOf } from './boards/access'
 import { boards, lists, notifications, reminderSends, tasks, users } from './db/schema'
+import { reminderMessage } from './chat/format'
 import { emails } from './mail/templates'
 
 /** A reminder whose moment passed while the server was down still goes out, up to this late. */
@@ -107,12 +108,21 @@ async function deliver(
     .select({ name: lists.name })
     .from(lists)
     .where(and(eq(lists.boardId, t.boardId), eq(lists.id, t.status)))
-  await app.webhooks.emit(t.boardId, 'reminder.due', {
-    board: { id: board.id, name: board.name },
-    task: { id: t.id, title: t.title, due: t.due, list: list?.name ?? null },
-    reminder: { id: r.id, at: fireTime(r, { due: t.due ?? undefined })?.toISOString() ?? null },
-    for: { id: u.id, name: u.name },
-  })
+  await app.webhooks.emit(
+    t.boardId,
+    'reminder.due',
+    {
+      board: { id: board.id, name: board.name },
+      task: { id: t.id, title: t.title, due: t.due, list: list?.name ?? null },
+      reminder: { id: r.id, at: fireTime(r, { due: t.due ?? undefined })?.toISOString() ?? null },
+      for: { id: u.id, name: u.name },
+    },
+    () =>
+      reminderMessage(
+        { for: u.name, board: board.name, title: t.title, due: t.due ? dueInWords(t.due, r.tz) : null },
+        app.webhooks.cardUrl(t.boardId, t.id),
+      ),
+  )
   return true
 }
 

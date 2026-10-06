@@ -1,4 +1,5 @@
 import scalar from '@scalar/fastify-api-reference'
+import { WEBHOOK_FORMATS } from '@kanbanto/model/api'
 import { FIELD_TYPES } from '@kanbanto/model/fields'
 import { STARTERS } from '@kanbanto/model/starters'
 import { PlanCommandSchema } from '@kanbanto/model/planningSchema'
@@ -164,7 +165,7 @@ const schemas = {
 
 const webhookHeaders = `Each delivery is a POST with a JSON body and these headers:
 
-- \`X-Kanbanto-Event\`: the event (\`board.changed\`, \`comment.added\`, \`ping\`)
+- \`X-Kanbanto-Event\`: the event (\`board.changed\`, \`comment.added\`, \`reminder.due\`, \`ping\`)
 - \`X-Kanbanto-Delivery\`: the delivery's id (the same on retries)
 - \`X-Kanbanto-Signature\`: \`t=<unix seconds>,v1=<hex>\`, where \`<hex>\` is HMAC-SHA256 of \`<t>.<raw body>\` with the webhook's secret.
   Recompute it, compare in constant time, and reject old timestamps.
@@ -224,7 +225,8 @@ The answer lists the records that changed.
       },
       {
         name: 'Webhook settings',
-        description: 'A board’s webhooks, for its owners (when a platform admin allows webhooks). What they send is under Webhooks.',
+        description:
+          'A board’s webhooks, for its owners (when a platform admin allows webhooks). What they send is under Webhooks. One with a chat app as its `format` (Slack, Google Chat, Microsoft Teams, Discord) is sent the same events as a short text the channel shows, unsigned.',
       },
       { name: 'Workspaces' },
       {
@@ -890,7 +892,8 @@ The answer lists the records that changed.
         post: {
           tags: ['Webhook settings'],
           summary: 'Add a webhook',
-          description: 'The answer includes its signing secret.',
+          description:
+            'The answer includes its signing secret. With a chat app as the `format`, `url` is a channel’s address in that app: the channel is sent a first message, which has to be taken for the webhook to be saved, and there is no secret.',
           parameters: [id('id')],
           requestBody: {
             content: {
@@ -898,6 +901,11 @@ The answer lists the records that changed.
                 schema: obj(
                   {
                     url: { ...str, format: 'uri' },
+                    format: {
+                      enum: [...WEBHOOK_FORMATS],
+                      description:
+                        'How its messages are written. `json` (the default): Kanbanto’s own data, signed. The others: text for a channel in that chat app. It can’t be changed afterwards.',
+                    },
                     events: {
                       type: 'array',
                       items: { enum: ['board.changed', 'comment.added', 'reminder.due'] },
@@ -909,7 +917,7 @@ The answer lists the records that changed.
               },
             },
           },
-          responses: { 200: json(obj({ id: str, secret: str })) },
+          responses: { 200: json(obj({ id: str, secret: { ...str, description: 'Only for the `json` format.' } }, ['id'])) },
         },
       },
       '/api/boards/{id}/webhooks/{hookId}': {
@@ -946,7 +954,7 @@ The answer lists the records that changed.
       '/api/boards/{id}/webhooks/{hookId}/secret': {
         get: {
           tags: ['Webhook settings'],
-          summary: 'Show the signing secret',
+          summary: 'Show the signing secret (a webhook that sends to a chat app has none: 400)',
           parameters: [id('id'), id('hookId')],
           responses: { 200: json(obj({ secret: str })) },
         },

@@ -219,7 +219,7 @@ function People({ onClose }: { onClose: () => void }) {
         </Card>
       )}
       {access.role === 'owner' && (
-        <Card title="Webhooks: send changes, comments and reminders to another app (Slack, n8n, Zapier…)">
+        <Card title="Webhooks: send changes, comments and reminders to another app (n8n, Zapier…), or to a channel in Slack, Google Chat, Microsoft Teams or Discord">
           <WebhookList onOpen={setHook} />
         </Card>
       )}

@@ -159,7 +159,7 @@ would mean a different moment on every computer.
 
 ## Webhooks
 
-A board's owners add them in **Board settings → Webhooks**. Each change on the board (`board.changed`) and each new
+A board's owners add them in **Board settings → People & apps**. Each change on the board (`board.changed`) and each new
 comment (`comment.added`) is POSTed to the address as JSON:
 
 ```json
@@ -206,8 +206,8 @@ function fromKanbanto(rawBody, header, secret) {
 ```
 
 **Answer with any 2xx within 10 seconds.** Anything else is retried after 1, 5, 30, 120 and 360 minutes, then given up.
-The same delivery keeps its `X-Kanbanto-Delivery` id across retries, so you can skip ones you've seen. The Webhooks
-dialog shows each webhook's latest deliveries, can send a test (`ping`), and can pause it.
+The same delivery keeps its `X-Kanbanto-Delivery` id across retries, so you can skip ones you've seen. Board settings
+shows each webhook's latest deliveries, can send a test (`ping`), and can pause it.
 
 Where webhooks may point is the platform admins' choice: public `https://` addresses only (safe for a site anyone can
 sign up to), or also `http://` and private addresses (for tools inside your network, like a self-hosted n8n). Redirects
@@ -218,6 +218,43 @@ Each webhook can be set to send only some events (`events`: `board.changed`, `co
 default). Its log (`GET /api/boards/<id>/webhooks/<webhook id>/deliveries`, `?failed=1` for problems only) shows each
 delivery's payload and the start of the answer, and `POST …/deliveries/<delivery id>/resend` sends one again. Deliveries
 are kept for a week.
+
+### To a chat channel
+
+A webhook has a **format**, chosen when it's added (`format`, in the app "Send to"): `json` is everything above. The
+others are for a channel in a chat app, which is sent the same three events as a short text it can show, with the
+card's title opening the card:
+
+| `format` | The address is | What is POSTed |
+|---|---|---|
+| `slack` | a channel's incoming webhook (`https://hooks.slack.com/services/…`) | `{ "text": "Ann moved <https://…|“Deploy”> to Done on Launch" }` |
+| `google-chat` | a space's webhook (`https://chat.googleapis.com/v1/spaces/…`) | `{ "text": "…" }`, links written the same way |
+| `teams` | a channel's workflow, the one that posts when a webhook request is received | a message holding an Adaptive Card, one line of text per change |
+| `discord` | a channel's webhook (`https://discord.com/api/webhooks/…`) | `{ "content": "Ann moved [“Deploy”](<https://…>) to Done on Launch", "allowed_mentions": { "parse": [] } }` |
+
+```bash
+curl -X POST https://kanbanto.example.com/api/boards/<id>/webhooks \
+  -H "Authorization: Bearer kbt_…" -H "Content-Type: application/json" \
+  -d '{ "url": "https://hooks.slack.com/services/T0/B0/…", "format": "slack" }'
+```
+
+What differs from a `json` webhook:
+
+- **The words are the activity log's.** A card change says what the board's activity says (added, moved, assigned,
+  renamed, a date set…); one change with several lines is one message, eight lines at most and then "and 5 more". A
+  change that only puts cards in another order says nothing. A comment is who wrote it, on which card, and its first
+  200 characters; a reminder is who it's for, the card, and when it's due.
+- **What people typed can't tell anyone.** A card called `@everyone` or `<!channel>` is written so the chat app
+  shows those characters and mentions nobody.
+- **No code to send back, no signature.** A chat app can't answer the check above, and nobody at that end would check
+  a signature. Instead, the channel is sent a first message when the webhook is added ("Kanbanto will post news from
+  Launch here.") and the webhook is only saved if the chat app takes it. On a site that sends webhooks to public
+  addresses only, the address also has to be the chat app's own, as in the table. The answer to adding one has no
+  `secret`, and the two secret routes answer 400.
+- **Sending one again** sends the same message. The format can't be changed afterwards: add another webhook.
+
+The channel's address is the key to the channel: whoever has it can post there. Card titles, people's names and the
+start of comments are posted in the channel, for everyone in it to read.
 ## AI assistants (MCP)
 
 Kanbanto speaks the [Model Context Protocol](https://modelcontextprotocol.io) at **`/api/mcp`**, so assistants can find,

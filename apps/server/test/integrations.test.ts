@@ -1167,6 +1167,130 @@ describe('webhook events', () => {
   })
 })
 
+describe('webhooks that send to a chat app', () => {
+  it('get each change as words, unsigned, after a first message; a reorder says nothing', async () => {
+    const { ann, id } = await site({ webhooks: 'any' })
+    const r = await receiver()
+    try {
+      const added = await ann.ok('POST', `/api/boards/${id}/webhooks`, { url: r.url, format: 'slack' })
+      // No signing secret: nothing at a chat app checks one.
+      expect(added).toEqual({ id: added.id })
+      expect(JSON.parse(r.got[0].body)).toEqual({ text: 'Kanbanto will post news from My first board here.' })
+      expect((await ann.request('GET', `/api/boards/${id}/webhooks/${added.id}/secret`)).status).toBe(400)
+      expect((await ann.request('POST', `/api/boards/${id}/webhooks/${added.id}/secret`)).status).toBe(400)
+      const [hook] = (await ann.ok('GET', `/api/boards/${id}/webhooks`)).webhooks
+      expect(hook).toMatchObject({ url: r.url, format: 'slack', events: ['board.changed', 'comment.added', 'reminder.due'] })
+
+      const change = (command: object) => ann.ok('POST', `/api/boards/${id}/mutations`, { mutationId: mid(), command })
+      await change({ type: 'task.update', id: 'A', fields: { title: 'Launch!' } })
+      // Only its place among the others changes: the activity log has no line for that, and nor has the channel.
+      await change({ type: 'task.move', id: 'A3', place: { before: 'A1' } })
+      await ann.ok('POST', `/api/boards/${id}/tasks/A/comments`, { body: 'Looks good' })
+      expect(await deliver()).toBe(2)
+
+      const [, renamed, comment] = r.got
+      expect(renamed.headers['x-kanbanto-signature']).toBeUndefined()
+      expect(renamed.headers['x-kanbanto-event']).toBeUndefined()
+      expect(JSON.parse(renamed.body).text).toMatch(/^Ann renamed “Launch website” to <http[^|]+\/#\/b\/[^|]+\?task=A\|“Launch!”> on My first board$/)
+      expect(JSON.parse(comment.body).text).toMatch(/^Ann commented on <[^|]+\|“Launch!”> on My first board: Looks good$/)
+
+      // The log shows the message as it went, and sending it again sends the same.
+      const log = (await ann.ok('GET', `/api/boards/${id}/webhooks/${added.id}/deliveries`)).deliveries
+      expect(log.map((d: { event: string }) => d.event)).toEqual(['comment.added', 'board.changed'])
+      expect(log[1].payload).toEqual(JSON.parse(renamed.body))
+      expect(await ann.ok('POST', `/api/boards/${id}/webhooks/${added.id}/deliveries/${log[1].id}/resend`)).toMatchObject({ ok: true })
+      expect(r.got.at(-1)!.body).toBe(renamed.body)
+      await ann.ok('POST', `/api/boards/${id}/webhooks/${added.id}/test`)
+      expect(JSON.parse(r.got.at(-1)!.body)).toEqual({ text: 'A test from Kanbanto for My first board.' })
+    } finally {
+      await r.close()
+    }
+  })
+
+  it('follow the same switches, beside a webhook that gets the data', async () => {
+    const { ann, id } = await site({ webhooks: 'any' })
+    const chat = await receiver()
+    const data = await receiver()
+    try {
+      const hook = await ann.ok('POST', `/api/boards/${id}/webhooks`, { url: chat.url, format: 'discord', events: ['comment.added'] })
+      const { secret } = await ann.ok('POST', `/api/boards/${id}/webhooks`, { url: data.url })
+      await ann.ok('POST', `/api/boards/${id}/mutations`, {
+        mutationId: mid(),
+        command: { type: 'task.update', id: 'A', fields: { title: 'Launch!' } },
+      })
+      await ann.ok('POST', `/api/boards/${id}/tasks/A/comments`, { body: 'hello @everyone' })
+      await deliver()
+      // The chat: its first message, then the comment only (card changes are switched off for it).
+      expect(chat.got).toHaveLength(2)
+      expect(JSON.parse(chat.got[1].body)).toMatchObject({
+        content: expect.stringMatching(/commented on .*: hello @everyone$/),
+        allowed_mentions: { parse: [] },
+      })
+      // The data webhook is as it always was: both events, signed, in Kanbanto's own shape.
+      expect(data.got.map((g) => g.headers['x-kanbanto-event'])).toEqual(['board.changed', 'comment.added'])
+      const [, time, sig] = String(data.got[0].headers['x-kanbanto-signature']).match(/^t=(\d+),v1=([0-9a-f]+)$/)!
+      expect(createHmac('sha256', secret).update(`${time}.${data.got[0].body}`).digest('hex')).toBe(sig)
+      expect(Object.keys(JSON.parse(data.got[0].body)).sort()).toEqual(['actor', 'at', 'board', 'changes', 'command', 'delivery', 'event', 'seq'])
+      // A format is what a webhook is made with.
+      expect((await ann.request('PATCH', `/api/boards/${id}/webhooks/${hook.id}`, { format: 'slack' })).status).toBe(400)
+      expect((await ann.request('POST', `/api/boards/${id}/webhooks`, { url: chat.url, format: 'carrier-pigeon' })).status).toBe(400)
+    } finally {
+      await chat.close()
+      await data.close()
+    }
+  })
+
+  it('where only public addresses are allowed: the chat app’s own address, and a first message it takes', async () => {
+    const { ann, id } = await site({ webhooks: 'public' })
+    const posted: { url: string; body: string; headers: Record<string, string> }[] = []
+    let status = 404
+    const { post, ask } = t.app.webhooks
+    t.app.webhooks.post = async (url, body, headers) => {
+      posted.push({ url, body, headers })
+      return { status, text: 'ok' }
+    }
+    // A chat app is never asked for the code: it couldn't answer.
+    t.app.webhooks.ask = async () => {
+      throw new Error('asked')
+    }
+    try {
+      const slack = 'https://hooks.slack.com/services/T0/B0/abc'
+      const elsewhere = await ann.request('POST', `/api/boards/${id}/webhooks`, { url: 'https://example.com/hook', format: 'slack' })
+      expect(elsewhere).toMatchObject({ status: 400, body: { error: expect.stringMatching(/isn’t a Slack address/) } })
+      expect(posted).toHaveLength(0)
+
+      const refused = await ann.request('POST', `/api/boards/${id}/webhooks`, { url: slack, format: 'slack' })
+      expect(refused).toMatchObject({
+        status: 400,
+        body: { error: expect.stringMatching(/Slack didn’t take a message at that address \(it answered 404\)/) },
+      })
+      expect((await ann.ok('GET', `/api/boards/${id}/webhooks`)).webhooks).toHaveLength(0)
+
+      status = 200
+      const { id: hookId } = await ann.ok('POST', `/api/boards/${id}/webhooks`, { url: slack, format: 'slack' })
+      expect(posted.at(-1)).toMatchObject({ url: slack, body: JSON.stringify({ text: 'Kanbanto will post news from My first board here.' }) })
+      expect(Object.keys(posted.at(-1)!.headers).sort()).toEqual(['content-type', 'user-agent'])
+
+      // Its address can change to another of the chat app's, which is greeted too; never to somewhere else.
+      const count = posted.length
+      expect((await ann.request('PATCH', `/api/boards/${id}/webhooks/${hookId}`, { url: 'https://example.com/hook' })).status).toBe(400)
+      await ann.ok('PATCH', `/api/boards/${id}/webhooks/${hookId}`, { url: `${slack}d` })
+      expect(posted).toHaveLength(count + 1)
+
+      await ann.ok('POST', `/api/boards/${id}/mutations`, {
+        mutationId: mid(),
+        command: { type: 'task.update', id: 'A', fields: { title: 'Launch!' } },
+      })
+      expect(await deliver()).toBe(1)
+      expect(posted.at(-1)!.url).toBe(`${slack}d`)
+      expect(JSON.parse(posted.at(-1)!.body).text).toMatch(/^Ann renamed “Launch website” to /)
+    } finally {
+      t.app.webhooks.post = post
+      t.app.webhooks.ask = ask
+    }
+  })
+})
+
 describe('API reference', () => {
   it('describes the API (with every command) and shows it at /api/docs', async () => {
     const spec = await new Person(t.app).ok('GET', '/api/openapi.json')

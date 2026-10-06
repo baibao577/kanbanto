@@ -131,7 +131,7 @@ export async function buildApp(
   app.decorate('db', db)
   app.decorate('hub', hub)
   const engine = new BoardEngine(db, hub)
-  const webhooks = new Webhooks(db)
+  const webhooks = new Webhooks(db, () => mail.siteUrl ?? env.appUrl ?? null)
   const calendar = new CalendarSync(db, engine, opts.google ?? google, () => mail.siteUrl ?? env.appUrl ?? null)
   engine.onChanged = (boardId, e) => {
     void webhooks.boardChanged(boardId, e).catch((err) => app.log.error({ err: loggable(err) }, 'queueing webhooks'))
