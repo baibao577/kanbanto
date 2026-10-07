@@ -12,8 +12,8 @@ no limit to how deep it goes.
 ![A card's subtasks, with Add a subtask ringed](/images/sub-1-add.webp)
 
 A subtask is a full card. It has its own list, person, due date, description and comments, and it can have subtasks
-of its own. Click one to open it; the trail above its title shows where it belongs, and each name in the trail is a
-link back up. The circle beside a subtask shows its status; click it to move the subtask to another list, such as
+of its own. Click one to open it; the trail above its title shows the board and the cards it sits inside, and each
+card's name there is a link back up. The circle beside a subtask shows its status; click it to move the subtask to another list, such as
 Done.
 
 ## How subtasks show on the board
@@ -62,7 +62,8 @@ rows to rearrange them.
 
 ## Change where a task belongs
 
-- In the open card, under **More**, click **Parent** and pick another card, or none to make it top-level.
+- In the open card, click **Change parent** at the top (**Set parent** on a card that has none) and pick another
+  card, or none to make it top-level.
 - In the Outline, drag the row to its new place.
 
 ## Good to know

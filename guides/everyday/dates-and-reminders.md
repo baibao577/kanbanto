@@ -3,9 +3,9 @@
 ## Set a due date
 
 1. Open a card.
-2. Click **Due** (or **Add a due date**).
+2. Click **Dates**, in the row of boxes under the title, then **Due** (or **Add a due date**).
 
-   ![The Due field on a card, ringed](/images/date-1-due.webp)
+   ![The Dates box open on a card, with Due ringed](/images/date-1-due.webp)
 
 3. Pick a day on the calendar, or type one in the box at the top.
 
@@ -34,14 +34,15 @@ You can also set a date while creating a card, by typing it in the title: "Call 
 
 ## What an overdue card looks like
 
-A card whose due date has passed shows the date in red on the board, until it is done.
+A card whose due date has passed shows the date in red on the board, until it is done. Open, its **Dates** box
+says how late it is ("3 days late"); before that, how long is left ("8 days left", "due today").
 
 ## Reminders
 
 A reminder is a nudge at a moment you choose.
 
 1. Open a card.
-2. Beside **Reminders**, click **Add a reminder**.
+2. Click **Dates**, then **Add a reminder** beside **Reminders**.
 3. Type a time ("tmr 10:00", "fri 2pm", "in 2 hours"), or pick one from the list.
 
 ![Adding a reminder to a card](/images/reminders.webp)

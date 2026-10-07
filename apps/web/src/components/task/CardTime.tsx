@@ -3,7 +3,6 @@ import { useCallback, useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import type { TimeEntryView } from '@kanbanto/model/api'
 import { fromDay, todayDay, toDay } from '@kanbanto/model/dates'
-import { descendantsOf } from '@kanbanto/model/indexer'
 import { formatDuration, parseDuration } from '@kanbanto/model/time'
 import { api, errorMessage } from '@/api/client'
 import { useBoard } from '@/app/board-context'
@@ -12,30 +11,6 @@ import { Avatar } from '@/components/common/bits'
 import { dayWords } from '@/components/time/logging'
 import { cn } from '@/lib/utils'
 import { Section } from './Section'
-
-/** The side field: the card's logged time (with its subtasks') and a way to log more. */
-export function TimeField({ taskId }: { taskId: string }) {
-  const { counts, idx, logTime } = useBoard()
-  const own = counts.time[taskId] ?? 0
-  const all = own + descendantsOf(idx, taskId).reduce((s, k) => s + (counts.time[k] ?? 0), 0)
-  return (
-    <div className="flex min-h-8 items-center gap-2 px-2 py-1 text-sm">
-      <span className={cn('min-w-0 tabular-nums', !all && 'text-muted-foreground')}>
-        {own ? formatDuration(own) : all ? 'None on this card' : 'None yet'}
-        {all > own && <span className="block text-xs text-muted-foreground">{formatDuration(all)} with subtasks</span>}
-      </span>
-      {logTime && (
-        <button
-          type="button"
-          onClick={() => logTime(taskId)}
-          className="ml-auto inline-flex h-7 shrink-0 items-center gap-1 rounded-md px-2 text-xs font-medium text-primary hover:bg-primary/10"
-        >
-          <Timer className="size-3.5" /> Log
-        </button>
-      )}
-    </div>
-  )
-}
 
 /** The card's time, by person: each entry's time, day and note, changed in place by whoever may. */
 export function TimeSection({ taskId }: { taskId: string }) {

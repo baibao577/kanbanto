@@ -35,7 +35,7 @@ export function CustomFields({
       }
     >
       {/* View only: every field shows its value but can't be changed. */}
-      <fieldset disabled={readOnly} className="grid min-w-0 grid-cols-2 items-start gap-2 xl:grid-cols-3">
+      <fieldset disabled={readOnly} className="grid min-w-0 grid-cols-2 items-start gap-2 sm:grid-cols-3 xl:grid-cols-4">
         {data.fields.map((f) => {
           const all = parent && f.type === 'number' && f.sum ? totalUnder(idx, f, task.id) : undefined
           return (

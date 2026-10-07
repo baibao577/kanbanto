@@ -28,7 +28,7 @@ comments.
 big work and small steps live in the same place.
 
 A card that is not inside another one is called a **project** on the screen. So "Add a project" simply adds a card at
-the top level, and an open card says "Project" above its title when nothing is above it.
+the top level, and an open card shows only its board's name above its title when nothing is above it.
 
 ## Three ways to look at the same work
 

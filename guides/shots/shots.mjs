@@ -221,6 +221,19 @@ const openBoard = async (view = 'board') => {
   await page.getByText('Launch announcement', { exact: true }).first().waitFor()
   await page.waitForTimeout(500)
 }
+/**
+ * A card's dates: the Dates tile under its title opens Start, Due, Reminders and Timeline color (the box isn't inside
+ * the card's own element, so it's found on the page).
+ */
+const openDates = async (card) => {
+  await card.getByRole('button', { name: /^Dates/ }).click()
+  const box = page.locator('[data-slot=popover-content]').filter({ hasText: 'Reminders' })
+  await box.waitFor()
+  await page.waitForTimeout(300)
+  return box
+}
+/** The button a date is shown on, in the Dates box ("Due", "Start"). */
+const dateButton = (box, label) => box.getByText(label, { exact: true }).locator('..').getByRole('button').first()
 const openCard = async (id) => {
   await page.goto(`${SITE}/#/b/${board}/board?task=${id}`)
   await page.reload()
@@ -371,20 +384,17 @@ await shot('outline', () => openBoard('outline'))
 await shot('timeline', () => openBoard('timeline'))
 await shot('due-date', async () => {
   const card = await openCard('newsletter')
-  await card.getByText('Due', { exact: true }).locator('..').getByRole('button').first().click()
+  const box = await openDates(card)
+  await dateButton(box, 'Due').click()
   await page.waitForTimeout(600)
-  return around([page.getByPlaceholder(/Type a date/), page.getByText('Add time'), card.getByText('Reminders', { exact: true })], 36)
+  return around([card.getByRole('button', { name: /^Dates/ }), page.getByPlaceholder(/Type a date/), page.getByText('Add time'), box], 36)
 })
 await shot('reminders', async () => {
   const card = await openCard('announce')
-  await card.getByRole('button', { name: 'Add a reminder' }).click()
+  const box = await openDates(card)
+  await box.getByRole('button', { name: 'Add a reminder' }).click()
   await page.waitForTimeout(600)
-  const { clip } = await around(
-    [page.getByPlaceholder(/tmr 10:00/), page.getByText('2 days before'), card.getByRole('button', { name: 'Add a reminder' })],
-    36,
-  )
-  // (From the list's own edge: the names of the card's other fields, to its left, would only be cut in half.)
-  return { clip: { ...clip, x: clip.x + 26, width: clip.width - 26 } }
+  return around([card.getByRole('button', { name: /^Dates/ }), box, page.getByPlaceholder(/tmr 10:00/), page.getByText('2 days before')], 36)
 })
 await shot('comments', async () => {
   const card = await openCard('announce')
@@ -420,7 +430,7 @@ await shot('files', async () => {
       card.getByText('Files', { exact: true }),
       card.getByText('brief.pdf'),
       card.getByRole('button', { name: 'Attach' }).first(),
-      card.getByText('Subtasks', { exact: true }),
+      card.getByText('Waiting on', { exact: true }),
     ],
     28,
   )
@@ -573,12 +583,11 @@ await shot('log-time', async () => {
 })
 await shot('card-time', async () => {
   const card = await openCard('newsletter')
-  const title = card.getByText('Time', { exact: true }).first()
-  await title.evaluate((el) => el.scrollIntoView({ block: 'center' }))
+  // (The section further down the card, not the Time logged box at its top, which says the same total.)
+  const section = card.locator('section').filter({ has: page.getByRole('heading', { name: 'Time', exact: true }) })
+  await section.evaluate((el) => el.scrollIntoView({ block: 'center' }))
   await page.waitForTimeout(400)
-  // (A little more on the left: the section's icon and the person's initials stand out from the text.)
-  const { clip } = await around([title, card.getByText('4h 30m').first(), card.getByText('Yesterday').first()], 28)
-  return { clip: { ...clip, x: clip.x - 44, width: clip.width + 44 } }
+  return around([section], 20)
 })
 await shot('my-week', async () => {
   await page.goto(`${SITE}/#/time`)
@@ -603,12 +612,22 @@ await shot('bell', async () => {
   return around([page.getByRole('button', { name: /Notifications/ }), list], 20)
 })
 await shot('follow', async () => {
+  // (Ann made the card, so she follows it: the button at the top of the card says so.)
   const card = await openCard('newsletter')
-  const unfollow = card.getByRole('button', { name: 'Unfollow', exact: true })
-  await unfollow.evaluate((el) => el.scrollIntoView({ block: 'center' }))
-  await page.waitForTimeout(400)
-  await ring(unfollow)
-  return around([unfollow, card.getByRole('button', { name: 'Delete task' })], 28)
+  const following = card.getByRole('button', { name: 'Following', exact: true })
+  await following.waitFor()
+  await ring(following)
+  // (Down to the row of boxes, so it's clear which part of the card this is.)
+  return around(
+    [
+      card.getByRole('navigation'),
+      card.getByLabel('Title'),
+      following,
+      card.getByRole('button', { name: 'Close' }),
+      card.getByRole('button', { name: /^Dates/ }),
+    ],
+    24,
+  )
 })
 await shot('notifications', async () => {
   await page.goto(`${SITE}/#/account/notifications`)
@@ -704,21 +723,13 @@ await shot('sub-2-focus', async () => {
 })
 await shot('date-1-due', async () => {
   const card = await openCard('analytics')
-  const due = card.getByText('Due', { exact: true }).locator('..').getByRole('button').first()
-  await ring(due)
-  return around(
-    [
-      card.getByText('Start', { exact: true }),
-      due,
-      card.getByText('Reminders', { exact: true }),
-      card.getByRole('button', { name: 'Add a reminder' }),
-    ],
-    40,
-  )
+  const box = await openDates(card)
+  await ring(dateButton(box, 'Due'))
+  return around([card.getByRole('button', { name: /^Dates/ }), box], 40)
 })
 await shot('date-2-typed', async () => {
   const card = await openCard('analytics')
-  await card.getByText('Due', { exact: true }).locator('..').getByRole('button').first().click()
+  await dateButton(await openDates(card), 'Due').click()
   await page.getByPlaceholder(/Type a date/).fill('fri 2pm')
   await page.waitForTimeout(700)
   return around([page.getByPlaceholder(/Type a date/), page.getByText('Add time').or(page.getByText(/time/i).last())], 40)

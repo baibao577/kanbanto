@@ -111,7 +111,7 @@ export function CardPeek({
           onClose={onClose}
           banner={
             viewOnly && (
-              <div className="flex items-center gap-2 border-b bg-muted/60 px-6 py-2.5 pr-12 text-xs text-muted-foreground">
+              <div className="flex items-center gap-2 border-b bg-muted/60 px-6 py-2.5 text-xs text-muted-foreground">
                 <Eye className="size-4 shrink-0" />
                 <span className="min-w-0 flex-1 truncate">
                   View only, on <span className="font-medium text-foreground">{data.board.name}</span>

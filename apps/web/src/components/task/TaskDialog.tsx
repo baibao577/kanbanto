@@ -1,63 +1,26 @@
-import {
-  Archive,
-  ArrowSquareRight,
-  BellRinging,
-  BellSlash,
-  CaretDown,
-  CaretRight,
-  ChatCircle,
-  CheckCircle,
-  Circle,
-  Crosshair,
-  ListChecks,
-  Plus,
-  Prohibit,
-  Trash,
-  X,
-} from '@phosphor-icons/react'
-import { formatDay, formatMoment } from '@/lib/format'
+import { CheckCircle, Circle, ListChecks, Prohibit, X } from '@phosphor-icons/react'
+import { formatMoment } from '@/lib/format'
 import { changedAt } from '@kanbanto/model/table'
-import { api, errorMessage } from '@/api/client'
-import { toast } from 'sonner'
-import { cn } from '@/lib/utils'
 import { useMediaQuery } from '@/lib/useMediaQuery'
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { BoardContext, useBoard } from '@/app/board-context'
-import { ColorSwatches, LabelChip, PriorityIcon, ProgressBar, StatusDot, StatusPill } from '@/components/common/bits'
+import { ProgressBar, StatusDot, StatusPill } from '@/components/common/bits'
 import { QuickAdd } from '@/components/board/QuickAdd'
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from '@/components/ui/alert-dialog'
-import { Button } from '@/components/ui/button'
-import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { ancestorsOf, descendantsOf, indexFor, statusCol } from '@kanbanto/model/indexer'
-import { COLORS, tone } from '@kanbanto/model/colors'
+import { Dialog, DialogContent } from '@/components/ui/dialog'
+import { indexFor, statusCol } from '@kanbanto/model/indexer'
 import type { TaskFields } from '@kanbanto/model/commands'
-import { EPOCH, PRIORITIES, PRIORITY_LABEL, type Priority } from '@kanbanto/model/types'
+import { EPOCH } from '@kanbanto/model/types'
 import { ArchivedBanner } from './ArchivedTask'
 import { AttachmentsSection } from './Attachments'
-import { TimeField, TimeSection } from './CardTime'
+import { CardHeader } from './CardHeader'
+import { TimeSection } from './CardTime'
 import { CommentsSection } from './Comments'
 import { CustomFields } from './CustomFields'
 import { LinkedFromSection } from './LinkedFrom'
 import { Description } from './Description'
 import { useCardFiles } from '@/data/cardFiles'
-import { LabelPicker } from './LabelPicker'
-import { Reminders } from './Reminders'
-import { TitleDateChip } from '@/components/text/TitleDate'
-import { useTitleDate } from '@/components/text/useTitleDate'
 import { Section } from './Section'
-import { DateField, FieldButton, PersonPicker, TaskPicker } from './pickers'
+import { FieldButton, TaskPicker } from './pickers'
 
 /** The card back: everything about one task, Trello-style. */
 export function TaskDialog({
@@ -78,9 +41,11 @@ export function TaskDialog({
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
       <DialogContent
+        // (The ✕ is in the card's own top row, with its other buttons: see CardHeader.)
+        showCloseButton={false}
         // One column that never grows past the dialog: a long name inside (a parent, say) is cut, not the card widened.
-        // On wide screens it's as tall as the window, with the comments as a third column (each column scrolls), and
-        // wide enough for the side column to put each field's name and value on one line.
+        // On wide screens it's as tall as the window: the header stays put, and under it the card and its comments are
+        // two columns that each scroll.
         className="max-h-[calc(100dvh-4rem)] grid-cols-[minmax(0,1fr)] gap-0 overflow-y-auto p-0 sm:max-w-3xl lg:max-w-4xl xl:flex xl:h-[calc(100dvh-4rem)] xl:max-w-[1280px] xl:flex-col xl:overflow-hidden"
         // Opening a card is for reading it: nothing in it is put into editing (on a phone, a focused title brings up
         // the keyboard). A card made just now starts in its title, so its name can be typed straight away.
@@ -128,22 +93,25 @@ function ArchivedCard({ id, onClose }: { id: string; onClose: () => void }) {
   )
 }
 
+/**
+ * The card under its header (see CardHeader): what the card is, in a wide column (the board's own fields, its
+ * description, subtasks, files, what it waits on, what links to it, the time logged on it), and beside it, on wide
+ * screens, its comments. Narrower, the comments come last in the one column.
+ */
 function TaskDetail({ id, onClose }: { id: string; onClose: () => void }) {
-  const { data, idx, run, openTask, createTask, focus, readOnly, onActivity, moveToBoard, logTime, counts, canComment } = useBoard()
+  const { data, idx, run, openTask, createTask, readOnly, onActivity, logTime } = useBoard()
   // Wide enough for the comments to have their own column.
   const wide = useMediaQuery('(min-width: 1280px)')
+  // The card has scrolled under the header (wide screens, where the header stays put).
+  const [scrolled, setScrolled] = useState(false)
   // The card's files, shared by the Files section, comments and the description (# references).
   const cardFiles = useCardFiles(data.board.id, id, onActivity)
   const t = data.tasks[id]
   const kids = idx.childrenOf.get(id) ?? []
-  const col = statusCol(idx, id)
-  const derived = data.board.mode === 'derived' && kids.length > 0
-  const path = ancestorsOf(data.tasks, id)
-  const labelById = useMemo(() => new Map(data.labels.map((l) => [l.id, l])), [data.labels])
   const patch = (fields: TaskFields) => run({ type: 'task.update', id, fields })
+  const waitingOn = t.blockedBy.filter((b) => b in data.tasks)
 
-  // A task can't move under itself or anything below it, and can't wait on itself.
-  const notParent = useMemo(() => new Set([id, ...descendantsOf(idx, id)]), [idx, id])
+  // A task can't wait on itself (or twice on the same one).
   const notBlocker = useMemo(() => new Set([id, ...t.blockedBy]), [id, t.blockedBy])
 
   // L: log time on this card (not while typing, or with another box open over it).
@@ -162,49 +130,14 @@ function TaskDetail({ id, onClose }: { id: string; onClose: () => void }) {
 
   return (
     <>
-      <div className="relative px-6 pt-5 pr-24">
-        {/* Narrower screens: the comments are at the bottom; this goes there. */}
-        {!wide && (counts.comments[id] > 0 || canComment) && (
-          <button
-            type="button"
-            onClick={() => document.getElementById('card-comments')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
-            className="absolute top-3.5 right-12 inline-flex h-7 items-center gap-1 rounded-md px-2 text-xs text-muted-foreground hover:bg-accent hover:text-foreground"
-            title="Go to the comments"
-          >
-            <ChatCircle className="size-4" /> {counts.comments[id] || 'Comment'}
-          </button>
-        )}
-        {/* One line: short names in full, long ones share what's left and end in … */}
-        <nav className="mb-1 grid min-h-5 auto-cols-[minmax(0,max-content)] grid-flow-col items-center justify-start gap-1 text-xs text-muted-foreground">
-          {path.length === 0 ? (
-            <span>Project</span>
-          ) : (
-            path.map((a, i) => (
-              <span key={a} className="flex min-w-0 items-center gap-1">
-                {i > 0 && <CaretRight className="size-3 shrink-0" />}
-                <button onClick={() => openTask(a)} title={data.tasks[a].title} className="truncate hover:text-foreground hover:underline">
-                  {data.tasks[a].title}
-                </button>
-              </span>
-            ))
-          )}
-        </nav>
-        <DialogTitle className="sr-only">{t.title}</DialogTitle>
-        <DialogDescription className="sr-only">Task details</DialogDescription>
-        <TitleField
-          key={`title-${id}`}
-          title={t.title}
-          readOnly={readOnly}
-          // A reminder from the title is added to the card's others.
-          onSave={(title, fields) =>
-            patch({ ...fields, title, ...(fields.reminders && { reminders: [...(t.reminders ?? []), ...fields.reminders] }) })
-          }
-        />
-      </div>
+      <CardHeader id={id} onClose={onClose} wide={wide} scrolled={scrolled} />
 
-      <div className="grid grid-cols-[minmax(0,1fr)] items-start gap-6 px-6 pt-4 pb-6 md:grid-cols-[minmax(0,1fr)_20rem] md:gap-0 xl:min-h-0 xl:flex-1 xl:grid-cols-[minmax(0,1fr)_20rem_22rem] xl:grid-rows-[minmax(0,1fr)] xl:items-stretch xl:pb-0">
-        {/* Main column */}
-        <div className="min-w-0 divide-y md:pr-6 xl:min-h-0 xl:overflow-y-auto xl:pb-6 [&>*]:py-5 [&>*:first-child]:pt-0 [&>*:last-child]:pb-0">
+      <div className="grid grid-cols-[minmax(0,1fr)] xl:min-h-0 xl:flex-1 xl:grid-cols-[minmax(0,1fr)_28rem] xl:grid-rows-[minmax(0,1fr)]">
+        {/* The card itself */}
+        <div
+          onScroll={(e) => setScrolled(e.currentTarget.scrollTop > 0)}
+          className="min-w-0 divide-y divide-border/60 px-6 pb-6 xl:min-h-0 xl:overflow-y-auto [&>*]:py-4 [&>*:first-child]:pt-1 [&>*:last-child]:pb-0"
+        >
           {/* The board's own fields: what this kind of card is about, so they come first. */}
           <CustomFields task={t} readOnly={readOnly} onChange={(custom) => patch({ custom })} />
           <Description
@@ -217,8 +150,6 @@ function TaskDetail({ id, onClose }: { id: string; onClose: () => void }) {
             draftId={`${data.board.id}:${id}`}
             onSave={(description) => patch({ description })}
           />
-
-          <AttachmentsSection cardFiles={cardFiles} />
 
           <Section
             icon={<ListChecks />}
@@ -272,29 +203,29 @@ function TaskDetail({ id, onClose }: { id: string; onClose: () => void }) {
             )}
           </Section>
 
-          <Section icon={<Prohibit />} title="Waiting on" count={t.blockedBy.filter((b) => b in data.tasks).length}>
-            {t.blockedBy.filter((b) => b in data.tasks).length > 0 && (
+          <AttachmentsSection cardFiles={cardFiles} />
+
+          <Section icon={<Prohibit />} title="Waiting on" count={waitingOn.length}>
+            {waitingOn.length > 0 && (
               <ul className="mb-1">
-                {t.blockedBy
-                  .filter((b) => b in data.tasks)
-                  .map((b) => (
-                    <li key={b} className="group flex items-center gap-2 rounded-md px-1 py-1 hover:bg-accent/60">
-                      <StatusDot category={idx.category.get(b)!} color={statusCol(idx, b).color} />
-                      <button onClick={() => openTask(b)} className="min-w-0 flex-1 truncate text-left text-sm">
-                        {data.tasks[b].title}
+                {waitingOn.map((b) => (
+                  <li key={b} className="group flex items-center gap-2 rounded-md px-1 py-1 hover:bg-accent/60">
+                    <StatusDot category={idx.category.get(b)!} color={statusCol(idx, b).color} />
+                    <button onClick={() => openTask(b)} className="min-w-0 flex-1 truncate text-left text-sm">
+                      {data.tasks[b].title}
+                    </button>
+                    <StatusPill col={statusCol(idx, b)} />
+                    {!readOnly && (
+                      <button
+                        aria-label="Stop waiting on this"
+                        onClick={() => patch({ blockedBy: t.blockedBy.filter((x) => x !== b) })}
+                        className="grid size-6 place-items-center rounded text-muted-foreground opacity-0 group-hover:opacity-100 hover:text-foreground"
+                      >
+                        <X className="size-3.5" />
                       </button>
-                      <StatusPill col={statusCol(idx, b)} />
-                      {!readOnly && (
-                        <button
-                          aria-label="Stop waiting on this"
-                          onClick={() => patch({ blockedBy: t.blockedBy.filter((x) => x !== b) })}
-                          className="grid size-6 place-items-center rounded text-muted-foreground opacity-0 group-hover:opacity-100 hover:text-foreground"
-                        >
-                          <X className="size-3.5" />
-                        </button>
-                      )}
-                    </li>
-                  ))}
+                    )}
+                  </li>
+                ))}
               </ul>
             )}
             {!readOnly && (
@@ -315,6 +246,12 @@ function TaskDetail({ id, onClose }: { id: string; onClose: () => void }) {
 
           <TimeSection taskId={id} />
 
+          <p className="text-[11px] leading-relaxed text-muted-foreground">
+            Created {formatWhen(t.createdAt)}
+            {/* (The last real change, as the Outline's Updated column and a list sorted by it have it.) */}
+            {changedAt(t) !== t.createdAt && <> · updated {formatWhen(changedAt(t))}</>}
+          </p>
+
           {!wide && (
             <div id="card-comments" className="scroll-mt-4">
               <CommentsSection taskId={id} cardFiles={cardFiles} />
@@ -322,405 +259,14 @@ function TaskDetail({ id, onClose }: { id: string; onClose: () => void }) {
           )}
         </div>
 
-        {/* Side column */}
-        <aside className="border-t pt-5 md:sticky md:top-4 md:border-t-0 md:border-l md:pt-0 md:pl-4 xl:static xl:min-h-0 xl:overflow-y-auto xl:pr-4 xl:pb-6">
-          {/* One line each, in groups, the most used first; the last two groups fold. (The board's own fields are in the
-              main column.) View only: every field shows its value but can't be changed. */}
-          <div className="min-w-0 divide-y [&>*]:py-3 [&>*:first-child]:pt-0">
-            <fieldset disabled={readOnly} className="min-w-0 space-y-1.5">
-              <SideField label="Status">
-                {derived ? (
-                  <div className="flex min-h-8 flex-wrap items-center gap-x-2 px-2 py-1 text-sm">
-                    <StatusPill col={col} />
-                    <span className="text-xs whitespace-nowrap text-muted-foreground">follows its subtasks</span>
-                  </div>
-                ) : (
-                  <Select value={col.id} onValueChange={(v) => patch({ status: v })}>
-                    <SelectTrigger size="sm" className="w-full border-transparent shadow-none hover:bg-accent">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {data.columns.map((c) => (
-                        <SelectItem key={c.id} value={c.id}>
-                          <StatusDot category={c.category} color={c.color} /> {c.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                )}
-              </SideField>
-              <SideField label="Assignee">
-                <PersonPicker value={t.assigneeId} onChange={(assigneeId) => patch({ assigneeId })} />
-              </SideField>
-              <SideField label="Priority">
-                <Select value={t.priority ?? 'none'} onValueChange={(v) => patch({ priority: v === 'none' ? null : (v as Priority) })}>
-                  <SelectTrigger
-                    size="sm"
-                    aria-label="Priority"
-                    className={cn('w-full border-transparent shadow-none hover:bg-accent', !t.priority && 'text-muted-foreground')}
-                  >
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {PRIORITIES.map((p) => (
-                      <SelectItem key={p} value={p}>
-                        <PriorityIcon priority={p} /> {PRIORITY_LABEL[p]}
-                      </SelectItem>
-                    ))}
-                    <SelectItem value="none" className="text-muted-foreground">
-                      No priority
-                    </SelectItem>
-                  </SelectContent>
-                </Select>
-              </SideField>
-              <SideField label="Labels">
-                <div className="flex flex-wrap items-center gap-1 px-1">
-                  {t.labels
-                    .map((l) => labelById.get(l))
-                    .filter((l) => !!l)
-                    .map((l) => (
-                      <LabelPicker
-                        key={l.id}
-                        selected={t.labels}
-                        onChange={(labels) => patch({ labels })}
-                        trigger={
-                          <button className="rounded transition-[filter] hover:brightness-95">
-                            <LabelChip label={l} className="h-7 px-2 text-xs" />
-                          </button>
-                        }
-                      />
-                    ))}
-                  <LabelPicker
-                    selected={t.labels}
-                    onChange={(labels) => patch({ labels })}
-                    trigger={
-                      <button
-                        aria-label="Add a label"
-                        className={
-                          t.labels.length
-                            ? 'grid size-7 place-items-center rounded bg-secondary text-muted-foreground hover:text-foreground'
-                            : 'flex h-7 items-center gap-1.5 rounded px-1.5 text-sm text-muted-foreground hover:bg-accent hover:text-foreground'
-                        }
-                      >
-                        <Plus className="size-3.5" />
-                        {!t.labels.length && 'Add a label'}
-                      </button>
-                    }
-                  />
-                </div>
-              </SideField>
-            </fieldset>
-            <SideGroup
-              id="dates"
-              title="Dates"
-              summary={t.due ? `Due ${formatDay(t.due)}` : t.start ? `Starts ${formatDay(t.start)}` : undefined}
-              readOnly={readOnly}
-            >
-              <SideField label="Start">
-                <DateField icon={false} value={t.start} placeholder="Add a start date" onChange={(start) => patch({ start: start ?? '' })} />
-              </SideField>
-              <SideField label="Due">
-                <DateField
-                  icon={false}
-                  value={t.due}
-                  placeholder="Add a due date"
-                  defaultTime="17:00"
-                  onChange={(due) => patch({ due: due ?? '' })}
-                />
-              </SideField>
-              <SideField label="Reminders">
-                <Reminders task={t} readOnly={readOnly} onChange={(reminders) => patch({ reminders })} />
-              </SideField>
-            </SideGroup>
-            <SideGroup id="more" title="More" readOnly={readOnly}>
-              <SideField label="Time">
-                <TimeField taskId={id} />
-              </SideField>
-              <SideField label="Parent">
-                <TaskPicker
-                  placeholder="Move it under…"
-                  exclude={notParent}
-                  noneLabel="No parent (make it a project)"
-                  onPick={(p) => run({ type: 'task.move', id, parentId: p })}
-                  trigger={<FieldButton empty={!t.parentId}>{t.parentId ? data.tasks[t.parentId]?.title : 'None — it’s a project'}</FieldButton>}
-                />
-              </SideField>
-              <SideField label="Timeline color">
-                <Popover>
-                  <PopoverTrigger asChild>
-                    <FieldButton empty={!t.color}>
-                      <span
-                        className="size-4 shrink-0 rounded"
-                        style={t.color ? { backgroundColor: tone(t.color) } : { boxShadow: 'inset 0 0 0 1.5px var(--border)' }}
-                      />
-                      {t.color ? COLORS.find((c) => c.id === t.color)?.name : 'Same as its status'}
-                    </FieldButton>
-                  </PopoverTrigger>
-                  <PopoverContent align="start" className="w-64">
-                    <ColorSwatches value={t.color} noneLabel="Same as its status" onChange={(color) => patch({ color: color ?? null })} />
-                  </PopoverContent>
-                </Popover>
-              </SideField>
-            </SideGroup>
-          </div>
-
-          <div className="space-y-1 border-t pt-4">
-            {canComment && <FollowTask boardId={data.board.id} id={id} assigneeId={t.assigneeId} />}
-            {kids.length > 0 && (
-              <Button
-                variant="ghost"
-                size="sm"
-                className="w-full justify-start gap-2"
-                onClick={() => {
-                  focus(id)
-                  onClose()
-                }}
-              >
-                <Crosshair /> Focus on its subtasks
-              </Button>
-            )}
-            {!readOnly && (
-              <Button variant="ghost" size="sm" className="w-full justify-start gap-2" onClick={() => moveToBoard(id)}>
-                <ArrowSquareRight /> Move to another board…
-              </Button>
-            )}
-            {!readOnly && col.category !== 'done' && (
-              <Button
-                variant="ghost"
-                size="sm"
-                className="w-full justify-start gap-2"
-                title="Moves it (and its unfinished subtasks) to the done list, then archives it"
-                onClick={() => {
-                  if (run({ type: 'task.archive', id, complete: true })) onClose()
-                }}
-              >
-                <CheckCircle /> Complete and archive
-              </Button>
-            )}
-            {!readOnly && (
-              <Button
-                variant="ghost"
-                size="sm"
-                className="w-full justify-start gap-2"
-                onClick={() => {
-                  if (run({ type: 'task.archive', id })) onClose()
-                }}
-              >
-                <Archive /> Archive{kids.length > 0 && ` (with ${kids.length} subtask${kids.length === 1 ? '' : 's'})`}
-              </Button>
-            )}
-            {!readOnly && <DeleteTask id={id} title={t.title} onDeleted={onClose} />}
-          </div>
-          <p className="mt-3 px-2 text-[11px] leading-relaxed text-muted-foreground">
-            Created {formatWhen(t.createdAt)}
-            {/* (The last real change, as the Outline's Updated column and a list sorted by it have it.) */}
-            {changedAt(t) !== t.createdAt && <> · updated {formatWhen(changedAt(t))}</>}
-          </p>
-        </aside>
-
         {/* Wide screens: the conversation as its own column, the box to write in always in view. */}
         {wide && (
-          <div className="flex min-h-0 flex-col border-l pb-4 pl-6">
+          <div className="flex min-h-0 flex-col border-l px-5 pt-1 pb-4">
             <CommentsSection taskId={id} cardFiles={cardFiles} column />
           </div>
         )}
       </div>
     </>
-  )
-}
-
-/**
- * The task's title, edited in place. Only a change you made is saved: if someone renames the task while it's open,
- * their title shows here (unless you're typing), and clicking in and out again doesn't put the old one back.
- */
-function TitleField({ title, readOnly, onSave }: { title: string; readOnly: boolean; onSave: (title: string, fields: TaskFields) => void }) {
-  const ref = useRef<HTMLTextAreaElement>(null)
-  // The title as it was when editing started (so only newly typed date words count).
-  const [atFocus, setAtFocus] = useState(title)
-  const [draft, setDraft] = useState<string | null>(null)
-  useEffect(() => {
-    if (ref.current && document.activeElement !== ref.current) ref.current.value = title
-  }, [title])
-  // A time typed into the title while editing (not one that was already there) can become the due date.
-  const date = useTitleDate(draft ?? '')
-  const fresh = !!date.when && !atFocus.toLowerCase().includes(date.when.text.toLowerCase())
-  return (
-    <div>
-      <textarea
-        ref={ref}
-        defaultValue={title}
-        rows={1}
-        aria-label="Title"
-        readOnly={readOnly}
-        onFocus={(e) => {
-          setAtFocus(e.target.value)
-          setDraft(e.target.value)
-        }}
-        onChange={(e) => setDraft(e.target.value)}
-        onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), e.currentTarget.blur())}
-        onBlur={(e) => {
-          const v = e.target.value.trim()
-          const { title: next, fields } = fresh ? date.apply(v) : { title: v, fields: {} }
-          if (next && (next !== atFocus.trim() || Object.keys(fields).length)) {
-            onSave(next, fields)
-            e.target.value = next
-          } else e.target.value = title
-          setDraft(null)
-          date.reset()
-        }}
-        className="-mx-2 w-[calc(100%+1rem)] resize-none rounded-md px-2 py-1 text-xl font-semibold outline-none [field-sizing:content] hover:bg-accent/60 focus:bg-background focus:ring-2 focus:ring-ring/40"
-      />
-      {fresh && <TitleDateChip state={date} className="mt-1" />}
-    </div>
-  )
-}
-
-/** A field in the side column: its name and its value on one line (the value may take more lines, like labels). */
-function SideField({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <div className="grid grid-cols-[6rem_minmax(0,1fr)] items-start">
-      <p className="truncate pl-2 text-[13px] leading-8 font-medium text-foreground" title={label}>
-        {label}
-      </p>
-      <div className="min-w-0">{children}</div>
-    </div>
-  )
-}
-
-const foldKey = (id: string) => `kankan:card:fold:${id}`
-
-/**
- * A group of side fields under a small heading that folds it away (remembered on this device, for every card).
- * Folded, the heading says the one thing worth knowing (`summary`).
- */
-function SideGroup({
-  id,
-  title,
-  summary,
-  readOnly,
-  children,
-}: {
-  id: string
-  title: string
-  summary?: string
-  readOnly: boolean
-  children: ReactNode
-}) {
-  const [folded, setFolded] = useState(() => {
-    try {
-      return localStorage.getItem(foldKey(id)) === '1'
-    } catch {
-      return false
-    }
-  })
-  const toggle = () => {
-    setFolded(!folded)
-    try {
-      localStorage.setItem(foldKey(id), folded ? '0' : '1')
-    } catch {
-      // (Not remembered, then.)
-    }
-  }
-  return (
-    <div>
-      <button
-        type="button"
-        onClick={toggle}
-        aria-expanded={!folded}
-        className="flex h-7 w-full items-center gap-1 rounded pl-1 pr-2 text-left text-sm font-semibold text-foreground hover:bg-accent"
-      >
-        {folded ? <CaretRight className="size-3 shrink-0 text-muted-foreground" /> : <CaretDown className="size-3 shrink-0 text-muted-foreground" />}
-        {title}
-        {folded && summary && <span className="ml-auto truncate pl-2 text-xs font-normal text-muted-foreground">{summary}</span>}
-      </button>
-      {!folded && (
-        <fieldset disabled={readOnly} className="mt-1 min-w-0 space-y-1.5">
-          {children}
-        </fieldset>
-      )}
-    </div>
-  )
-}
-
-/**
- * Whether you follow this card, and the button to start or stop. Followers are told (bell, morning email, desktop
- * notifications) about its comments and what happens to it; people follow the cards they're part of without asking.
- */
-function FollowTask({ boardId, id, assigneeId }: { boardId: string; id: string; assigneeId?: string }) {
-  const [following, setFollowing] = useState<boolean | null>(null)
-  // (Asked again when it's assigned: that can start it. Commenting does too, so the comments say when they change.)
-  const { onActivity } = useBoard()
-  useEffect(() => {
-    const load = () =>
-      api<{ following: boolean }>('GET', `/boards/${boardId}/tasks/${id}/follow`).then(
-        (r) => setFollowing(r.following),
-        () => {},
-      )
-    void load()
-    return onActivity((m) => {
-      if (m.type === 'comment' && m.taskId === id && m.action === 'added') void load()
-    })
-  }, [boardId, id, assigneeId, onActivity])
-  if (following === null) return null
-  const set = (next: boolean) => {
-    setFollowing(next)
-    api<{ following: boolean }>('PUT', `/boards/${boardId}/tasks/${id}/follow`, { following: next }).then(
-      (r) => setFollowing(r.following),
-      (e) => {
-        setFollowing(!next)
-        toast.error(errorMessage(e))
-      },
-    )
-  }
-  return (
-    <Button
-      variant="ghost"
-      size="sm"
-      className="w-full justify-start gap-2"
-      aria-pressed={following}
-      title={
-        following
-          ? 'You’re told about comments and changes on this card. Click to stop.'
-          : 'Be told about comments and changes on this card (bell, morning email, desktop notifications)'
-      }
-      onClick={() => set(!following)}
-    >
-      {following ? <BellSlash /> : <BellRinging />} {following ? 'Unfollow' : 'Follow'}
-    </Button>
-  )
-}
-
-function DeleteTask({ id, title, onDeleted }: { id: string; title: string; onDeleted: () => void }) {
-  const { idx, run } = useBoard()
-  const n = descendantsOf(idx, id).length
-  return (
-    <AlertDialog>
-      <AlertDialogTrigger asChild>
-        <Button variant="ghost" size="sm" className="w-full justify-start gap-2 text-destructive hover:text-destructive">
-          <Trash /> Delete task
-        </Button>
-      </AlertDialogTrigger>
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle>Delete “{title}”?</AlertDialogTitle>
-          <AlertDialogDescription>
-            {n ? `Its ${n} ${n === 1 ? 'subtask' : 'subtasks'} will be deleted too. ` : ''}This can’t be undone.
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogCancel>Cancel</AlertDialogCancel>
-          <AlertDialogAction
-            className="bg-destructive text-white hover:bg-destructive/90"
-            onClick={() => {
-              run({ type: 'task.delete', id })
-              onDeleted()
-            }}
-          >
-            Delete
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
   )
 }
 

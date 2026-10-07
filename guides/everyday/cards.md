@@ -24,44 +24,43 @@ Click a card to open it.
 
 ![An open card](/images/card.webp)
 
-**On the left**
+**At the top**
 
+- **Where it is.** The board's name, then the cards this one sits inside, if any. Click one to open it.
+- **Set parent** (or **Change parent**). Puts the card inside another card, or takes it out again. A card with no
+  parent is called a **project**.
+- **Follow.** Be told about its comments and changes. See [notifications](/people/notifications).
+- **⋯** has the rest: Focus on its subtasks, Move to another board, Complete and archive, Archive and Delete task.
 - **Title.** Click it to rename.
-- **Fields.** The board's [own fields](/everyday/fields), when it has any: a box for each, such as a client or an
-  amount.
-- **Description.** The full story, with headings, lists and checklists. See
-  [writing a description](/everyday/descriptions).
-- **Files.** Anything attached to the card.
-- **Subtasks.** Smaller cards inside this one.
-- **Waiting on.** Other cards that have to finish first. Until they are done, the card shows an amber **Waiting**
-  sign on the board.
 
-**In the middle**, one line each, the ones used most first:
+**The row of boxes under the title** is the same six on every card. Each says what the card has, in grey when it has
+nothing, and is the button that changes it:
 
 - **Status.** The list it is in. Changing it here is the same as dragging the card.
 - **Assignee.** The person responsible, picked from the people on the board: everyone it is shared with, which on a
   workspace board includes the workspace's members. One per card.
 - **Priority.** Urgent, High, Medium, Low, or none.
-- **Labels.** Colored tags you make up, such as "design" or "bug".
+- **Dates.** Opens **Start**, **Due** and **Reminders** (see
+  [due dates and reminders](/everyday/dates-and-reminders)) and **Timeline color**, the color of its bar in the
+  Timeline view. The box says how long is left, and shows a small alarm clock when a reminder is set.
+- **Labels.** Colored tags you make up, such as "design" or "bug". The first three show, then how many more.
+- **Time logged.** Time logged on this card. Click it to log more.
 
-Under **Dates**:
+**On the left**, the card itself:
 
-- **Start** and **Due.** See [due dates and reminders](/everyday/dates-and-reminders).
-- **Reminders.** A nudge at a time you choose.
-
-Under **More**:
-
-- **Time.** Time logged on this card.
-- **Parent.** The card it sits inside. A card with no parent is called a **project**, which is why the top of the
-  card says "Project".
-- **Timeline color.** The color of its bar in the Timeline view.
-
-Click **Dates** or **More** to fold that group away. It stays folded on every card you open on that device, until
-you click it again. Folded, **Dates** still says when the card is due.
+- **Fields.** The board's [own fields](/everyday/fields), when it has any: a box for each, such as a client or an
+  amount.
+- **Description.** The full story, with headings, lists and checklists. See
+  [writing a description](/everyday/descriptions).
+- **Subtasks.** Smaller cards inside this one.
+- **Files.** Anything attached to the card.
+- **Waiting on.** Other cards that have to finish first. Until they are done, the card shows an amber **Waiting**
+  sign on the board.
 
 **On the right:** [comments](/everyday/comments-and-files).
 
-On a narrow screen these are stacked, with a **Comment** button at the top to jump to the comments.
+On a narrow screen there is one column, with the comments last and a **Comment** button at the top to jump to them.
+The row of boxes wraps onto more rows.
 
 ## What a card shows on the board
 
@@ -106,7 +105,7 @@ straight onto a list of the board you have open.
 - **Undo** anything with <kbd>⌘Z</kbd> (<kbd>Ctrl+Z</kbd> on Windows).
 - **Who can change cards:** people who can edit the board. People who can only view it can read and comment.
 - **Labels belong to the board.** Make and rename them from any card's Labels, or in Board settings.
-- **Deleting removes a card**, with its subtasks. **Delete task** is at the very bottom of an open card; scroll down to it. An **Undo**
+- **Deleting removes a card**, with its subtasks. **Delete task** is under the **⋯** at the top of an open card. An **Undo**
   button appears for a few seconds; after that it is gone. If you might want it again, archive it instead.
 - **Everyone sees changes at once.** If a teammate has the board open, your change appears on their screen.
 

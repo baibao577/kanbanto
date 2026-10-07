@@ -33,14 +33,15 @@ Quick buttons add 15m, 30m, 1h, 2h or 4h, and the box shows how much you have lo
 
 ## Log from a card
 
-- Open a card and click **Log** beside **Time**, or
+- Open a card and click **Time logged**, in the row of boxes under its title, or
 - choose **Log time…** in the card's **⋯** menu.
 
 The box opens with that card already picked.
 
 ## See the time on a card
 
-An open card shows its total under **Time**, and the entries behind it: who, when, how long, and the note.
+An open card shows its total in **Time logged**, and further down, under **Time**, the entries behind it: who,
+when, how long, and the note.
 
 ![A card's logged time](/images/card-time.webp){.medium}
 

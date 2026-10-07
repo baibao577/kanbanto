@@ -16,7 +16,7 @@ export function ArchivedBanner({ id, onClose }: { id: string; onClose: () => voi
   const from = t.archivedList ?? data.columns.find((c) => c.id === t.status)?.name
 
   return (
-    <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b bg-muted/60 px-6 py-3 pr-12 text-sm">
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b bg-muted/60 px-6 py-3 text-sm">
       <Archive className="size-4 shrink-0 text-muted-foreground" />
       <span className="min-w-0 flex-1 text-muted-foreground">
         Archived {t.archivedAt ? formatDistanceToNow(parseISO(t.archivedAt), { addSuffix: true }) : ''}

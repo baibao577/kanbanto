@@ -28,11 +28,12 @@ mentioned you on it. From then on the bell tells you about:
 
 Several changes in a row by the same person show as one line, and you are never told about your own changes.
 
-To follow any other card, open it and click **Follow** in the side column, above Delete. The same button says
-**Unfollow** once you follow it.
+To follow any other card, open it and click **Follow** at the top of the card. The button says **Following** once
+you do; click it again to stop.
 
-![Unfollow, with the card's other actions](/images/follow.webp){.medium}
- A line under the bell from a followed card has its own **Unfollow** too.
+![Following, ringed, at the top of an open card](/images/follow.webp)
+
+A line under the bell from a followed card has its own **Unfollow**.
 
 Once you unfollow a card, commenting on it again does not follow it again. Being assigned the card does.
 

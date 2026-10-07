@@ -89,8 +89,11 @@ export function TaskPicker({
   )
 }
 
-/** Pick one of the board's people (its members). `value` / `onChange` are their account ids. */
-export function PersonPicker({ value, onChange }: { value?: string; onChange: (memberId: string | null) => void }) {
+/**
+ * Pick one of the board's people (its members). `value` / `onChange` are their account ids. `trigger`: what opens it,
+ * where a field's own line isn't what's wanted (the card window's Assignee cell).
+ */
+export function PersonPicker({ value, onChange, trigger }: { value?: string; onChange: (memberId: string | null) => void; trigger?: ReactNode }) {
   const { data, openShare, access } = useBoard()
   const [open, setOpen] = useState(false)
   const [q, setQ] = useState('')
@@ -107,17 +110,19 @@ export function PersonPicker({ value, onChange }: { value?: string; onChange: (m
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <FieldButton empty={!current}>
-          {current ? (
-            <>
-              <Avatar name={current.name} picture={current.picture} className="size-5 text-[9px]" /> {current.name}
-            </>
-          ) : (
-            <>
-              <UserCircle className="size-4" /> Assign someone
-            </>
-          )}
-        </FieldButton>
+        {trigger ?? (
+          <FieldButton empty={!current}>
+            {current ? (
+              <>
+                <Avatar name={current.name} picture={current.picture} className="size-5 text-[9px]" /> {current.name}
+              </>
+            ) : (
+              <>
+                <UserCircle className="size-4" /> Assign someone
+              </>
+            )}
+          </FieldButton>
+        )}
       </PopoverTrigger>
       <PopoverContent align="start" className="w-64 p-0">
         <Command shouldFilter={false}>
@@ -306,7 +311,8 @@ export function DateField({
           onClick={() => onChange(undefined)}
           aria-label="Clear date"
           className={cn(
-            'grid size-7 shrink-0 place-items-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground',
+            // (View only: the date can't be cleared, so the ✕ isn't shown.)
+            'grid size-7 shrink-0 place-items-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground disabled:hidden',
             bare && 'opacity-0 group-hover/date:opacity-100 focus-visible:opacity-100',
           )}
         >

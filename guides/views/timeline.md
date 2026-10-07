@@ -46,7 +46,7 @@ in its **Display** too), so turning it on in one hides them in both. A line says
 
 ## Bar colors
 
-A bar takes the color of its status. To pick one yourself, open the card and choose a **Timeline color**, under **More**.
+A bar takes the color of its status. To pick one yourself, open the card, click **Dates** and choose a **Timeline color**.
 
 ## The calendar
 

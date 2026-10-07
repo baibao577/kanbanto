@@ -5,6 +5,18 @@ then `git pull` (or download the new release) and `docker compose up -d --build`
 
 ## Unreleased
 
+- **A new card window.** An open card is now two columns: the card itself, wide, on the left, and its comments on the
+  right. What used to be a middle column of one-line fields is a row of six boxes under the title: **Status**,
+  **Assignee**, **Priority**, **Dates**, **Labels** and **Time logged**. Each says what the card has, in grey when
+  it has nothing, and is the button that changes it. **Dates** opens Start, Due, Reminders and Timeline color, says
+  how long is left ("8 days left", "3 days late"), and shows a small alarm clock when a reminder is set. At the top
+  are the board's name and the cards this one sits inside, **Set parent** (or **Change parent**), **Follow**, and a
+  **⋯** menu with Focus on its subtasks, Move to another board, Complete and archive, Archive and Delete task. The
+  window's ✕ sits in that row. On the left, Subtasks now come before Files, and a board's own fields are up to four
+  boxes across. The top stays in place while the card scrolls. Below a wide screen it is one column with the
+  comments last; on a phone the boxes are two a row, with Dates and Labels on rows of their own. People who can only
+  view see the same boxes and can't change them, though Dates still opens to read the reminders.
+
 - **Profile pictures:** Account settings → Profile has a **Picture** card: choose a picture, see it in the circle,
   save it. It then shows in place of your initials wherever you appear: on cards, in comments, in the lists of people
   on a board and in a workspace, in filters, the plan, search and the account button. The picture is cut to a square
