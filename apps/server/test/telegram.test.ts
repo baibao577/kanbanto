@@ -504,17 +504,20 @@ describe('a bot in a group', () => {
 })
 
 describe('your own news, through a bot you connected to your own chat', () => {
-  it('mentions and reminders come to your chat, each with its own switch; followed cards only if you ask', async () => {
+  it('mentions and reminders come to your chat with the board’s bot, each with its own switch; followed cards only if you ask', async () => {
     const { ann, id } = await site()
     const { boardId: inbox } = await ann.ok('POST', '/api/inbox')
     const mine = await addBot(ann, inbox, 'ann_inbox_bot')
     await mine.connect(own(ANN), ANN)
+    const onBoard = await addBot(ann, id, 'ann_board_bot')
+    await onBoard.connect(own(ANN), ANN)
     const bob = await Person.signUp(t.app, 'Bob')
     await ann.ok('POST', `/api/boards/${id}/invitations`, { email: 'bob@example.com', role: 'editor' })
+    // Her own news (said with its title in bold), apart from what the board's bot says as the board's news.
     const news = () =>
       said()
-        .slice(1)
         .map((m) => m.text)
+        .filter((text) => /^<b>(Bob |⏰)/.test(text))
     const settle = () => new Promise((r) => setTimeout(r, 150))
 
     await bob.ok('POST', `/api/boards/${id}/tasks/A/comments`, { body: 'Can you look, @Ann?', mentions: [ann.user.id] })
@@ -570,8 +573,8 @@ describe('your own news, through a bot you connected to your own chat', () => {
   })
 })
 
-describe('your own news, through a bot on any board', () => {
-  it('a bot on a board, in your own chat, tells you your reminders and mentions from every board, each thing once', async () => {
+describe('your own news, through your bot on the card’s board', () => {
+  it('a bot on a board, in your own chat, tells you your reminders and mentions on that board, each thing once, and nothing of another board', async () => {
     const { ann, id } = await site()
     const bot = await addBot(ann, id, 'launch_bot')
     await bot.connect(own(ANN), ANN)
@@ -598,7 +601,15 @@ describe('your own news, through a bot on any board', () => {
     expect(texts()).toHaveLength(2)
     expect(texts()[1]).toMatch(/^Bob commented on .*“Event”.* on My first board: Invites are out$/)
 
-    // A reminder on another board, which has no bot: it comes through the one she has.
+    // A reminder on another board, which has no bot: it isn't this bot's to say, nor the one on her Inbox's. (It is
+    // still sent: the bell and email have it.)
+    const { boardId: inbox } = await ann.ok('POST', '/api/inbox')
+    const mine = await addBot(ann, inbox, 'ann_inbox_bot')
+    await mine.connect(own(ANN), ANN)
+    expect((await ann.ok('GET', '/api/account/telegram')).bots).toEqual([
+      { bot: 'launch_bot', board: 'My first board', inbox: false },
+      { bot: 'ann_inbox_bot', board: 'Inbox', inbox: true },
+    ])
     const { id: other } = await ann.ok('POST', '/api/boards', { name: 'Other' })
     await ann.ok('POST', `/api/boards/${other}/mutations`, {
       mutationId: mid(),
@@ -611,7 +622,7 @@ describe('your own news, through a bot on any board', () => {
     })
     expect(await sendReminders(t.app)).toBe(1)
     await settle()
-    expect(texts().at(-1)).toMatch(/^<b>⏰ Pay rent<\/b>\nOther/)
+    expect(texts().filter((text) => text.includes('Pay rent'))).toEqual([])
 
     // A reminder on the bot's own board: once, as her own, not also as the board's.
     const count = texts().length
@@ -698,18 +709,30 @@ describe('the menu: shortcuts that answer in the chat', () => {
     expect(menuOf(GROUP.id)).toEqual([])
   })
 
-  it('/today, in your own chat: what is yours and overdue, due today and tomorrow, and your reminders in the next 24 hours', async () => {
+  it('/today, in your own chat: what is yours on that bot’s board and overdue, due today and tomorrow, and your reminders in the next 24 hours', async () => {
     const { ann, id } = await site()
     const { boardId: inbox } = await ann.ok('POST', '/api/inbox')
     const mine = await addBot(ann, inbox, 'ann_inbox_bot')
     await mine.connect(own(ANN), ANN)
     expect(menuOf(ANN.id)).toEqual(['list', 'today', 'board', 'help'])
     expect(await ann.ok('GET', '/api/account/telegram')).toEqual({ allowed: true, bots: [{ bot: 'ann_inbox_bot', board: 'Inbox', inbox: true }] })
-    expect(said().at(-1)!.text).toMatch(/Send \/today for what is due today and tomorrow, what is overdue, and your reminders/)
+    expect(said().at(-1)!.text).toMatch(
+      /Send \/today for what is due today and tomorrow, what is overdue, and your reminders in the next 24 hours, on this board\./,
+    )
 
     send(mine.token, own(ANN), ANN, '/today')
     await mine.poll()
-    expect(said().at(-1)!.text).toBe('Nothing is due today or tomorrow, nothing is overdue, and no reminder is set for the next 24 hours.')
+    expect(said().at(-1)!.text).toBe(
+      'Nothing is due today or tomorrow in your Inbox, nothing is overdue, and no reminder is set for the next 24 hours.',
+    )
+    // A second bot of hers, on the board, in her own chat with it.
+    const boards = await addBot(ann, id, 'ann_board_bot')
+    await boards.connect(own(ANN), ANN)
+    send(boards.token, own(ANN), ANN, '/today')
+    await boards.poll()
+    expect(said().at(-1)!.text).toBe(
+      'Nothing is due today or tomorrow on <b>My first board</b>, nothing is overdue, and no reminder is set for the next 24 hours.',
+    )
 
     const day = (n: number) => new Date(Date.now() + 7 * 3600_000 + n * 86_400_000).toISOString().slice(0, 10)
     const set = (taskId: string, fields: object) =>
@@ -728,29 +751,38 @@ describe('the menu: shortcuts that answer in the chat', () => {
     send(mine.token, own(ANN), ANN, 'Water the plants today')
     send(mine.token, own(ANN), ANN, '/today')
     await mine.poll()
-    const lines = said().at(-1)!.text.split('\n')
-    expect(lines).toHaveLength(9)
-    expect(lines[0]).toBe('<b>Overdue</b>')
-    expect(lines[1]).toMatch(/^• <a href="[^"]+\?task=B1">Send invites<\/a> · My first board · was due \w{3} \d+ \w{3}$/)
-    expect(lines[2]).toBe('<b>Due today</b>')
-    expect(lines.slice(3, 5).sort()).toEqual([
-      expect.stringMatching(/^• <a href="[^"]+\?task=A3">Deploy<\/a> · My first board$/),
-      expect.stringMatching(/^• <a href="[^"]+">Water the plants<\/a> · Inbox$/),
+    // Each bot answers for its own board. The Inbox's: the card she sent it, and nothing of the board's.
+    expect(said().at(-1)!.text.split('\n')).toEqual([
+      'Your Inbox',
+      '<b>Due today</b>',
+      expect.stringMatching(/^• <a href="[^"]+">Water the plants<\/a>$/),
+      `<a href="https://kanbanto.example/#/b/${inbox}">Open the board ›</a>`,
     ])
+    // The board's: what is hers there, and nothing of her Inbox.
+    send(boards.token, own(ANN), ANN, '/today')
+    await boards.poll()
+    const lines = said().at(-1)!.text.split('\n')
+    expect(lines).toHaveLength(10)
+    expect(lines[0]).toBe('<b>My first board</b>')
+    expect(lines[1]).toBe('<b>Overdue</b>')
+    expect(lines[2]).toMatch(/^• <a href="[^"]+\?task=B1">Send invites<\/a> · was due \w{3} \d+ \w{3}$/)
+    expect(lines[3]).toBe('<b>Due today</b>')
+    expect(lines[4]).toMatch(/^• <a href="[^"]+\?task=A3">Deploy<\/a>$/)
     expect(lines[5]).toBe('<b>Due tomorrow</b>')
-    expect(lines[6]).toMatch(/^• <a href="[^"]+\?task=A2a">Homepage<\/a> · My first board$/)
+    expect(lines[6]).toMatch(/^• <a href="[^"]+\?task=A2a">Homepage<\/a>$/)
     expect(lines[7]).toBe('<b>Reminders in the next 24 hours</b>')
-    expect(lines[8]).toMatch(/^• <a href="[^"]+\?task=A3">Deploy<\/a> · My first board · \w{3} \d+ \w{3}, \d\d:\d\d$/)
+    expect(lines[8]).toMatch(/^• <a href="[^"]+\?task=A3">Deploy<\/a> · \w{3} \d+ \w{3}, \d\d:\d\d$/)
+    expect(lines[9]).toBe(`<a href="https://kanbanto.example/#/b/${id}">Open the board ›</a>`)
 
     // A card with a time: its time is said. A finished one is left out.
     await set('A3', { due: `${day(0)}T16:59:00Z`, reminders: [] })
     await set('B1', { status: 'done' })
-    send(mine.token, own(ANN), ANN, '/today')
-    await mine.poll()
+    send(boards.token, own(ANN), ANN, '/today')
+    await boards.poll()
     const again = said().at(-1)!.text
     expect(again).not.toContain('Overdue')
     expect(again).not.toContain('Reminders')
-    expect(again).toMatch(/>Deploy<\/a> · My first board · 23:59\n/)
+    expect(again).toMatch(/>Deploy<\/a> · 23:59\n/)
     // (A shortcut is never a card: the Inbox has the one she sent.)
     expect(await cards(inbox)).toHaveLength(1)
   })

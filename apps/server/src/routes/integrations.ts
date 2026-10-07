@@ -102,8 +102,8 @@ export const integrationRoutes: FastifyPluginAsync = async (app) => {
   })
 
   /**
-   * The Telegram bots you connected to your own chat, on any board: the ones your reminders and mentions can come
-   * through (for the Telegram switches under Notifications). First the one used when a card's board has none of its own.
+   * The Telegram bots you connected to your own chat, and the board each is on: the ones your reminders and mentions
+   * come through, each for its own board (for the Telegram switches under Notifications).
    */
   app.get('/account/telegram', async (req) => {
     const me = requireUser(req.user)

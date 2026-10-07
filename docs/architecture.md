@@ -196,8 +196,8 @@ The app uses hash routing, so any static host or proxy works without rewrite rul
   for a week which message made which card, for Undo, No date, an edited message and a reply (a comment). The
   connecting codes, the per-chat limits and albums in flight are in memory. Three shortcuts answer in the chat:
   `/board` (a link), `/list` (the titles in the list new cards go to, read as whoever added the bot) and, in someone's own chat
-  with a bot, `/today` (what is theirs and due, and their reminders in the next 24 hours, on all their boards); each chat's menu (`setMyCommands` for that chat) lists the ones that work there.
-  Links are only written for a site address Telegram will link (not `localhost`): otherwise the address is shown. Someone's own news (`tell.ts`) goes through a bot they connected to their own chat: the one on the card's board, else the one on their Inbox, else another of theirs; that bot's chat is then left out of the board's news of the same thing. The token is in every address this code calls, so nothing in `telegram/api.ts`
+  with a bot, `/today` (what is theirs and due on that bot's board, and their reminders there in the next 24 hours, read the same way); each chat's menu (`setMyCommands` for that chat) lists the ones that work there.
+  Links are only written for a site address Telegram will link (not `localhost`): otherwise the address is shown. Someone's own news (`tell.ts`) goes through a bot they connected to their own chat on the card's board, and no other (a bot's reach is the board it was added to: with no bot of theirs there, nothing is said on Telegram); that bot's chat is then left out of the board's news of the same thing. The token is in every address this code calls, so nothing in `telegram/api.ts`
   puts an address in an error or a log line. Platform admins allow bots or not (`site_settings.telegram_bots`), a
   switch of its own: bots work whatever the setting for webhooks is, and have their own box in Board settings.
 - **MCP** is stateless: each POST to `/api/mcp` builds a server whose tools call the same functions the routes use

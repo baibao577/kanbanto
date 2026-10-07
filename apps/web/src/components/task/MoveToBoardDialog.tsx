@@ -124,7 +124,8 @@ export function MoveToBoardDialog({
 
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="gap-4 sm:max-w-md">
+      {/* (One column no wider than the window: a long title or board name on one line would stretch it past its edge.) */}
+      <DialogContent className="grid-cols-[minmax(0,1fr)] gap-4 sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Move to another board</DialogTitle>
           <DialogDescription className="truncate">“{task.title}”</DialogDescription>
@@ -132,7 +133,8 @@ export function MoveToBoardDialog({
 
         <div className="space-y-1.5">
           <p className="text-xs font-medium text-muted-foreground">To</p>
-          <Command className="rounded-lg border" shouldFilter>
+          {/* (h-auto: at its usual full height it would be as tall as this whole block, label included, and run over what's below.) */}
+          <Command className="h-auto rounded-lg border" shouldFilter>
             <CommandInput placeholder="Find a board" />
             <CommandList className="max-h-56">
               <CommandEmpty>{boards ? 'No other board you can add to.' : 'Loading…'}</CommandEmpty>
@@ -227,8 +229,8 @@ export function MoveToBoardDialog({
           <Button variant="ghost" onClick={onClose}>
             Cancel
           </Button>
-          <Button onClick={() => void move()} disabled={!to || !plan || busy}>
-            {busy ? 'Moving…' : to ? `Move to “${to.name}”` : 'Move'}
+          <Button className="min-w-0 shrink" onClick={() => void move()} disabled={!to || !plan || busy}>
+            <span className="truncate">{busy ? 'Moving…' : to ? `Move to “${to.name}”` : 'Move'}</span>
           </Button>
         </DialogFooter>
       </DialogContent>

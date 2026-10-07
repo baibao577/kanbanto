@@ -66,7 +66,8 @@ This is set per computer and browser, so turn it on wherever you want it.
 ## In Telegram
 
 Reminders and mentions can also reach you in Telegram, as they happen, through a bot you connected to your own
-chat with it, on any board or on your Inbox ([how](/more/telegram#your-own-reminders-and-mentions)); then choose
+chat with it. Each bot tells you about the board it is on, your Inbox included
+([how](/more/telegram#your-own-reminders-and-mentions)); then choose
 what it tells you under **Account settings → Notifications → Telegram**: reminders and mentions are on to start, comments and
 changes on the cards you follow are off.
 

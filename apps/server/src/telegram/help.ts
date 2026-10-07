@@ -25,7 +25,7 @@ export const HELP = {
   /** The shortcuts in the menu, everywhere. */
   menu: ['Send /list to see the cards waiting in the list, and /board for a link to the board.'],
   /** …and the one more in someone's own chat with the bot. */
-  own: ['Send /today for what is due today and tomorrow, what is overdue, and your reminders in the next 24 hours, on all your boards.'],
+  own: ['Send /today for what is due today and tomorrow, what is overdue, and your reminders in the next 24 hours, on this board.'],
 } as const
 
 export const helpText = (kind: 'private' | 'group') =>

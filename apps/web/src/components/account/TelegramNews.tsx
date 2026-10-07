@@ -9,13 +9,14 @@ import { useLoaded } from '@/data/useLoaded'
 
 interface Mine {
   allowed: boolean
-  /** The bots you connected to your own chat, the one that's used by default first. */
+  /** The bots you connected to your own chat, each with the board it's on (and tells you about). */
   bots: { bot: string; board: string; inbox: boolean }[]
 }
 
 /**
  * Your own news on Telegram: reminders, mentions and (if you ask) news from the cards you follow, through a bot you
- * connected to your own chat with it, on any board. Shown where Telegram bots are allowed on the site, or you have one.
+ * connected to your own chat with it, each bot for the board it's on. Shown where Telegram bots are allowed on the
+ * site, or you have one.
  */
 export function TelegramNews() {
   const { user, setUser } = useAuth()
@@ -27,17 +28,15 @@ export function TelegramNews() {
       (e) => toast.error(errorMessage(e)),
     )
   const where = (b: Mine['bots'][number]) => `@${b.bot} (on ${b.inbox ? 'your Inbox' : `“${b.board}”`})`
+  const joined = (words: string[]) => (words.length < 2 ? words.join('') : `${words.slice(0, -1).join(', ')} and ${words.at(-1)}`)
   return (
     <SettingsCard title="Telegram" description="The same news in Telegram, as things happen, through a bot you connected to your own chat with it.">
       {mine.bots.length ? (
         <div className="space-y-2">
           <p className="text-xs leading-relaxed text-muted-foreground">
-            Through {where(mine.bots[0])}.
-            {mine.bots.length > 1 &&
-              ` You have ${mine.bots.length} bots of your own: news about a card comes through the bot on that card’s board when it has one (${mine.bots
-                .slice(1)
-                .map(where)
-                .join(', ')}).`}
+            Through {joined(mine.bots.map(where))}.{' '}
+            {mine.bots.length > 1 ? 'Each tells you about cards on its own board.' : 'It tells you about cards on that board.'} A board without a bot
+            of yours sends nothing to Telegram.
           </p>
           <label className="flex items-center justify-between gap-3 text-sm">
             Reminders
@@ -63,7 +62,7 @@ export function TelegramNews() {
       ) : (
         <p className="text-xs leading-relaxed text-muted-foreground">
           You have no Telegram bot connected to your own chat yet. Add one to a board of yours, or to your Inbox (Board settings → People & apps →
-          Telegram), and connect it with “My own chat with the bot”. It then tells you your reminders and mentions, from every board.
+          Telegram), and connect it with “My own chat with the bot”. It then tells you your reminders and mentions on that board.
         </p>
       )}
     </SettingsCard>

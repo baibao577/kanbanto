@@ -13,7 +13,6 @@ import { telegramHtml as h, telegramLink, telegramOpen, telegramText } from '../
 import { telegramBots, telegramCards, users, webhooks, type TelegramWrote } from '../db/schema'
 import { HttpError } from '../http'
 import { dueInWords } from '../reminders'
-import { boardsFor } from '../routes/boards'
 import { mentionsIn, postComment } from '../routes/comments'
 import { saveUpload } from '../routes/files'
 import { attachFile } from '../routes/uploads'
@@ -297,51 +296,48 @@ async function showList(c: Ctx): Promise<string> {
 }
 
 /**
- * `/today`, in someone's own chat with a bot they connected: what is theirs and coming up, on every board they can
- * open. Overdue, due today and due tomorrow (a whole-day date has no hour to count 24 hours from, so it goes by the
- * day), and the reminders going off in the next 24 hours. "Theirs" is what their calendar shows: cards assigned to
- * them, and cards nobody is assigned on boards where they are the only person (their Inbox, for one).
+ * `/today`, in someone's own chat with a bot they connected: what is theirs and coming up on the bot's board, and
+ * only there (a bot speaks for the board it was added to, like `/list`). Overdue, due today and due tomorrow (a
+ * whole-day date has no hour to count 24 hours from, so it goes by the day), and the reminders going off in the next
+ * 24 hours. "Theirs" is what their calendar shows: cards assigned to them, and cards nobody is assigned when they
+ * are the board's only person (their Inbox, for one).
  */
 async function showToday(c: Ctx): Promise<string> {
   if (c.bot.chatKind !== 'private') return 'That works in your own chat with a bot.'
-  const me = await person(c.app, c.hook.createdBy)
+  const me = await reader(c)
   if (!me) return NOT_NOW
   const zone = me.timeZone ?? 'UTC'
   const now = new Date()
   const today = dayIn(now, zone)
   const tomorrow = dayIn(new Date(now.getTime() + DAY), zone)
-  const open = (await boardsFor(c.app.db, me.id)).filter((b) => !b.archivedAt)
-  const boardsData = await c.app.engine.snapshots(open.map((b) => b.id))
-  type Item = { boardId: string; id: string; title: string; board: string; when: string; at: number }
+  const { data } = await c.app.engine.snapshot(c.board.id)
+  const idx = indexFor(data)
+  const alone = data.members.length === 1 && data.members[0].id === me.id
+  type Item = { id: string; title: string; when: string; at: number }
   const overdue: Item[] = []
   const dueToday: Item[] = []
   const dueTomorrow: Item[] = []
   const reminders: Item[] = []
-  for (const [boardId, data] of boardsData) {
-    const idx = indexFor(data)
-    const alone = data.members.length === 1 && data.members[0].id === me.id
-    for (const t of Object.values(data.tasks)) {
-      if (idx.category.get(t.id) === 'done') continue
-      const item = (when: string, at: number): Item => ({ boardId, id: t.id, title: t.title, board: data.board.name, when, at })
-      if (t.due && (t.assigneeId ? t.assigneeId === me.id : alone)) {
-        const timed = t.due.length > 10
-        const day = timed ? dayIn(new Date(t.due), zone) : t.due
-        const at = timed ? Date.parse(t.due) : Date.parse(`${t.due}T00:00:00Z`)
-        // (Today and tomorrow: the time when it has one, else nothing more to say. Overdue: the day it was due.)
-        const time = timed ? dueInWords(t.due, zone).split(', ')[1] : ''
-        if (day < today) overdue.push(item(`was due ${dueInWords(t.due, zone)}`, at))
-        else if (day === today) dueToday.push(item(time, at))
-        else if (day === tomorrow) dueTomorrow.push(item(time, at))
-      }
-      for (const r of t.reminders ?? []) {
-        if ((t.assigneeId ?? r.by) !== me.id) continue
-        const at = fireTime(r, t)
-        if (at && at > now && at.getTime() <= now.getTime() + DAY) reminders.push(item(dueInWords(at.toISOString(), zone), at.getTime()))
-      }
+  for (const t of Object.values(data.tasks)) {
+    if (idx.category.get(t.id) === 'done') continue
+    const item = (when: string, at: number): Item => ({ id: t.id, title: t.title, when, at })
+    if (t.due && (t.assigneeId ? t.assigneeId === me.id : alone)) {
+      const timed = t.due.length > 10
+      const day = timed ? dayIn(new Date(t.due), zone) : t.due
+      const at = timed ? Date.parse(t.due) : Date.parse(`${t.due}T00:00:00Z`)
+      // (Today and tomorrow: the time when it has one, else nothing more to say. Overdue: the day it was due.)
+      const time = timed ? dueInWords(t.due, zone).split(', ')[1] : ''
+      if (day < today) overdue.push(item(`was due ${dueInWords(t.due, zone)}`, at))
+      else if (day === today) dueToday.push(item(time, at))
+      else if (day === tomorrow) dueTomorrow.push(item(time, at))
+    }
+    for (const r of t.reminders ?? []) {
+      if ((t.assigneeId ?? r.by) !== me.id) continue
+      const at = fireTime(r, t)
+      if (at && at > now && at.getTime() <= now.getTime() + DAY) reminders.push(item(dueInWords(at.toISOString(), zone), at.getTime()))
     }
   }
-  const line = (t: Item) =>
-    `• ${telegramLink(c.site ? taskUrl(c.site, t.boardId, t.id) : null, t.title)} · ${h(t.board)}${t.when ? ` · ${h(t.when)}` : ''}`
+  const line = (t: Item) => `• ${telegramLink(c.site ? taskUrl(c.site, c.board.id, t.id) : null, t.title)}${t.when ? ` · ${h(t.when)}` : ''}`
   const part = (title: string, items: Item[]) => {
     const sorted = items.sort((a, b) => a.at - b.at)
     return sorted.length
@@ -354,7 +350,11 @@ async function showToday(c: Ctx): Promise<string> {
     ...part('Due tomorrow', dueTomorrow),
     ...part('Reminders in the next 24 hours', reminders),
   ]
-  return all.length ? all.join('\n') : 'Nothing is due today or tomorrow, nothing is overdue, and no reminder is set for the next 24 hours.'
+  if (!all.length)
+    return `Nothing is due today or tomorrow ${c.board.inboxOf ? 'in' : 'on'} ${placeOf(c)}, nothing is overdue, and no reminder is set for the next 24 hours.`
+  return [c.board.inboxOf ? 'Your Inbox' : `<b>${h(c.board.name)}</b>`, ...all, telegramOpen(boardUrl(c), 'Open the board ›')]
+    .filter(Boolean)
+    .join('\n')
 }
 
 // ── A message ──────────────────────────────────────────────────────────────────

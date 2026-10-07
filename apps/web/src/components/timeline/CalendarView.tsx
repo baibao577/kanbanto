@@ -178,9 +178,12 @@ export function CalendarView({ search }: { search: string }) {
 
         <div className="min-h-0 flex-1 overflow-auto">
           <div className="flex min-h-full flex-col gap-3 px-3 pb-3 sm:px-6 sm:pb-4">
+            {/* The day names stay at the top while the weeks scroll under them. (overflow-clip, not hidden, rounds the
+              box's corners without making it the thing that scrolls: the names then stick to the view, not to the box.
+              Their background is the same tint as before, mixed solid so the weeks don't show through.) */}
             {range !== 'day' && !narrow && (
-              <div className="overflow-hidden rounded-xl border bg-card">
-                <div className="grid grid-cols-7 border-b bg-muted/50 text-xs font-medium text-foreground/80">
+              <div className="overflow-clip rounded-xl border bg-card">
+                <div className="sticky top-0 z-10 grid grid-cols-7 border-b bg-[color-mix(in_oklab,var(--muted)_50%,var(--card))] text-xs font-medium text-foreground/80">
                   {WEEKDAYS.map((d) => (
                     <span key={d} className="px-3 py-1.5 text-right">
                       {d}

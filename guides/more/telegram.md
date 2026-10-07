@@ -7,7 +7,7 @@ A board can have a Telegram bot of its own. The bot is connected to one chat:
 
 Connect it to **your own chat** with the bot and it is personal: send it a thought and it is a card. Connect it to
 a **group** and it is the team's: everyone sees the news, and anyone adds a card. A bot in your own chat also tells
-you your reminders and mentions; one on **your Inbox** takes whatever you send it into your Inbox.
+you your reminders and mentions on that board; one on **your Inbox** takes whatever you send it into your Inbox.
 
 This page has two halves. [Setting it up](#setting-it-up) is for the board's owner, once.
 [Using it in the chat](#using-it-in-the-chat) is for everyone in the chat.
@@ -74,7 +74,7 @@ chat at a time.
 
 ### Your own reminders and mentions
 
-A bot you connected to **your own chat** with it also tells you your own news, from every board, as it happens:
+A bot you connected to **your own chat** with it also tells you your own news on its board, as it happens:
 
 - your **reminders**,
 - when someone **@mentions** you,
@@ -85,9 +85,10 @@ cards you follow are off.
 
 ![Account settings, Notifications: the Telegram switches](/images/telegram-4-news.webp){.medium}
 
-It doesn't matter which board the bot is on. If you have several, news about a card comes through the bot on that
-card's board when it has one, else the one on your Inbox, else another of yours. Nothing is said twice: when the bot
-tells you a reminder or a comment as your own news, its chat isn't also sent it as the board's news.
+Each bot speaks for the board it is on, and only that one. News about a card reaches you through your bot on that
+card's board; a board where you have no bot sends nothing to Telegram (the bell, email and desktop notifications
+still tell you). To hear from several boards, add a bot to each. Nothing is said twice: when the bot tells you a
+reminder or a comment as your own news, its chat isn't also sent it as the board's news.
 
 A bot connected to a group tells nobody their own news: a group is the board's.
 
@@ -154,14 +155,14 @@ Bot   Added to Launch by Ann
 Tap **Menu** beside the message box, or type `/`, and Telegram lists the bot's shortcuts for that chat:
 
 - Send /list to see the cards waiting in the list, and /board for a link to the board.
-- Send /today for what is due today and tomorrow, what is overdue, and your reminders in the next 24 hours, on all your boards.
+- Send /today for what is due today and tomorrow, what is overdue, and your reminders in the next 24 hours, on this board.
 
 `/list` shows the list new cards go to: up to 15 cards, in the board's order, each opening its card. A group's menu
 also has `/card`.
 
-`/today` is in your own chat with a bot, on any board. It lists what is yours on every board you can open: cards
-assigned to you, and cards with nobody assigned on boards where you are the only person (your Inbox, for one). In
-four parts: **Overdue**, **Due today**, **Due tomorrow**, and **Reminders in the next 24 hours**.
+`/today` is in your own chat with a bot, on any board. It lists what is yours on that bot's board, and only there:
+cards assigned to you, and cards with nobody assigned when you are the board's only person (your Inbox, for one). A
+bot on another board answers for that one. In four parts: **Overdue**, **Due today**, **Due tomorrow**, and **Reminders in the next 24 hours**.
 
 These two put card titles in the chat, for everyone in it to read. The rest of the board can't be read from the
 chat.
@@ -184,7 +185,7 @@ chat.
 | Reply to the bot's answer with a photo or a file | The file is added to that card, in a comment. |
 | Send `/list` | The cards waiting in the list new cards go to, with a link to each. |
 | Send `/board` | A link that opens the board in Kanbanto. |
-| Send `/today` (your own chat with a bot) | What is overdue, due today and due tomorrow, and your reminders in the next 24 hours, on all your boards. |
+| Send `/today` (your own chat with a bot) | What is overdue, due today and due tomorrow, and your reminders in the next 24 hours, on that bot's board. |
 | Send `/help` | The short version of this page. |
 | Send a sticker, a location or a poll | "I can take words, photos and files." |
 
@@ -240,7 +241,7 @@ No codes for labels, people or lists: those are set on the card, in Kanbanto.
   in the chat's history. Pick the chat with that in mind.
 - **Everyone in the chat can add cards** to that board, and comment on or take back the cards the chat added.
 - **What can be read from the chat:** the board's news as it happens, and, with `/list`, the titles of the cards
-  waiting in one list. In your own chat with a bot, `/today` shows the titles of your cards that are due. Nothing else of
+  waiting in one list. In your own chat with a bot, `/today` shows the titles of your cards on that board that are due. Nothing else of
   the board: descriptions, comments and the other lists stay in Kanbanto, and the links the bot gives open only for
   people who can sign in and open the board.
 - **A bot that only posts news** ("Messages there become cards" switched off) has no menu and answers nothing.

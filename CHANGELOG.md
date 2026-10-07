@@ -15,6 +15,17 @@ then `git pull` (or download the new release) and `docker compose up -d --build`
   people; pictures are set on the website, not with an API token.
 - **A new name shows at once** on boards other people have open. Before, it could stay the old one there until
   something else on the board changed.
+- **Telegram: a bot speaks for the board it is on, and only that one.** Two things reached past it. `/today` listed
+  what was yours on every board you can open: it now lists the bot's own board. And your own news (reminders,
+  mentions, the cards you follow) came through a bot on another board, or on your Inbox, when the card's board had
+  none: now it comes only through a bot of yours on the card's own board, and a board where you have none sends
+  nothing to Telegram. The bell, emails and desktop notifications are unchanged. To hear from several boards in
+  Telegram, add a bot to each. Account settings → Notifications → Telegram says which boards your bots cover.
+- **Timeline calendar: the day names stay in place.** Scrolling down a long month or two weeks, the row of Mon to
+  Sun stays at the top of the calendar, so a column still says which day it is.
+- **Fixed: "Move to another board" with a long card title or board name.** The title ran off the window's edge and
+  took the list of boards and the buttons with it, and the list sat over what was under it. Long names are cut short
+  with "…" again, in the title, the list and the Move button.
 
 ## 0.1.0 — first public release (2026-10-07)
 

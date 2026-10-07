@@ -8,12 +8,12 @@ export type NewsKind = 'reminders' | 'mentions' | 'follows'
 
 /**
  * Tells someone a piece of their own news as it happens, wherever they asked for it: a desktop notification (in
- * the browsers where they turned those on), and Telegram, through a bot they connected to their own chat (the one
- * on the card's board, else the one on their Inbox, else another of theirs). Each has its own switch per kind of
- * news. `url`: the card's address on this site, from the "/" on.
+ * the browsers where they turned those on), and Telegram, through a bot they connected to their own chat on the
+ * card's board (no bot of theirs there: not on Telegram). Each has its own switch per kind of news. `url`: the
+ * card's address on this site, from the "/" on.
  *
  * `about`: the board the card is on, and (`covered`) the board's own news of the same thing, when there's no way to
- * keep that from the same chat: then a bot on that board that already sends it isn't asked to say it twice.
+ * keep that from the same chat: then a bot that already sends it isn't asked to say it twice.
  *
  * Returns the webhook of the bot it was told through, for the caller to leave out of the board's news of it.
  */

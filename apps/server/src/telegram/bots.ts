@@ -114,39 +114,37 @@ export class Telegram {
   }
 
   /**
-   * The bots someone connected to their own chat (their own private chat with a bot they added), on any board: the
-   * ones that can tell them their own news. In the order they'd be picked for a card on `boardId`: the bot on that
-   * board first, then the one on their Inbox, then the others, oldest first.
+   * The bots someone connected to their own chat (their own private chat with a bot they added), each with the board
+   * it's on: the ones that can tell them their own news, each about its own board. Oldest first.
    */
-  async ownBots(userId: string, boardId?: string) {
-    const rows = await this.app.db
+  async ownBots(userId: string) {
+    return this.app.db
       .select({ hook: webhooks, bot: telegramBots, board: { id: boards.id, name: boards.name, inboxOf: boards.inboxOf } })
       .from(telegramBots)
       .innerJoin(webhooks, eq(webhooks.id, telegramBots.webhookId))
       .innerJoin(boards, eq(boards.id, webhooks.boardId))
       .where(and(eq(webhooks.createdBy, userId), eq(webhooks.active, true), eq(telegramBots.chatKind, 'private'), isNotNull(telegramBots.chatId)))
       .orderBy(webhooks.createdAt)
-    const place = (r: (typeof rows)[number]) => (r.board.id === boardId ? 0 : r.board.inboxOf === userId ? 1 : 2)
-    return rows.sort((a, b) => place(a) - place(b))
   }
 
   /**
    * Someone's own news (a reminder, a mention) about a card on `about.boardId`, through a bot they connected to their
-   * own chat: see `ownBots` for which. Returns that bot's webhook when it was sent (so the same chat isn't also sent
-   * it as the board's news), else null.
+   * own chat on that board, and only such a bot: a bot's reach is the board it was added to, so a card on a board
+   * where they have none isn't told on Telegram. Returns that bot's webhook when it was sent (so the same chat isn't
+   * also sent it as the board's news), else null.
    *
-   * `about.covered`: the board's own news of the same thing. When the bot is that board's own and already sends it,
-   * nothing more is sent: the chat has it.
+   * `about.covered`: the board's own news of the same thing. When the bot already sends that, nothing more is sent:
+   * the chat has it.
    */
   async toPerson(
     userId: string,
     message: { title: string; body?: string; url?: string | null },
     about: { boardId?: string; covered?: string } = {},
   ): Promise<string | null> {
-    if (!(await this.allowed())) return null
-    const [row] = await this.ownBots(userId, about.boardId)
+    if (!about.boardId || !(await this.allowed())) return null
+    const row = (await this.ownBots(userId)).find((r) => r.board.id === about.boardId)
     if (!row) return null
-    if (about.covered && row.board.id === about.boardId && (!row.hook.events || row.hook.events.includes(about.covered))) return null
+    if (about.covered && (!row.hook.events || row.hook.events.includes(about.covered))) return null
     const html = [`<b>${h(message.title)}</b>`, message.body && h(message.body), telegramOpen(message.url ?? null)].filter(Boolean).join('\n')
     await this.api.call(decrypt(row.hook.secretEncrypted), 'sendMessage', { chat_id: row.bot.chatId, ...telegramText(html) })
     return row.hook.id
