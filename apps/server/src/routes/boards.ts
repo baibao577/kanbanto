@@ -1,4 +1,4 @@
-import type { ArchivedPage, BoardAccess, BoardSummary, Role } from '@kanbanto/model/api'
+import type { ArchivedPage, BoardAccess, BoardSummary, CardHistory, Role } from '@kanbanto/model/api'
 import { ARCHIVED_DATES, archivedFamily, archivedIn } from '@kanbanto/model/archived'
 import { isBackground, type BoardBackground } from '@kanbanto/model/colors'
 import { BoardDataSchema, CommandSchema } from '@kanbanto/model/schema'
@@ -12,7 +12,7 @@ import { and, eq, inArray, sql } from 'drizzle-orm'
 import type { FastifyPluginAsync } from 'fastify'
 import { z } from 'zod'
 import { accessFor, accessOf, requireAccess, type BoardRow } from '../boards/access'
-import { parseMoment, readActivity } from '../boards/activityLog'
+import { parseMoment, readActivity, readTaskActivity } from '../boards/activityLog'
 import { notOnInbox } from '../boards/inbox'
 import { canBeLinked, factOf, linksToResolve, resolveLinks, unlinkBoard } from '../boards/links'
 import { createBoard, createStarter, importBoard } from '../boards/service'
@@ -21,6 +21,7 @@ import type { Db } from '../db'
 import { boardFavorites, boards, workspaces } from '../db/schema'
 import { addCardSaid, NewCardBody } from '../boards/newCards'
 import { importCards, ImportCardsBody } from '../boards/importCards'
+import { pictureUrl } from '../pictures'
 import { HttpError, parse, siteUrl } from '../http'
 import { requireUser } from './auth'
 import { commentCounts, lastComments } from './comments'
@@ -391,6 +392,31 @@ export const boardRoutes: FastifyPluginAsync = async (app) => {
         ...(e.kind === 'change'
           ? { command: e.command, via: e.via, items: e.items }
           : { taskId: e.taskId, task: e.task, body: e.body, mentions: e.mentions }),
+      })),
+      nextUntil: more ? entries[entries.length - 1].at.toISOString() : null,
+    }
+  })
+
+  /**
+   * What happened to one card, newest first: its own lines of the board's log, each with who did it, when and through
+   * which app (the History beside a card's comments). For the board's people, like the board's log: not public-link
+   * visitors. An archived card's history is still read. More: ask again with `until` set to `nextUntil`.
+   */
+  app.get('/boards/:id/tasks/:taskId/activity', async (req): Promise<CardHistory> => {
+    const { id, taskId } = parse(Params.extend({ taskId: z.string().min(1).max(100) }), req.params)
+    const me = requireUser(req.user)
+    const { access } = await requireAccess(app.db, me, id, 'viewer')
+    if (access.via === 'public') throw new HttpError(403, 'Join this board to see its activity.')
+    const q = parse(z.object({ until: z.string().max(40).optional(), limit: z.coerce.number().int().min(1).max(200).optional() }), req.query)
+    const until = parseMoment(q.until, 'until', null)
+    const { entries, more } = await readTaskActivity(app.db, { boardId: id, taskId, until, limit: q.limit ?? 50 })
+    return {
+      entries: entries.map((e) => ({
+        at: e.at.toISOString(),
+        actor: e.actorId ? { id: e.actorId, name: e.actorName ?? 'Someone', picture: pictureUrl(e.actorPicture) } : null,
+        via: e.via,
+        // (A line logged before the card's own wording was kept says the card's name, as the board's log does.)
+        lines: e.items.map((i) => (i.own ? { text: i.own, ...(i.date && { date: i.date }) } : { text: i.text })),
       })),
       nextUntil: more ? entries[entries.length - 1].at.toISOString() : null,
     }

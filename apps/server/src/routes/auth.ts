@@ -16,6 +16,7 @@ import { HttpError, parse, siteUrl } from '../http'
 import { loggable } from '../errors'
 import { emails } from '../mail/templates'
 import { loadSettings as getSettings } from '../settings'
+import { VERSION } from '../version'
 import { announceSharingChange, announceWorkspaceChange, changePerson } from '../boards/announce'
 
 const email = z
@@ -194,6 +195,8 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
       googleSignIn,
       links: app.siteLinks,
       guidesUrl: app.guidesUrl,
+      // (For people who are signed in: a visitor isn't told which release a site runs.)
+      version: req.user ? VERSION : null,
     }
   })
 

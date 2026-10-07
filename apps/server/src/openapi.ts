@@ -297,7 +297,21 @@ The answer lists the records that changed.
     ],
     paths: {
       '/api/auth/me': {
-        get: { tags: ['You'], summary: 'Who the token belongs to', responses: { 200: json(obj({ user: obj({ id: str, name: str, email: str }) })) } },
+        get: {
+          tags: ['You'],
+          summary: 'Who the token belongs to, and which Kanbanto the site runs',
+          responses: {
+            200: json(
+              obj({
+                user: obj({ id: str, name: str, email: str }),
+                version: obj({
+                  number: { ...str, description: 'The release, like 0.1.0.' },
+                  built: { ...nullable(str), description: 'The day this copy was built (2026-10-07). Null when it runs straight from the source.' },
+                }),
+              }),
+            ),
+          },
+        },
       },
       '/api/notifications': {
         get: {
@@ -668,7 +682,23 @@ The answer lists the records that changed.
                       actor: nullable(obj({ id: str, name: str })),
                       command: str,
                       via: { ...nullable(str), description: 'The app it was made through ("Claude", "API"); null: the website.' },
-                      items: { type: 'array', items: obj({ taskId: str, text: str }, ['text']), description: 'Changes: what it did, in words.' },
+                      items: {
+                        type: 'array',
+                        items: obj(
+                          {
+                            taskId: str,
+                            text: str,
+                            own: {
+                              ...str,
+                              description:
+                                'The same line as the card’s own history says it ("moved it from To Do to Done"); {date} in it stands for `date`.',
+                            },
+                            date: str,
+                          },
+                          ['text'],
+                        ),
+                        description: 'Changes: what it did, in words.',
+                      },
                       taskId: str,
                       task: nullable(str),
                       body: str,
@@ -680,6 +710,42 @@ The answer lists the records that changed.
                 nextUntil: nullable({ ...str, format: 'date-time' }),
               }),
             ),
+          },
+        },
+      },
+      '/api/boards/{id}/tasks/{taskId}/activity': {
+        get: {
+          tags: ['Boards'],
+          summary: 'What happened to one task',
+          description: `Newest first: what was done to it, in words to follow the person's name ("moved it from To Do to Doing"), from the board's activity (kept for ${ACTIVITY_DAYS} days): changes to the task, its files (attached, removed, restored) and its logged time (logged, changed, removed). Its comments aren't in it. For the board's people. For more, ask again with \`until\` set to \`nextUntil\`.`,
+          parameters: [
+            id('id'),
+            id('taskId'),
+            { name: 'until', in: 'query', schema: { ...str, description: 'Up to when (not including it): an ISO date or date-time. Default: now.' } },
+            { name: 'limit', in: 'query', schema: { type: 'integer', minimum: 1, maximum: 200, default: 50 } },
+          ],
+          responses: {
+            200: json(
+              obj({
+                entries: {
+                  type: 'array',
+                  items: obj(
+                    {
+                      at: { ...str, format: 'date-time' },
+                      actor: nullable(obj({ id: str, name: str, picture: nullable(str) })),
+                      via: { ...nullable(str), description: 'The app it was made through ("Claude", "API"); null: the website.' },
+                      lines: {
+                        type: 'array',
+                        items: obj({ text: str, date: { ...str, description: 'What {date} in the text stands for: a day or a moment.' } }, ['text']),
+                      },
+                    },
+                    ['at', 'actor', 'via', 'lines'],
+                  ),
+                },
+                nextUntil: nullable({ ...str, format: 'date-time' }),
+              }),
+            ),
+            403: json(ref('Error'), 'Visitors with the public link don’t see a board’s activity'),
           },
         },
       },

@@ -45,6 +45,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     )
   }, [userId, needsZone])
 
+  // What only someone signed in is told (which Kanbanto this is) comes with a fresh look, once they've signed in here.
+  const needsVersion = !!me?.user && !me.version
+  useEffect(() => {
+    if (needsVersion) void refresh()
+  }, [needsVersion, refresh])
+
   const value = useMemo<AuthValue | null>(
     () =>
       me && {

@@ -405,7 +405,7 @@ await shot('comments', async () => {
   await page.waitForTimeout(500)
   return around(
     [
-      card.getByText('Comments', { exact: true }),
+      card.getByRole('tab', { name: /Comments/ }),
       page.getByRole('textbox', { name: 'Write a comment' }),
       card.getByText('Ben Ortiz').first(),
       page.getByRole('listbox'),
@@ -1836,6 +1836,23 @@ await shot('inbox-4-phone', async () => {
   await page.waitForTimeout(400)
 })
 await page.setViewportSize({ width: 1360, height: 860 })
+
+// ── A card's history: last of all, since it changes a card and no picture after it shows the board ──────
+await shot('history', async () => {
+  const change = (who, fields) =>
+    api(who, 'POST', `/boards/${board}/mutations`, { mutationId: `g${stamp}-h-${n++}`, command: { type: 'task.update', id: 'quotes', fields } })
+  // Ben picks it up; later Ann takes it over. (Each person's changes, minutes apart, read as one visit.)
+  await change(benCtx, { status: 'doing' })
+  await change(benCtx, { priority: 'high', labels: ['writing'] })
+  await api(benCtx, 'POST', `/boards/${board}/tasks/quotes/time`, { minutes: 90, day: day(0) })
+  await change(ann, { assigneeId: me.id, due: day(4) })
+  await change(ann, { description: 'Two quotes for the launch announcement: one from a shop, one from a club.' })
+  const card = await openCard('quotes')
+  await card.getByRole('tab', { name: 'History' }).click()
+  await card.getByRole('list', { name: 'History' }).waitFor()
+  await page.waitForTimeout(400)
+  return around([card.getByRole('tablist'), card.getByRole('list', { name: 'History' }), card.getByText('History goes back 180 days.')], 24)
+})
 
 await browser.close()
 console.log(`made ${made.length}: ${made.join(', ')}`)

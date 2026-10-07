@@ -69,6 +69,9 @@ async function deliver(
   // Only for someone who can still open the board.
   if (!board || !u || !(await accessOf(app.db, board, u.id))) return false
   const by = r.by && r.by !== u.id ? (await app.db.select({ name: users.name }).from(users).where(eq(users.id, r.by)))[0]?.name : undefined
+  // A due time is said as the clock reads where the person being told is (the zone their account has), else where
+  // the reminder was set. (A reminder for an exact moment carries no zone of its own.)
+  const due = t.due ? dueInWords(t.due, u.timeZone ?? r.tz) : null
 
   await app.db
     .insert(notifications)
@@ -87,7 +90,7 @@ async function deliver(
           name: u.name,
           task: t.title,
           board: board.name,
-          due: t.due ? dueInWords(t.due, r.tz) : null,
+          due,
           by: by ?? null,
           url: `${site}/#/b/${encodeURIComponent(t.boardId)}?task=${encodeURIComponent(t.id)}`,
         }),
@@ -100,7 +103,7 @@ async function deliver(
     'reminders',
     {
       title: `⏰ ${t.title}`,
-      body: `${board.name}${t.due ? ` · due ${dueInWords(t.due, r.tz)}` : ''}${by ? ` · set by ${by}` : ''}`,
+      body: `${board.name}${due ? ` · due ${due}` : ''}${by ? ` · set by ${by}` : ''}`,
       url: `/#/b/${encodeURIComponent(t.boardId)}?task=${encodeURIComponent(t.id)}`,
       tag: `reminder:${t.boardId}:${t.id}`,
     },
@@ -121,18 +124,14 @@ async function deliver(
       reminder: { id: r.id, at: fireTime(r, { due: t.due ?? undefined })?.toISOString() ?? null },
       for: { id: u.id, name: u.name },
     },
-    () =>
-      reminderMessage(
-        { for: u.name, board: board.name, title: t.title, due: t.due ? dueInWords(t.due, r.tz) : null },
-        app.webhooks.cardUrl(t.boardId, t.id),
-      ),
+    () => reminderMessage({ for: u.name, board: board.name, title: t.title, due }, app.webhooks.cardUrl(t.boardId, t.id)),
     // (A bot of their own on this board has just told them: its chat isn't sent the same as the board's news.)
     told ?? undefined,
   )
   return true
 }
 
-/** "Fri 3 Oct" (a whole day), or "Fri 3 Oct, 14:30" in the setter's time zone (UTC when unknown). */
+/** "Fri 3 Oct" (a whole day), or "Fri 3 Oct, 14:30" as the clock reads in a time zone ("…, 14:30 UTC" when none is known). */
 export function dueInWords(due: string, tz?: string): string {
   const whole = due.length <= 10
   const d = new Date(whole ? `${due}T00:00:00Z` : due)

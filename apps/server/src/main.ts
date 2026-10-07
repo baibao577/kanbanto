@@ -12,6 +12,7 @@ import { sendReminders } from './reminders'
 import { logTransport } from './mail/transport'
 import { tidyFiles } from './routes/files'
 import { moveSecretsOffDevKey } from './secrets'
+import { versionWords } from './version'
 
 /** A problem that stops Kanbanto from starting: said in one line, without a stack trace. */
 function fail(message: string): never {
@@ -83,3 +84,4 @@ process.on('SIGINT', shutdown)
 process.on('SIGTERM', shutdown)
 
 await app.listen({ port: env.port, host: env.host })
+app.log.info(`Kanbanto ${versionWords()}`)

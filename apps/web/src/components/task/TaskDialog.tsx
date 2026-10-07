@@ -14,7 +14,7 @@ import { ArchivedBanner } from './ArchivedTask'
 import { AttachmentsSection } from './Attachments'
 import { CardHeader } from './CardHeader'
 import { TimeSection } from './CardTime'
-import { CommentsSection } from './Comments'
+import { CardActivity } from './CardActivity'
 import { CustomFields } from './CustomFields'
 import { LinkedFromSection } from './LinkedFrom'
 import { Description } from './Description'
@@ -254,7 +254,7 @@ function TaskDetail({ id, onClose }: { id: string; onClose: () => void }) {
 
           {!wide && (
             <div id="card-comments" className="scroll-mt-4">
-              <CommentsSection taskId={id} cardFiles={cardFiles} />
+              <CardActivity taskId={id} cardFiles={cardFiles} />
             </div>
           )}
         </div>
@@ -262,7 +262,7 @@ function TaskDetail({ id, onClose }: { id: string; onClose: () => void }) {
         {/* Wide screens: the conversation as its own column, the box to write in always in view. */}
         {wide && (
           <div className="flex min-h-0 flex-col border-l px-5 pt-1 pb-4">
-            <CommentsSection taskId={id} cardFiles={cardFiles} column />
+            <CardActivity taskId={id} cardFiles={cardFiles} column />
           </div>
         )}
       </div>

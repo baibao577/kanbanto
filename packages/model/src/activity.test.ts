@@ -29,6 +29,41 @@ describe('the activity log, in words', () => {
     expect(run({ type: 'board.update', fields: { description: 'The website launch' } })).toEqual(['changed what the board is for'])
   })
 
+  it('says each line again as the card’s own history reads it: without its name, with what it was before', () => {
+    const own = (cmd: Command) => {
+      const r = execute(data, cmd, { now: '2026-10-01T00:00:00Z', newId: () => 'new1', idx: indexFor(data) })
+      if ('error' in r) throw new Error(r.error)
+      return describeChanges(data, r.changes).map((i) => (i.date ? `${i.own} [${i.date}]` : i.own))
+    }
+    expect(own({ type: 'task.create', parentId: 'A', fields: { title: 'Write copy' } })).toEqual(['added it under “Launch website”'])
+    expect(own({ type: 'task.create', parentId: null, fields: { title: 'Buy groceries' } })).toEqual(['added it'])
+    expect(own({ type: 'task.update', id: 'A3', fields: { status: 'done' } })).toEqual(['moved it from To Do to Done'])
+    // A date is left for whoever shows the line to write in the reader's own words.
+    expect(
+      own({ type: 'task.update', id: 'A3', fields: { title: 'Ship it', assigneeId: null, due: '2026-10-20', start: '2026-10-12T02:00:00.000Z' } }),
+    ).toEqual([
+      'renamed it from “Deploy” to “Ship it”',
+      'unassigned it',
+      'set it due {date} [2026-10-20]',
+      'set it to start {date} [2026-10-12T02:00:00Z]',
+    ])
+    expect(own({ type: 'task.update', id: 'A2a', fields: { due: '', description: 'New words', priority: 'urgent' } })).toEqual([
+      'cleared its due date',
+      'edited the description',
+      'set the priority to Urgent',
+    ])
+    expect(own({ type: 'task.move', id: 'A3', parentId: 'B' })).toEqual(['moved it under “Event”'])
+    expect(own({ type: 'task.move', id: 'A3', parentId: null })).toEqual(['moved it to the top level'])
+    // Labels are named, the ones put on and the ones taken off.
+    expect(own({ type: 'task.update', id: 'A2a', fields: { labels: ['ui', 'brand'] } })).toEqual(['added the label “brand”'])
+    expect(own({ type: 'task.update', id: 'A2a', fields: { labels: ['brand', 'marketing'] } })).toEqual([
+      'added the labels “brand”, “marketing” and removed the label “ui”',
+    ])
+    expect(own({ type: 'task.archive', id: 'A3', complete: true }).at(-1)).toBe('archived it as completed')
+    // What isn't about one task has no such line.
+    expect(own({ type: 'column.update', id: 'todo', fields: { name: 'Next' } })).toEqual([undefined])
+  })
+
   it('priority: set, cleared, filtered and sorted most important first', () => {
     const r = execute(
       data,

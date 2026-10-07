@@ -27,6 +27,7 @@ export function CommentsSection({
   taskId,
   cardFiles,
   column,
+  bare,
 }: {
   taskId: string
   cardFiles: CardFiles
@@ -35,6 +36,8 @@ export function CommentsSection({
    * write in pinned under it. Otherwise a section of the card: the box first, newest comment next.
    */
   column?: boolean
+  /** Without its own heading: under the card's Comments tab, which already says what it is and how many (see CardActivity). */
+  bare?: boolean
 }) {
   const { data, canComment, access, onActivity } = useBoard()
   const { user } = useAuth()
@@ -151,7 +154,7 @@ export function CommentsSection({
   if (column)
     return (
       <section className="flex min-h-0 flex-1 flex-col" aria-label="Comments">
-        <header className="mb-3 flex min-h-7 shrink-0 items-center gap-2.5">
+        <header className={cn('mb-3 flex min-h-7 shrink-0 items-center gap-2.5', bare && 'hidden')}>
           <span className="grid size-7 shrink-0 place-items-center rounded-lg bg-primary/10 text-primary [&_svg]:size-4">
             <ChatCircle />
           </span>
@@ -176,11 +179,17 @@ export function CommentsSection({
       </section>
     )
 
-  return (
-    <Section icon={<ChatCircle />} title="Comments" count={items.length}>
+  const body = (
+    <>
       {composer}
       {!canComment && !items.length && <p className="text-xs text-muted-foreground">No comments yet.</p>}
       <ul className="space-y-4">{[...items].reverse().map(item)}</ul>
+    </>
+  )
+  if (bare) return body
+  return (
+    <Section icon={<ChatCircle />} title="Comments" count={items.length}>
+      {body}
     </Section>
   )
 }

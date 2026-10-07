@@ -7,6 +7,9 @@ Click your initials (or your picture, once you have one) at the top right for yo
 From here: **Search all cards**, **My week**, **Guides** (these pages), **Account settings**, the appearance (light,
 dark, or following your device), and signing out. People who run the site also see **Platform console**, where the site itself is set up.
 
+The small line at the foot of the menu says which Kanbanto this is, like "Kanbanto 0.1.0 · 7 Oct": the release, and
+the day this copy was built. Say it when you report a problem.
+
 ## Account settings
 
 | Section | What is there |
@@ -42,7 +45,9 @@ visitors of a board's public link.
 
 Your **name** shows on cards you are assigned, on your comments, and when someone @mentions you.
 
-Your **time zone** decides when your morning summary arrives. Dates with a time are always shown in your own time.
+Your **time zone** decides when your morning summary arrives, and how a time reads in what Kanbanto sends you (a
+reminder's "due Wed 7 Oct, 18:00" in an email or on Telegram). In the app, dates with a time are always shown in your
+own time.
 
 ## Dark theme
 

@@ -96,6 +96,17 @@ UI ─run(command)─▶ BoardSync: execute() here ─▶ shown at once (optimis
 - **Undo/redo** is an ordinary command (`records.restore`) that says what each record should go back to *and* what
   it should be now. If someone else changed it since, the undo is refused rather than overwriting their edit.
 - **Retries are safe:** the same `mutationId` gets the first answer back instead of running twice.
+- **The activity log** (`board_activity`): with each change the server writes what it did, in words
+  (`describeAllChanges` in the model: "moved “Deploy” to Done"), with who made it and through which app, kept 180
+  days. Each line about a task is written twice: as the board's log says it, and as the task's own history does
+  (`own`: "moved it from To Do to Done", with what it was before and a date left as `{date}` for the reader's time
+  zone). Assistants read the first (`recent_activity`); the card window's **History** tab reads the second
+  (`readTaskActivity`, the lines of one task, asked of the rows' `items` with a jsonb `@>`: about 10 ms on a board
+  with 100,000 logged changes, so it has no index of its own). A card's files and its logged time aren't board
+  commands, so their routes write their own lines (`logLine`: attached, removed, restored; logged, changed, removed).
+  A line about logged time says when the time was typed in, not when the work was done, so those (`TIME_COMMANDS`)
+  don't count where the log is read for signs of work ("cards you touched that day", `find_tasks`' worked_after).
+  Comments aren't in the log.
 - **Offline:** changes wait in the tab (the top bar shows "Offline") and are sent when the connection returns.
   Closing the tab with unsent changes asks first. There's no offline storage.
 

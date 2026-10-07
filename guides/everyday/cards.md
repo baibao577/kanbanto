@@ -57,10 +57,33 @@ nothing, and is the button that changes it:
 - **Waiting on.** Other cards that have to finish first. Until they are done, the card shows an amber **Waiting**
   sign on the board.
 
-**On the right:** [comments](/everyday/comments-and-files).
+**On the right**, two tabs: [**Comments**](/everyday/comments-and-files) and [**History**](#a-card-s-history).
 
-On a narrow screen there is one column, with the comments last and a **Comment** button at the top to jump to them.
+On a narrow screen there is one column, with the two tabs last and a **Comment** button at the top to jump to them.
 The row of boxes wraps onto more rows.
+
+## A card's history
+
+Open a card and click **History**, beside **Comments**. It lists what happened to the card, newest first: who moved
+it and from which list, who renamed it, assigned it, dated it or labelled it, who attached or removed a file, who
+logged time on it, and when.
+
+![A card's history](/images/history.webp){.medium}
+
+- Several changes by one person within a few minutes are shown together, as one visit.
+- A change made through an assistant or another app says so: "through Claude", "through API", "through Telegram".
+- It follows the card as it changes, so a teammate's change appears while you look.
+- **Show earlier** at the bottom brings older changes.
+
+Good to know:
+
+- History goes back **180 days**.
+- What a card was before a change is only said when it moves to another list ("from To Do to Doing").
+- A card moved here from another board starts with "moved it here from another board".
+- Time logged for another day says which: "logged 30m for Mon 28 Sep". The entries themselves, with their notes, are
+  in the card's **Time** section.
+- Comments are under their own tab.
+- Everyone on the board can read a card's history. Visitors with the board's public link see its comments only.
 
 ## What a card shows on the board
 

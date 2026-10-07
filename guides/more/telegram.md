@@ -81,7 +81,8 @@ A bot you connected to **your own chat** with it also tells you your own news on
 - and, if you switch it on, comments and changes on the cards you follow.
 
 Choose which under **Account settings → Notifications → Telegram**: reminders and mentions are on to start, the
-cards you follow are off.
+cards you follow are off. A reminder says when the card is due by your clock (the time zone in your Account
+settings).
 
 ![Account settings, Notifications: the Telegram switches](/images/telegram-4-news.webp){.medium}
 

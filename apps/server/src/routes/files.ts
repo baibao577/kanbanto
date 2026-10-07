@@ -5,10 +5,10 @@ import type { FastifyInstance, FastifyPluginAsync } from 'fastify'
 import { z } from 'zod'
 import type { SessionUser } from '../auth/sessions'
 import { requireAccess } from '../boards/access'
+import { logLine } from '../boards/activityLog'
 import { encryptionReady } from '../crypto'
 import type { Db, Tx } from '../db'
-import type { ActivityItem } from '@kanbanto/model/activity'
-import { attachments, boardActivity, boards, siteSettings, storageBackends, users } from '../db/schema'
+import { attachments, boards, siteSettings, storageBackends, tasks, users } from '../db/schema'
 import { serial } from '../serial'
 import { HttpError, parse } from '../http'
 import {
@@ -425,13 +425,45 @@ export function saveUpload(app: FastifyInstance, u: Upload): Promise<AttachmentV
     const [attachment] = await views(app.db, and(eq(attachments.id, attId)))
     // A comment's files are announced, and logged, with the comment.
     if (!forComment) {
-      const items: ActivityItem[] = [{ taskId, text: `attached “${name}” to “${task.title}”` }]
-      await app.db.insert(boardActivity).values({ id: newId(), boardId: id, actorId: me.id, command: 'file.attach', items, via: u.via ?? null })
+      await logLine(app.db, {
+        boardId: id,
+        actorId: me.id,
+        command: 'file.attach',
+        via: u.via,
+        item: { taskId, text: `attached “${name}” to “${task.title}”`, own: `attached “${name}”` },
+      })
       await app.db.update(boards).set({ activityAt: new Date() }).where(eq(boards.id, id))
       app.hub.broadcast(id, { type: 'attachment', taskId, action: 'added', attachmentId: attId, attachment })
     }
     return attachment
   })
+}
+
+/**
+ * Says in the board's log that a card's file was removed, or brought back (which is how it gets into the card's
+ * history). Not for a file of a comment that was never posted, nor on a card that's gone.
+ */
+async function logFileLine(
+  app: FastifyInstance,
+  me: SessionUser,
+  a: typeof attachments.$inferSelect,
+  did: 'removed' | 'restored',
+  via: string | null | undefined,
+) {
+  if (a.draft) return
+  const [card] = await app.db
+    .select({ title: tasks.title })
+    .from(tasks)
+    .where(and(eq(tasks.boardId, a.boardId), eq(tasks.id, a.taskId)))
+  if (!card) return
+  await logLine(app.db, {
+    boardId: a.boardId,
+    actorId: me.id,
+    command: did === 'removed' ? 'file.remove' : 'file.restore',
+    via,
+    item: { taskId: a.taskId, text: `${did} “${a.name}” ${did === 'removed' ? 'from' : 'to'} “${card.title}”`, own: `${did} “${a.name}”` },
+  })
+  await app.db.update(boards).set({ activityAt: new Date() }).where(eq(boards.id, a.boardId))
 }
 
 /** A file that was saved for a comment which then couldn't be posted: removed for good (it was never visible). */
@@ -563,13 +595,15 @@ export const fileRoutes: FastifyPluginAsync = async (app) => {
   /** Moves a file to the trash (editors and owners). */
   app.delete('/boards/:id/attachments/:attId', async (req) => {
     const { id, attId } = parse(AttParams, req.params)
-    await requireAccess(app.db, requireUser(req.user), id, 'editor')
+    const me = requireUser(req.user)
+    await requireAccess(app.db, me, id, 'editor')
     const [a] = await app.db
       .update(attachments)
       .set({ deletedAt: new Date() })
       .where(and(eq(attachments.id, attId), eq(attachments.boardId, id), isNull(attachments.deletedAt)))
       .returning()
     if (!a) throw new HttpError(404, 'That file no longer exists.')
+    await logFileLine(app, me, a, 'removed', req.apiToken?.app)
     app.hub.broadcast(id, { type: 'attachment', taskId: a.taskId, action: 'deleted', attachmentId: attId })
     return { ok: true }
   })
@@ -578,7 +612,8 @@ export const fileRoutes: FastifyPluginAsync = async (app) => {
   app.post('/boards/:id/attachments/:attId/restore', (req) =>
     serial(`files:${(req.params as { id: string }).id}`, async () => {
       const { id, attId } = parse(AttParams, req.params)
-      await requireAccess(app.db, requireUser(req.user), id, 'editor')
+      const me = requireUser(req.user)
+      await requireAccess(app.db, me, id, 'editor')
       // A file coming back takes its space again, so there has to be room for it (as for a new upload).
       const [was] = await app.db
         .select()
@@ -599,6 +634,7 @@ export const fileRoutes: FastifyPluginAsync = async (app) => {
         .where(and(eq(attachments.id, attId), eq(attachments.boardId, id), isNotNull(attachments.deletedAt)))
         .returning()
       if (!a) throw new HttpError(404, 'That file can’t be restored any more.')
+      await logFileLine(app, me, a, 'restored', req.apiToken?.app)
       const [attachment] = await views(app.db, and(eq(attachments.id, attId)))
       app.hub.broadcast(id, { type: 'attachment', taskId: a.taskId, action: 'added', attachmentId: attId, attachment })
       return { attachment }

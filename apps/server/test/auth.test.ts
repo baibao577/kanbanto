@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
+import { version } from '../package.json'
 import { Person, reset, setPlatformAdmin, setup } from './helpers'
 
 let t: Awaited<ReturnType<typeof setup>>
@@ -25,9 +26,13 @@ describe('accounts', () => {
     expect(unknown.body).toEqual(wrong.body)
     // Email isn't case-sensitive.
     await p.ok('POST', '/api/auth/signin', { email: ' ANN@example.com ', password: 'correct horse' })
-    expect((await p.ok('GET', '/api/auth/me')).user.name).toBe('Ann')
+    const me = await p.ok('GET', '/api/auth/me')
+    expect(me.user.name).toBe('Ann')
+    // Someone signed in is told which Kanbanto this is (no build day when run from the source); a visitor isn't.
+    expect(me.version).toEqual({ number: version, built: null })
+    expect(version).toMatch(/^\d+\.\d+\.\d+/)
     await p.ok('POST', '/api/auth/signout')
-    expect((await p.ok('GET', '/api/auth/me')).user).toBeNull()
+    expect(await p.ok('GET', '/api/auth/me')).toMatchObject({ user: null, version: null })
   })
 
   it('checks sign-up details', async () => {

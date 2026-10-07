@@ -5,6 +5,26 @@ then `git pull` (or download the new release) and `docker compose up -d --build`
 
 ## Unreleased
 
+- **A card's history.** Beside a card's comments there is now a **History** tab: what happened to the card, newest
+  first, with who did it, when, and through which app when it wasn't the website ("through Claude"). It says what a
+  move was from and to ("moved it from To Do to Doing"), names the labels put on or taken off, and writes dates in
+  your own time. Changes one person makes within a few minutes are shown together. It follows the card as it
+  changes, and **Show earlier** brings older changes. It reads the board's activity, so it goes back 180 days;
+  changes logged before this version name the card in each line. Everyone on the board can read it; visitors with
+  the public link see the comments only. For apps: `GET /api/boards/<id>/tasks/<taskId>/activity`, and each line of
+  the board's activity now also carries `own`, the same line in the card's own words.
+- **Files and logged time are in the activity.** Until now the board's activity said when a file was attached, and
+  nothing else about files or time. It now also says when a file is removed or brought back with Undo, and when time
+  is logged ("logged 1h 30m", with the day when it is for another day), changed or removed; when an owner fixes
+  someone else's entry, it says whose. They show in a card's History, and assistants see them in the board's recent
+  activity. Typing in your time doesn't count as working on the card just then: My week's and the log box's "cards
+  you touched" go by the day the time is for, as before.
+- **The app says which version it is.** The foot of the account menu says, like "Kanbanto 0.1.0 · 7 Oct": the
+  release, and the day this copy was built (a copy built from `main` between two releases says the last release's
+  number, so the day tells it apart). Platform console → Overview says it too, the server's log when it starts, and
+  `node dist/cli.js version`. Only people who are signed in are told (`version` in `/api/auth/me`); `/api/health`
+  is unchanged. The bug report form asks for that line.
+
 - **A new card window.** An open card is now two columns: the card itself, wide, on the left, and its comments on the
   right. What used to be a middle column of one-line fields is a row of six boxes under the title: **Status**,
   **Assignee**, **Priority**, **Dates**, **Labels** and **Time logged**. Each says what the card has, in grey when
@@ -35,6 +55,13 @@ then `git pull` (or download the new release) and `docker compose up -d --build`
   Telegram, add a bot to each. Account settings → Notifications → Telegram says which boards your bots cover.
 - **Timeline calendar: the day names stay in place.** Scrolling down a long month or two weeks, the row of Mon to
   Sun stays at the top of the calendar, so a column still says which day it is.
+- **Fixed: a reminder gave the due time in UTC.** A reminder set for an exact moment ("tomorrow 9:00") said when
+  the card was due as "Wed 7 Oct, 11:00 UTC", on Telegram, in the email and in the desktop notification. It now says
+  it by the clock of the person being reminded, from the time zone in their Account settings ("Wed 7 Oct, 18:00"),
+  and only an account with no time zone is still told in UTC.
+- **Fixed: Undo couldn't be clicked while a card was open.** Removing a file or a time entry in a card shows
+  "Removed… Undo" at the foot of the screen, but the open window took the click. Undo works there now, and leaves
+  the card open.
 - **Fixed: "Move to another board" with a long card title or board name.** The title ran off the window's edge and
   took the list of boards and the buttons with it, and the list sat over what was under it. Long names are cut short
   with "…" again, in the title, the list and the Move button.

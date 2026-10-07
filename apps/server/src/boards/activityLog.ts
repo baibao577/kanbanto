@@ -1,6 +1,7 @@
 import type { ActivityItem } from '@kanbanto/model/activity'
-import { and, desc, eq, gte, inArray, lt, lte } from 'drizzle-orm'
-import type { Db } from '../db'
+import { newId } from '@kanbanto/model/ids'
+import { and, desc, eq, gte, inArray, lt, lte, notInArray, sql } from 'drizzle-orm'
+import type { Db, Tx } from '../db'
 import { boardActivity, comments, tasks, timeEntries, users } from '../db/schema'
 import { HttpError } from '../http'
 
@@ -9,6 +10,27 @@ import { HttpError } from '../http'
  * ("what was I working on in spring?"): a card itself only keeps its last change.
  */
 export const ACTIVITY_DAYS = 180
+
+/**
+ * The commands logged time's lines are kept under ("logged 1h 30m on “Deploy”"). Such a line says when the time was
+ * typed in, which is often not the day the work was done (that's the entry's own day): so it's part of the card's
+ * history, but not a sign that the card was worked on at that moment.
+ */
+export const TIME_COMMANDS = ['time.log', 'time.change', 'time.remove']
+
+/**
+ * Writes one line about a card into the board's log, for what isn't a board command and so doesn't go through the
+ * engine (a card's files, its logged time): `text` as the board's log reads it ("attached “a.pdf” to “Deploy”"),
+ * `own` as the card's own history does ("attached “a.pdf”").
+ */
+export async function logLine(
+  db: Db | Tx,
+  line: { boardId: string; actorId: string; command: string; via?: string | null; item: ActivityItem & { taskId: string } },
+) {
+  await db
+    .insert(boardActivity)
+    .values({ id: newId(), boardId: line.boardId, actorId: line.actorId, command: line.command, items: [line.item], via: line.via ?? null })
+}
 
 /** One thing that happened on a board: a change (in words), or a comment. */
 export type ActivityEntry = {
@@ -20,6 +42,54 @@ export type ActivityEntry = {
   | { kind: 'change'; items: ActivityItem[]; command: string; via: string | null }
   | { kind: 'comment'; taskId: string; task: string | null; body: string; mentions: string[] }
 )
+
+/** What was done to one card at one time: its own lines of a change, who made it and through what. */
+export interface TaskActivityEntry {
+  at: Date
+  actorId: string | null
+  actorName: string | null
+  actorPicture: string | null
+  via: string | null
+  items: ActivityItem[]
+}
+
+/**
+ * One card's own history from the board's log, newest first: the lines about it (a change may hold lines about other
+ * cards too: those are left out), back as far as the log goes. Comments aren't in it: a card's comments are their own
+ * list. Returns up to `limit`, and whether there's more (then ask again with `until` set to the last one's `at`).
+ *
+ * (A line is tied to its card inside the row's `items`, so this asks the database which rows hold one for this card.
+ * It reads the board's rows through `board_activity_board_idx`: quick enough on a board with tens of thousands.)
+ */
+export async function readTaskActivity(
+  db: Db,
+  q: { boardId: string; taskId: string; until: Date | null; limit: number },
+): Promise<{ entries: TaskActivityEntry[]; more: boolean }> {
+  const rows = await db
+    .select({
+      at: boardActivity.at,
+      actorId: boardActivity.actorId,
+      actorName: users.name,
+      actorPicture: users.picture,
+      via: boardActivity.via,
+      items: boardActivity.items,
+    })
+    .from(boardActivity)
+    .leftJoin(users, eq(users.id, boardActivity.actorId))
+    .where(
+      and(
+        eq(boardActivity.boardId, q.boardId),
+        sql`${boardActivity.items} @> ${JSON.stringify([{ taskId: q.taskId }])}::jsonb`,
+        q.until ? lt(boardActivity.at, q.until) : undefined,
+      ),
+    )
+    .orderBy(desc(boardActivity.at))
+    .limit(q.limit + 1)
+  return {
+    entries: rows.slice(0, q.limit).map((r) => ({ ...r, items: (r.items as ActivityItem[]).filter((i) => i.taskId === q.taskId) })),
+    more: rows.length > q.limit,
+  }
+}
 
 const UNITS = { h: 3_600_000, d: 86_400_000, w: 604_800_000 }
 
@@ -142,7 +212,15 @@ export async function workSigns(
   const changes = await db
     .select({ boardId: boardActivity.boardId, items: boardActivity.items })
     .from(boardActivity)
-    .where(and(inArray(boardActivity.boardId, boardIds), from ? gte(boardActivity.at, from) : undefined, to ? lt(boardActivity.at, to) : undefined))
+    .where(
+      and(
+        inArray(boardActivity.boardId, boardIds),
+        // (Time shows by the day it was logged for, just above.)
+        notInArray(boardActivity.command, TIME_COMMANDS),
+        from ? gte(boardActivity.at, from) : undefined,
+        to ? lt(boardActivity.at, to) : undefined,
+      ),
+    )
   for (const c of changes) for (const item of c.items as ActivityItem[]) if (item.taskId) add(c.boardId, item.taskId, 'changed')
   return out
 }

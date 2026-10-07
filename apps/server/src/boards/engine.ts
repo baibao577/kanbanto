@@ -269,8 +269,11 @@ export class BoardEngine {
       const q = `“${plan.summary.title}”`
       const log = (boardId: string, items: ActivityItem[]) =>
         tx.insert(boardActivity).values({ id: newId(), boardId, actorId: userId, command: 'task.moveToBoard', items, via: via ?? null })
-      const left: ActivityItem[] = [{ taskId, text: `moved ${q}${more} to another board` }]
-      const arrived: ActivityItem[] = [{ taskId: plan.ids.get(taskId)!, text: `moved ${q}${more} here from another board` }]
+      // (`own`: the line as the card's own history says it. On the board it arrives on, that's where its history starts.)
+      const left: ActivityItem[] = [{ taskId, text: `moved ${q}${more} to another board`, own: `moved it${more} to another board` }]
+      const arrived: ActivityItem[] = [
+        { taskId: plan.ids.get(taskId)!, text: `moved ${q}${more} here from another board`, own: `moved it${more} here from another board` },
+      ]
       await log(fromId, left)
       await log(toId, arrived)
       const bump = async (id: string) => {

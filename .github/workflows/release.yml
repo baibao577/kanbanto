@@ -1,6 +1,7 @@
 # A version tag (v1.2.3) publishes a ready-made image to GitHub's container registry:
 #   ghcr.io/<owner>/<repo>:1.2.3 and :latest
 # and then lists the release on GitHub, with that version's part of CHANGELOG.md as its text.
+# The tag has to be the "version" in apps/server/package.json, which is what the app says it is (see src/version.ts).
 name: Release
 
 on:
@@ -16,6 +17,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: The tag is the version the app says it is
+        run: |
+          version="$(jq -r .version apps/server/package.json)"
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::The tag is $GITHUB_REF_NAME, but apps/server/package.json says $version, which is the number the app shows. Set \"version\" there to ${GITHUB_REF_NAME#v}, commit, and tag that commit."
+            exit 1
+          fi
       - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4

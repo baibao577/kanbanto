@@ -355,6 +355,12 @@ docker compose up -d --build --wait
 Database changes are applied automatically when the new version starts. Check the logs if anything looks wrong:
 `docker compose logs --tail 100 app`.
 
+**Which version is running?** The foot of the account menu (your initials, top right) says, like
+"Kanbanto 0.1.0 · 7 Oct": the release, and the day this copy was built. So does Platform console → Overview, the
+log when the server starts, and `docker compose exec app node dist/cli.js version`. A copy built from `main` between
+two releases says the last release's number: the day is what tells it apart. Only people who are signed in are told;
+`/api/health` doesn't say.
+
 ## Other ways to run it
 
 ### A platform like Railway, Render or Fly.io

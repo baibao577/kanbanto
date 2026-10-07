@@ -3,7 +3,8 @@ import { type ReactNode } from 'react'
 import type { AdminSettings, PlatformEmail, PlatformStats, PlatformStorage } from '@kanbanto/model/api'
 import { api } from '@/api/client'
 import { hrefFor, type AdminSection } from '@/app/router'
-import { formatSize } from '@/lib/format'
+import { useAuth } from '@/app/use-auth'
+import { formatShortDay, formatSize } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { PageTitle } from '@/components/settings/SettingsCard'
 import { useLoaded } from '@/data/useLoaded'
@@ -25,6 +26,7 @@ const fetchOverview = () =>
 /** Platform console → Overview: totals, and how each part is set up (with a link to change it). */
 export function OverviewSection() {
   const [d] = useLoaded(fetchOverview)
+  const { version } = useAuth()
   if (!d) return null
   const { stats, email, storage } = d
   const emailOk = email.sender && email.sender.working
@@ -60,6 +62,12 @@ export function OverviewSection() {
           tone={storage.bucket?.lastError ? 'bad' : 'ok'}
         />
       </section>
+      {version && (
+        <p className="text-xs text-muted-foreground">
+          This is Kanbanto {version.number}
+          {version.built && `, built on ${formatShortDay(version.built)}`}.
+        </p>
+      )}
     </div>
   )
 }

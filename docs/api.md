@@ -265,6 +265,13 @@ first: each change in words ("moved “Deploy” to Done"), who made it and thro
 `since` and `until` also take `24h`, `3d` or `2w` (back from now). Changes are kept for 180 days. For more, ask again
 with `until` set to the answer's `nextUntil`.
 
+`GET /api/boards/<id>/tasks/<taskId>/activity` is one task's own history, newest first: `entries`, each with `at`,
+`actor`, `via` and `lines`, what was done to it in words that follow the person's name ("moved it from To Do to
+Doing"). `{date}` in a line stands for that line's `date`. It is read from the same activity, so it goes back 180
+days too, and its comments aren't in it. Files attached, removed and restored are, and so is time logged, changed
+and removed. Page with `until` and `nextUntil` as above. A line logged before 0.2 names the task, as the board's
+activity does.
+
 **Dates.** A task's `start` and `due` are a whole day, `2026-10-15`, or with a time an exact moment in UTC,
 `2026-10-15T07:30:00Z`, which the app shows in each person's own time zone. Send a time with its time zone
 (`2026-10-15T14:30:00+07:00` or `…Z`); it's stored in UTC, to the minute. A time without a time zone is refused, since it

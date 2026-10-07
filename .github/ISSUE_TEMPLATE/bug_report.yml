@@ -37,7 +37,7 @@ body:
     id: version
     attributes:
       label: Version
-      description: The release (e.g. v0.1.0), or the date you downloaded it.
+      description: The line at the foot of the account menu (your initials, top right), like "Kanbanto 0.1.0 · 7 Oct". If you can't open the app, the release (e.g. v0.1.0) or the date you downloaded it.
   - type: textarea
     id: logs
     attributes:

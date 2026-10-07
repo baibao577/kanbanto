@@ -71,6 +71,8 @@ It arrives:
 Turn email reminders off, or desktop notifications on, under **your initials → Account settings → Notifications**.
 Desktop notifications are switched on per computer, and work even when Kanbanto is not open.
 
+A reminder says when the card is due by your own clock: the time zone in your Account settings.
+
 ## The morning summary
 
 Around 8:00 in your own time zone, Kanbanto emails you a short summary: cards due today and overdue, reminders later

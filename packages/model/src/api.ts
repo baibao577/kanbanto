@@ -70,6 +70,11 @@ export interface Me {
   links: SiteLink[]
   /** Where "Guides" in the account menu goes: how to use Kanbanto. Null: the site has taken the item out. */
   guidesUrl: string | null
+  /**
+   * Which Kanbanto the site runs, for people who are signed in (null for a visitor): the release's number ("0.1.0"),
+   * and the day this copy was built ("2026-10-07"; null when it runs straight from the source).
+   */
+  version: { number: string; built: string | null } | null
 }
 
 export type SmtpSecurity = 'tls' | 'starttls' | 'none'
@@ -809,6 +814,31 @@ export interface AdminUser {
   createdAt: string
   /** Boards they own. */
   boards: number
+}
+
+/**
+ * GET /api/boards/:id/tasks/:taskId/activity: what happened to one card, newest first, from the board's activity log
+ * (which goes back 180 days). For the board's people, not visitors with its public link. Comments aren't in it.
+ */
+export interface CardHistory {
+  entries: CardHistoryEntry[]
+  /** Pass back as `until` for the ones before these; null at the end. */
+  nextUntil: string | null
+}
+
+/** One change to a card: who made it, when, through which app, and what it did. */
+export interface CardHistoryEntry {
+  at: string
+  /** Null: their account is gone. */
+  actor: { id: string; name: string; picture?: string | null } | null
+  /** The app it was made through ("Claude", "API", "Telegram"); null: the website. */
+  via: string | null
+  /**
+   * What it did to the card, in words to follow the person's name: "moved it from To Do to Doing". `{date}` in one
+   * stands for `date` (a day or a moment), to be written in the reader's own words. Lines logged before the card's
+   * own wording was kept name the card: "moved “Deploy” to Doing".
+   */
+  lines: { text: string; date?: string }[]
 }
 
 /** What the server sends over a board's live connection. */

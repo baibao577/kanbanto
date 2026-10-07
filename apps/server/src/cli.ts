@@ -2,6 +2,7 @@ import { platformAdmins, resetPassword, setPlatformAdmin } from './admins'
 import { currentKey, newMasterKey } from './crypto'
 import { createDb, migrateDb } from './db'
 import { env } from './env'
+import { versionWords } from './version'
 
 /**
  * Server-side commands for the platform owner. Platform admin rights are only granted here (never by signing up),
@@ -13,13 +14,19 @@ import { env } from './env'
  *   user password <email>  set a temporary password for an account (e.g. you forgot yours and email isn't set up)
  *   key                    print the encryption key in use, to keep a copy (it protects the saved email and storage keys)
  *   secret                 print a new random key, if you'd rather set ENCRYPTION_KEY yourself
+ *   version                which Kanbanto this is
  *
  * In development: pnpm admin grant you@example.com
  * In Docker:      docker compose exec app node dist/cli.js admin grant you@example.com
  */
-const USAGE = 'Usage: admin grant <email> | admin revoke <email> | admin list | user password <email> | key | secret'
+const USAGE = 'Usage: admin grant <email> | admin revoke <email> | admin list | user password <email> | key | secret | version'
 
 const [group, action, email] = process.argv.slice(2)
+
+if (group === 'version') {
+  console.log(`Kanbanto ${versionWords()}`)
+  process.exit(0)
+}
 
 if (group === 'secret') {
   console.log(newMasterKey())

@@ -544,11 +544,12 @@ describe('your own news, through a bot you connected to your own chat', () => {
       command: {
         type: 'task.update',
         id: 'A',
-        fields: { assigneeId: ann.user.id, reminders: [{ id: 'r1', at: new Date(Date.now() - 60_000).toISOString() }] },
+        fields: { assigneeId: ann.user.id, due: '2026-10-07T11:00:00Z', reminders: [{ id: 'r1', at: new Date(Date.now() - 60_000).toISOString() }] },
       },
     })
     expect(await sendReminders(t.app)).toBe(1)
-    expect(news().at(-1)).toMatch(/^<b>⏰ Launch website<\/b>\nMy first board/)
+    // The time it's due is said as her clock reads (her account is on Bangkok time): 11:00 UTC is 6pm there.
+    expect(news().at(-1)).toMatch(/^<b>⏰ Launch website<\/b>\nMy first board · due Wed 7 Oct, 18:00\n/)
 
     // A reminder on a card of the Inbox itself: its bot's chat hears it once, not also as the Inbox's own news.
     send(mine.token, own(ANN), ANN, 'Water the plants')
@@ -560,16 +561,18 @@ describe('your own news, through a bot you connected to your own chat', () => {
       command: {
         type: 'task.update',
         id: plant.id,
-        fields: { reminders: [{ id: 'r2', at: new Date(Date.now() - 60_000).toISOString(), by: ann.user.id }] },
+        fields: { due: '2026-10-07T11:00:00Z', reminders: [{ id: 'r2', at: new Date(Date.now() - 60_000).toISOString(), by: ann.user.id }] },
       },
     })
+    // An account with no time zone is told in UTC, and the message says so.
+    await ann.ok('PATCH', '/api/auth/me', { timeZone: null })
     expect(await sendReminders(t.app)).toBe(1)
     await deliver()
     const after = said()
       .slice(before)
       .map((m) => m.text)
     expect(after.filter((text) => text.includes('Water the plants'))).toHaveLength(1)
-    expect(after[0]).toMatch(/^<b>⏰ Water the plants<\/b>\nInbox/)
+    expect(after[0]).toMatch(/^<b>⏰ Water the plants<\/b>\nInbox · due Wed 7 Oct, 11:00 UTC\n/)
   })
 })
 

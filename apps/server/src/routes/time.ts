@@ -1,13 +1,14 @@
-import type { ActivityItem } from '@kanbanto/model/activity'
+import { OWN_DATE, type ActivityItem } from '@kanbanto/model/activity'
 import type { TimeEntryView, TimeMine, WeekView } from '@kanbanto/model/api'
 import { fromDay, normalizeTaskDate, toDay, weekdayOf } from '@kanbanto/model/dates'
 import { newId } from '@kanbanto/model/ids'
-import { MAX_MINUTES } from '@kanbanto/model/time'
-import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, lt, lte, ne, sql } from 'drizzle-orm'
+import { formatDuration, MAX_MINUTES } from '@kanbanto/model/time'
+import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, lt, lte, ne, notInArray, sql } from 'drizzle-orm'
 import { alias } from 'drizzle-orm/pg-core'
 import type { FastifyInstance, FastifyPluginAsync } from 'fastify'
 import { z } from 'zod'
 import { atLeast, requireAccess, workspaceRole, type Access, type BoardRow } from '../boards/access'
+import { logLine, TIME_COMMANDS } from '../boards/activityLog'
 import type { SessionUser } from '../auth/sessions'
 import type { Db, Tx } from '../db'
 import { boardActivity, comments, lists, planningPeople, tasks, timeEntries, users } from '../db/schema'
@@ -135,7 +136,16 @@ async function touchedCards(db: Db | Tx, userId: string, boardIds: string[], fir
   const changes = await db
     .select({ at: boardActivity.at, boardId: boardActivity.boardId, items: boardActivity.items })
     .from(boardActivity)
-    .where(and(inArray(boardActivity.boardId, boardIds), eq(boardActivity.actorId, userId), gte(boardActivity.at, from), lt(boardActivity.at, until)))
+    .where(
+      and(
+        inArray(boardActivity.boardId, boardIds),
+        eq(boardActivity.actorId, userId),
+        // (Typing in your time for a card isn't working on it: that would tick the day you filled your week in.)
+        notInArray(boardActivity.command, TIME_COMMANDS),
+        gte(boardActivity.at, from),
+        lt(boardActivity.at, until),
+      ),
+    )
   const said = await db
     .select({ at: comments.createdAt, boardId: comments.boardId, taskId: comments.taskId })
     .from(comments)
@@ -162,6 +172,37 @@ async function announce(app: FastifyInstance, boardId: string, taskId: string) {
     .where(and(eq(timeEntries.boardId, boardId), eq(timeEntries.taskId, taskId)))
   // (Logged time isn't shown to visitors with the public link.)
   app.hub.broadcast(boardId, { type: 'time', taskId, total: r?.n ?? 0 }, true)
+}
+
+/**
+ * Says in the board's log what was done with a card's time (which is how it gets into the card's history): time
+ * logged ("logged 1h 30m", with the day when it's for another day than today where they are), an entry's time
+ * changed, an entry removed. Someone else's entry, fixed by an owner or admin, is said to be theirs. A card that's
+ * gone has no history to add to.
+ */
+async function logTimeLine(
+  app: FastifyInstance,
+  me: SessionUser,
+  e: Pick<Entry, 'boardId' | 'taskId' | 'userId'>,
+  command: 'time.log' | 'time.change' | 'time.remove',
+  words: (whose: string) => { text: (title: string) => string; own: string; date?: string },
+  via: string | null = null,
+) {
+  const [card] = await app.db
+    .select({ title: tasks.title })
+    .from(tasks)
+    .where(and(eq(tasks.boardId, e.boardId), eq(tasks.id, e.taskId)))
+  if (!card) return
+  const theirs =
+    e.userId && e.userId !== me.id ? (await app.db.select({ name: users.name }).from(users).where(eq(users.id, e.userId)))[0]?.name : null
+  const w = words(e.userId === me.id ? '' : `${theirs ?? 'someone'}’s `)
+  await logLine(app.db, {
+    boardId: e.boardId,
+    actorId: me.id,
+    command,
+    via,
+    item: { taskId: e.taskId, text: w.text(`“${card.title}”`), own: w.own, ...(w.date && { date: w.date }) },
+  })
 }
 
 /** An entry on a board you can see, and whether you may change it. */
@@ -195,6 +236,21 @@ export async function logTimeOn(
   if (!card) throw new HttpError(404, 'That card no longer exists.')
   const entryId = newId()
   await app.db.insert(timeEntries).values({ id: entryId, boardId, taskId, userId: me.id, ...body, via })
+  const time = formatDuration(body.minutes)
+  // (Time for another day, like a week filled in on Friday, says which.)
+  const other = body.day !== dayIn(new Date(), me.timeZone || 'UTC')
+  await logTimeLine(
+    app,
+    me,
+    { boardId, taskId, userId: me.id },
+    'time.log',
+    () => ({
+      text: (card) => `logged ${time} on ${card}${other ? ` for ${body.day}` : ''}`,
+      own: `logged ${time}${other ? ` for ${OWN_DATE}` : ''}`,
+      ...(other && { date: body.day }),
+    }),
+    via,
+  )
   const [entry] = await entryViews(app.db, eq(timeEntries.id, entryId), await changeRule(app.db, me, board, access))
   await announce(app, boardId, taskId)
   return entry
@@ -248,6 +304,21 @@ export const timeRoutes: FastifyPluginAsync = async (app) => {
       .update(timeEntries)
       .set({ ...body, updatedAt: new Date(), ...(e.userId !== me.id && { editedBy: me.id }) })
       .where(eq(timeEntries.id, entryId))
+    // (A new day or note alone isn't said: the entry itself shows them.)
+    if (body.minutes !== undefined && body.minutes !== e.minutes) {
+      const [was, now] = [formatDuration(e.minutes), formatDuration(body.minutes)]
+      await logTimeLine(
+        app,
+        me,
+        e,
+        'time.change',
+        (whose) => ({
+          text: (card) => `changed ${whose || 'the '}time logged on ${card} from ${was} to ${now}`,
+          own: `changed ${whose || 'the '}logged time from ${was} to ${now}`,
+        }),
+        req.apiToken?.app ?? null,
+      )
+    }
     const { board, access } = await requireAccess(app.db, me, id, 'viewer', { write: true })
     const [entry] = await entryViews(app.db, eq(timeEntries.id, entryId), await changeRule(app.db, me, board, access))
     await announce(app, id, e.taskId)
@@ -259,6 +330,18 @@ export const timeRoutes: FastifyPluginAsync = async (app) => {
     const me = requireUser(req.user)
     const e = await entryFor(app, me, id, entryId)
     await app.db.delete(timeEntries).where(eq(timeEntries.id, entryId))
+    const time = formatDuration(e.minutes)
+    await logTimeLine(
+      app,
+      me,
+      e,
+      'time.remove',
+      (whose) => ({
+        text: (card) => `removed ${time} of ${whose}logged time from ${card}`,
+        own: `removed ${time} of ${whose}logged time`,
+      }),
+      req.apiToken?.app ?? null,
+    )
     await announce(app, id, e.taskId)
     return { ok: true }
   })

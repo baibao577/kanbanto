@@ -4,6 +4,7 @@ import { useAuth } from '@/app/use-auth'
 import { useTheme } from '@/app/use-theme'
 import { SEARCH_KEYS } from '@/components/cards/search'
 import { Avatar } from '@/components/common/bits'
+import { formatShortDay } from '@/lib/format'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -19,9 +20,12 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 
-/** Your avatar: search all cards, your week, the guides, account, appearance, the platform console (platform admins), sign out. */
+/**
+ * Your avatar: search all cards, your week, the guides, account, appearance, the platform console (platform admins),
+ * sign out, and which Kanbanto this is.
+ */
 export function AccountMenu() {
-  const { user, signOut, guidesUrl } = useAuth()
+  const { user, signOut, guidesUrl, version } = useAuth()
   const { theme, setTheme } = useTheme()
   if (!user) return null
 
@@ -86,6 +90,13 @@ export function AccountMenu() {
           >
             <SignOut /> Sign out
           </DropdownMenuItem>
+          {version && (
+            // Which Kanbanto this is, for when something needs reporting: the release, and the day this copy was built.
+            <p className="truncate px-2 pt-1.5 pb-1 text-[11px] text-muted-foreground">
+              Kanbanto {version.number}
+              {version.built && ` · ${formatShortDay(version.built)}`}
+            </p>
+          )}
         </DropdownMenuContent>
       </DropdownMenu>
     </>
