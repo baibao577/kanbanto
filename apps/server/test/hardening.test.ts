@@ -112,6 +112,9 @@ describe('what stops when access does', () => {
       payload: Buffer.alloc(10),
     })
     expect(raw.statusCode).toBe(415)
+    // …and a picture's bytes only go where a profile picture is set.
+    const picture = await t.app.inject({ method: 'PATCH', url: '/api/auth/me', headers: { 'content-type': 'image/png' }, payload: Buffer.alloc(10) })
+    expect(picture.statusCode).toBe(415)
   })
 })
 

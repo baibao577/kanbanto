@@ -1,7 +1,8 @@
 import { eq } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
+import type { Tx } from '../db'
 import { boards, users } from '../db/schema'
-import { accessOf } from './access'
+import { accessOf, openBoards } from './access'
 
 /**
  * People, visibility or invites changed: every cached and open copy of the board is refreshed (so new people
@@ -25,4 +26,19 @@ export async function announceSharingChange(app: FastifyInstance, boardId: strin
 export async function announceWorkspaceChange(app: FastifyInstance, workspaceId: string) {
   const rows = await app.db.select({ id: boards.id }).from(boards).where(eq(boards.workspaceId, workspaceId))
   for (const b of rows) await announceSharingChange(app, b.id)
+}
+
+/**
+ * A person's name or picture is changing (`change` writes it): every board they're on shows them, so those boards'
+ * change numbers go up with it, and once that's done their cached copies go and every open copy is fetched again.
+ * (Not `touch`: nothing happened on those boards, so they don't move up among the recently active ones.)
+ */
+export async function changePerson(app: FastifyInstance, userId: string, change: (tx: Tx) => Promise<void>) {
+  const ids = await app.db.transaction(async (tx) => {
+    await change(tx)
+    const ids = (await openBoards(tx, userId)).map((b) => b.id)
+    await app.engine.bump(tx, ids)
+    return ids
+  })
+  app.engine.reloaded(ids)
 }

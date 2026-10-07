@@ -302,6 +302,7 @@ export function PlanningView({ ws, route }: { ws: WorkspaceDetail; route: Worksp
             canEdit={canEdit}
             coarse={coarse}
             activity={state.activity}
+            pictures={state.pictures}
             boards={state.boards}
             todayRequest={todayRequest}
             run={run}

@@ -2,6 +2,7 @@ import { createHash, randomBytes } from 'node:crypto'
 import { and, eq, gt, isNull, lt } from 'drizzle-orm'
 import type { Db } from '../db'
 import { sessions, users } from '../db/schema'
+import { pictureUrl } from '../pictures'
 
 export const SESSION_COOKIE = 'kankan_session'
 const DAY = 24 * 60 * 60 * 1000
@@ -12,6 +13,8 @@ export interface SessionUser {
   id: string
   email: string
   name: string
+  /** Where their profile picture is (null: none). */
+  picture: string | null
   isAdmin: boolean
   emailVerified: boolean
   /** Has a password to sign in with (someone who only ever signed in with Google has none). */
@@ -66,6 +69,7 @@ export const sessionUser = (u: typeof users.$inferSelect): SessionUser => ({
   id: u.id,
   email: u.email,
   name: u.name,
+  picture: pictureUrl(u.picture),
   isAdmin: u.isAdmin,
   emailVerified: !!u.emailVerifiedAt,
   hasPassword: u.passwordHash !== null,

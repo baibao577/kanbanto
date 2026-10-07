@@ -274,6 +274,13 @@
       "when": 1791310857513,
       "tag": "0038_signup_google_only",
       "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1791346644185,
+      "tag": "0039_profile_picture",
+      "breakpoints": true
     }
   ]
 }

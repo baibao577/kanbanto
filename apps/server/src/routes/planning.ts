@@ -37,7 +37,7 @@ export const planningRoutes: FastifyPluginAsync = async (app) => {
     const { id } = parse(Params, req.params)
     const me = requireUser(req.user)
     const canEdit = await canPlan(app.db, id, me.id)
-    const { plan, seq, activity } = await loadPlan(app.db, id)
+    const { plan, seq, activity, pictures } = await loadPlan(app.db, id)
     const members = await app.db.select({ userId: workspaceMembers.userId }).from(workspaceMembers).where(eq(workspaceMembers.workspaceId, id))
     // The workspace's boards you can open: what a project can be linked to, and what its link opens.
     const boards = (await boardsFor(app.db, me.id))
@@ -50,7 +50,7 @@ export const planningRoutes: FastifyPluginAsync = async (app) => {
       app.db,
       plan.projects.flatMap((p) => (p.boardId && open.has(p.boardId) ? [p.boardId] : [])),
     )
-    return { plan, seq, canEdit, memberIds: members.map((m) => m.userId), activity, boards, actuals }
+    return { plan, seq, canEdit, memberIds: members.map((m) => m.userId), activity, pictures, boards, actuals }
   })
 
   /** A board's project in its workspace's plan: who's booked on it, how much and until when (for its Timeline). */
@@ -64,7 +64,7 @@ export const planningRoutes: FastifyPluginAsync = async (app) => {
       .where(eq(planningProjects.boardId, id))
     // The plan is for the workspace's people: someone the board is shared with from outside doesn't see it.
     if (!link || !(await workspaceRole(app.db, link.workspaceId, me.id))) return { plan: null }
-    const { plan } = await loadPlan(app.db, link.workspaceId)
+    const { plan, pictures } = await loadPlan(app.db, link.workspaceId)
     const project = plan.projects.find((p) => p.id === link.projectId)
     if (!project) return { plan: null }
     const blocks = plan.blocks.filter((b) => b.projectId === project.id).sort((a, b) => (a.start < b.start ? -1 : 1))
@@ -75,6 +75,7 @@ export const planningRoutes: FastifyPluginAsync = async (app) => {
       lines.push({
         key: personId,
         name: person?.name ?? 'Someone',
+        ...(person?.userId && pictures[person.userId] && { picture: pictures[person.userId] }),
         role: (person?.roleId && roles.get(person.roleId)) || null,
         blocks: blocks.filter((b) => b.personId === personId).map(({ start, end, pct }) => ({ start, end, pct })),
       })

@@ -2,7 +2,7 @@ import { Check, PencilSimple, Plus, X } from '@phosphor-icons/react'
 import { useState } from 'react'
 import { peopleOf, type BoardField, type FieldValue } from '@kanbanto/model/fields'
 import { useBoard } from '@/app/board-context'
-import { useLinks, usePerson } from '@/app/links-context'
+import { useLinks, usePerson, usePersonPicture } from '@/app/links-context'
 import { Avatar } from '@/components/common/bits'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { cn } from '@/lib/utils'
@@ -12,12 +12,13 @@ const GONE = 'Someone who left'
 
 const CHIP = 'inline-flex h-6 max-w-full min-w-0 items-center gap-1.5 rounded-full border bg-card pr-2 pl-0.5 text-xs'
 
-/** One of the board's people, as a chip: their initials and name. `onRemove`: an ✕ that takes them out. */
+/** One of the board's people, as a chip: their picture or initials, and their name. `onRemove`: an ✕ that takes them out. */
 export function PersonChip({ id, onRemove }: { id: string; onRemove?: () => void }) {
   const name = usePerson(id)
+  const picture = usePersonPicture(id)
   return (
     <span className={cn(CHIP, !name && 'border-dashed pl-2 text-muted-foreground italic', onRemove && 'pr-0.5')}>
-      {name && <Avatar name={name} className="size-5 text-[9px]" />}
+      {name && <Avatar name={name} picture={picture} className="size-5 text-[9px]" />}
       <span className="truncate">{name ?? GONE}</span>
       {onRemove && (
         <button
@@ -33,11 +34,12 @@ export function PersonChip({ id, onRemove }: { id: string; onRemove?: () => void
   )
 }
 
-/** Just the initials (a "?" for someone who left). */
+/** Just their picture or initials (a "?" for someone who left). */
 function Face({ id, className }: { id: string; className?: string }) {
   const name = usePerson(id)
+  const picture = usePersonPicture(id)
   return name ? (
-    <Avatar name={name} className={className} />
+    <Avatar name={name} picture={picture} className={className} />
   ) : (
     <span
       title={GONE}
@@ -197,7 +199,7 @@ function PeoplePicker({ field, picked, onPick }: { field: BoardField; picked: st
                 onClick={() => onPick(m.id)}
                 className="flex h-8 w-full items-center gap-2 rounded-md px-2 text-left text-sm hover:bg-accent"
               >
-                <Avatar name={m.name} className="size-5 text-[9px]" />
+                <Avatar name={m.name} picture={m.picture} className="size-5 text-[9px]" />
                 <span className="min-w-0 flex-1 truncate">{m.name}</span>
                 {on && <Check weight="bold" className="size-3.5 shrink-0" />}
               </button>

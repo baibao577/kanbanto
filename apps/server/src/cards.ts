@@ -113,7 +113,7 @@ export async function searchCards(app: FastifyInstance, me: SessionUser, q: Card
 
   const rows: { row: CardRow; at: number; createdAt: number; due?: string; priority?: Task['priority'] }[] = []
   const labels = new Set<string>()
-  const people = new Map<string, string>()
+  const people = new Map<string, { name: string; picture?: string | null }>()
   const fields = new Map<string, FieldDef>()
   for (const b of boards) {
     const { data } = await app.engine.snapshot(b.id)
@@ -121,7 +121,7 @@ export async function searchCards(app: FastifyInstance, me: SessionUser, q: Card
     const archived = data.archived ?? {}
     const labelById = new Map(data.labels.map((l) => [l.id, l]))
     for (const l of data.labels) if (l.name.trim()) labels.add(l.name.trim())
-    for (const m of data.members) people.set(m.id, m.name)
+    for (const m of data.members) people.set(m.id, { name: m.name, picture: m.picture })
     for (const { front: _front, total: _total, ...def } of data.fields) fields.set(def.id, def)
     // Asked about a field: each card says what it has for it, and a test of it leaves out the boards without it.
     const asked = q.field ? data.fields.find((f) => f.id === q.field) : undefined
@@ -178,7 +178,7 @@ export async function searchCards(app: FastifyInstance, me: SessionUser, q: Card
       if (want && !fieldMatches(asked!, held, want, asker)) return
       const said = asked && held !== undefined ? valueText(asked, held, titleOf) : ''
       const at = cardMoment(facts, filter)!
-      const assignee = t.assigneeId ? (data.members.find((m) => m.id === t.assigneeId)?.name ?? null) : null
+      const assigned = t.assigneeId ? data.members.find((m) => m.id === t.assigneeId) : undefined
       rows.push({
         at: at.at,
         createdAt: facts.createdAt,
@@ -196,7 +196,8 @@ export async function searchCards(app: FastifyInstance, me: SessionUser, q: Card
           listColor: (put ? null : statusCol(idx, t.id).color) ?? null,
           done,
           completed: put ? (t.archivedDone ?? null) : null,
-          assignee,
+          assignee: assigned?.name ?? null,
+          ...(assigned?.picture && { assigneePicture: assigned.picture }),
           priority: t.priority ?? null,
           due: t.due ?? null,
           labels: t.labels.flatMap((l) => (labelById.has(l) ? [{ name: labelById.get(l)!.name, color: labelById.get(l)!.color }] : [])),
@@ -235,7 +236,9 @@ export async function searchCards(app: FastifyInstance, me: SessionUser, q: Card
     nextOffset: offset + page.length < rows.length ? offset + page.length : null,
     ...(offset === 0 && {
       labels: [...labels].sort((a, b) => a.localeCompare(b)),
-      people: [...people].map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name)),
+      people: [...people]
+        .map(([id, p]) => ({ id, name: p.name, ...(p.picture && { picture: p.picture }) }))
+        .sort((a, b) => a.name.localeCompare(b.name)),
       fields: [...fields.values()].sort((a, b) => a.name.localeCompare(b.name)),
     }),
   }

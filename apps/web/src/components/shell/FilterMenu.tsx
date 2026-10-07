@@ -102,12 +102,12 @@ export function FilterMenu() {
           {/* "Me" is whoever is looking: a filter saved with it is everyone's own. */}
           {user && (
             <CheckRow checked={!!f.assignees?.includes(ME)} onChange={() => set({ assignees: toggleIn(f.assignees, ME) })}>
-              <Avatar name={user.name} className="size-5 text-[9px]" /> Me
+              <Avatar name={user.name} picture={user.picture} className="size-5 text-[9px]" /> Me
             </CheckRow>
           )}
           {data.members.map((m) => (
             <CheckRow key={m.id} checked={!!f.assignees?.includes(m.id)} onChange={() => set({ assignees: toggleIn(f.assignees, m.id) })}>
-              <Avatar name={m.name} className="size-5 text-[9px]" /> {m.name}
+              <Avatar name={m.name} picture={m.picture} className="size-5 text-[9px]" /> {m.name}
             </CheckRow>
           ))}
           <CheckRow checked={!!f.assignees?.includes('')} onChange={() => set({ assignees: toggleIn(f.assignees, '') })}>

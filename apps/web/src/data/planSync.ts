@@ -18,6 +18,7 @@ export interface PlanState {
   canEdit: boolean
   memberIds: string[]
   activity: PlanningView['activity']
+  pictures: PlanningView['pictures']
   /** The workspace's boards you can open (what a project can be linked to). */
   boards: PlanningView['boards']
   /** Time logged on linked boards' cards (minutes by board, then by account), fresh with every check. */
@@ -103,6 +104,7 @@ export class PlanSync {
       canEdit: view.canEdit,
       memberIds: view.memberIds,
       activity: view.activity,
+      pictures: view.pictures,
       boards: view.boards,
       actuals: view.actuals,
       unsaved: 0,
@@ -245,7 +247,14 @@ export class PlanSync {
         }
         this.confirmed = view.plan
         this.seq = view.seq
-        this.set({ canEdit: view.canEdit, memberIds: view.memberIds, activity: view.activity, boards: view.boards, actuals: view.actuals })
+        this.set({
+          canEdit: view.canEdit,
+          memberIds: view.memberIds,
+          activity: view.activity,
+          pictures: view.pictures,
+          boards: view.boards,
+          actuals: view.actuals,
+        })
         this.replay()
       } catch (e) {
         if (e instanceof ApiError && e.status === 404) this.emit({ type: 'gone' })

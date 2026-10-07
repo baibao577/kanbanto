@@ -145,7 +145,7 @@ export const BoardSchema = z.object({
   description: plain(1000).optional(),
   ...meta,
 })
-export const MemberSchema = z.object({ id: recordId, name: plain(200), ...meta })
+export const MemberSchema = z.object({ id: recordId, name: plain(200), picture: z.string().max(200).optional(), ...meta })
 export const ColumnSchema = z.object({
   id: recordId,
   name: plain(200),

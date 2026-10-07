@@ -121,7 +121,7 @@ export function PlanBand({
             <div className={cell} style={{ width: left, paddingLeft: 30 }}>
               {line.name ? (
                 <>
-                  <Avatar name={line.name} className="size-4 text-[8px]" />
+                  <Avatar name={line.name} picture={line.picture} className="size-4 text-[8px]" />
                   <span className="min-w-0 truncate text-xs">{line.name}</span>
                   {line.role && <span className="shrink-0 rounded border px-1 text-[10px] text-muted-foreground">{line.role}</span>}
                 </>

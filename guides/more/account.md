@@ -1,6 +1,6 @@
 # Your account
 
-Click your initials at the top right for your account menu.
+Click your initials (or your picture, once you have one) at the top right for your account menu.
 
 ![The account menu](/images/account-menu.webp){.small}
 
@@ -11,7 +11,7 @@ dark, or following your device), and signing out. People who run the site also s
 
 | Section | What is there |
 |---|---|
-| **Profile** | Your name as others see it, and the email address you sign in with. |
+| **Profile** | Your picture and your name as others see them, and the email address you sign in with. |
 | **Password** | Change your password, or add one if you signed up with Google. |
 | **Notifications** | The morning summary, reminder emails, desktop notifications, and your time zone. See [notifications](/people/notifications). |
 | **Calendar** | Google Calendar and the calendar link. See [calendar](/more/calendar). |
@@ -22,6 +22,21 @@ dark, or following your device), and signing out. People who run the site also s
 | **Add from anywhere** | A button for your bookmarks bar, and Share on an Android phone, to put things in your Inbox. See [add from anywhere](/everyday/add-from-anywhere). |
 
 Most people only ever need the first four, and perhaps the last.
+
+## Your picture
+
+Without a picture, you show as your initials in a circle. To use a picture instead, open **Account settings →
+Profile**, click **Choose a picture** and pick one from your device. The circle shows how it will look. Click
+**Save** to keep it, or **Cancel** to leave things as they were.
+
+The picture is cut to a square from its middle, so one with your face near the centre works best. Any size is fine:
+it is made small before it is sent.
+
+It then shows wherever you appear: on cards you are assigned, beside your comments, and in the lists of people on a
+board. Others see it straight away. Anyone who can see a board can see the pictures of the people on it, including
+visitors of a board's public link.
+
+**Change** replaces it. **Remove** takes it away, and you show as your initials again.
 
 ## Your name and time zone
 

@@ -51,6 +51,8 @@ export interface Board extends Meta {
 export interface Member extends Meta {
   id: string
   name: string
+  /** Their profile picture, when they have one: a path on this site (see PublicUser.picture). */
+  picture?: string
 }
 
 /** A user-defined status list. */

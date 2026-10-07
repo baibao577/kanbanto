@@ -20,6 +20,11 @@ export interface PublicUser {
   id: string
   email: string
   name: string
+  /**
+   * Their profile picture: a path on this site (`/api/pictures/…`, a new one whenever the picture changes), or null
+   * when they have none and show as their initials. The same wherever a person comes with a `picture`.
+   */
+  picture: string | null
   /** Platform admin (the people running the site; granted on the server, never by signing up). */
   isAdmin: boolean
   /** Confirmed their email address, or a platform admin vouched for it (required once the site can send email). */
@@ -213,7 +218,7 @@ export interface ArchivedPage {
 export interface CommentView {
   id: string
   taskId: string
-  author: { id: string; name: string } | null
+  author: { id: string; name: string; picture?: string | null } | null
   body: string
   /** People @mentioned in it. */
   mentions: string[]
@@ -229,7 +234,7 @@ export interface TimeEntryView {
   boardId: string
   taskId: string
   /** Who logged it (null: their account is gone). */
-  user: { id: string; name: string } | null
+  user: { id: string; name: string; picture?: string | null } | null
   /** The day it counts for, "2026-10-02". */
   day: string
   minutes: number
@@ -519,6 +524,8 @@ export interface CardRow {
   /** Archived as completed: it was in a done list then. null: not archived, or unknown (archived before this was kept). */
   completed: boolean | null
   assignee: string | null
+  /** Their profile picture, when they have one. */
+  assigneePicture?: string
   priority: Priority | null
   due: string | null
   labels: { name: string; color: ColorName }[]
@@ -548,13 +555,14 @@ export interface CardsPage {
   nextOffset: number | null
   /** On the first page: the labels, people and fields of the boards searched, to filter by. */
   labels?: string[]
-  people?: { id: string; name: string }[]
+  people?: { id: string; name: string; picture?: string | null }[]
   fields?: FieldDef[]
 }
 
 export interface SharingMember {
   userId: string
   name: string
+  picture: string | null
   /** Owners see everyone's; others only their own. */
   email?: string
   role: Role
@@ -719,6 +727,7 @@ export interface WorkspaceSummary {
 export interface WorkspaceMember {
   userId: string
   name: string
+  picture: string | null
   /** Admins see everyone's; others only their own. */
   email?: string
   role: WorkspaceRole
@@ -737,6 +746,8 @@ export interface PlanningView {
   memberIds: string[]
   /** The last change to each project's plan: when, and who made it. */
   activity: Record<string, { at: string; by: string | null }>
+  /** The profile pictures of the people in the plan who have one, by account. */
+  pictures: Record<string, string>
   /** The workspace's boards you can open: what a project can be linked to. */
   boards: { id: string; name: string; background: string | null }[]
   /** Time logged on linked boards' cards: minutes by board, then by account (see planActuals). */
@@ -756,7 +767,7 @@ export interface BoardPlan {
     scheduled: number
     unassigned: number
     /** One per person on it (earliest first), then each "not assigned yet" line with time on it. */
-    lines: { key: string; name: string | null; role: string | null; blocks: { start: string; end: string; pct: number }[] }[]
+    lines: { key: string; name: string | null; picture?: string; role: string | null; blocks: { start: string; end: string; pct: number }[] }[]
   } | null
 }
 
@@ -791,6 +802,7 @@ export interface AdminUser {
   id: string
   email: string
   name: string
+  picture: string | null
   isAdmin: boolean
   emailVerified: boolean
   disabled: boolean

@@ -44,7 +44,7 @@ export function CardsFilters({
   boards: BoardSummary[]
   workspaces: WorkspaceSummary[]
   /** The people, label names and fields of the boards searched (from the results). */
-  people: { id: string; name: string }[]
+  people: { id: string; name: string; picture?: string | null }[]
   labels: string[]
   fields: FieldDef[]
   /** The field picked, when it's known: it may not be on the boards searched now. */
@@ -222,7 +222,7 @@ function MoreMenu({
 }: {
   search: Search
   set: (patch: Partial<Search>) => void
-  people: { id: string; name: string }[]
+  people: { id: string; name: string; picture?: string | null }[]
   labels: string[]
   fields: FieldDef[]
   field?: FieldDef

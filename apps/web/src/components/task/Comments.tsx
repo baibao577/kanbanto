@@ -87,7 +87,7 @@ export function CommentsSection({
     const mine = c.author?.id === user?.id
     return (
       <li key={c.id} className="group flex gap-3">
-        <Avatar name={c.author?.name ?? '?'} className="mt-0.5 size-7 text-[10px]" />
+        <Avatar name={c.author?.name ?? '?'} picture={c.author?.picture} className="mt-0.5 size-7 text-[10px]" />
         <div className="min-w-0 flex-1">
           <p className="text-xs">
             <span className="font-semibold">{c.author?.name ?? 'Someone'}</span>{' '}
@@ -135,7 +135,7 @@ export function CommentsSection({
   }
   const composer = canComment && (
     <div className={cn('flex gap-3', !column && 'mb-4')}>
-      <Avatar name={user?.name ?? '?'} className="mt-1 size-7 text-[10px]" />
+      <Avatar name={user?.name ?? '?'} picture={user?.picture} className="mt-1 size-7 text-[10px]" />
       <Composer
         boardId={boardId}
         taskId={taskId}

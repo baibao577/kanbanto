@@ -13,6 +13,7 @@ import { attachments, boards, comments, notifications, tasks, users, workspaces 
 import { HttpError, parse } from '../http'
 import { requireUser } from './auth'
 import { attachDrafts, trashCommentFiles, views as attachmentViews } from './files'
+import { pictureUrl } from '../pictures'
 
 const Params = z.object({ id: z.string().min(1).max(100) })
 const TaskParams = Params.extend({ taskId: z.string().min(1).max(100) })
@@ -40,7 +41,7 @@ export const excerpt = (body: string, n = 140) => (body.length > n ? `${body.sli
 
 async function commentViews(db: Db | Tx, where: ReturnType<typeof and>): Promise<CommentView[]> {
   const rows = await db
-    .select({ c: comments, authorName: users.name })
+    .select({ c: comments, authorName: users.name, authorPicture: users.picture })
     .from(comments)
     .leftJoin(users, eq(users.id, comments.authorId))
     .where(where)
@@ -57,10 +58,10 @@ async function commentViews(db: Db | Tx, where: ReturnType<typeof and>): Promise
         ),
       )
     : []
-  return rows.map(({ c, authorName }) => ({
+  return rows.map(({ c, authorName, authorPicture }) => ({
     id: c.id,
     taskId: c.taskId,
-    author: c.authorId ? { id: c.authorId, name: authorName ?? 'Someone' } : null,
+    author: c.authorId ? { id: c.authorId, name: authorName ?? 'Someone', picture: pictureUrl(authorPicture) } : null,
     body: c.body,
     mentions: c.mentions,
     attachments: files.filter((f) => f.commentId === c.id),

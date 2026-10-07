@@ -63,6 +63,7 @@ interface Props extends SheetActions {
   /** A touch screen: blocks aren't dragged (a tap opens their menu; fingers scroll). */
   coarse: boolean
   activity: PlanningView['activity']
+  pictures: PlanningView['pictures']
   boards: PlanningView['boards']
   /** Scroll to today (when this number changes). */
   todayRequest: number
@@ -953,7 +954,7 @@ const Row = memo(function Row(p: RowProps) {
           <div className="flex min-w-0 items-center gap-2">
             {canEdit && <Grip kind="person" id={person.id} name={person.name} />}
             <Fold open={!row.collapsed} label={person.name} onClick={() => p.toggleGroup(row.key)} />
-            <Avatar name={person.name} className="size-5 text-[9px]" />
+            <Avatar name={person.name} picture={person.userId ? p.pictures[person.userId] : null} className="size-5 text-[9px]" />
             <button
               type="button"
               className="min-w-0 truncate text-left text-sm font-semibold hover:underline"
@@ -1012,6 +1013,7 @@ const Row = memo(function Row(p: RowProps) {
             <AddPersonPicker
               options={row.options}
               plan={plan}
+              pictures={p.pictures}
               onPick={(personId) => p.run({ type: 'line.add', projectId: row.projectId, personId })}
               onNew={() => p.newPerson(row.projectId)}
               onOpenLine={() => p.run({ type: 'project.addOpenLine', id: row.projectId })}
@@ -1036,7 +1038,7 @@ const Row = memo(function Row(p: RowProps) {
         {row.label === 'person' ? (
           person ? (
             <>
-              {!p.narrow && <Avatar name={person.name} className="size-5 text-[9px]" />}
+              {!p.narrow && <Avatar name={person.name} picture={person.userId ? p.pictures[person.userId] : null} className="size-5 text-[9px]" />}
               <button type="button" className="min-w-0 truncate text-left text-sm hover:underline" onClick={() => p.editPerson(person.id)}>
                 {person.name}
               </button>

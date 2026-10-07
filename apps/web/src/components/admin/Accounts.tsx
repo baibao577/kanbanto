@@ -168,7 +168,7 @@ export function AccountsSection() {
                 <tr key={u.id} className={cn('border-b last:border-0', u.disabled && 'text-muted-foreground')}>
                   <td className="px-4 py-2.5">
                     <div className="flex items-center gap-3">
-                      <Avatar name={u.name} className="size-8 text-xs" />
+                      <Avatar name={u.name} picture={u.picture} className="size-8 text-xs" />
                       <div className="min-w-0">
                         <div className="truncate font-medium">
                           {u.name}

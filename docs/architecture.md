@@ -356,6 +356,14 @@ The app uses hash routing, so any static host or proxy works without rewrite rul
 
 ## Files
 
+- **Profile pictures** are not files in this sense (`src/pictures.ts`, `routes/pictures.ts`): a person's picture is
+  shrunk by the app to 256 × 256 before it is sent and kept in the database (`account_pictures`, apart from `users`
+  so reading a person doesn't read their picture), so there is no quota, nothing to move between storages, and it is
+  in the database backup. `users.picture` holds its key, random and new with every upload, and a person is sent with
+  `picture`, the path `/api/pictures/<key>`, beside their name. That path needs no sign-in (a public link's visitors
+  see who cards are assigned to) and never shows another picture, so browsers keep it for a year. Boards hold their
+  people in memory: a new picture or name goes through `changePerson` (`boards/announce.ts`), which raises the change
+  number of every board the person is on and tells the open copies to fetch again.
 - Files go to the **server's disk** (`UPLOADS_DIR`) by default, or to an **S3-compatible bucket** set in the
   Platform console. Each file remembers where it was saved; changing the setting never breaks existing files, and
   doesn't move them by itself (old settings are retired, not overwritten; saving a bucket used before brings its

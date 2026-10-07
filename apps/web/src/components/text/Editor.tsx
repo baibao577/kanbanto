@@ -34,7 +34,7 @@ import { cn } from '@/lib/utils'
 import { counted, posAt, type Place } from './caret'
 import { forEditor, looksLikeMarkdown, tidyMarkdown } from './mdText'
 
-type Member = { id: string; name: string }
+type Member = { id: string; name: string; picture?: string | null }
 type Chain = ReturnType<TiptapEditor['chain']>
 /** Something the "/" menu puts in (or, inside a table, does to it). */
 interface Insert {
@@ -371,7 +371,7 @@ export default function Editor({
               >
                 {s.kind === '@' ? (
                   <>
-                    <Avatar name={s.member.name} className="size-5 text-[9px]" /> {s.member.name}
+                    <Avatar name={s.member.name} picture={s.member.picture} className="size-5 text-[9px]" /> {s.member.name}
                   </>
                 ) : s.kind === '#' ? (
                   <>

@@ -226,7 +226,7 @@ function People({ onClose }: { onClose: () => void }) {
           >
             <div className="flex -space-x-1.5">
               {data.members.slice(0, 8).map((m) => (
-                <Avatar key={m.id} name={m.name} className="ring-2 ring-card" />
+                <Avatar key={m.id} name={m.name} picture={m.picture} className="ring-2 ring-card" />
               ))}
             </div>
           </Row>

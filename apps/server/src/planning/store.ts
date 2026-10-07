@@ -7,6 +7,7 @@ import { and, eq, inArray, sql } from 'drizzle-orm'
 import type { Db, Tx } from '../db'
 import { planningBlocks, planningLines, planningPeople, planningProjects, planningRoles, planningState, users } from '../db/schema'
 import { HttpError } from '../http'
+import { pictureUrl } from '../pictures'
 
 /**
  * A workspace's plan in the database (see model/planning.ts for what it is). Records come and go as the model's
@@ -62,6 +63,8 @@ export interface LoadedPlan {
   seq: number
   /** The last change to each project: when, and who made it (their name). */
   activity: Record<string, { at: string; by: string | null }>
+  /** The profile pictures of the people in it who have one, by account. */
+  pictures: Record<string, string>
 }
 
 /** A workspace's whole plan (plans are small: tens of people, hundreds of blocks). */
@@ -69,7 +72,7 @@ export async function loadPlan(tx: Db | Tx, workspaceId: string): Promise<Loaded
   const [state] = await tx.select({ seq: planningState.seq }).from(planningState).where(eq(planningState.workspaceId, workspaceId))
   const roles = await tx.select().from(planningRoles).where(eq(planningRoles.workspaceId, workspaceId))
   const people = await tx
-    .select({ p: planningPeople, account: users.name })
+    .select({ p: planningPeople, account: users.name, picture: users.picture })
     .from(planningPeople)
     .leftJoin(users, eq(users.id, planningPeople.userId))
     .where(eq(planningPeople.workspaceId, workspaceId))
@@ -82,9 +85,12 @@ export async function loadPlan(tx: Db | Tx, workspaceId: string): Promise<Loaded
   const blocks = await tx.select().from(planningBlocks).where(eq(planningBlocks.workspaceId, workspaceId))
   const activity: LoadedPlan['activity'] = {}
   for (const { p, by } of projects) if (p.activityAt) activity[p.id] = { at: iso(p.activityAt), by }
+  const pictures: LoadedPlan['pictures'] = {}
+  for (const { p, picture } of people) if (p.userId && picture) pictures[p.userId] = pictureUrl(picture)!
   return {
     seq: state?.seq ?? 0,
     activity,
+    pictures,
     plan: {
       roles: roles
         .map((r) => ({ id: r.id, name: r.name, position: r.position, ...meta(r) }))

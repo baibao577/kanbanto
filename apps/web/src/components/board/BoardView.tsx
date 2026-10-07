@@ -973,7 +973,7 @@ function LaneHeader({
         </>
       ) : prefs.display.board.rows === 'assignee' && lane.key !== UNASSIGNED ? (
         <span className="flex items-center gap-2 text-sm font-semibold">
-          <Avatar name={lane.title} /> {lane.title}
+          <Avatar name={lane.title} picture={idx.members.get(lane.key)?.picture} /> {lane.title}
         </span>
       ) : (
         <span className="text-sm font-semibold text-(--canvas-muted)">{lane.title}</span>

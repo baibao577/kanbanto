@@ -9,14 +9,14 @@ import { createSession, endAllSessions, endSession, SESSION_COOKIE, sessionUser,
 import { acceptInvite, checkInviteFor, findAnyInvite, provesEmail } from '../boards/invites'
 import { createBoard } from '../boards/service'
 import { googleApp } from '../calendar/sync'
-import type { Tx } from '../db'
+import type { Db, Tx } from '../db'
 import { emailOutbox, users } from '../db/schema'
 import { env } from '../env'
 import { HttpError, parse, siteUrl } from '../http'
 import { loggable } from '../errors'
 import { emails } from '../mail/templates'
 import { loadSettings as getSettings } from '../settings'
-import { announceSharingChange, announceWorkspaceChange } from '../boards/announce'
+import { announceSharingChange, announceWorkspaceChange, changePerson } from '../boards/announce'
 
 const email = z
   .string()
@@ -52,6 +52,7 @@ export const publicUser = (u: SessionUser) => ({
   id: u.id,
   email: u.email,
   name: u.name,
+  picture: u.picture,
   isAdmin: u.isAdmin,
   emailVerified: u.emailVerified,
   hasPassword: u.hasPassword,
@@ -289,10 +290,14 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
         .partial(),
       req.body,
     )
-    await app.db
-      .update(users)
-      .set({ ...body, updatedAt: new Date() })
-      .where(eq(users.id, user.id))
+    const save = (tx: Db | Tx) =>
+      tx
+        .update(users)
+        .set({ ...body, updatedAt: new Date() })
+        .where(eq(users.id, user.id))
+    // A new name shows on every board they're on: those are told (see changePerson).
+    if (body.name !== undefined && body.name !== user.name) await changePerson(app, user.id, async (tx) => void (await save(tx)))
+    else await save(app.db)
     return { user: { ...publicUser(user), ...body } }
   })
 

@@ -3,6 +3,19 @@
 What changed in each release, newest first. Upgrading? See [Upgrades](docs/self-hosting.md#upgrades): back up first,
 then `git pull` (or download the new release) and `docker compose up -d --build`. Database updates run by themselves.
 
+## Unreleased
+
+- **Profile pictures:** Account settings → Profile has a **Picture** card: choose a picture, see it in the circle,
+  save it. It then shows in place of your initials wherever you appear: on cards, in comments, in the lists of people
+  on a board and in a workspace, in filters, the plan, search and the account button. The picture is cut to a square
+  from its middle and shrunk in your browser before it is sent (a JPG, PNG or WebP of any size will do). Remove it
+  to go back to your initials. People who have a board open see the new picture at once, and visitors of a board's
+  public link see it too. For apps: a person now comes with `picture` beside their name (a path on the site, or
+  nothing when they have none) in `/api/auth/me`, a board's `members`, comment authors and the other lists of
+  people; pictures are set on the website, not with an API token.
+- **A new name shows at once** on boards other people have open. Before, it could stay the old one there until
+  something else on the board changed.
+
 ## 0.1.0 — first public release (2026-10-07)
 
 - **Boards of tasks inside tasks**, as deep as you like, shown as a **Board** (lists you name), a **Timeline** and an

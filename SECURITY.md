@@ -78,6 +78,10 @@ Fixes go into the latest version. If you run Kanbanto yourself, keep it up to da
   script types are refused. Files in a bucket are reached through 5-minute signed links.
 - Uploads are checked (who, and the declared size) before the file is read. Files for a comment not yet posted are
   visible only to their uploader.
+- **Profile pictures** are small (256 KB at most) and only PNG, JPEG or WebP, decided by the file's first bytes and
+  not by what the request calls it. They are served as pictures, never as web pages. A picture's link is long and
+  random, changes whenever the picture does, and works without signing in: people looking at a board through its
+  public link see who its cards are assigned to. Anyone given that link can load that one picture, and nothing else.
 
 **API tokens, webhooks and AI assistants**
 

@@ -207,7 +207,7 @@ export function WorkspaceView({ route }: { route: WorkspaceRoute }) {
                       const me = m.userId === user?.id
                       return (
                         <li key={m.userId} className="flex items-center gap-3 py-1.5">
-                          <Avatar name={m.name} className="size-8 text-xs" />
+                          <Avatar name={m.name} picture={m.picture} className="size-8 text-xs" />
                           <span className="min-w-0 flex-1">
                             <span className="block truncate text-sm font-medium">
                               {m.name}

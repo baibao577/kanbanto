@@ -7,6 +7,7 @@ import {
   bigint,
   boolean,
   check,
+  customType,
   date,
   index,
   integer,
@@ -23,6 +24,7 @@ import {
 } from 'drizzle-orm/pg-core'
 
 const at = (name: string) => timestamp(name, { withTimezone: true, mode: 'date' })
+const bytes = customType<{ data: Buffer }>({ dataType: () => 'bytea' })
 /** createdAt / updatedAt / version, the same meta every board record carries in the model. */
 const meta = {
   createdAt: at('created_at').notNull(),
@@ -41,6 +43,8 @@ export const users = pgTable('users', {
   passwordHash: text('password_hash'),
   /** Who they are at Google (the ID token's `sub`), once they've signed in with Google: it stays the same if their address changes. */
   googleSub: text('google_sub').unique(),
+  /** Their profile picture: its key in account_pictures (what its link ends with). Null: none, they show as initials. */
+  picture: text('picture'),
   isAdmin: boolean('is_admin').notNull().default(false),
   /**
    * When they proved they own the address (a link in an email), or a platform admin vouched for them. Required
@@ -72,6 +76,22 @@ export const users = pgTable('users', {
   disabledAt: at('disabled_at'),
   createdAt: at('created_at').notNull().defaultNow(),
   updatedAt: at('updated_at').notNull().defaultNow(),
+})
+
+/**
+ * Profile pictures, one a person at most: small (shrunk by the browser before it's sent), so they're kept here rather
+ * than in the file storage, apart from `users` so reading a person doesn't read their picture. The key is random and
+ * new with every upload: the link to a picture never shows another one.
+ */
+export const accountPictures = pgTable('account_pictures', {
+  key: text('key').primaryKey(),
+  userId: uuid('user_id')
+    .notNull()
+    .unique()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  mime: text('mime').notNull(),
+  bytes: bytes('bytes').notNull(),
+  createdAt: at('created_at').notNull().defaultNow(),
 })
 
 export const sessions = pgTable(

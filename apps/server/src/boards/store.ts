@@ -6,12 +6,15 @@ import { and, asc, eq, getTableColumns, inArray, isNull, sql } from 'drizzle-orm
 import type { PgTable } from 'drizzle-orm/pg-core'
 import type { Db, Tx } from '../db'
 import { boardFieldRows, boardMembers, boards, labels, libraryFields, lists, tasks, users, workspaceMembers, type Role } from '../db/schema'
+import { pictureUrl } from '../pictures'
 import { higherRole, type BoardRow } from './access'
 import { boardFields, boardFromRow, fieldFromRow, labelFromRow, labelToRow, listFromRow, listToRow, taskFromRow, taskToRow } from './records'
 
 export interface Person {
   userId: string
   name: string
+  /** Where their profile picture is (null: none). */
+  picture: string | null
   email: string
   role: Role
   /** Added to the board, or there through its workspace. */
@@ -27,21 +30,23 @@ export interface Person {
  */
 export async function boardPeople(tx: Db | Tx, board: BoardRow): Promise<Person[]> {
   const added = await tx
-    .select({ m: boardMembers, name: users.name, email: users.email })
+    .select({ m: boardMembers, name: users.name, email: users.email, picture: users.picture })
     .from(boardMembers)
     .innerJoin(users, eq(users.id, boardMembers.userId))
     .where(eq(boardMembers.boardId, board.id))
-  const people = new Map<string, Person>(added.map(({ m, name, email }) => [m.userId, { ...m, name, email, via: 'member' as const }]))
+  const people = new Map<string, Person>(
+    added.map(({ m, name, email, picture }) => [m.userId, { ...m, name, email, picture: pictureUrl(picture), via: 'member' as const }]),
+  )
   if (board.visibility === 'workspace' && board.workspaceId) {
     const everyone = await tx
-      .select({ m: workspaceMembers, name: users.name, email: users.email })
+      .select({ m: workspaceMembers, name: users.name, email: users.email, picture: users.picture })
       .from(workspaceMembers)
       .innerJoin(users, eq(users.id, workspaceMembers.userId))
       .where(eq(workspaceMembers.workspaceId, board.workspaceId))
-    for (const { m, name, email } of everyone) {
+    for (const { m, name, email, picture } of everyone) {
       const p = people.get(m.userId)
       if (p) p.role = higherRole(p.role, board.workspaceRole)
-      else people.set(m.userId, { ...m, role: board.workspaceRole, name, email, via: 'workspace' })
+      else people.set(m.userId, { ...m, role: board.workspaceRole, name, email, picture: pictureUrl(picture), via: 'workspace' })
     }
   }
   return [...people.values()].sort((a, b) => a.name.localeCompare(b.name))
@@ -52,6 +57,7 @@ export async function loadMembers(tx: Db | Tx, board: BoardRow): Promise<Member[
   return (await boardPeople(tx, board)).map((p) => ({
     id: p.userId,
     name: p.name,
+    ...(p.picture && { picture: p.picture }),
     createdAt: p.createdAt.toISOString(),
     updatedAt: p.updatedAt.toISOString(),
     version: p.version,

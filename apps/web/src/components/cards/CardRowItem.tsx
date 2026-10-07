@@ -78,7 +78,7 @@ export function CardRowItem({
           )}
           {c.assignee && (
             <span className="inline-flex items-center gap-1">
-              <Avatar name={c.assignee} className="size-4 text-[8px]" />
+              <Avatar name={c.assignee} picture={c.assigneePicture} className="size-4 text-[8px]" />
               <span className="max-sm:hidden">{c.assignee}</span>
             </span>
           )}

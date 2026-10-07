@@ -16,6 +16,7 @@ import { WHY_NOT_SENT } from '../mail/mailer'
 import { emails } from '../mail/templates'
 import { requireUser } from './auth'
 import { notifyAdded } from './comments'
+import { pictureUrl } from '../pictures'
 
 const Params = z.object({ id: z.string().min(1).max(100) })
 const MemberParams = Params.extend({ userId: z.uuid() })
@@ -59,14 +60,14 @@ export const sharingRoutes: FastifyPluginAsync = async (app) => {
     if (access.via === 'public') throw new HttpError(403, 'Only people on this board can see who’s on it.')
     const owner = access.role === 'owner'
     const rows = await app.db
-      .select({ userId: users.id, name: users.name, email: users.email, role: boardMembers.role })
+      .select({ userId: users.id, name: users.name, picture: users.picture, email: users.email, role: boardMembers.role })
       .from(boardMembers)
       .innerJoin(users, eq(users.id, boardMembers.userId))
       .where(eq(boardMembers.boardId, id))
     const order = { owner: 0, editor: 1, viewer: 2 }
     const members = rows
       .sort((a, b) => order[a.role] - order[b.role] || a.name.localeCompare(b.name))
-      .map((m) => (owner || m.userId === me.id ? m : { userId: m.userId, name: m.name, role: m.role }))
+      .map(({ email, ...m }) => ({ ...m, picture: pictureUrl(m.picture), ...((owner || m.userId === me.id) && { email }) }))
     // Only owners see the invites (anyone holding them can join).
     const invites = owner ? await activeInvites(app.db, id) : { link: null, code: null, pending: [] }
     const [workspace] = board.workspaceId

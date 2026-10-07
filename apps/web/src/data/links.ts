@@ -27,6 +27,7 @@ export class LinkStore {
   private listeners = new Map<string, Set<() => void>>()
   private all = new Set<() => void>()
   private people = new Map<string, string>()
+  private pictures = new Map<string, string>()
   private faces = new Map<string, Set<() => void>>()
   private asked = new Set<string>()
   private queue = new Set<string>()
@@ -51,6 +52,9 @@ export class LinkStore {
 
   /** The name of one of the board's people (undefined: they aren't on it, or not any more). */
   nameOf = (userId: string): string | undefined => this.people.get(userId)
+
+  /** Their profile picture (undefined: they have none). */
+  pictureOf = (userId: string): string | undefined => this.pictures.get(userId)
 
   subscribePerson = (userId: string, listener: () => void) => {
     const set = this.faces.get(userId) ?? new Set()
@@ -87,12 +91,15 @@ export class LinkStore {
     this.local.clear()
     let changed = false
     if (data.members !== members) {
-      const next = new Map(data.members.map((m) => [m.id, m.name]))
+      const next = new Map(data.members.map((m) => [m.id, m]))
       for (const id of new Set([...next.keys(), ...this.people.keys()])) {
-        if (next.get(id) === this.people.get(id)) continue
+        const now = next.get(id)
+        if (now?.name === this.people.get(id) && now?.picture === this.pictures.get(id)) continue
         changed = true
-        if (next.has(id)) this.people.set(id, next.get(id)!)
+        if (now) this.people.set(id, now.name)
         else this.people.delete(id)
+        if (now?.picture) this.pictures.set(id, now.picture)
+        else this.pictures.delete(id)
         this.faces.get(id)?.forEach((l) => l())
       }
     }

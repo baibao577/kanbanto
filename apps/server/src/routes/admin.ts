@@ -25,6 +25,7 @@ import { getSettings, requireUser } from './auth'
 import { googleApp } from '../calendar/sync'
 import { googleRedirectUri } from './calendar'
 import { googleSignInRedirectUri } from './google-auth'
+import { pictureUrl } from '../pictures'
 
 const UserParams = z.object({ id: z.uuid() })
 
@@ -54,6 +55,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         id: users.id,
         email: users.email,
         name: users.name,
+        picture: users.picture,
         isAdmin: users.isAdmin,
         emailVerifiedAt: users.emailVerifiedAt,
         disabledAt: users.disabledAt,
@@ -65,6 +67,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     return {
       users: rows.map(({ emailVerifiedAt, ...u }) => ({
         ...u,
+        picture: pictureUrl(u.picture),
         emailVerified: !!emailVerifiedAt,
         disabled: !!u.disabledAt,
         disabledAt: u.disabledAt?.toISOString() ?? null,

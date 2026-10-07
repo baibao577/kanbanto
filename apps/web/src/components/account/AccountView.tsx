@@ -1,11 +1,13 @@
 import { Bell, BookmarkSimple, CalendarDots, Code, EnvelopeSimple, HardDrives, Key, Tag, UserCircle } from '@phosphor-icons/react'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import type { PublicUser } from '@kanbanto/model/api'
 import { api, errorMessage } from '@/api/client'
+import { removePicture, savePicture, squarePicture } from '@/lib/picture'
 import { currentSubscription } from '@/lib/push'
 import type { AccountSection } from '@/app/router'
 import { useAuth } from '@/app/use-auth'
+import { Avatar } from '@/components/common/bits'
 import { FieldLibrary } from '@/components/fields/FieldLibrary'
 import { PageTitle, SettingsCard } from '@/components/settings/SettingsCard'
 import { SettingsLayout, type SettingsNavItem } from '@/components/settings/SettingsLayout'
@@ -70,6 +72,7 @@ function Profile() {
   return (
     <div className="space-y-6">
       <PageTitle title="Profile" description="How you appear to others on boards and tasks." />
+      <Picture />
       <SettingsCard title="Your name">
         <form
           className="flex items-center gap-2"
@@ -98,6 +101,100 @@ function Profile() {
         </p>
       </SettingsCard>
     </div>
+  )
+}
+
+/** Your profile picture: choose one, see it in the circle, then save it. Without one you show as your initials. */
+function Picture() {
+  const { user, setUser } = useAuth()
+  const input = useRef<HTMLInputElement>(null)
+  // The picture chosen and not saved yet: what will be sent, and where the browser keeps it to show it.
+  const [chosen, setChosen] = useState<{ picture: Blob; url: string } | null>(null)
+  const [busy, setBusy] = useState(false)
+  useEffect(() => () => void (chosen && URL.revokeObjectURL(chosen.url)), [chosen])
+  if (!user) return null
+
+  const choose = async (file: File | undefined) => {
+    if (!file) return
+    try {
+      const picture = await squarePicture(file)
+      setChosen({ picture, url: URL.createObjectURL(picture) })
+    } catch (err) {
+      toast.error(errorMessage(err))
+    }
+  }
+  const change = async (work: () => Promise<PublicUser>, done: string) => {
+    setBusy(true)
+    try {
+      setUser(await work())
+      setChosen(null)
+      toast(done)
+    } catch (err) {
+      toast.error(errorMessage(err))
+    } finally {
+      setBusy(false)
+    }
+  }
+  const pick = () => input.current?.click()
+
+  return (
+    <SettingsCard title="Picture" description="Shown in place of your initials on cards, comments and everywhere else you appear.">
+      <div className="flex flex-wrap items-center gap-4">
+        <Avatar name={user.name} picture={chosen?.url ?? user.picture} className="size-16 text-xl" />
+        <div className="min-w-0 flex-1 basis-56 space-y-2">
+          <div className="flex flex-wrap gap-2">
+            {chosen ? (
+              <>
+                <Button key="save" size="sm" disabled={busy} onClick={() => change(() => savePicture(chosen.picture), 'Picture saved')}>
+                  Save
+                </Button>
+                <Button key="cancel" size="sm" variant="ghost" disabled={busy} onClick={() => setChosen(null)}>
+                  Cancel
+                </Button>
+              </>
+            ) : user.picture ? (
+              <>
+                <Button key="change" size="sm" variant="outline" disabled={busy} onClick={pick}>
+                  Change
+                </Button>
+                <Button
+                  key="remove"
+                  size="sm"
+                  variant="ghost"
+                  className="text-destructive hover:text-destructive"
+                  disabled={busy}
+                  onClick={() => change(removePicture, 'Picture removed')}
+                >
+                  Remove
+                </Button>
+              </>
+            ) : (
+              <Button size="sm" variant="outline" onClick={pick}>
+                Choose a picture
+              </Button>
+            )}
+          </div>
+          <p className="text-xs text-muted-foreground">
+            {chosen
+              ? 'This is how it will look. It isn’t saved yet.'
+              : user.picture
+                ? 'Others see it wherever your name appears.'
+                : 'A JPG, PNG or WebP. It’s cut to a square from the middle.'}
+          </p>
+        </div>
+      </div>
+      <input
+        ref={input}
+        type="file"
+        accept="image/*"
+        hidden
+        aria-label="Choose a picture"
+        onChange={(e) => {
+          void choose(e.target.files?.[0])
+          e.target.value = ''
+        }}
+      />
+    </SettingsCard>
   )
 }
 

@@ -235,16 +235,24 @@ export function ProgressBar({
   )
 }
 
-export function Avatar({ name, className }: { name: string; className?: string }) {
+/** A person, as a circle: their profile picture when they have one (`picture`, where it is on this site), their initials otherwise. */
+export function Avatar({ name, picture, className }: { name: string; picture?: string | null; className?: string }) {
+  // A picture that doesn't load (they removed it since this was fetched) gives way to the initials.
+  const [failed, setFailed] = useState<string | null>(null)
+  const shown = picture && picture !== failed ? picture : null
   return (
     <span
       title={name}
       className={cn(
-        'inline-grid size-6 shrink-0 place-items-center rounded-full bg-secondary text-[10px] font-semibold text-secondary-foreground ring-1 ring-border',
+        'inline-grid size-6 shrink-0 place-items-center overflow-hidden rounded-full bg-secondary text-[10px] font-semibold text-secondary-foreground ring-1 ring-border',
         className,
       )}
     >
-      {initials(name)}
+      {shown ? (
+        <img src={shown} alt="" draggable={false} decoding="async" onError={() => setFailed(shown)} className="size-full object-cover" />
+      ) : (
+        initials(name)
+      )}
     </span>
   )
 }

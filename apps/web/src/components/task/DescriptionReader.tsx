@@ -42,7 +42,7 @@ export function DescriptionReader({
   value: string
   readOnly: boolean
   cardFiles: CardFiles
-  people: { id: string; name: string }[]
+  people: { id: string; name: string; picture?: string | null }[]
   writing: boolean
   /** What the editor opens with: the text, and where the cursor goes. */
   start: { text: string; caret?: Place }

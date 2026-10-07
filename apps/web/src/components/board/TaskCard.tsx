@@ -114,7 +114,8 @@ export const TaskCard = memo(function TaskCard({
   const fields = frontFields.filter((f) => t.custom?.[f.id] !== undefined)
   const chips = config.columns === 'parent' || !!t.priority || blocked || !!t.due || age !== null || fields.length > 0
   const meta = !!next || (!!kids && !d.includes('progress')) || comments > 0 || files > 0 || time > 0
-  const assignee = t.assigneeId && <Avatar name={idx.members.get(t.assigneeId)?.name ?? '?'} className="ml-auto size-5 text-[9px]" />
+  const who = t.assigneeId ? idx.members.get(t.assigneeId) : undefined
+  const assignee = t.assigneeId && <Avatar name={who?.name ?? '?'} picture={who?.picture} className="ml-auto size-5 text-[9px]" />
 
   return (
     <article

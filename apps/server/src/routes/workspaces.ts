@@ -18,6 +18,7 @@ import { emails } from '../mail/templates'
 import { seedPlan } from '../planning/store'
 import { requireUser } from './auth'
 import { notifyAdded } from './comments'
+import { pictureUrl } from '../pictures'
 
 const Params = z.object({ id: z.uuid() })
 const MemberParams = Params.extend({ userId: z.uuid() })
@@ -47,13 +48,20 @@ export const workspaceRoutes: FastifyPluginAsync = async (app) => {
     const { workspace, role } = await requireWorkspace(app.db, id, meId)
     const admin = role === 'admin'
     const rows = await app.db
-      .select({ userId: users.id, name: users.name, email: users.email, role: workspaceMembers.role, planner: workspaceMembers.planner })
+      .select({
+        userId: users.id,
+        name: users.name,
+        picture: users.picture,
+        email: users.email,
+        role: workspaceMembers.role,
+        planner: workspaceMembers.planner,
+      })
       .from(workspaceMembers)
       .innerJoin(users, eq(users.id, workspaceMembers.userId))
       .where(eq(workspaceMembers.workspaceId, id))
     const members = rows
       .sort((a, b) => (a.role === b.role ? a.name.localeCompare(b.name) : a.role === 'admin' ? -1 : 1))
-      .map((m) => (admin || m.userId === meId ? m : { userId: m.userId, name: m.name, role: m.role, planner: m.planner }))
+      .map(({ email, ...m }) => ({ ...m, picture: pictureUrl(m.picture), ...((admin || m.userId === meId) && { email }) }))
     const [{ n }] = await app.db
       .select({ n: sql<number>`count(*)::int` })
       .from(boards)

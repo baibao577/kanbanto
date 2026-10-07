@@ -54,10 +54,10 @@ export function TimeSection({ taskId }: { taskId: string }) {
   useEffect(() => onActivity((m) => m.type === 'time' && m.taskId === taskId && load()), [onActivity, taskId, load])
 
   if (!entries.length) return null
-  const people = new Map<string, { name: string; entries: TimeEntryView[]; total: number }>()
+  const people = new Map<string, { name: string; picture?: string | null; entries: TimeEntryView[]; total: number }>()
   for (const e of entries) {
     const key = e.user?.id ?? ''
-    const p = people.get(key) ?? { name: e.user?.name ?? 'Someone who left', entries: [], total: 0 }
+    const p = people.get(key) ?? { name: e.user?.name ?? 'Someone who left', picture: e.user?.picture, entries: [], total: 0 }
     p.entries.push(e)
     p.total += e.minutes
     people.set(key, p)
@@ -91,7 +91,7 @@ export function TimeSection({ taskId }: { taskId: string }) {
         {[...people.entries()].map(([key, p]) => (
           <div key={key}>
             <div className="mb-1 flex items-center gap-2 text-sm">
-              <Avatar name={p.name} className="size-5 text-[9px]" />
+              <Avatar name={p.name} picture={p.picture} className="size-5 text-[9px]" />
               <span className="font-medium">{p.name}</span>
               <span className="text-muted-foreground tabular-nums">{formatDuration(p.total)}</span>
             </div>

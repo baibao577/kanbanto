@@ -76,7 +76,7 @@ Without opening it, a card shows its labels, its title, and a line of small sign
 | A paperclip and a number | How many files |
 | A stopwatch and a time | Time logged on it |
 | "1/3" | How many of its subtasks are done |
-| Initials in a circle | Who it is assigned to |
+| Initials or a picture in a circle | Who it is assigned to |
 
 ## Move a card
 

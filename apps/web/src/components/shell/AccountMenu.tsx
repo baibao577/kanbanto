@@ -30,7 +30,7 @@ export function AccountMenu() {
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <button aria-label="Your account" className="rounded-full outline-none focus-visible:ring-2 focus-visible:ring-ring/50">
-            <Avatar name={user.name} className="size-8 text-xs" />
+            <Avatar name={user.name} picture={user.picture} className="size-8 text-xs" />
           </button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-60">

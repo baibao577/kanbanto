@@ -237,7 +237,7 @@ type Props = {
   value: FieldFilter
   onChange: (next: FieldFilter | undefined) => void
   /** The people a person field can be asked for: the board's, or everyone on the boards searched. */
-  people?: { id: string; name: string }[]
+  people?: { id: string; name: string; picture?: string | null }[]
   /**
    * The cards a card link can be asked for (the ones the board's cards link to), how to name one and how to draw
    * one. Without it (several boards at once), only whether there is a link.
@@ -559,7 +559,7 @@ export function FieldCriteria(p: Props) {
               name: m.name,
               row: (
                 <>
-                  <Avatar name={m.name} className="size-5 text-[9px]" /> {m.name}
+                  <Avatar name={m.name} picture={m.picture} className="size-5 text-[9px]" /> {m.name}
                 </>
               ),
             })),

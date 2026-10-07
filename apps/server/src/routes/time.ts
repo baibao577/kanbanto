@@ -15,6 +15,7 @@ import { HttpError, parse } from '../http'
 import { dayIn } from '../mail/digest'
 import { requireUser } from './auth'
 import { boardsFor } from './boards'
+import { pictureUrl } from '../pictures'
 
 /**
  * Time logged on cards. Editors and owners log; everyone on the board sees it (not visitors with the public link).
@@ -60,17 +61,17 @@ async function changeRule(db: Db | Tx, me: SessionUser, board: BoardRow, access:
 
 async function entryViews(db: Db | Tx, where: ReturnType<typeof and>, canEdit: (e: Entry) => boolean): Promise<TimeEntryView[]> {
   const rows = await db
-    .select({ e: timeEntries, userName: users.name, editorName: editor.name })
+    .select({ e: timeEntries, userName: users.name, userPicture: users.picture, editorName: editor.name })
     .from(timeEntries)
     .leftJoin(users, eq(users.id, timeEntries.userId))
     .leftJoin(editor, eq(editor.id, timeEntries.editedBy))
     .where(where)
     .orderBy(desc(timeEntries.day), desc(timeEntries.createdAt))
-  return rows.map(({ e, userName, editorName }) => ({
+  return rows.map(({ e, userName, userPicture, editorName }) => ({
     id: e.id,
     boardId: e.boardId,
     taskId: e.taskId,
-    user: e.userId ? { id: e.userId, name: userName ?? 'Someone' } : null,
+    user: e.userId ? { id: e.userId, name: userName ?? 'Someone', picture: pictureUrl(userPicture) } : null,
     day: e.day,
     minutes: e.minutes,
     note: e.note,

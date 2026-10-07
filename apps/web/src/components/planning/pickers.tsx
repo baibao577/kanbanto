@@ -13,12 +13,14 @@ const trigger =
 export function AddPersonPicker({
   options,
   plan,
+  pictures,
   onPick,
   onNew,
   onOpenLine,
 }: {
   options: PlanPerson[]
   plan: PlanData
+  pictures: Record<string, string>
   onPick: (personId: string) => void
   onNew: () => void
   /** Another "not assigned yet" line, for a need nobody is chosen for yet. */
@@ -62,7 +64,7 @@ export function AddPersonPicker({
                     setOpen(false)
                   }}
                 >
-                  <Avatar name={p.name} className="size-5 text-[9px]" />
+                  <Avatar name={p.name} picture={p.userId ? pictures[p.userId] : null} className="size-5 text-[9px]" />
                   <span className="truncate">{p.name}</span>
                   {p.roleId && roles.get(p.roleId) && <span className="ml-auto text-xs text-muted-foreground">{roles.get(p.roleId)}</span>}
                 </CommandItem>

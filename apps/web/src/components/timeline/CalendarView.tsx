@@ -405,7 +405,7 @@ function Marks({ id, draw, who, className }: { id: string; draw: Draw; who?: boo
     <span className={cn('flex shrink-0 items-center gap-1', className)}>
       {t.priority && <PriorityIcon priority={t.priority} className="size-3.5" />}
       {total > 0 && <Kids done={subDone} total={total} />}
-      {person && <Avatar name={person} className="size-[18px] shrink-0 text-[9px]" />}
+      {person && <Avatar name={person} picture={draw.idx.members.get(t.assigneeId!)?.picture} className="size-[18px] shrink-0 text-[9px]" />}
     </span>
   )
 }
@@ -620,7 +620,13 @@ function Row({ card, draw, boxed }: { card: DayCard; draw: Draw; boxed?: boolean
       {t.priority && <PriorityIcon priority={t.priority} />}
       {total > 0 && <Kids done={subDone} total={total} />}
       <span className="shrink-0 text-xs text-muted-foreground max-sm:hidden">{col.name}</span>
-      {t.assigneeId && <Avatar name={draw.memberName(t.assigneeId)} className="size-[22px] shrink-0 text-[10px]" />}
+      {t.assigneeId && (
+        <Avatar
+          name={draw.memberName(t.assigneeId)}
+          picture={draw.idx.members.get(t.assigneeId)?.picture}
+          className="size-[22px] shrink-0 text-[10px]"
+        />
+      )}
     </button>
   )
 }

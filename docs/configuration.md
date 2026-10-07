@@ -116,7 +116,7 @@ Open it from the menu under your initials (platform admins only). Each section h
 | | **Google Calendar:** the client ID and secret of a Google app you make once, so people can connect their Google Calendar. The secret is write-only and encrypted. See [Calendar](calendar.md). | Not set up |
 | | **People can sign in with Google:** adds "Continue with Google" to the sign-in and sign-up pages, through that Google app (which needs a second redirect address, shown there). See [Signing in with Google](self-hosting.md#signing-in-with-google). | Off |
 
-Things each person sets for themselves in **Account settings** (`#/account`): name, password (or adding one, after signing up with Google), their
+Things each person sets for themselves in **Account settings** (`#/account`): name, profile picture, password (or adding one, after signing up with Google), their
 notifications (the morning summary email, reminder emails, desktop notifications, their time zone), their calendar (Google Calendar, a calendar link, and which boards are in it), their own Resend
 key for invites, their own storage bucket (at a public `https://` address), and their API tokens. Board owners add
 webhooks in Board settings. See [API, webhooks and AI](api.md).
@@ -149,4 +149,5 @@ Run in the Kanbanto folder as `docker compose exec app node dist/cli.js <command
 | Integrations | 20 API tokens per person; 10 webhooks per board; apps registering for sign-in: 20 an hour per address; a calendar link: 120 requests a minute. |
 | Sent emails | Kept for 60 days (for the limits), without their contents: those are removed once sent. |
 | Files | Deleted files stay in a trash for 30 days (restorable, if there's room in the owner's space). Files waiting in unposted comments: 10 per person, up to 3 times the largest file size, removed after a day. |
-| Request size | 1 MB, except board imports (20 MB), changes to a board (10 MB) and file uploads (the largest file size). |
+| Profile pictures | 256 KB at most, as PNG, JPEG or WebP (the app shrinks one to 256 × 256 before sending it, about a tenth of that). Kept in the database, not with the files, so they don't count toward anyone's space. |
+| Request size | 1 MB, except board imports (20 MB), changes to a board (10 MB), file uploads (the largest file size) and profile pictures (256 KB). |

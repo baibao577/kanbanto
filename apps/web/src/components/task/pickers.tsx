@@ -110,7 +110,7 @@ export function PersonPicker({ value, onChange }: { value?: string; onChange: (m
         <FieldButton empty={!current}>
           {current ? (
             <>
-              <Avatar name={current.name} className="size-5 text-[9px]" /> {current.name}
+              <Avatar name={current.name} picture={current.picture} className="size-5 text-[9px]" /> {current.name}
             </>
           ) : (
             <>
@@ -126,7 +126,7 @@ export function PersonPicker({ value, onChange }: { value?: string; onChange: (m
             <CommandGroup>
               {matches.map((m) => (
                 <CommandItem key={m.id} value={m.id} onSelect={() => pick(m.id)}>
-                  <Avatar name={m.name} className="size-5 text-[9px]" /> {m.name}
+                  <Avatar name={m.name} picture={m.picture} className="size-5 text-[9px]" /> {m.name}
                   {m.id === value && <Check className="ml-auto" />}
                 </CommandItem>
               ))}

@@ -317,8 +317,8 @@ describe('sharing', () => {
     // Bob sees names, and only his own address.
     const seen = (await bob.ok('GET', `/api/boards/${id}/sharing`)).members
     expect(seen).toEqual([
-      { userId: ann.user.id, name: 'Ann', role: 'owner' },
-      { userId: bob.user.id, name: 'Bob', email: 'bob@example.com', role: 'viewer' },
+      { userId: ann.user.id, name: 'Ann', picture: null, role: 'owner' },
+      { userId: bob.user.id, name: 'Bob', picture: null, email: 'bob@example.com', role: 'viewer' },
     ])
     // Ann (an owner) sees everyone's.
     expect((await ann.ok('GET', `/api/boards/${id}/sharing`)).members.map((m: { email: string }) => m.email)).toEqual([

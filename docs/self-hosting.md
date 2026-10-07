@@ -302,7 +302,7 @@ and **your `.env` file**. Run these in the Kanbanto folder:
 ```bash
 mkdir -p backups
 
-# 1. The database (boards, accounts, comments, settings)
+# 1. The database (boards, accounts and their profile pictures, comments, settings)
 docker compose exec -T db pg_dump -U kankan -d kankan -Fc > backups/kanbanto-$(date +%F).dump
 
 # 2. Attachments kept on the server's disk

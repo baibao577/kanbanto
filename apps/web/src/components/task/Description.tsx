@@ -45,7 +45,7 @@ export function Description({
   readOnly: boolean
   cardFiles: CardFiles
   /** The board's people, suggested after "@". */
-  people: { id: string; name: string }[]
+  people: { id: string; name: string; picture?: string | null }[]
   /** What its draft is kept under: the board and the card. */
   draftId: string
   onSave: (text: string) => void

@@ -42,6 +42,7 @@ import { commentRoutes } from './routes/comments'
 import { timeRoutes } from './routes/time'
 import { emailRoutes } from './routes/email'
 import { fileRoutes } from './routes/files'
+import { pictureRoutes } from './routes/pictures'
 import { uploadRoutes } from './routes/uploads'
 import { sharingRoutes } from './routes/sharing'
 import { mcpRoutes } from './mcp'
@@ -297,6 +298,7 @@ export async function buildApp(
   await app.register(commentRoutes, { prefix: '/api' })
   await app.register(timeRoutes, { prefix: '/api' })
   await app.register(fileRoutes, { prefix: '/api' })
+  await app.register(pictureRoutes, { prefix: '/api' })
   await app.register(uploadRoutes, { prefix: '/api' })
   app.get('/api/health', async () => ({ ok: true }))
 

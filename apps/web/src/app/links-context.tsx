@@ -27,6 +27,13 @@ export function usePerson(userId: string): string | undefined {
   return useSyncExternalStore(subscribe, () => store?.nameOf(userId))
 }
 
+/** Their profile picture, kept up to date the same way (undefined: they have none). */
+export function usePersonPicture(userId: string): string | undefined {
+  const store = useContext(LinksContext)?.store
+  const subscribe = useCallback((l: () => void) => store?.subscribePerson(userId, l) ?? never, [store, userId])
+  return useSyncExternalStore(subscribe, () => store?.pictureOf(userId))
+}
+
 /** What one link points at, kept up to date (undefined while it isn't known, or outside a board). */
 export function useLinked(ref: string): LinkedCard | undefined {
   const store = useContext(LinksContext)?.store

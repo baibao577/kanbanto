@@ -320,7 +320,8 @@ export function OutlineView({ search }: { search: string }) {
                         {t.priority && <PriorityIcon priority={t.priority} />}
                         {t.assigneeId && (
                           <span className="inline-flex items-center gap-1">
-                            <Avatar name={memberName(t.assigneeId)} className="size-4 text-[8px]" /> {memberName(t.assigneeId)}
+                            <Avatar name={memberName(t.assigneeId)} picture={idx.members.get(t.assigneeId)?.picture} className="size-4 text-[8px]" />{' '}
+                            {memberName(t.assigneeId)}
                           </span>
                         )}
                         {t.due && <DueChip due={t.due} done={done} />}
@@ -527,7 +528,11 @@ export function OutlineView({ search }: { search: string }) {
                             ) : c.key === 'assignee' ? (
                               t.assigneeId && (
                                 <span className="flex min-w-0 items-center gap-2">
-                                  <Avatar name={memberName(t.assigneeId)} className="size-5 text-[9px]" />
+                                  <Avatar
+                                    name={memberName(t.assigneeId)}
+                                    picture={idx.members.get(t.assigneeId)?.picture}
+                                    className="size-5 text-[9px]"
+                                  />
                                   <span className="truncate text-sm">{memberName(t.assigneeId)}</span>
                                 </span>
                               )
