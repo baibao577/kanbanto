@@ -1493,7 +1493,7 @@ describe('API reference', () => {
   it('describes the API (with every command) and shows it at /api/docs', async () => {
     const spec = await new Person(t.app).ok('GET', '/api/openapi.json')
     expect(spec.openapi).toBe('3.1.0')
-    expect(spec.components.schemas.Command.oneOf).toHaveLength(20)
+    expect(spec.components.schemas.Command.oneOf).toHaveLength(22)
     expect(spec.components.schemas.PlanCommand.oneOf).toHaveLength(22)
     expect(Object.keys(spec.paths)).toEqual(
       expect.arrayContaining([

@@ -160,6 +160,60 @@ describe('following a card', () => {
     expect((await bell(ann))[0].changes).toEqual(['archived “Deploy” as completed', 'deleted “Deploy”'])
   })
 
+  it('tells someone once when one change is about many of their cards', async () => {
+    const { ann, bob, id, run } = await team()
+    const give = (ids: string[], to: string | null) =>
+      run(ann, { type: 'tasks.update', cards: ids.map((card) => ({ id: card, fields: { assigneeId: to } })) })
+    // Up to three cards: a line for each, as when they're given one at a time.
+    await give(['A1', 'A3', 'A4'], bob.user.id)
+    expect((await bell(bob)).map((n) => n.changes)).toEqual([
+      ['assigned “Write the launch blog post” to you'],
+      ['assigned “Deploy” to you'],
+      ['assigned “Buy domain” to you'],
+    ])
+    await bob.ok('POST', '/api/notifications/read', {})
+    // More than that: one line about them all, and Bob follows every one of them.
+    await give(['A2a', 'A2b', 'B1', 'B2', 'C1'], bob.user.id)
+    const [line, ...older] = await bell(bob)
+    expect(line).toMatchObject({
+      kind: 'change',
+      actor: 'Ann',
+      read: false,
+      task: { id: 'A2a' },
+      changes: ['assigned “Homepage” and 4 more cards to you'],
+    })
+    expect(older.every((n) => n.read)).toBe(true)
+    expect(await following(bob, id, 'C1')).toBe(true)
+    expect(await bell(ann)).toEqual([])
+
+    // Different things at once are each said once, about the cards they happened to.
+    const { data } = await ann.ok('GET', `/api/boards/${id}`)
+    const doing = data.columns.find((c: { category: string }) => c.category === 'doing')
+    await bob.ok('POST', '/api/notifications/read', {})
+    await run(ann, {
+      type: 'tasks.update',
+      cards: ['A2b', 'B2', 'C1', 'A4'].map((card, i) => ({ id: card, fields: { due: '2026-10-20', ...(i < 3 && { status: doing.id }) } })),
+    })
+    expect((await bell(bob))[0].changes).toEqual([`moved “Logo” and 2 more cards to ${doing.name}; set “Logo” and 3 more cards due 20 Oct`])
+
+    // Several cards archived, then deleted, as one change each: one line each, and one undo's worth of history.
+    await bob.ok('POST', '/api/notifications/read', {})
+    const before = (await ann.ok('GET', `/api/boards/${id}/activity`)).activity.length
+    await run(ann, { type: 'tasks.archive', ids: ['A2a', 'A2b', 'B1', 'B2', 'C1'] })
+    expect((await bell(bob))[0].changes).toEqual(['archived “Homepage” and 4 more cards'])
+    expect((await ann.ok('GET', `/api/boards/${id}/activity`)).activity.length).toBe(before + 1)
+    await run(ann, { type: 'tasks.delete', ids: ['A1', 'A3', 'A4', 'B'] })
+    const after = (await ann.ok('GET', `/api/boards/${id}`)).data
+    expect(['A1', 'A3', 'A4', 'B', 'A2a', 'C1'].some((card) => card in after.tasks)).toBe(false)
+    // (Three of the four were Bob's: a line for each.)
+    expect(
+      (await bell(bob))
+        .slice(0, 3)
+        .map((n) => n.changes?.[0])
+        .sort(),
+    ).toEqual(['deleted “Buy domain”', 'deleted “Deploy”', 'deleted “Write the launch blog post”'])
+  })
+
   it('reaches the morning email and the desktop, for people who want that', async () => {
     const { ann, bob, id, run } = await team()
     await setPlatformAdmin(t.db, 'ann@example.com', true)

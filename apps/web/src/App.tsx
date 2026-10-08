@@ -72,6 +72,8 @@ function canvasStyle(background?: string): React.CSSProperties | undefined {
 const UNDOABLE_TOAST: Partial<Record<Command['type'], string>> = {
   'task.delete': 'Task deleted',
   'task.archive': 'Card archived',
+  'tasks.archive': 'Cards archived',
+  'tasks.delete': 'Cards deleted',
   'column.delete': 'List deleted',
   'label.delete': 'Label deleted',
   'tasks.clearField': 'Field cleared on every card',
@@ -421,16 +423,16 @@ function Workspace({ store }: { store: Store }) {
   }, [waiting, setCount])
   const lastRun = useRef(0)
 
-  /** Runs a command; if the rules refuse it, says why. */
+  /** Runs a command; if the rules refuse it, says why. `said`: what it did, to say with an Undo button. */
   const run = useCallback(
-    (cmd: Command) => {
+    (cmd: Command, said?: string) => {
       const error = store.run(cmd)
       if (error) {
         toast(error, { id: 'refused' })
         return false
       }
       lastRun.current = Date.now()
-      const done = cmd.type === 'task.archive' && cmd.complete ? 'Card completed and archived' : UNDOABLE_TOAST[cmd.type]
+      const done = said ?? (cmd.type === 'task.archive' && cmd.complete ? 'Card completed and archived' : UNDOABLE_TOAST[cmd.type])
       if (done) toast(done, { id: 'undo', action: { label: 'Undo', onClick: () => say(undo()) } })
       return true
     },

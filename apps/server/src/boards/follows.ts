@@ -11,6 +11,13 @@ import { tellPerson } from '../tell'
 const TOGETHER_MS = 10 * 60_000
 /** Lines kept in one notification. */
 const MAX_LINES = 20
+/**
+ * One change that has news for someone about more cards than this is one line under their bell, said about all of
+ * them ("assigned “Homepage” and 11 more cards to you"), not a line for each: several cards changed at once.
+ */
+const MANY_CARDS = 3
+/** The different things said in such a line (assigned, moved, a due date), at most. */
+const MANY_KINDS = 3
 
 type Named = { id: string; name: string }
 
@@ -114,12 +121,19 @@ const q = (s: string) => `“${s}”`
 const dayWords = (day: string) =>
   new Intl.DateTimeFormat('en-GB', { timeZone: 'UTC', day: 'numeric', month: 'short' }).format(new Date(`${day}T00:00:00Z`))
 
-/** One thing that happened to a card that its followers hear about, in words to follow the actor's name. */
+/**
+ * One thing that happened to a card that its followers hear about, in words to follow the actor's name. The words
+ * are made around what they're about (`say`), so the same thing happening to several cards can be said once:
+ * `say('“Deploy”')`, `say('“Deploy” and 11 more cards')`.
+ */
 interface News {
   taskId: string
-  text: string
+  /** The card's name, in quotes. */
+  title: string
+  /** (None: only the person it was given to hears of a card that was just made.) */
+  say?: (cards: string) => string
   /** How it reads to this person instead (the one it was assigned to). */
-  toYou?: { userId: string; text: string }
+  toYou?: { userId: string; say: (cards: string) => string }
   /** Not for these people (they're told another way: mentioned in the new description). */
   except?: string[]
   /** It's about where the card is (moved, archived, restored, deleted): what a rule of the board may have told them already. */
@@ -138,29 +152,54 @@ function newsIn(data: BoardData, changes: Change[], mentioned: Map<string, strin
     if (c.entity !== 'task') continue
     const a = c.before as Task | null
     const b = c.after as Task | null
-    if (a && !b) out.push({ taskId: a.id, text: `deleted ${q(a.title)}`, place: true })
+    if (a && !b) out.push({ taskId: a.id, title: q(a.title), say: (t) => `deleted ${t}`, place: true })
     if (!a || !b) continue
-    const t = q(b.title)
+    const about = { taskId: b.id, title: q(b.title) }
     if (!a.archivedAt !== !b.archivedAt) {
-      out.push({ taskId: b.id, text: b.archivedAt ? `archived ${t}${b.archivedDone ? ' as completed' : ''}` : `restored ${t}`, place: true })
+      const how = b.archivedAt ? ['archived', b.archivedDone ? ' as completed' : ''] : ['restored', '']
+      out.push({ ...about, say: (t) => `${how[0]} ${t}${how[1]}`, place: true })
       continue
     }
-    if (a.status !== b.status) out.push({ taskId: b.id, text: `moved ${t} to ${list(b.status)}`, place: true })
-    if (a.assigneeId !== b.assigneeId)
+    if (a.status !== b.status) out.push({ ...about, say: (t) => `moved ${t} to ${list(b.status)}`, place: true })
+    if (a.assigneeId !== b.assigneeId) {
+      const to = b.assigneeId
       out.push({
-        taskId: b.id,
-        text: b.assigneeId ? `assigned ${t} to ${person(b.assigneeId)}` : `unassigned ${t}`,
-        ...(b.assigneeId && { toYou: { userId: b.assigneeId, text: `assigned ${t} to you` } }),
+        ...about,
+        say: (t) => (to ? `assigned ${t} to ${person(to)}` : `unassigned ${t}`),
+        ...(to && { toYou: { userId: to, say: (t) => `assigned ${t} to you` } }),
       })
-    if (a.due !== b.due)
+    }
+    if (a.due !== b.due) {
+      const due = b.due
       out.push({
-        taskId: b.id,
-        text: !b.due ? `cleared the due date of ${t}` : b.due.length === 10 ? `set ${t} due ${dayWords(b.due)}` : `changed when ${t} is due`,
+        ...about,
+        say: (t) => (!due ? `cleared the due date of ${t}` : due.length === 10 ? `set ${t} due ${dayWords(due)}` : `changed when ${t} is due`),
       })
+    }
     if ((a.description ?? '') !== (b.description ?? ''))
-      out.push({ taskId: b.id, text: `edited the description of ${t}`, except: mentioned.get(b.id) })
+      out.push({ ...about, say: (t) => `edited the description of ${t}`, except: mentioned.get(b.id) })
   }
   return out
+}
+
+/**
+ * What happened to many cards, for one person, as one line: each different thing said once about all the cards it
+ * happened to ("assigned “Homepage” and 11 more cards to you; set “Homepage” and 11 more cards due 20 Oct").
+ */
+function manyInWords(lines: { title: string; say: (cards: string) => string }[]): string {
+  // (The same thing is the same words around whatever card it's about.)
+  const kinds = new Map<string, { say: (cards: string) => string; titles: string[] }>()
+  for (const l of lines) {
+    const key = l.say('\u0000')
+    const kind = kinds.get(key)
+    if (kind) kind.titles.push(l.title)
+    else kinds.set(key, { say: l.say, titles: [l.title] })
+  }
+  const said = [...kinds.values()].slice(0, MANY_KINDS).map((k) => {
+    const more = k.titles.length - 1
+    return k.say(more ? `${k.titles[0]} and ${more.toLocaleString('en')} more ${more === 1 ? 'card' : 'cards'}` : k.titles[0])
+  })
+  return said.join('; ') + (kinds.size > MANY_KINDS ? '; and more' : '')
 }
 
 /**
@@ -250,7 +289,7 @@ export async function afterBoardChange(
   // A card that was just made has no one to tell yet, except whoever it was given to.
   for (const c of changes)
     if (c.entity === 'task' && !c.before && c.after?.assigneeId && !undo)
-      news.push({ taskId: c.id, text: '', toYou: { userId: c.after.assigneeId, text: `assigned ${q(c.after.title)} to you` } })
+      news.push({ taskId: c.id, title: q(c.after.title), toYou: { userId: c.after.assigneeId, say: (t) => `assigned ${t} to you` } })
   if (!starts.length && !assigned.length && !mentioned.size && !news.length) return
 
   const actor = data.members.find((m) => m.id === actorId)?.name ?? 'Someone'
@@ -278,18 +317,33 @@ export async function afterBoardChange(
     const assignees = new Map<string, string | undefined>()
     for (const c of changes) if (c.entity === 'task') assignees.set(c.id, (c.after ?? c.before)?.assigneeId)
     const followers = await followersOf(tx, boardId, new Map(news.map((n) => [n.taskId, assignees.get(n.taskId)])))
-    // Per person and card: the lines for them.
-    const lines = new Map<string, { userId: string; taskId: string; texts: string[] }>()
+    // Per person: what there is to say to them, card by card.
+    const forPerson = new Map<string, { taskId: string; title: string; say: (cards: string) => string }[]>()
     for (const n of news)
       for (const userId of followers.get(n.taskId) ?? []) {
         if (userId === actorId || !onBoard.has(userId) || n.except?.includes(userId)) continue
         if (n.place && told?.get(userId)?.has(n.taskId)) continue
-        const text = n.toYou?.userId === userId ? n.toYou.text : n.text
-        if (!text) continue
-        const key = `${userId}:${n.taskId}`
-        if (!lines.has(key)) lines.set(key, { userId, taskId: n.taskId, texts: [] })
-        lines.get(key)!.texts.push(text)
+        const say = n.toYou?.userId === userId ? n.toYou.say : n.say
+        if (!say) continue
+        if (!forPerson.has(userId)) forPerson.set(userId, [])
+        forPerson.get(userId)!.push({ taskId: n.taskId, title: n.title, say })
       }
+    // Per person and card: the lines for them. Someone with news about many cards gets one line for them all.
+    const lines = new Map<string, { userId: string; taskId: string; texts: string[] }>()
+    for (const [userId, theirs] of forPerson) {
+      if (new Set(theirs.map((l) => l.taskId)).size > MANY_CARDS) {
+        const text = manyInWords(theirs)
+        const taskId = theirs[0].taskId
+        await tx.insert(notifications).values({ id: newId(), userId, kind: 'change', boardId, taskId, actorId, changes: [text] })
+        pushes.push({ userId, kind: 'follows', title: `${actor} ${text}`, body: data.board.name, taskId })
+        continue
+      }
+      for (const l of theirs) {
+        const key = `${userId}:${l.taskId}`
+        if (!lines.has(key)) lines.set(key, { userId, taskId: l.taskId, texts: [] })
+        lines.get(key)!.texts.push(l.say(l.title))
+      }
+    }
     const since = new Date(Date.now() - TOGETHER_MS)
     for (const { userId, taskId, texts } of lines.values()) {
       // More from the same person on the same card, not yet seen: added to that line.

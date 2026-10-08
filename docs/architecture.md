@@ -442,6 +442,19 @@ The app uses hash routing, so any static host or proxy works without rewrite rul
   heading starts with its value (`groupFields`). Nothing is stored but the key: it is part of the view settings,
   saved in presets, carried when a field changes its id (`remapPreset`) and dropped when the field leaves
   (`cleanPrefs`); a key a later version adds reads as not grouped. Which headings are folded is kept on the device.
+- **Several cards changed at once** (`model/bulk.ts`, `components/select/`). A view keeps which cards are ticked
+  (`useSelection`: the person's own, forgotten with the view; a card that leaves the board leaves it for good, so
+  an undo doesn't bring it back ticked) and shows `SelectionBar`, which floats at the foot of the view. Every
+  action is one command, worked out in the model from the board as it is, so it is one entry in the history and
+  one undo: `tasks.update` for fields (`setOnCards`: only the cards that would change, a parent that follows its
+  subtasks left out of a move and counted, cards arriving in a list placed at its end; `labelOnCards` adds or
+  removes one label and keeps the rest; `fieldOnCards` does the same for a field that holds several people or
+  cards, and sets any other), `tasks.archive` and `tasks.delete` for putting away and deleting (what
+  `task.archive` and `task.delete` do to one, for the named cards that have none of the others above them).
+  A change with news for one person about more than three cards is told to them once, each kind of thing said
+  about all the cards it happened to (`manyInWords` in `boards/follows.ts`). The Outline has it (a tick box where
+  a row is pointed at, Shift for a range, the Task heading's box for all that is shown); the Board is to follow
+  with the same bar.
 - **A filter's tests, and how they stay compatible.** A new test is always a new key; no key ever changes meaning
   (`in` got `notIn` beside it, the old `date: 'past' | 'week' | 'none'` got `on` / `days` / `from` / `to`, `due` got
   `dueIs` and `startIs`). A tab left open across an update, or a rollback, reads a filter with keys it doesn't know

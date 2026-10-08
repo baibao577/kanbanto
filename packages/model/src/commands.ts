@@ -1,7 +1,7 @@
 import { normalizeTaskDate } from './dates'
 import { applyChanges, current } from './changes'
 import { patchCustom, tidyCustom, type FieldDef, type FieldValue } from './fields'
-import { buildIndex, descendantsOf, isLeaf, statusCol, wouldCycle, type TaskIndex } from './indexer'
+import { ancestorsOf, buildIndex, descendantsOf, isLeaf, statusCol, wouldCycle, type TaskIndex } from './indexer'
 import { comparePositions, positionBetween, positionsBetween } from './position'
 import { stamp, type Change } from './records'
 import type { Board, BoardData, Category, LabelDef, Priority, Reminder, StatusColumn, Task } from './types'
@@ -49,6 +49,13 @@ export type Command =
    * finish it first (it and its unfinished subtasks go to the first done list), so it's archived as completed.
    */
   | { type: 'task.archive'; id: string; complete?: boolean }
+  /**
+   * Several tasks put away, or deleted, together: what `task.archive` and `task.delete` do to one, as one change (so
+   * one undo brings them all back). A task named along with a task above it goes with that one. Not for archived
+   * tasks: deleting those is for good, one at a time.
+   */
+  | { type: 'tasks.archive'; ids: string[]; complete?: boolean }
+  | { type: 'tasks.delete'; ids: string[] }
   /**
    * Tidies a done list: archives its top-level cards that got done before `before` (a moment), each with its subtasks
    * (see `doneBefore`). A finished card under another card stays: it goes with that card, once that one is done.
@@ -136,6 +143,12 @@ function run(data: BoardData, cmd: Command, ctx: Context): Change[] {
   const { now } = ctx
   const out: Change[] = []
   const task = (id: string) => data.tasks[id] ?? reject('That task no longer exists.')
+  // Several tasks named for one thing done to each with its subtasks: the ones with none of the others above them.
+  const tops = (ids: string[]) => {
+    if (ids.length > BULK_MAX) reject(`That’s more tasks than can be changed at once (${BULK_MAX.toLocaleString('en')} at most).`)
+    const named = new Set(ids.map((id) => task(id).id))
+    return [...named].filter((id) => !ancestorsOf(data.tasks, id).some((a) => named.has(a)))
+  }
   // When it got done: set on entering a done list, kept while it stays in one, gone once it leaves.
   const putTask = (before: Task | null, { doneAt, ...next }: Omit<Task, 'createdAt' | 'updatedAt' | 'version'>, columns = data.columns) => {
     const done = columns.some((c) => c.id === next.status && c.category === 'done')
@@ -254,9 +267,9 @@ function run(data: BoardData, cmd: Command, ctx: Context): Change[] {
       break
     }
 
-    case 'task.archive': {
-      const t = task(cmd.id)
-      const ids = [t.id, ...subtree(data.tasks, t.id)]
+    case 'task.archive':
+    case 'tasks.archive': {
+      const ids = (cmd.type === 'task.archive' ? [task(cmd.id).id] : tops(cmd.ids)).flatMap((id) => [id, ...descendantsOf(ctx.idx, id)])
       let tasks = data.tasks
       let idx = ctx.idx
       if (cmd.complete) {
@@ -312,17 +325,18 @@ function run(data: BoardData, cmd: Command, ctx: Context): Change[] {
       break
     }
 
-    case 'task.delete': {
+    case 'task.delete':
+    case 'tasks.delete': {
       // Deleting an archived task is for good: it and its subtasks.
-      const gone_ = data.archived?.[cmd.id]
+      const gone_ = cmd.type === 'task.delete' ? data.archived?.[cmd.id] : undefined
       if (gone_) {
         for (const id of [gone_.id, ...subtree(data.archived!, gone_.id)]) out.push({ entity: 'task', id, before: data.archived![id], after: null })
         break
       }
-      const t = task(cmd.id)
-      // The task and everything under it; "waiting on" links to them go too.
-      const gone = new Set([t.id])
-      const stack = [t.id]
+      const first = cmd.type === 'task.delete' ? [task(cmd.id).id] : tops(cmd.ids)
+      // The tasks and everything under them; "waiting on" links to them go too.
+      const gone = new Set(first)
+      const stack = [...first]
       while (stack.length) {
         for (const c of ctx.idx.childrenOf.get(stack.pop()!) ?? []) {
           if (gone.has(c)) continue

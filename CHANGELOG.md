@@ -5,6 +5,20 @@ then `git pull` (or download the new release) and `docker compose up -d --build`
 
 ## Unreleased
 
+- **Change several cards at once, in the Outline.** Point at a row and a box appears at its start. Tick a few
+  rows (hold Shift for a run of them; the box in the Task heading ticks everything a search or a filter found),
+  and a bar at the bottom of the view moves them to a list, assigns them, adds or removes a label, sets a
+  priority, dates or one of the board's own fields, archives or deletes them. Each is one change with one Undo,
+  and a message says how many cards it changed. Adding a label keeps the labels a card already had. Ticking a card
+  with subtasks ticks that card only; **Add their subtasks** takes what is under it too. On a phone, **Select**
+  above the list shows the boxes.
+
+  Someone given many cards at once is told once ("assigned “Homepage” and 11 more cards to you"), and so is
+  anyone who follows more than three cards of one change.
+
+  For apps: two new commands, `tasks.archive` and `tasks.delete`, put away or delete several cards as one
+  change. No database change.
+
 - **Group the Outline's rows.** **Display → Group by** gathers the rows under a heading for each list, person,
   priority or label, or for each value of one of the board's own fields (a choice, a person or a tick). Each task
   is under its own heading, with the tasks above it in grey to show where it belongs, so a step that is Ben's shows

@@ -42,6 +42,7 @@ export default defineConfig({
           { text: 'Your own fields', link: '/everyday/fields' },
           { text: 'Templates', link: '/everyday/templates' },
           { text: 'Search and filters', link: '/everyday/search-and-filters' },
+          { text: 'Change several cards at once', link: '/everyday/several-cards' },
           { text: 'Done cards and the archive', link: '/everyday/done-and-archive' },
         ],
       },

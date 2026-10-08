@@ -17,8 +17,8 @@ export interface BoardContextValue {
   setPrefs: Dispatch<PrefsAction>
   /** Everything derived from the tasks (tree, rolled-up status, progress). */
   idx: TaskIndex
-  /** Runs a command. If it isn't allowed, shows why and returns false. */
-  run: (cmd: Command) => boolean
+  /** Runs a command. If it isn't allowed, shows why and returns false. `done`: what it did, said with an Undo button. */
+  run: (cmd: Command, done?: string) => boolean
   /**
    * Takes in a change the server made for you outside `run` (cards added from a spreadsheet): it shows at once, and
    * `done` is said with an Undo button, which takes it back like any change of yours.

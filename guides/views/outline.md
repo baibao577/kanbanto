@@ -23,7 +23,12 @@ card.
 
 ## Rearrange
 
-Drag rows to put them in the order you want.
+Drag rows to put them in the order you want. A row is picked up from anywhere on it.
+
+## Change several tasks at once
+
+Point at a row and a box appears at its start. Tick a few rows, and a bar at the bottom moves, assigns, labels,
+dates or archives them together. See [change several cards at once](/everyday/several-cards).
 
 ## Sort and filter
 

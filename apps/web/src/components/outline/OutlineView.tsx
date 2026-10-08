@@ -4,9 +4,10 @@ import {
   ArrowsDownUp,
   CaretDown,
   CaretRight,
+  Check,
   CheckSquare,
   Crosshair,
-  DotsSixVertical,
+  Minus,
   Plus,
   Prohibit,
   Square,
@@ -24,6 +25,8 @@ import { PRIORITY_LABEL, type LabelDef, type Priority } from '@kanbanto/model/ty
 import { Empty } from '@/components/common/Empty'
 import { StatusMenu } from '@/components/common/StatusMenu'
 import { QuickAdd } from '@/components/board/QuickAdd'
+import { SelectionBar } from '@/components/select/SelectionBar'
+import { useSelection } from '@/components/select/useSelection'
 import { ViewActions } from '@/components/shell/ViewBar'
 import { FoldAll } from '@/components/tree/FoldAll'
 import { Button } from '@/components/ui/button'
@@ -305,6 +308,31 @@ export function OutlineView({ search }: { search: string }) {
       })
     return { groups, truncated: more, count: cards.length }
   }, [groupKey, focusId, idx, counted, limit, data.labels, forced, addingUp, folded, top, expanded, order])
+  // Ticking rows, to change several cards at once (see SelectionBar). A range (Shift) goes by the rows as they're
+  // laid out; "all" is the cards that are there for their own sake, not the parents shown around them.
+  const selection = useSelection()
+  // (A phone has nothing to point with: its boxes show once "Select" is tapped.)
+  const [selecting, setSelecting] = useState(false)
+  const laid = useMemo(() => (sections ? sections.groups.flatMap((g) => g.rows) : rows), [sections, rows])
+  const laidSet = useMemo(() => new Set(laid), [laid])
+  const tickable = useMemo(
+    () => [
+      ...new Set(
+        sections ? sections.groups.flatMap((g) => g.rows.filter((id) => g.own.has(id))) : matched ? rows.filter((id) => matched.has(id)) : rows,
+      ),
+    ],
+    [sections, rows, matched],
+  )
+  const ticked = tickable.filter((id) => selection.has(id)).length
+  const allTicked = ticked === 0 ? false : ticked === tickable.length ? true : ('mixed' as const)
+  const tick = (id: string, title: string, className?: string) => (
+    <Tick
+      checked={selection.has(id)}
+      label={`Select ${title}`}
+      onToggle={(e) => selection.toggle(id, { range: e.shiftKey, order: laid })}
+      className={className}
+    />
+  )
   const foldGroup = (value: string, shut: boolean) => setFolded([...folded].filter((v) => v !== value).concat(shut ? [value] : []))
   const foldAll = {
     disabled: !groupKey && forced,
@@ -426,11 +454,13 @@ export function OutlineView({ search }: { search: string }) {
           'relative flex items-start gap-1 py-2 pr-3',
           !g && 'drag-handle',
           !g && !depth && kids && 'bg-muted/40',
+          selection.has(id) && 'bg-primary/8',
           dragId === id && 'opacity-40',
           zone === 'inside' && 'bg-primary/8',
         )}
         style={{ paddingLeft: 6 + depth * 16 }}
       >
+        {!readOnly && (selecting || selection.size > 0) && tick(id, t.title, 'mt-1 mr-1 ml-1.5 size-5')}
         <button
           disabled={!kids || !!g || forced || (!!keep && !kids.some((k) => keep.has(k)))}
           onClick={() => toggle(id)}
@@ -521,6 +551,8 @@ export function OutlineView({ search }: { search: string }) {
           !g && 'drag-handle',
           // (Under a heading, the heading is the band: a tinted project under it would read as another one.)
           !g && !depth && kids && '[--row:color-mix(in_oklab,var(--muted)_55%,var(--card))]',
+          selection.has(id) &&
+            '[--row:color-mix(in_oklab,var(--primary)_10%,var(--card))] hover:[--row:color-mix(in_oklab,var(--primary)_14%,var(--card))]',
           at.last && at.addAfter !== i && !totalled && 'border-b-0',
           dragId === id && 'opacity-40',
           zone === 'inside' && '[--row:color-mix(in_oklab,var(--primary)_8%,var(--card))]',
@@ -539,10 +571,15 @@ export function OutlineView({ search }: { search: string }) {
           {Array.from({ length: depth }, (_, l) => (
             <span key={l} aria-hidden className="absolute inset-y-0 w-px bg-border/60" style={{ left: HANDLE + l * INDENT + 11 }} />
           ))}
-          <span className="grid shrink-0 place-items-center" style={{ width: HANDLE - 4 }} title={g ? undefined : 'Drag to move'}>
-            {!readOnly && !g && (
-              <DotsSixVertical weight="bold" className="size-3.5 cursor-grab text-muted-foreground/60 opacity-0 group-hover:opacity-100" />
-            )}
+          {/* The row's tick box, there when the row is pointed at and for every row once one is ticked. (A row is
+              dragged from anywhere on it: it needs no handle.) */}
+          <span className="grid shrink-0 place-items-center" style={{ width: HANDLE - 4 }}>
+            {!readOnly &&
+              tick(
+                id,
+                t.title,
+                selection.size > 0 ? undefined : 'opacity-0 group-hover:opacity-100 focus-visible:opacity-100 touch-only:opacity-100',
+              )}
           </span>
           <span style={{ width: depth * INDENT }} className="shrink-0" />
           <button
@@ -661,9 +698,21 @@ export function OutlineView({ search }: { search: string }) {
       </ViewActions>
 
       <div className="h-full overflow-auto">
-        <div className="px-3 py-4 sm:px-6">
+        {/* (Room under the last row for the bar of the selection, which floats there.) */}
+        <div className={cn('px-3 py-4 sm:px-6', selection.size > 0 && 'pb-20')}>
           {/* A phone's list has no "Task" heading to hold them. */}
-          <div className="mb-1 flex justify-end md:hidden">
+          <div className="mb-1 flex items-center justify-end md:hidden">
+            {!readOnly && (
+              <button
+                onClick={() => {
+                  if (selecting || selection.size) selection.clear()
+                  setSelecting(!(selecting || selection.size > 0))
+                }}
+                className="mr-auto h-7 rounded-md px-2 text-xs font-medium text-muted-foreground hover:bg-accent hover:text-foreground"
+              >
+                {selecting || selection.size > 0 ? 'Cancel' : 'Select'}
+              </button>
+            )}
             <FoldAll {...foldAll} />
           </div>
           {(cfg.sort || matched || groupKey) && (
@@ -721,7 +770,7 @@ export function OutlineView({ search }: { search: string }) {
             <div className="w-full overflow-clip rounded-xl border bg-card" style={{ minWidth }}>
               <div role="table" aria-label="Tasks">
                 {/* Header row, pinned while you scroll. Click a column to sort by it. */}
-                <div ref={headerRow} role="row" className="sticky top-0 z-20 border-b bg-muted" style={grid}>
+                <div ref={headerRow} role="row" className="group/head sticky top-0 z-20 border-b bg-muted" style={grid}>
                   {columns.map((c, i) => {
                     const on = cfg.sort?.key === c.key ? cfg.sort.dir : undefined
                     // Every column but Task can be moved: by dragging its name, or with Alt+Shift and an arrow.
@@ -749,6 +798,21 @@ export function OutlineView({ search }: { search: string }) {
                         )}
                         style={i === 0 ? { paddingLeft: HANDLE } : undefined}
                       >
+                        {/* Ticks every card that is shown (what a search or a filter found), or unticks them. */}
+                        {i === 0 && !readOnly && tickable.length > 0 && (
+                          <span className="absolute inset-y-0 left-0 grid place-items-center" style={{ width: HANDLE }}>
+                            <Tick
+                              checked={allTicked}
+                              label="Select all the tasks shown"
+                              onToggle={() => (allTicked === true ? selection.remove(tickable) : selection.add(tickable))}
+                              className={
+                                selection.size > 0
+                                  ? undefined
+                                  : 'opacity-0 group-hover/head:opacity-100 focus-visible:opacity-100 touch-only:opacity-100'
+                              }
+                            />
+                          </span>
+                        )}
                         <button
                           onClick={() => setSort(!on ? { key: c.key, dir: 'asc' } : on === 'asc' ? { key: c.key, dir: 'desc' } : undefined)}
                           onKeyDown={(e) => {
@@ -849,7 +913,47 @@ export function OutlineView({ search }: { search: string }) {
           )}
         </div>
       </div>
+      {!readOnly && <SelectionBar selection={selection} shown={laidSet} className={totalled && !narrow ? 'bottom-12' : undefined} />}
     </>
+  )
+}
+
+/**
+ * A tick box of the table: a row's, or the Task heading's for all of them (a dash: some are ticked). A plain button
+ * that looks like the app's checkbox, since a table has thousands. It keeps its press to itself: the row under it
+ * is dragged by a press, and Shift with a click would select text.
+ */
+function Tick({
+  checked,
+  label,
+  onToggle,
+  className,
+}: {
+  checked: boolean | 'mixed'
+  label: string
+  onToggle: (e: React.MouseEvent) => void
+  className?: string
+}) {
+  return (
+    <button
+      type="button"
+      role="checkbox"
+      aria-checked={checked}
+      aria-label={label}
+      onPointerDown={(e) => e.stopPropagation()}
+      onMouseDown={(e) => e.shiftKey && e.preventDefault()}
+      onClick={(e) => {
+        e.stopPropagation()
+        onToggle(e)
+      }}
+      className={cn(
+        'grid size-4 shrink-0 place-content-center rounded-[4px] border border-input bg-card shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50',
+        checked && 'border-primary bg-primary text-primary-foreground',
+        className,
+      )}
+    >
+      {checked === true ? <Check weight="bold" className="size-3" /> : checked === 'mixed' ? <Minus weight="bold" className="size-3" /> : null}
+    </button>
   )
 }
 

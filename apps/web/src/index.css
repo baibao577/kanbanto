@@ -6,6 +6,13 @@
 /* Devices that can't hover (touch screens): show what would otherwise appear on hover. */
 @custom-variant touch-only (@media (hover: none));
 
+/* While cards are selected, the bar that changes them floats at the foot of the view: the app's messages (with
+   their Undo) sit above it. */
+:root[data-selecting] [data-sonner-toaster] {
+  --offset-bottom: 6.5rem !important;
+  --mobile-offset-bottom: 6.5rem !important;
+}
+
 /*
  * Design tokens. Every color, radius and font in the app comes from here,
  * so a new theme (or a brand) is a new set of these values — nothing else changes.

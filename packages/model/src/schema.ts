@@ -255,6 +255,8 @@ export const CommandSchema = z.discriminatedUnion('type', [
   }),
   z.object({ type: z.literal('task.delete'), id }),
   z.object({ type: z.literal('task.archive'), id, complete: z.boolean().optional() }),
+  z.object({ type: z.literal('tasks.archive'), ids: z.array(id).max(BULK_MAX), complete: z.boolean().optional() }),
+  z.object({ type: z.literal('tasks.delete'), ids: z.array(id).max(BULK_MAX) }),
   z.object({ type: z.literal('tasks.archiveDone'), status: id, before: z.string().max(40) }),
   z.object({ type: z.literal('task.restore'), id }),
   z.object({ type: z.literal('tasks.clearField'), fieldId: id }),

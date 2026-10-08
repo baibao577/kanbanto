@@ -2294,6 +2294,41 @@ await shot('outline-groups-field', async () => {
   return { clip: { ...clip, height: clip.height - 18 } }
 })
 
+// Several cards ticked in the Outline, and the bar that changes them (after the grouped pictures: not grouped here).
+const tickRows = async (titles) => {
+  await openBoard('outline')
+  const stop = page.getByRole('button', { name: 'Stop grouping' })
+  if (await stop.count()) await stop.click()
+  for (const title of titles) {
+    const row = page
+      .locator('[role=table] > [role=row]')
+      .filter({ has: page.getByRole('button', { name: title, exact: true }) })
+      .first()
+    await row.hover()
+    await row.getByRole('checkbox', { name: `Select ${title}`, exact: true }).click()
+  }
+  await page.mouse.move(4, 4)
+  return page.getByRole('toolbar', { name: 'Change the selected cards' })
+}
+// (A shorter window, so the bar at its foot is near the rows it is about.)
+await page.setViewportSize({ width: 1360, height: 600 })
+await shot('several-1-bar', async () => {
+  const bar = await tickRows(['Hero picture', 'Pricing section', 'Collect customer quotes'])
+  const table = await page.getByRole('table', { name: 'Tasks' }).boundingBox()
+  const at = await bar.boundingBox()
+  return { clip: { x: 0, y: table.y - 16, width: 1360, height: at.y + at.height + 14 - (table.y - 16) } }
+})
+await shot('several-2-labels', async () => {
+  const bar = await tickRows(['Hero picture', 'Pricing section'])
+  await bar.getByRole('button', { name: 'Labels' }).click()
+  const menu = page.locator('[data-radix-popper-content-wrapper]').last()
+  await menu.getByText('Labels on 2 cards').waitFor()
+  await page.waitForTimeout(350)
+  return around([menu, bar], 20)
+})
+await page.keyboard.press('Escape')
+await page.setViewportSize({ width: 1360, height: 860 })
+
 await browser.close()
 console.log(`made ${made.length}: ${made.join(', ')}`)
 if (failed.length) console.log(`\nnot made (${failed.length}):\n  ${failed.join('\n  ')}`)

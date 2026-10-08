@@ -40,7 +40,9 @@ curl -X POST https://kanbanto.example.com/api/boards/<board id>/mutations \
   `task.archive`, `tasks.archiveDone`, `task.restore`, `task.delete`, `tasks.import` (many cards in one change:
   see "Many cards at once" below), `tasks.update` (several tasks changed in one change:
   `{"type":"tasks.update","cards":[{"id":"<task id>","fields":{"status":"<list id>"}}, …]}`, each task with its own
-  `fields` as `task.update` takes them), and the ones for lists, labels and the board.
+  `fields` as `task.update` takes them), `tasks.archive` and `tasks.delete` (several tasks put away or deleted
+  in one change, each with its subtasks: `{"type":"tasks.archive","ids":["<task id>", …]}`; up to 2,000 ids, and
+  a task named along with a task above it goes with that one), and the ones for lists, labels and the board.
 - **Custom fields.** A board's own fields are in `data.fields` (id, name, type, and for a choice its options); a
   task's values are in `custom`, by field id. Set them with `task.update`:
   `{"type":"task.update","id":"<task id>","fields":{"custom":{"<field id>":"Acme","<another>":null}}}` sets the
