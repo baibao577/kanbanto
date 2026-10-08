@@ -378,33 +378,32 @@ export const PresetSettingsSchema = z.object({
 // word, so the two are kept the same: this stops compiling when they drift.)
 export const filterSchemaMatchesType: SameAs<z.infer<typeof PresetSettingsSchema>['filter'], TableFilter> = true
 
-/**
- * A board's rule (see rules.ts). What it says about its cards is a filter's lists, people, labels, priorities and
- * fields, and nothing else: a part a rule can't have ("me" aside, which `ruleProblem` sees to) makes it not a rule.
- */
-export const BoardRuleSchema = z
+const ruleName = plain(60)
+  .refine((s) => s.trim().length > 0 && s === s.trim(), 'A name can’t be empty.')
+  .optional()
+/** The cards a rule is about (see CardSet): a filter's lists, people, labels, priorities and fields, and nothing else. */
+const ruleCards = z
+  .object({
+    statuses: z.array(recordId).min(1).max(50).optional(),
+    assignees: z.array(z.string().max(100)).min(1).max(50).optional(),
+    labels: z.array(recordId).min(1).max(50).optional(),
+    priorities: z
+      .array(z.enum([...PRIORITIES, '']))
+      .min(1)
+      .max(PRIORITIES.length + 1)
+      .optional(),
+    fields: z
+      .record(recordId, fieldFilter)
+      .refine((f) => Object.keys(f).length <= 10, 'Too many fields.')
+      .optional(),
+  })
+  .strict()
+const LimitRuleSchema = z
   .object({
     id: z.uuid(),
     kind: z.literal('limit'),
-    name: plain(60)
-      .refine((s) => s.trim().length > 0 && s === s.trim(), 'A name can’t be empty.')
-      .optional(),
-    cards: z
-      .object({
-        statuses: z.array(recordId).min(1).max(50).optional(),
-        assignees: z.array(z.string().max(100)).min(1).max(50).optional(),
-        labels: z.array(recordId).min(1).max(50).optional(),
-        priorities: z
-          .array(z.enum([...PRIORITIES, '']))
-          .min(1)
-          .max(PRIORITIES.length + 1)
-          .optional(),
-        fields: z
-          .record(recordId, fieldFilter)
-          .refine((f) => Object.keys(f).length <= 10, 'Too many fields.')
-          .optional(),
-      })
-      .strict(),
+    name: ruleName,
+    cards: ruleCards,
     counts: z.enum(RULE_COUNTS),
     measure: z.union([z.object({ by: z.literal('cards') }).strict(), z.object({ by: z.literal('field'), field: recordId }).strict()]),
     per: z.literal('person').optional(),
@@ -418,6 +417,33 @@ export const BoardRuleSchema = z
   .strict()
   .refine((r) => r.max !== undefined || r.min !== undefined, 'A limit needs a number.')
   .refine((r) => r.max === undefined || r.min === undefined || r.min <= r.max, 'The least can’t be more than the most.')
+const WhenRuleSchema = z
+  .object({
+    id: z.uuid(),
+    kind: z.literal('when'),
+    name: ruleName,
+    on: z.enum(['enters', 'leaves']),
+    cards: ruleCards,
+    counts: z.enum(RULE_COUNTS),
+    // (One thing to do, for now: tell. Who: people's ids, and "@assignee" for whoever the card is assigned to.)
+    then: z
+      .array(
+        z
+          .object({
+            do: z.literal('tell'),
+            who: z.array(z.string().min(1).max(100)).min(1).max(50),
+          })
+          .strict(),
+      )
+      .length(1),
+  })
+  .strict()
+/**
+ * A board's rule (see rules.ts): a limit, or a "when" rule. What it says about its cards is a filter's lists,
+ * people, labels, priorities and fields, and nothing else: a part a rule can't have ("me" aside, which `ruleProblem`
+ * sees to) makes it not a rule.
+ */
+export const BoardRuleSchema = z.union([LimitRuleSchema, WhenRuleSchema])
 export const ruleSchemaMatchesType: SameAs<z.infer<typeof BoardRuleSchema>, BoardRule> = true
 export const outlineSchemaMatchesType: SameAs<z.infer<typeof PresetSettingsSchema>['outline'], OutlineConfig> = true
 

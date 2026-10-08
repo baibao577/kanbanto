@@ -122,6 +122,8 @@ interface News {
   toYou?: { userId: string; text: string }
   /** Not for these people (they're told another way: mentioned in the new description). */
   except?: string[]
+  /** It's about where the card is (moved, archived, restored, deleted): what a rule of the board may have told them already. */
+  place?: boolean
 }
 
 /**
@@ -136,14 +138,14 @@ function newsIn(data: BoardData, changes: Change[], mentioned: Map<string, strin
     if (c.entity !== 'task') continue
     const a = c.before as Task | null
     const b = c.after as Task | null
-    if (a && !b) out.push({ taskId: a.id, text: `deleted ${q(a.title)}` })
+    if (a && !b) out.push({ taskId: a.id, text: `deleted ${q(a.title)}`, place: true })
     if (!a || !b) continue
     const t = q(b.title)
     if (!a.archivedAt !== !b.archivedAt) {
-      out.push({ taskId: b.id, text: b.archivedAt ? `archived ${t}${b.archivedDone ? ' as completed' : ''}` : `restored ${t}` })
+      out.push({ taskId: b.id, text: b.archivedAt ? `archived ${t}${b.archivedDone ? ' as completed' : ''}` : `restored ${t}`, place: true })
       continue
     }
-    if (a.status !== b.status) out.push({ taskId: b.id, text: `moved ${t} to ${list(b.status)}` })
+    if (a.status !== b.status) out.push({ taskId: b.id, text: `moved ${t} to ${list(b.status)}`, place: true })
     if (a.assigneeId !== b.assigneeId)
       out.push({
         taskId: b.id,
@@ -214,11 +216,15 @@ async function afterImport(app: FastifyInstance, boardId: string, e: { userId: s
  * After a change to a board: the people it involves start following the cards (whoever made a card, whoever it's
  * assigned to, whoever is newly @mentioned in its description), the newly mentioned are told, and each card's
  * followers hear what happened to it. Never the person who made the change, and only people on the board.
+ *
+ * `told`: the cards a rule of the board just told each person about (boards/tell.ts). Where such a card went isn't
+ * said to them a second time as its follower; the rest of its news still is.
  */
 export async function afterBoardChange(
   app: FastifyInstance,
   boardId: string,
   e: { userId: string; command: string; changes: Change[]; data: BoardData },
+  told?: Map<string, Set<string>>,
 ) {
   const { data, changes, userId: actorId } = e
   const onBoard = new Set(data.members.map((m) => m.id))
@@ -277,6 +283,7 @@ export async function afterBoardChange(
     for (const n of news)
       for (const userId of followers.get(n.taskId) ?? []) {
         if (userId === actorId || !onBoard.has(userId) || n.except?.includes(userId)) continue
+        if (n.place && told?.get(userId)?.has(n.taskId)) continue
         const text = n.toYou?.userId === userId ? n.toYou.text : n.text
         if (!text) continue
         const key = `${userId}:${n.taskId}`

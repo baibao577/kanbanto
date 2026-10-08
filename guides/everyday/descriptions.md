@@ -53,8 +53,14 @@ card. There are two ways, and they give the same result:
   <kbd>Enter</kbd>, or click one, and its name goes in where the `/` was. <kbd>Esc</kbd> closes the list and
   leaves you in the text.
 
+  ![The menu that "/" opens, with Card ringed](/images/mention-1-menu.webp){.medium}
+
+  ![The list of cards, found by typing part of a title](/images/mention-2-cards.webp){.medium}
+
 Once saved, the name is a small link. Click it to open the card: a card on the same board opens in place, and a
 card on another board takes you to that board. Hover over a card on the same board to read its title.
+
+![A description with two cards' names as links](/images/mention-3-link.webp)
 
 A few things to know:
 

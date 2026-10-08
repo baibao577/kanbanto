@@ -113,14 +113,14 @@ export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCh
   )
 }
 
-/** What the board says about its cards, the same to everyone on it (see model rules.ts). Limits, for now. */
+/** What the board says about its cards, the same to everyone on it (see model rules.ts): limits, and rules that tell people. */
 function Rules() {
   return (
     <div className="space-y-4">
       <div>
         <h2 className="text-base font-semibold">Rules</h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          What this board says about its cards. Everyone on it sees the same; its owners change them.
+          What this board says about its cards, and who it tells. Everyone on it sees the same; its owners change them.
         </p>
       </div>
       <RulesList />

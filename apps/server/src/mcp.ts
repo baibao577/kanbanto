@@ -30,7 +30,7 @@ import { formatDuration, parseDuration } from '@kanbanto/model/time'
 import { ancestorsOf, descendantsOf, indexFor, isBlocked, statusCol, type TaskIndex } from '@kanbanto/model/indexer'
 import { fireTime } from '@kanbanto/model/reminders'
 import { readRef, refOf, taskByRef } from '@kanbanto/model/refs'
-import { describeRule, evaluateRules } from '@kanbanto/model/rules'
+import { describeRule, evaluateRules, ruleProblem, whensOf } from '@kanbanto/model/rules'
 import { hasWords, wordsOf } from '@kanbanto/model/search'
 import { STARTERS, type Starter } from '@kanbanto/model/starters'
 import { byBoard, byHand } from '@kanbanto/model/view'
@@ -139,6 +139,13 @@ const limitsOf = (data: BoardData, idx: TaskIndex) =>
           ? { people: s.groups.map((g) => ({ name: idx.members.get(g.person)?.name ?? 'Someone', now: g.value, ...room(g.value) })) }
           : { now: s.groups[0].value, ...room(s.groups[0].value) }),
     }
+  })
+
+/** A board's rules that tell people, for an assistant: each in words ("When a card arrives in Quoted, tell Dana"). */
+const tellsOf = (data: BoardData, idx: TaskIndex) =>
+  whensOf(data.rules).map((rule) => {
+    const problem = ruleProblem(idx, rule, data.labels)
+    return { says: describeRule(rule, data), ...(problem && { cannot_work: problem }) }
   })
 
 const fileBrief = (f: AttachmentView) => ({
@@ -418,7 +425,7 @@ function buildServer(app: FastifyInstance, me: SessionUser, token: TokenAccess, 
     {
       title: 'Get a board',
       description:
-        'A board’s lists (in order), labels, people and limits (how much a list may hold, and the room left), and its open tasks: the top levels (each with how many subtasks it has, its subtasks under it), or the part under parent_id. The top-level tasks come list by list, each list in the order its cards were put in by hand. Up to 300 tasks; use find_tasks for more.',
+        'A board’s lists (in order), labels, people, limits (how much a list may hold, and the room left) and rules that tell people when a card arrives in a list or leaves it, and its open tasks: the top levels (each with how many subtasks it has, its subtasks under it), or the part under parent_id. The top-level tasks come list by list, each list in the order its cards were put in by hand. Up to 300 tasks; use find_tasks for more.',
       inputSchema: {
         board_id: z.string(),
         parent_id: z.string().optional().describe('Show only the tasks under this one (to look inside a big task).'),
@@ -454,6 +461,8 @@ function buildServer(app: FastifyInstance, me: SessionUser, token: TokenAccess, 
         const linked = await linkedOn(board, access, data)
         const [where] = await choose({ board_id: a.board_id })
         if (a.parent_id && !data.tasks[a.parent_id]) throw new HttpError(404, 'There’s no such task on this board.')
+        const limits = limitsOf(data, idx)
+        const tells = tellsOf(data, idx)
         const top = a.parent_id ? idx.depth.get(a.parent_id)! + 1 : 0
         const levels = a.depth ?? 2
         const list = a.list ? pick(idx.columns, a.list, 'list').id : null
@@ -499,8 +508,10 @@ function buildServer(app: FastifyInstance, me: SessionUser, token: TokenAccess, 
           }),
           people: data.members.map((m) => ({ id: m.id, name: m.name, ...(m.id === me.id && { you: true }) })),
           totals: { tasks: all, open: all - done, done },
-          // The board's limits (its rules: see model rules.ts), each in words with where it stands now.
-          ...(data.rules?.length && { limits: limitsOf(data, idx) }),
+          // The board's rules (see model rules.ts): its limits, each in words with where it stands now, and the ones
+          // that tell people when a card arrives somewhere or leaves (the app does the telling; nothing to do here).
+          ...(limits.length && { limits }),
+          ...(tells.length && { rules_that_tell_people: tells }),
           ...(a.tasks !== false && {
             tasks: shown.slice(0, 300).map((id) => ({ depth: idx.depth.get(id)! - top, ...brief(data, idx, data.tasks[id], linked) })),
             ...(shown.length > 300 && { more: shown.length - 300 }),

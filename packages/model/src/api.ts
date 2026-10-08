@@ -278,8 +278,8 @@ export interface WeekView {
 }
 
 /**
- * Under the bell: someone @mentioned you, something happened on a card you follow, a reminder, or someone added you to
- * a board or a workspace.
+ * Under the bell: someone @mentioned you, something happened on a card you follow, one of a board's rules told you,
+ * a reminder, or someone added you to a board or a workspace.
  */
 export type NotificationView =
   | {
@@ -316,6 +316,25 @@ export type NotificationView =
       task: { id: string; title: string }
       /** What, in words that follow the actor's name ("moved “Deploy” to Done"), oldest first. */
       changes: string[]
+      createdAt: string
+      read: boolean
+    }
+  | {
+      id: string
+      /** One of the board's rules told you: cards arrived in its cards, or left them (see model rules.ts). */
+      kind: 'rule'
+      /** Who made the change. */
+      actor: string
+      board: { id: string; name: string }
+      /** The first of the cards (to open; a card that left by being deleted is no longer there). */
+      task: { id: string; title: string }
+      /** The rule: its id, to stop it telling you (null once the rule is removed), and its name when it has one. */
+      rule: { id: string | null; name: string }
+      /** What happened, in words to follow the cards' titles ("arrived in Quoted"). */
+      moment: string
+      /** The cards, by the titles they had then: the first ones, and how many more there were. */
+      cards: { id: string; title: string }[]
+      more: number
       createdAt: string
       read: boolean
     }

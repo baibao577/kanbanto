@@ -19,6 +19,8 @@ Changes are saved as you make them.
   WEB-12. They are made from the board's name; its **owners** can change them (2 to 5 letters or digits, starting
   with a letter). Every card is renamed at once, and a number written with the old letters still finds its card.
   Two boards in the same workspace, or two of your own, can't have the same letters. Your Inbox is always **IN**.
+
+  ![Board settings, with the letters for card numbers ringed](/images/number-3-letters.webp)
 - **When a task has subtasks, its status…**
   - **Follows its subtasks** (recommended): it is Done when all its subtasks are done, and In progress as soon as
     one of them starts.
@@ -28,9 +30,12 @@ Changes are saved as you make them.
 under each list. See
 [your own fields](/everyday/fields).
 
-**Rules.** What the board says about its cards, the same to everyone on it. Today that is its
-[limits](/views/limits): how much a list, a person or the whole board may hold. Every limit is listed with where it
-stands; the board's owners make, change and remove them here.
+**Rules.** What the board says about its cards, the same to everyone on it. Its [limits](/views/limits): how much
+a list, a person or the whole board may hold, each with where it stands. And its rules that
+[tell people when a card arrives](/views/telling-rules) in a list or leaves it, each with who it tells. The board's
+owners make, change and remove them here; anyone a rule tells can switch it off for themselves.
+
+![Board settings, Rules: the board's limits, then its rules that tell people](/images/rules-settings.webp)
 
 **Background.** One of 12 colors, 12 designs, or your own: pick any hue and a light, medium or deep shade.
 

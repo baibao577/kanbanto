@@ -7,7 +7,7 @@ import { indexFor } from '@kanbanto/model/indexer'
 import type { Change } from '@kanbanto/model/records'
 import { withNumbers } from '@kanbanto/model/refs'
 import type { BoardData, Task } from '@kanbanto/model/types'
-import { and, eq, inArray, lt, sql } from 'drizzle-orm'
+import { and, eq, inArray, lt, ne, sql } from 'drizzle-orm'
 import type { Db, Tx } from '../db'
 import {
   attachments,
@@ -78,10 +78,19 @@ export class BoardEngine {
     | null = null
 
   /**
-   * Run after each command that changed something, before its answer goes back (following cards and telling people):
-   * what it does is there by the time the person who made the change looks. `data`: the board after the change.
+   * Run after each command that changed something, before its answer goes back (the board's rules, following cards
+   * and telling people): what it does is there by the time the person who made the change looks. `data`: the board
+   * after the change; `before`: as it was (a rule asks which cards arrived or left between the two).
    */
-  afterChange: ((boardId: string, e: { userId: string; command: string; changes: Change[]; data: BoardData }) => Promise<void>) | null = null
+  afterChange:
+    ((boardId: string, e: { userId: string; command: string; changes: Change[]; data: BoardData; before: BoardData }) => Promise<void>) | null = null
+
+  /**
+   * Run for each of the two boards after a card moved from one to the other, which is no command (`transfer`): the
+   * boards' rules only. (Followers aren't told through here: to one board it would read as a card deleted, to the
+   * other as a card made.)
+   */
+  afterMove: ((boardId: string, e: { userId: string; changes: Change[]; data: BoardData; before: BoardData }) => Promise<void>) | null = null
 
   constructor(db: Db, hub: LiveHub) {
     this.db = db
@@ -168,7 +177,7 @@ export class BoardEngine {
         throw Object.assign(new HttpError(422, 'That change couldn’t be applied to this board.'), { cause: e })
       }
       if ('error' in r) throw new HttpError(422, r.error)
-      if (!r.changes.length && !healed) return { seq: row.seq, changes: [], data, stripped: false, said: [] }
+      if (!r.changes.length && !healed) return { seq: row.seq, changes: [], data, before: data, stripped: false, said: [] }
       // Links to cards on other boards: what this board can't check by itself (see links.ts). A new link that fails
       // is refused. An undo that would bring one back goes through without it: the rest of it is still wanted.
       let changes = r.changes
@@ -221,7 +230,7 @@ export class BoardEngine {
         .update(boards)
         .set({ seq, activityAt: new Date(), ...(numbered.next !== row.nextNumber && { nextNumber: numbered.next }) })
         .where(eq(boards.id, boardId))
-      return { seq, changes, data: applyChanges(data, changes), stripped, said }
+      return { seq, changes, data: applyChanges(data, changes), before: data, stripped, said }
     })
 
     this.remember(boardId, { seq: result.seq, data: result.data })
@@ -236,7 +245,7 @@ export class BoardEngine {
       if (result.stripped) this.hub.broadcast(boardId, { type: 'reload' })
       const board = { id: boardId, name: result.data.board.name }
       this.onChanged?.(boardId, { board, userId, command: command.type, seq: out.seq, changes: out.changes, items: result.said, mutationId })
-      await this.afterChange?.(boardId, { userId, command: command.type, changes: out.changes, data: result.data })
+      await this.afterChange?.(boardId, { userId, command: command.type, changes: out.changes, data: result.data, before: result.before })
     }
     return out
   }
@@ -416,7 +425,11 @@ export class BoardEngine {
         const at = (t: typeof comments | typeof attachments | typeof notifications) => and(eq(t.boardId, fromId), eq(t.taskId, oldId))
         await tx.update(comments).set({ boardId: toId, taskId: id }).where(at(comments))
         await tx.update(attachments).set({ boardId: toId, taskId: id }).where(at(attachments))
-        await tx.update(notifications).set({ boardId: toId, taskId: id }).where(at(notifications))
+        // (What a rule of the board it leaves told people stays there: it was about that board's lists.)
+        await tx
+          .update(notifications)
+          .set({ boardId: toId, taskId: id })
+          .where(and(at(notifications), ne(notifications.kind, 'rule')))
         // Its followers too, the ones who can open the board it went to (the bell checks that when it's read).
         await tx
           .update(taskFollowers)
@@ -450,8 +463,8 @@ export class BoardEngine {
       }
       return {
         plan,
-        from: { seq: await bump(fromId), data: applyChanges(source, plan.source), said: left },
-        to: { seq: await bump(toId), data: applyChanges(target, plan.target), said: arrived },
+        from: { seq: await bump(fromId), data: applyChanges(source, plan.source), before: source, said: left },
+        to: { seq: await bump(toId), data: applyChanges(target, plan.target), before: target, said: arrived },
       }
     })
 
@@ -473,6 +486,9 @@ export class BoardEngine {
     }
     // The other board's comment and file counts changed too.
     this.hub.broadcast(toId, { type: 'reload' })
+    // Each board's rules: the card left one and arrived on the other.
+    await this.afterMove?.(fromId, { userId, changes: plan.source, data: from.data, before: from.before })
+    await this.afterMove?.(toId, { userId, changes: plan.target, data: dest.data, before: dest.before })
     // Links to the cards that moved follow them (or go, where they can't): once the move itself is done and settled.
     const linksRemoved = await followMoved({ db: this.db, engine: this }, fromId, toId, plan.ids).catch(() => 0)
     return { id: plan.ids.get(taskId)!, summary: { ...plan.summary, linksRemoved }, board: { id: toId, name: dest.data.board.name } }

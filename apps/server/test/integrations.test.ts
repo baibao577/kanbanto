@@ -263,6 +263,14 @@ describe('MCP', () => {
     await run({ type: 'label.delete', id: 'soon' })
     const broken = (await tool('get_board', { board_id: id, tasks: false })).limits[2]
     expect(broken).toEqual({ says: 'At most 2 cards in To Do', cannot_be_worked_out: 'A label it names is gone.' })
+    // Its rules that tell people are said in words too (the app does the telling).
+    expect('rules_that_tell_people' in (await tool('get_board', { board_id: id, tasks: false }))).toBe(false)
+    await ann.ok('POST', `/api/boards/${id}/rules`, {
+      rule: { kind: 'when', on: 'enters', cards: { statuses: ['done'] }, counts: 'leaves', then: [{ do: 'tell', who: ['@assignee'] }] },
+    })
+    expect((await tool('get_board', { board_id: id, tasks: false })).rules_that_tell_people).toEqual([
+      { says: 'When a card arrives in Done, tell whoever it is assigned to' },
+    ])
     const board = await tool('get_board', { board_id: id })
     expect(board.board.code).toBe('MY')
     expect(board.tasks.find((x: { id: string }) => x.id === 'A3')).toMatchObject({ ref: 'MY-6', title: 'Deploy' })

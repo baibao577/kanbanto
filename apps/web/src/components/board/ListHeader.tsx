@@ -3,6 +3,7 @@ import {
   ArrowLeft,
   ArrowRight,
   ArrowsInLineHorizontal,
+  BellRinging,
   DotsThree,
   EyeSlash,
   Gauge,
@@ -17,6 +18,7 @@ import { ColorSwatches, StatusDot } from '@/components/common/bits'
 import { LimitChip } from '@/components/rules/LimitChip'
 import { STANDING } from '@/components/rules/standing'
 import { LimitEditor } from '@/components/rules/LimitEditor'
+import { TellEditor } from '@/components/rules/TellEditor'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -44,7 +46,7 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { cn } from '@/lib/utils'
 import { tone } from '@kanbanto/model/colors'
-import { isPlainCount, type RuleState } from '@kanbanto/model/rules'
+import { isPlainCount, listOf, type RuleState, whensOf } from '@kanbanto/model/rules'
 import { listSort, sortComparator } from '@kanbanto/model/table'
 import {
   CATEGORIES,
@@ -81,6 +83,9 @@ export function ListHeader({ col, count, limits = NO_LIMITS, editing, setEditing
   const { data, idx, prefs, setPrefs, run, undo, readOnly, access } = useBoard()
   const [deleting, setDeleting] = useState(false)
   const [limiting, setLimiting] = useState(false)
+  const [telling, setTelling] = useState(false)
+  // The rule that tells people about this list's arrivals, when there is one: the menu changes that one.
+  const tells = whensOf(data.rules).find((r) => r.on === 'enters' && listOf(r) === col.id)
   // What the list's own number says is this person's view (their filter, what they hide). A limit's is everyone's:
   // where the two are the same number, it's said once, by the limit.
   const whole = limits.find((s) => !s.problem && s.rule.per !== 'person' && isPlainCount(s.rule))
@@ -193,7 +198,7 @@ export function ListHeader({ col, count, limits = NO_LIMITS, editing, setEditing
               <DotsThree weight="bold" className="size-4" />
             </button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="w-64">
+          <DropdownMenuContent align="start" className="w-72">
             <DropdownMenuItem onSelect={() => setEditing(col.id)}>
               <PencilSimple /> Rename
             </DropdownMenuItem>
@@ -291,6 +296,11 @@ export function ListHeader({ col, count, limits = NO_LIMITS, editing, setEditing
                 <Gauge /> {limits.length ? 'Change limit…' : 'Limit…'}
               </DropdownMenuItem>
             )}
+            {access.role === 'owner' && (
+              <DropdownMenuItem onSelect={() => setTelling(true)}>
+                <BellRinging /> {tells ? 'Who is told when a card arrives…' : 'Tell people when a card arrives…'}
+              </DropdownMenuItem>
+            )}
             {col.category === 'done' && (
               <DropdownMenuItem onSelect={onArchiveOlder}>
                 <Archive /> Archive older cards…
@@ -307,6 +317,7 @@ export function ListHeader({ col, count, limits = NO_LIMITS, editing, setEditing
       )}
 
       <DeleteListDialog col={col} open={deleting} onOpenChange={setDeleting} />
+      {telling && <TellEditor listId={col.id} rule={tells} onClose={() => setTelling(false)} />}
       {limiting && (
         <LimitEditor listId={col.id} rule={(limits.find((s) => isPlainCount(s.rule)) ?? limits[0])?.rule} onClose={() => setLimiting(false)} />
       )}

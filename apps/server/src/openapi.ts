@@ -671,9 +671,9 @@ The answer lists the records that changed.
       '/api/boards/{id}/rules': {
         post: {
           tags: ['Boards'],
-          summary: 'Make a rule (a limit)',
+          summary: 'Make a rule (a limit, or one that tells people)',
           description:
-            'Owners only. A board’s rules come with the board (`rules` in `GET /api/boards/{id}`), and where each stands is worked out from the board itself. The one kind today is a limit: `cards` says which cards (`statuses`: list ids, `assignees`, `labels`, `priorities`, `fields`: by field id, as a saved filter says them; not “me”, dates or days without activity, which would say something different to different people), `counts` which of them count where cards nest (`leaves`: the cards without subtasks, `topLevel`, `all`), `measure` what is added up (`{"by":"cards"}` or `{"by":"field","field":"<a number field’s id>"}`), `per: "person"` holds each person by what is assigned to them, `max` is the number, `name` is a few words of its owner’s for it (optional), and `then` is `[{"do":"show"}]`. A rule that names a list, label, person or field the board doesn’t have is refused with the reason (422). Up to 20 to a board.',
+            'Owners only. A board’s rules come with the board (`rules` in `GET /api/boards/{id}`), and where each stands is worked out from the board itself. Two kinds. A limit (`kind: "limit"`): `cards` says which cards (`statuses`: list ids, `assignees`, `labels`, `priorities`, `fields`: by field id, as a saved filter says them; not “me”, dates or days without activity, which would say something different to different people), `counts` which of them count where cards nest (`leaves`: the cards without subtasks, `topLevel`, `all`), `measure` what is added up (`{"by":"cards"}` or `{"by":"field","field":"<a number field’s id>"}`), `per: "person"` holds each person by what is assigned to them, `max` is the number, `name` is a few words of its owner’s for it (optional), and `then` is `[{"do":"show"}]`. A rule that tells people (`kind: "when"`): `on` is `enters` or `leaves`, `cards` and `counts` are as for a limit, and `then` is `[{"do":"tell","who":[…]}]` with the ids of people on the board and/or `"@assignee"` (whoever the card is assigned to: as it arrives, or as it was when it left). A card “enters” when it starts to meet `cards`, however that happens (moved in, made there, restored, changed so that it fits, arriving from another board), and “leaves” when it stops (also archived, deleted, moved to another board); the people named get a notification (`kind: "rule"` in `GET /api/notifications`), never the person who made the change. A rule that names a list, label, person or field the board doesn’t have is refused with the reason (422). Up to 20 to a board, of both kinds together.',
           parameters: [id('id')],
           requestBody: {
             content: {
@@ -703,6 +703,37 @@ The answer lists the records that changed.
           description: 'Owners only.',
           parameters: [id('id'), id('ruleId')],
           responses: ok,
+        },
+      },
+      '/api/boards/{id}/rules/mutes': {
+        get: {
+          tags: ['Boards'],
+          summary: 'The rules you switched off for yourself',
+          description:
+            'A rule that tells people can be switched off by each person for themselves. `mine`: the ids of the rules you switched off. For the board’s owners, `all` says who switched off which, by rule id. Not part of the board itself.',
+          parameters: [id('id')],
+          responses: {
+            200: json(
+              obj(
+                {
+                  mine: { type: 'array', items: str },
+                  all: { type: 'object', additionalProperties: { type: 'array', items: obj({ id: str, name: str }) } },
+                },
+                ['mine'],
+              ),
+            ),
+          },
+        },
+      },
+      '/api/boards/{id}/rules/{ruleId}/mute': {
+        put: {
+          tags: ['Boards'],
+          summary: 'Stop a rule telling you, or let it again',
+          description:
+            'Everyone on the board can, viewers too: it is about their own notifications, and nothing about the board changes. Not for visitors with the public link (403), and only for a rule that tells people (422 for a limit).',
+          parameters: [id('id'), id('ruleId')],
+          requestBody: { content: { 'application/json': { schema: obj({ muted: { type: 'boolean' } }, ['muted']) } } },
+          responses: { 200: json(obj({ muted: { type: 'boolean' } })) },
         },
       },
       '/api/boards/{id}/code': {

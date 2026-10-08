@@ -21,19 +21,9 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { cn } from '@/lib/utils'
+import { COUNTS, tidy } from './parts'
 
 const CARDS = 'cards'
-const COUNTS: Record<RuleCounts, [string, string]> = {
-  leaves: ['Cards without subtasks', 'A card that has subtasks isn’t counted: its subtasks are.'],
-  topLevel: ['Top-level cards', 'A card’s subtasks aren’t counted by themselves. A number field adds theirs to it.'],
-  all: ['Every card', 'A card and each of its subtasks are counted.'],
-}
-
-/** A filter with nothing left unsaid in it: no part that is empty or not there. */
-const tidy = (cards: RuleFilter): RuleFilter =>
-  Object.fromEntries(
-    Object.entries(cards).filter(([, v]) => v !== undefined && (!Array.isArray(v) || v.length) && (typeof v !== 'object' || Object.keys(v).length)),
-  )
 
 /**
  * Makes or changes a limit (the board's owners): at most this much of these cards. What is added up, who it holds

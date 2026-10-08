@@ -23,7 +23,8 @@ To point at one card, say its [name](/everyday/cards#a-card-s-name): "What's the
 Done." The assistant gives cards' names in its answers too, so you can tell which card it means.
 
 It is told the board's [limits](/views/limits) and the room left under each: "Is there room in Doing?", "Who is over
-their limit?", "Pick up the next card, unless Doing is full."
+their limit?", "Pick up the next card, unless Doing is full." It is told the board's rules that
+[tell people](/views/telling-rules) too: "Who hears when a card arrives in Quoted?"
 
 ## Look back
 

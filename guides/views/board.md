@@ -25,6 +25,8 @@ A list is a stage of the work. Each list has a menu, opened with its **⋯**.
   progress** or **Done**. This is how Kanbanto knows which cards are finished, whatever you name your lists.
 - **Limit…** says how much the list may hold: so many cards, or so much of a number field. The list's header then
   shows where it stands, and turns red when it is over. For the board's owners. See [limits](/views/limits).
+- **Tell people when a card arrives…** chooses who gets a line under their bell when a card comes into the list.
+  For the board's owners. See [tell people when a card arrives](/views/telling-rules).
 - **Archive older cards…** on a done list. See [done cards and the archive](/everyday/done-and-archive).
 - **Hide list** takes it off your screen only. A line beside the lists says which are hidden, with a way to show
   them again. New boards start with a hidden Backlog.

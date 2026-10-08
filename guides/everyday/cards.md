@@ -98,6 +98,11 @@ Done").
 
 - **See it** at the top of the open card. On the board, turn on **Display → Card numbers** to show it on every
   card; in the Outline, switch on the **Number** column.
+
+  ![The top of an open card, with its name ringed](/images/number-1-card.webp)
+
+  ![The board with every card's name above its title, and the Card numbers switch ringed](/images/number-2-board.webp)
+
 - **Find a card by it:** type `web-12`, or just `12`, in the board's [search](/everyday/search-and-filters), or
   `WEB-12` in Search cards.
 - **Copy a link to the card:** click the name at the top of the open card.

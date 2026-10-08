@@ -11,6 +11,7 @@ import { TOKEN_ROUTES, userForApiToken, type TokenAccess } from './auth/apiToken
 import { SESSION_COOKIE, userForToken, type SessionUser } from './auth/sessions'
 import { BoardEngine } from './boards/engine'
 import { afterBoardChange } from './boards/follows'
+import { tellByRules } from './boards/tell'
 import type { Db } from './db'
 import { env } from './env'
 import { dbErrorCode, loggable } from './errors'
@@ -149,7 +150,17 @@ export async function buildApp(
     calendar.kick()
   }
   // (Telling people never undoes the change it's about.)
-  engine.afterChange = (boardId, e) => afterBoardChange(app, boardId, e).catch((err) => app.log.error({ err: loggable(err) }, 'telling followers'))
+  // The board's rules go first: whoever a rule tells that a card arrived isn't told again as its follower.
+  const rules = (boardId: string, e: Parameters<typeof tellByRules>[2]) =>
+    tellByRules(app, boardId, e).catch((err) => {
+      app.log.error({ err: loggable(err) }, 'telling people by the board’s rules')
+      return undefined
+    })
+  engine.afterChange = async (boardId, e) => {
+    const told = await rules(boardId, e)
+    await afterBoardChange(app, boardId, e, told).catch((err) => app.log.error({ err: loggable(err) }, 'telling followers'))
+  }
+  engine.afterMove = async (boardId, e) => void (await rules(boardId, e))
   app.decorate('engine', engine)
   app.decorate('mail', mail)
   app.decorate('webhooks', webhooks)

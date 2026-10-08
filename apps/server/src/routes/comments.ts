@@ -9,7 +9,7 @@ import { openBoards, requireAccess, type BoardRow } from '../boards/access'
 import { follow, followersOf, isFollowing, mentionLine, setFollowing } from '../boards/follows'
 import { boardPeople } from '../boards/store'
 import type { Db, Tx } from '../db'
-import { attachments, boards, comments, notifications, tasks, users, workspaces } from '../db/schema'
+import { attachments, boardRules, boards, comments, notifications, tasks, users, workspaces } from '../db/schema'
 import { HttpError, parse } from '../http'
 import { requireUser } from './auth'
 import { uncover } from './covers'
@@ -319,9 +319,11 @@ export const commentRoutes: FastifyPluginAsync = async (app) => {
         taskTitle: tasks.title,
         description: tasks.description,
         body: comments.body,
+        ruleName: sql<string | null>`${boardRules.rule}->>'name'`,
       })
       .from(notifications)
       .leftJoin(boards, eq(boards.id, notifications.boardId))
+      .leftJoin(boardRules, eq(boardRules.id, notifications.ruleId))
       .leftJoin(workspaces, eq(workspaces.id, notifications.workspaceId))
       .leftJoin(users, eq(users.id, notifications.actorId))
       .leftJoin(tasks, and(eq(tasks.boardId, notifications.boardId), eq(tasks.id, notifications.taskId)))
@@ -345,6 +347,17 @@ export const commentRoutes: FastifyPluginAsync = async (app) => {
         if (r.n.kind === 'reminder') return { ...common, kind: 'reminder', actor: r.actor, board: CLOSED, task: { id: '', title: 'A task' } }
         if (r.n.kind === 'change') return { ...common, kind: 'change', board: CLOSED, task: { id: '', title: 'A task' }, changes: [] }
         if (r.n.kind === 'comment') return { ...common, kind: 'comment', board: CLOSED, task: { id: '', title: 'A task' }, excerpt: '' }
+        if (r.n.kind === 'rule')
+          return {
+            ...common,
+            kind: 'rule',
+            board: CLOSED,
+            task: { id: '', title: 'A task' },
+            rule: { id: null, name: '' },
+            moment: '',
+            cards: [],
+            more: 0,
+          }
         return { ...common, kind: 'mention', where: 'comment', board: CLOSED, task: { id: '', title: 'A task' }, excerpt: '' }
       }
       const board = r.n.boardId && r.boardName !== null ? { id: r.n.boardId, name: r.boardName } : null
@@ -366,6 +379,20 @@ export const commentRoutes: FastifyPluginAsync = async (app) => {
       }
       if (r.n.kind === 'change') return { ...common, kind: 'change', ...on, changes: r.n.changes ?? [] }
       if (r.n.kind === 'comment') return { ...common, kind: 'comment', ...on, excerpt: excerpt(r.body ?? '') }
+      // (What a rule said is kept as it was said: the cards by the titles they had, since one may be gone by now.)
+      if (r.n.kind === 'rule') {
+        const cards = r.n.said?.cards ?? []
+        return {
+          ...common,
+          kind: 'rule',
+          board: on.board,
+          task: cards[0] ?? on.task,
+          rule: { id: r.n.ruleId, name: r.ruleName ?? '' },
+          moment: r.n.said?.moment ?? '',
+          cards,
+          more: r.n.said?.more ?? 0,
+        }
+      }
       // (A mention with no comment is in the card's description: the line it's on, as it reads now.)
       return r.n.commentId
         ? { ...common, kind: 'mention', where: 'comment', ...on, excerpt: excerpt(r.body ?? '') }

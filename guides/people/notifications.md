@@ -8,6 +8,7 @@ The bell at the top right shows:
 
 - comments and descriptions where someone **@mentioned** you,
 - new comments and changes on the **cards you follow**,
+- what a **board's rules** tell you: a card arrived in a list, or left it,
 - **reminders** that have come due,
 - being **added** to a board or workspace.
 
@@ -39,6 +40,18 @@ Once you unfollow a card, commenting on it again does not follow it again. Being
 
 Following a card does not include its subtasks: each card is followed on its own.
 
+## What a board's rules tell you
+
+A board's owners can have it tell people when a card arrives in a list or leaves one, such as every new quote, or
+an order that was paid. If you are one of them, a line under the bell says which card, what happened, who did it and
+the rule's name. You don't need to follow the card.
+
+![The bell, with a line from a board's rule](/images/tell-3-bell.webp){.medium}
+
+To stop a rule telling you, click **Stop telling me** on its line, or turn off its switch behind the **Rules**
+button above the board. It stays on for everyone else. See
+[tell people when a card arrives](/views/telling-rules).
+
 ## The morning summary
 
 Once a day, around 8:00 in your own time zone, Kanbanto emails you:
@@ -46,7 +59,8 @@ Once a day, around 8:00 in your own time zone, Kanbanto emails you:
 - cards due today, and overdue ones,
 - reminders set for later today,
 - mentions you have not seen yet,
-- news from the cards you follow that you have not seen yet.
+- news from the cards you follow that you have not seen yet,
+- what your boards' rules told you that you have not seen yet.
 
 It is only sent on days when there is something to say.
 
@@ -56,7 +70,7 @@ A reminder also arrives by email at the moment you set. See [due dates and remin
 
 ## Notifications on your computer
 
-Mentions, reminders and news from the cards you follow can pop up on your screen even when the Kanbanto tab is closed, as long as your browser is
+Mentions, reminders, news from the cards you follow and what boards' rules tell you can pop up on your screen even when the Kanbanto tab is closed, as long as your browser is
 running. Clicking one opens the card.
 
 1. Open **your initials → Account settings → Notifications**.

@@ -792,9 +792,10 @@ export const notifications = pgTable(
       .references(() => users.id, { onDelete: 'cascade' }),
     /**
      * mention: in a comment (board, task, comment) or a description (no comment) · added: to a board or a workspace
-     * (one of the two) · comment, change: on a card they follow.
+     * (one of the two) · comment, change: on a card they follow · rule: one of the board's rules told them (`ruleId`,
+     * `said`; `taskId` is the first of its cards).
      */
-    kind: text('kind', { enum: ['mention', 'added', 'reminder', 'comment', 'change'] }).notNull(),
+    kind: text('kind', { enum: ['mention', 'added', 'reminder', 'comment', 'change', 'rule'] }).notNull(),
     boardId: text('board_id').references(() => boards.id, { onDelete: 'cascade' }),
     workspaceId: uuid('workspace_id').references(() => workspaces.id, { onDelete: 'cascade' }),
     taskId: text('task_id'),
@@ -802,13 +803,27 @@ export const notifications = pgTable(
     actorId: uuid('actor_id').references(() => users.id, { onDelete: 'set null' }),
     /** change: what happened, in words to follow the actor's name ("moved “Deploy” to Done"), oldest first. */
     changes: jsonb('changes').$type<string[]>(),
+    /** rule: the rule that told them (empty once that rule is removed). */
+    ruleId: uuid('rule_id').references(() => boardRules.id, { onDelete: 'set null' }),
+    /** rule: what it said, kept as it was said (a card that left by being deleted has no title to look up later). */
+    said: jsonb('said').$type<RuleNotice>(),
     createdAt: at('created_at').notNull().defaultNow(),
     readAt: at('read_at'),
     /** Included in a daily email summary. */
     emailedAt: at('emailed_at'),
   },
-  (t) => [index('notifications_user_idx').on(t.userId, t.createdAt)],
+  (t) => [index('notifications_user_idx').on(t.userId, t.createdAt), index('notifications_rule_idx').on(t.ruleId)],
 )
+
+/**
+ * What a rule told someone: what happened ("arrived in Quoted"), to which cards (the first ones, by the titles they
+ * had then), and how many more there were.
+ */
+export interface RuleNotice {
+  moment: string
+  cards: { id: string; title: string }[]
+  more: number
+}
 
 // ── File storage and attachments ───────────────────────────────────────────────
 
@@ -1215,6 +1230,24 @@ export const boardRules = pgTable(
     updatedAt: at('updated_at').notNull().defaultNow(),
   },
   (t) => [index('board_rules_board_idx').on(t.boardId)],
+)
+
+/**
+ * People who asked a rule that tells people not to tell them. Each person's own business, so it isn't part of the
+ * rule, nor of the board that is sent to everyone who opens it: asked for apart (routes/rules.ts).
+ */
+export const boardRuleMutes = pgTable(
+  'board_rule_mutes',
+  {
+    ruleId: uuid('rule_id')
+      .notNull()
+      .references(() => boardRules.id, { onDelete: 'cascade' }),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    createdAt: at('created_at').notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.ruleId, t.userId] }), index('board_rule_mutes_user_idx').on(t.userId)],
 )
 
 /** Boards people starred as favourites (shown first on the boards page and in the board switcher). */

@@ -12,10 +12,17 @@ that takes 24 trays, a crew with 160 hours, a reviewer with time for four.
 Limits are made by a board's **owners**.
 
 1. Open the list's **⋯** menu and choose **Limit…**.
+
+   ![A list's menu, with Limit… ringed](/images/limit-1-menu.webp){.medium}
+
 2. Type the number after **At most**, and click **Set limit**.
+
+   ![The limit for a list: at most 3 cards in Doing](/images/limit-2-editor.webp){.medium}
 
 The list's header now shows how much it holds against how much it may: **2 / 3**. It is grey while there is room,
 amber when the list is full, and red when it is over. Point at it to read the limit in words.
+
+![A list that is full: 3 / 3 beside its name](/images/limit-3-list.webp){.small}
 
 To change or remove it, choose **Change limit…** in the same menu.
 
@@ -32,6 +39,8 @@ in words as you go: "At most 2 cards for each person in Doing".
 | **Counting** | Which cards count when cards have [subtasks](/everyday/subtasks): the cards without subtasks, the top-level cards, or every card. It starts on what the board's lists show. |
 | **Name** | A few words of your own, such as "Roofing crew" or "Oven". Optional. |
 | **Which cards** | The lists the limit is about, and anything else its cards must be: who they are assigned to, their priority, their labels, or a value of one of your own fields. |
+
+![A limit for each person, about two lists: Which cards is open](/images/limit-4-which.webp){.medium}
 
 Some limits people set:
 
@@ -51,10 +60,12 @@ Some limits people set:
 - **Beside a list's name:** a plain count, such as **2 / 3**, or **2 each** for a limit that holds each person.
 - **Under the list's header:** a limit that needs words with its numbers, such as **Crew hours 166 / 160 h** or
   **Roofing crew 2 / 1**, and for a limit that holds each person, who has how much: **Marco 3 / 2**.
-- **The Limits button** above the view lists every limit of the board with where it stands, and says how many are
+- **The Rules button** above the view lists every limit of the board with where it stands, and says how many are
   over. It is there in the Timeline and the Outline too. A limit that is about several lists, or the whole board,
   shows here and not on a list.
 - **Board settings → Rules** has the same list.
+
+![The Rules button, with the board's limits and where each stands](/images/rules-button.webp){.medium}
 
 A folded list keeps the color of its limit.
 
@@ -68,14 +79,15 @@ A folded list keeps the color of its limit.
   everyone who has the board open.
 - **A limit on a number field keeps to the field's decimals.** On a field of whole hours, 35.6 becomes 36.
 - **If something a limit names is removed** (its list, a label, a person, a field), the limit is not worked out with
-  what is left of it, because that would quietly be a wider limit. The Limits list says it can't be worked out and
-  why. Change it there, or bring the thing back: undoing a deleted list brings its limit back too.
+  what is left of it, because that would quietly be a wider limit. The list of rules says it can't be worked out
+  and why. Change it there, or bring the thing back: undoing a deleted list brings its limit back too.
 - **A limit can't be about "me" or about dates.** It has to mean the same to everyone, on every day.
 - **Assistants are told the limits** and the room left under each, so "don't start anything new while Doing is
   full" works. See [what to ask](/ai/what-to-ask).
-- A board can have up to 20 limits.
+- A board can have up to 20 rules: limits, and [rules that tell people](/views/telling-rules), together.
 
 ## Next
 
+- [Tell people when a card arrives](/views/telling-rules)
 - [Your own fields](/everyday/fields)
 - [The Board view](/views/board)

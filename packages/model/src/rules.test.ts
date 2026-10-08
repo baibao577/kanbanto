@@ -1,26 +1,36 @@
 import { describe, expect, it } from 'vitest'
 import { bigBoard } from './bigBoard'
-import { applyChanges } from './changes'
+import { applyChanges, invertChanges } from './changes'
 import { execute, type Command } from './commands'
 import type { BoardField, FieldMap } from './fields'
 import { indexFor } from './indexer'
+import type { Change } from './records'
 import {
+  ASSIGNEE,
   cardsOf,
   countsFor,
   describeRule,
   evaluateRule,
   evaluateRules,
+  firings,
   hasConditions,
   isPlainCount,
+  knownRules,
   limitOn,
+  limitsOf,
   listOf,
   MAX_RULES,
+  momentOf,
   namesPeople,
   remapRule,
   ruleProblem,
   shortName,
+  tellOn,
+  toldNames,
+  whensOf,
   type BoardRule,
   type LimitRule,
+  type WhenRule,
 } from './rules'
 import { exampleData } from './sample'
 import { BoardDataSchema, BoardRuleSchema } from './schema'
@@ -55,7 +65,7 @@ function board(custom: Record<string, Record<string, unknown>> = {}): BoardData 
   }
 }
 const limit = (over: Partial<LimitRule> = {}, list = 'doing', max = 3): LimitRule => ({ ...limitOn(ID(1), list, 'derived', max), ...over })
-const stands = (data: BoardData, rule: BoardRule) => {
+const stands = (data: BoardData, rule: LimitRule) => {
   const s = evaluateRule(indexFor(data), rule, data.labels)
   return s.problem ? s.problem : s.groups.map((g) => `${g.person || 'all'} ${g.value} ${g.standing}`).join(', ')
 }
@@ -213,8 +223,183 @@ describe('a rule that names something that is gone', () => {
     const data = { ...board(), rules: [limit({}, 'doing', 1)] }
     const without = run(data, { type: 'column.delete', id: 'doing', moveTo: 'todo' })
     expect(without.rules).toEqual(data.rules)
-    expect(stands(without, without.rules![0])).toBe('Its list is gone.')
+    expect(stands(without, without.rules![0] as LimitRule)).toBe('Its list is gone.')
     expect(stands(data, data.rules[0])).toBe('all 2 over')
+  })
+})
+
+/** A rule that tells Mai about a list's arrivals (or, with `on: 'leaves'`, about what leaves it). */
+const tell = (over: Partial<WhenRule> = {}, list = 'doing'): WhenRule => ({
+  ...tellOn(ID(5), list, 'derived'),
+  then: [{ do: 'tell', who: ['mai'] }],
+  ...over,
+})
+/** What a change makes of a rule's cards: "arrived / left" ("-" for none), and the board after it. */
+function fires(data: BoardData, change: Command | Change[], rule: WhenRule): [string, BoardData] {
+  let changes = change as Change[]
+  if (!Array.isArray(change)) {
+    const r = execute(data, change, { now: NOW, newId: () => 'n1', idx: indexFor(data) })
+    if ('error' in r) throw new Error(r.error)
+    changes = r.changes
+  }
+  const after = applyChanges(data, changes)
+  const touched = changes.filter((c) => c.entity === 'task').map((c) => c.id)
+  const f = firings({ idx: indexFor(data), labels: data.labels }, { idx: indexFor(after), labels: after.labels }, rule, touched)
+  return [`${f.entered.sort().join(' ') || '-'} / ${f.left.sort().join(' ') || '-'}`, after]
+}
+const fired = (data: BoardData, change: Command | Change[], rule: WhenRule) => fires(data, change, rule)[0]
+
+describe('a rule that tells people when a card arrives or leaves', () => {
+  it('a card arrives however it comes to be one of the rule’s cards: moved in, made there, brought back', () => {
+    const data = board()
+    expect(fired(data, { type: 'task.update', id: 'A3', fields: { status: 'doing' } }, tell())).toBe('A3 / -')
+    expect(fired(data, { type: 'task.create', parentId: null, fields: { title: 'New', status: 'doing' } }, tell())).toBe('n1 / -')
+    const [gone, archived] = fires(data, { type: 'task.archive', id: 'B1' }, tell())
+    expect(gone).toBe('- / B1')
+    expect(fired(archived, { type: 'task.restore', id: 'B1' }, tell())).toBe('B1 / -')
+    expect(fired(data, { type: 'task.delete', id: 'B1' }, tell())).toBe('- / B1')
+    // The same change, to a rule about the list it left.
+    expect(fired(data, { type: 'task.update', id: 'A3', fields: { status: 'doing' } }, tell({}, 'todo'))).toBe('- / A3')
+    // An undo is a change like another: the card is back where it was.
+    const r = execute(data, { type: 'task.update', id: 'A3', fields: { status: 'doing' } }, { now: NOW, newId: () => 'n1', idx: indexFor(data) })
+    if ('error' in r) throw new Error(r.error)
+    const moved = applyChanges(data, r.changes)
+    expect(fired(moved, invertChanges(moved, r.changes, NOW), tell())).toBe('- / A3')
+  })
+
+  it('a change that leaves a card where it was is neither: a new title, another place in the same list', () => {
+    const data = board()
+    expect(fired(data, { type: 'task.update', id: 'B1', fields: { title: 'Send the invites' } }, tell())).toBe('- / -')
+    expect(fired(data, { type: 'task.update', id: 'B1', fields: { assigneeId: 'ton' } }, tell())).toBe('- / -')
+    expect(fired(data, { type: 'task.update', id: 'A3', fields: { status: 'todo' } }, tell({}, 'todo'))).toBe('- / -')
+  })
+
+  it('takes a limit’s conditions: a card changed so that it fits has arrived, with no list in it at all', () => {
+    const data = board()
+    const urgent = tell({ cards: { priorities: ['urgent'] } })
+    const [made, after] = fires(data, { type: 'task.update', id: 'A3', fields: { priority: 'urgent' } }, urgent)
+    expect(made).toBe('A3 / -')
+    expect(fired(after, { type: 'task.update', id: 'A3', fields: { priority: 'high' } }, urgent)).toBe('- / A3')
+    // Both at once: Ton's cards in Doing. Reassigned to Ton, B1 arrives though it never moved.
+    const tons = tell({ cards: { statuses: ['doing'], assignees: ['ton'] } })
+    expect(fired(data, { type: 'task.update', id: 'B1', fields: { assigneeId: 'ton' } }, tons)).toBe('B1 / -')
+    expect(fired(data, { type: 'task.update', id: 'A2a', fields: { status: 'done' } }, tons)).toBe('- / A2a')
+    expect(fired(data, { type: 'task.update', id: 'A3', fields: { status: 'doing' } }, tons)).toBe('- / -')
+  })
+
+  it('counts the cards its board shows: a parent that follows its subtasks arrives when they put it there', () => {
+    const data = board()
+    // Design (A2) has Homepage in Doing and Logo in To Do: with both done it shows in Done, without being written.
+    const [, half] = fires(data, { type: 'task.update', id: 'A2a', fields: { status: 'done' } }, tell({}, 'done'))
+    const last: Command = { type: 'task.update', id: 'A2b', fields: { status: 'done' } }
+    expect(fired(half, last, tell({}, 'done'))).toBe('A2b / -')
+    expect(fired(half, last, tell({ counts: 'all' }, 'done'))).toBe('A2 A2b / -')
+    expect(fired(half, last, tell({ counts: 'topLevel' }, 'done'))).toBe('- / -')
+    // (Half done, Design showed in Doing: that is the list it left.)
+    expect(fired(half, last, tell({ counts: 'all', on: 'leaves' }, 'todo'))).toBe('- / A2b')
+    expect(fired(half, last, tell({ counts: 'all', on: 'leaves' }))).toBe('- / A2')
+    // On a board where cards keep their own list, a subtask moved into the list isn't one of its cards.
+    const flat: BoardData = { ...data, board: { ...data.board, mode: 'manual' } }
+    const top = { ...tellOn(ID(6), 'doing', 'manual'), then: [{ do: 'tell' as const, who: ['mai'] }] }
+    expect(top.counts).toBe('topLevel')
+    expect(fired(flat, { type: 'task.update', id: 'A3', fields: { status: 'doing' } }, top)).toBe('- / -')
+    expect(fired(flat, { type: 'task.update', id: 'C', fields: { status: 'doing' } }, top)).toBe('C / -')
+  })
+
+  it('a card that only gains or loses subtasks has neither arrived nor left', () => {
+    const data = board()
+    // Deploy (A3) is in To Do without subtasks. Given one there, the subtask arrived; Deploy is where it was.
+    const [made, parent] = fires(data, { type: 'task.create', parentId: 'A3', fields: { title: 'Step', status: 'todo' } }, tell({}, 'todo'))
+    expect(made).toBe('n1 / -')
+    // Without it again, Deploy is a card without subtasks once more: not an arrival.
+    expect(fired(parent, { type: 'task.delete', id: 'n1' }, tell({}, 'todo'))).toBe('- / n1')
+  })
+
+  it('says nothing when it can’t be worked out, before the change or after it', () => {
+    const data = board()
+    const gone: Command = { type: 'column.delete', id: 'doing', moveTo: 'todo' }
+    const [left, without] = fires(data, gone, tell({ on: 'leaves' }))
+    expect(left).toBe('- / -')
+    // (The cards did arrive in the list they were put in.)
+    expect(fired(data, gone, tell({}, 'todo'))).toBe('A2a B1 / -')
+    // The list brought back by an undo isn't every card in it arriving.
+    const r = execute(data, gone, { now: NOW, newId: () => 'n1', idx: indexFor(data) })
+    if ('error' in r) throw new Error(r.error)
+    expect(fired(without, invertChanges(without, r.changes, NOW), tell())).toBe('- / -')
+    // A rule with nobody to tell: it names nobody, or the people it names have all left.
+    const idx = indexFor(data)
+    expect(ruleProblem(idx, tell(), data.labels)).toBeNull()
+    expect(ruleProblem(idx, tell({ then: [{ do: 'tell', who: [] }] }), data.labels)).toBe('It tells nobody.')
+    expect(ruleProblem(idx, tell({ then: [{ do: 'tell', who: ['gone'] }] }), data.labels)).toBe('Nobody it tells is on the board any more.')
+    expect(ruleProblem(idx, tell({ then: [{ do: 'tell', who: ['gone', 'ton'] }] }), data.labels)).toBeNull()
+    expect(ruleProblem(idx, tell({ then: [{ do: 'tell', who: [ASSIGNEE] }] }), data.labels)).toBeNull()
+    expect(ruleProblem(idx, tell({ cards: { statuses: ['nope'] } }), data.labels)).toBe('Its list is gone.')
+    expect(fired(data, { type: 'task.update', id: 'A3', fields: { status: 'doing' } }, tell({ then: [{ do: 'tell', who: ['gone'] }] }))).toBe('- / -')
+  })
+
+  it('is said in words: the rule, who it tells, and what happened to a card', () => {
+    const data = { ...board(), fields: [hours, stage] }
+    expect(describeRule(tell(), data)).toBe('When a card arrives in Doing, tell Mai')
+    expect(describeRule(tell({ on: 'leaves', then: [{ do: 'tell', who: [ASSIGNEE] }] }), data)).toBe(
+      'When a card leaves Doing, tell whoever it is assigned to',
+    )
+    const many = tell({
+      cards: { statuses: ['todo', 'doing'], priorities: ['urgent'] },
+      then: [{ do: 'tell', who: ['mai', 'gone', 'ton', ASSIGNEE] }],
+    })
+    expect(describeRule(many, data)).toBe(
+      'When a card arrives in To Do or Doing where Priority is Urgent, tell Mai, Ton and whoever it is assigned to',
+    )
+    expect(toldNames(many, data)).toBe('Mai, Ton and whoever it is assigned to')
+    expect(toldNames(tell({ then: [{ do: 'tell', who: ['gone'] }] }), data)).toBe('nobody')
+    const anywhere = tell({ cards: { priorities: ['urgent'] } })
+    expect(describeRule(anywhere, data)).toBe('When a card starts to be one where Priority is Urgent, tell Mai')
+    expect(describeRule({ ...anywhere, on: 'leaves' }, data)).toBe('When a card stops being one where Priority is Urgent, tell Mai')
+    expect(describeRule(tell({ cards: {} }), data)).toBe('When a card is added to the board, tell Mai')
+    // After a card's title, in a notice.
+    expect(momentOf(tell(), data)).toBe('arrived in Doing')
+    expect(momentOf(tell({ on: 'leaves' }), data)).toBe('left Doing')
+    expect(momentOf(many, data)).toBe('arrived in To Do or Doing')
+    expect(momentOf(anywhere, data)).toBe('now fits Priority is Urgent')
+    expect(momentOf({ ...anywhere, name: 'Urgent orders', on: 'leaves' }, data)).toBe('no longer fits “Urgent orders”')
+    expect(momentOf(tell({ cards: {} }), data)).toBe('was added to the board')
+    expect(momentOf(tell({ cards: {}, on: 'leaves' }), data)).toBe('left the board')
+    expect(shortName(tell({ name: 'New quotes' }), data)).toBe('New quotes')
+    expect(shortName(many, data)).toBe('Urgent')
+  })
+
+  it('is a rule of its board beside its limits, which only see limits', () => {
+    const rules: BoardRule[] = [limit({}, 'doing', 1), tell()]
+    const data = { ...board(), rules }
+    expect(limitsOf(rules)).toEqual([rules[0]])
+    expect(whensOf(rules)).toEqual([rules[1]])
+    expect(evaluateRules(indexFor(data), data).map((s) => s.rule.id)).toEqual([rules[0].id])
+    // A browser takes the board as it comes: a kind from a newer server is left out, not tripped over.
+    expect(knownRules([...rules, { ...limit(), kind: 'check' } as never])).toEqual(rules)
+    expect(knownRules(undefined)).toEqual([])
+    // Read as a rule from a board's data, and only when it is one.
+    const read = BoardDataSchema.parse({
+      ...board(),
+      rules: [
+        tell(),
+        tell({ then: [{ do: 'tell', who: [] }] }),
+        { ...tell(), then: [{ do: 'show' }] },
+        { ...tell(), on: 'waits' },
+        { ...tell(), max: 3 },
+        { ...tell(), then: [...tell().then, ...tell().then] },
+        { ...tell(), cards: { due: 'week' } },
+      ],
+    })
+    expect(read.rules).toEqual([tell()])
+    expect(BoardRuleSchema.safeParse(tell({ name: 'New quotes', then: [{ do: 'tell', who: ['mai', ASSIGNEE] }] })).success).toBe(true)
+    // In a board's file people aren't carried: a rule that tells any names people; "whoever it is assigned to" doesn't.
+    expect(namesPeople(tell(), () => false)).toBe(true)
+    expect(namesPeople(tell({ then: [{ do: 'tell', who: [ASSIGNEE] }] }), () => false)).toBe(false)
+    // Its fields follow a merge the way a limit's do, and it stays the rule it was.
+    const byStage = tell({ cards: { fields: { 'f-stage': { in: ['o-new'] } } } })
+    const merge: FieldMap = new Map([['f-stage', { id: 'f-phase', options: new Map([['o-new', 'p-new']]) }]])
+    expect(remapRule(byStage, merge, 'keep')).toEqual({ ...byStage, cards: { fields: { 'f-phase': { in: ['p-new'] } } } })
+    expect(remapRule(byStage, new Map(), 'drop')).toBeNull()
   })
 })
 

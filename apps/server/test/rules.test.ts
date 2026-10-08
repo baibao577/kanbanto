@@ -156,7 +156,7 @@ describe('a board’s rules', () => {
     // Twenty to a board.
     for (let i = 0; i < MAX_RULES; i++) expect((await make(ann, id, limit('doing', i + 1))).status).toBe(200)
     expect(await refused(limit('doing', 99))).toEqual([422, `A board can have up to ${MAX_RULES} rules. Remove one first.`])
-    expect((await rulesOf(ann, id))!.map((r) => r.max)).toEqual(Array.from({ length: MAX_RULES }, (_, i) => i + 1))
+    expect((await rulesOf(ann, id))!.map((r) => (r as LimitRule).max)).toEqual(Array.from({ length: MAX_RULES }, (_, i) => i + 1))
   })
 
   it('follow their fields when two are merged, and when the board moves to another workspace', async () => {

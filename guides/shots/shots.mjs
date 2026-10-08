@@ -26,6 +26,8 @@ const stamp = Date.now()
 
 const browser = await chromium.launch({ channel: 'chrome' })
 const ctx = await browser.newContext({ viewport: { width: 1360, height: 860 }, deviceScaleFactor: 2, colorScheme: 'light' })
+// (Keys are named as on a Mac, wherever the pictures are taken: ⌘K in the account menu.)
+await ctx.addInitScript(() => Object.defineProperty(navigator, 'platform', { get: () => 'MacIntel' }))
 const page = await ctx.newPage()
 const api = async (who, method, path, data) => {
   const r = await who.request.fetch(`${SITE}/api${path}`, { method, data })
@@ -1852,6 +1854,309 @@ await shot('history', async () => {
   await card.getByRole('list', { name: 'History' }).waitFor()
   await page.waitForTimeout(400)
   return around([card.getByRole('tablist'), card.getByRole('list', { name: 'History' }), card.getByText('History goes back 180 days.')], 24)
+})
+
+// ── Card numbers, covers and the board's rules: after everything else, since they change how the board looks ──────
+
+/** The board as the server has it now (its letters, each card's number, its lists and rules). */
+const boardNow = async () => (await api(ann, 'GET', `/boards/${board}`)).data
+/** A card's name, like WEB-3. */
+const nameOf = (data, id) => `${data.board.code}-${data.tasks[id].number}`
+/** A switch in the Display menu, turned on or off (the menu is left open). */
+const display = async (label, on) => {
+  await page.getByRole('button', { name: 'Display' }).click()
+  const sw = page.getByRole('switch', { name: label })
+  await sw.waitFor()
+  if (((await sw.getAttribute('aria-checked')) === 'true') !== on) await sw.click()
+  await page.waitForTimeout(300)
+  return sw
+}
+
+await shot('number-1-card', async () => {
+  const card = await openCard('announce')
+  const name = card.getByRole('button', { name: /copy a link to this card/ })
+  await ring(name)
+  return around([card.getByRole('navigation'), card.getByLabel('Title'), name, card.getByRole('button', { name: /^Dates/ })], 24)
+})
+await shot('number-2-board', async () => {
+  await openBoard()
+  const sw = await display('Card numbers', true)
+  await ring(sw)
+  return { clip: { x: 300, y: 50, width: 1060, height: 640 } }
+})
+// (Off again: the pictures after this one show the board as it starts.)
+if (made.includes('number-2-board')) {
+  await openBoard()
+  await display('Card numbers', false)
+  await page.keyboard.press('Escape')
+}
+await shot('number-3-letters', async () => {
+  await openBoard()
+  await page.getByRole('button', { name: 'More' }).click()
+  await page.getByRole('menuitem', { name: 'Board settings' }).click()
+  await page.locator('#board-letters').waitFor()
+  await page.locator('#board-letters').scrollIntoViewIfNeeded()
+  await ring(page.locator('#board-letters'))
+  return page.getByRole('dialog')
+})
+/** What was typed in a description and not saved is kept in the browser: forgotten, so a card opens as it is. */
+const forgetDrafts = async () => {
+  await page.goto(`${SITE}/#/`)
+  await page.evaluate(() => {
+    for (const key of Object.keys(localStorage)) if (key.startsWith('kankan:draft:')) localStorage.removeItem(key)
+  })
+}
+/** A card's empty description, opened for writing, with a few words and then "/". */
+const slashIn = async (id, words) => {
+  // (Leaving the editor saves what was typed: the picture before this one may have left its words on the card.
+  // So the editor is left first, then the card is emptied.)
+  await forgetDrafts()
+  await page.waitForTimeout(600)
+  await run({ type: 'task.update', id, fields: { description: '' } })
+  await forgetDrafts()
+  const card = await openCard(id)
+  await card.getByRole('button', { name: /Add more detail/ }).click()
+  await page.getByRole('textbox', { name: 'Description' }).waitFor()
+  await page.waitForTimeout(400)
+  await page.keyboard.type(words)
+  await page.keyboard.type('/')
+  await page.getByRole('listbox', { name: 'Put in' }).waitFor()
+  return card
+}
+await shot('mention-1-menu', async () => {
+  const card = await slashIn('photographer', 'Wait for the brief: ')
+  const entry = page.getByRole('listbox', { name: 'Put in' }).getByRole('option').first()
+  await ring(entry)
+  return around([card.getByText('Description', { exact: true }), page.getByRole('listbox', { name: 'Put in' })], 28)
+})
+await shot('mention-2-cards', async () => {
+  const card = await slashIn('photographer', 'Wait for the brief: ')
+  await page.getByRole('listbox', { name: 'Put in' }).getByRole('option').first().click()
+  await page.getByLabel('Mention a card').waitFor()
+  await page.getByLabel('Find a card').fill('hero')
+  await page.waitForTimeout(600)
+  return around([card.getByText('Description', { exact: true }), page.getByLabel('Mention a card')], 28)
+})
+await shot('mention-3-link', async () => {
+  const data = await boardNow()
+  await forgetDrafts()
+  await page.waitForTimeout(600)
+  await run({
+    type: 'task.update',
+    id: 'photographer',
+    fields: {
+      description: `Wait for the brief: ${nameOf(data, 'hero')} says what the pictures are for, and ${nameOf(data, 'announce')} is where they go.`,
+    },
+  })
+  const card = await openCard('photographer')
+  const link = card.getByRole('link', { name: nameOf(data, 'hero') })
+  await link.waitFor()
+  await link.hover()
+  await page.waitForTimeout(700)
+  await ring(link)
+  return around([card.getByText('Description', { exact: true }), link, card.getByText(/where they go/)], 36)
+})
+
+// Pictures to attach: drawn here, so the script needs no files of its own.
+const drawing = (inner, bg) =>
+  sharp(Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720"><rect width="1280" height="720" fill="${bg}"/>${inner}</svg>`))
+    .png()
+    .toBuffer()
+const DRAWINGS = {
+  // A homepage: a top bar, a headline, a button and a picture.
+  'homepage-draft.png': () =>
+    drawing(
+      `<rect width="1280" height="84" fill="#1e3a8a"/><rect x="60" y="30" width="150" height="24" rx="6" fill="#bfdbfe"/><rect x="920" y="32" width="80" height="20" rx="6" fill="#93c5fd"/><rect x="1030" y="32" width="80" height="20" rx="6" fill="#93c5fd"/><rect x="1140" y="32" width="80" height="20" rx="6" fill="#93c5fd"/><rect x="80" y="210" width="480" height="56" rx="10" fill="#1e293b"/><rect x="80" y="290" width="380" height="56" rx="10" fill="#1e293b"/><rect x="80" y="390" width="440" height="20" rx="6" fill="#94a3b8"/><rect x="80" y="424" width="360" height="20" rx="6" fill="#94a3b8"/><rect x="80" y="500" width="200" height="64" rx="14" fill="#2563eb"/><rect x="700" y="170" width="500" height="430" rx="24" fill="#bfdbfe"/><circle cx="1060" cy="290" r="54" fill="#fde68a"/><path d="M700 600 L880 400 L1000 520 L1090 440 L1200 560 L1200 576 Q1200 600 1176 600 Z" fill="#60a5fa"/>`,
+      '#eff6ff',
+    ),
+  // A sign-up box: a few words, a field and a button.
+  'signup-box.png': () =>
+    drawing(
+      `<rect x="290" y="150" width="700" height="420" rx="28" fill="#ffffff" stroke="#fdba74" stroke-width="6"/><rect x="360" y="220" width="420" height="40" rx="8" fill="#1e293b"/><rect x="360" y="286" width="520" height="20" rx="6" fill="#94a3b8"/><rect x="360" y="320" width="400" height="20" rx="6" fill="#94a3b8"/><rect x="360" y="400" width="380" height="72" rx="12" fill="#fff7ed" stroke="#fdba74" stroke-width="4"/><rect x="760" y="400" width="160" height="72" rx="12" fill="#ea580c"/>`,
+      '#ffedd5',
+    ),
+  // A phone with a form on it.
+  'phone-form.png': () =>
+    drawing(
+      `<rect x="470" y="60" width="340" height="600" rx="44" fill="#0f172a"/><rect x="490" y="110" width="300" height="500" rx="14" fill="#f8fafc"/><rect x="520" y="160" width="180" height="26" rx="6" fill="#1e293b"/><rect x="520" y="220" width="240" height="52" rx="10" fill="#e2e8f0"/><rect x="520" y="296" width="240" height="52" rx="10" fill="#e2e8f0"/><rect x="520" y="372" width="240" height="52" rx="10" fill="#fecaca" stroke="#dc2626" stroke-width="4"/><rect x="520" y="470" width="240" height="60" rx="12" fill="#16a34a"/>`,
+      '#dcfce7',
+    ),
+}
+/** Attaches drawn pictures to a card that is open, and waits for them to be listed. */
+const attach = async (card, names) => {
+  const files = []
+  for (const name of names) files.push({ name, mimeType: 'image/png', buffer: await DRAWINGS[name]() })
+  await card.locator('input[type=file]').first().setInputFiles(files)
+  for (const name of names) await card.getByText(name).first().waitFor()
+  await page.waitForTimeout(500)
+}
+/** Makes one of an open card's pictures its cover, with its button (which shows when the row is pointed at). */
+const useAsCover = async (card, name) => {
+  const row = card.locator('li, [class*=group]').filter({ hasText: name }).last()
+  await row.hover()
+  await row.getByRole('button', { name: 'Use as cover' }).click()
+  await row.getByRole('button', { name: 'Remove cover' }).waitFor()
+  await page.waitForTimeout(300)
+}
+await shot('cover-1-use', async () => {
+  const card = await openCard('newsletter')
+  await attach(card, ['signup-box.png', 'homepage-draft.png'])
+  await useAsCover(card, 'signup-box.png')
+  const other = card.locator('li, [class*=group]').filter({ hasText: 'homepage-draft.png' }).last()
+  await other.hover()
+  await ring(other.getByRole('button', { name: 'Use as cover' }))
+  return around(
+    [card.getByText('Files', { exact: true }), card.getByText('signup-box.png').first(), other, card.getByRole('button', { name: 'Attach' }).first()],
+    28,
+  )
+})
+await shot('cover-2-board', async () => {
+  // (Two more cards get a cover, so the board shows how they sit among cards without one.)
+  for (const [id, name] of [
+    ['hero', 'homepage-draft.png'],
+    ['signup', 'phone-form.png'],
+  ]) {
+    const card = await openCard(id)
+    await attach(card, [name])
+    await useAsCover(card, name)
+  }
+  if (!(await boardNow()).tasks.newsletter.cover) {
+    const card = await openCard('newsletter')
+    await attach(card, ['signup-box.png'])
+    await useAsCover(card, 'signup-box.png')
+  }
+  await openBoard()
+  await page.locator('img[src*="/thumb"]').first().waitFor()
+  await page.waitForTimeout(800)
+})
+
+// The board's rules. Limits first: the menu and the editor before any is made, then a few made at once.
+await shot('limit-1-menu', async () => {
+  await openBoard()
+  await page.getByRole('button', { name: 'Doing list options' }).click()
+  await page.getByRole('menu').waitFor()
+  await ring(page.getByRole('menuitem', { name: /^(Change limit|Limit)…$/ }))
+  return around([page.getByRole('menu'), page.getByText('Doing', { exact: true })], 30)
+})
+await shot('limit-2-editor', async () => {
+  await openBoard()
+  await page.getByRole('button', { name: 'Doing list options' }).click()
+  await page.getByRole('menuitem', { name: /^(Change limit|Limit)…$/ }).click()
+  await page.locator('#limit-most').fill('3')
+  await page.waitForTimeout(300)
+  return page.getByRole('dialog')
+})
+/** The sample's rules, made once: three limits and two rules that tell people. */
+const rulesOnce = async () => {
+  const data = await boardNow()
+  if (data.rules?.length) return
+  const counts = data.board.mode === 'manual' ? 'topLevel' : 'leaves'
+  const limit = (rule) =>
+    api(ann, 'POST', `/boards/${board}/rules`, { rule: { kind: 'limit', counts, measure: { by: 'cards' }, then: [{ do: 'show' }], ...rule } })
+  const tell = (rule, who) =>
+    api(ann, 'POST', `/boards/${board}/rules`, { rule: { kind: 'when', on: 'enters', counts, ...rule, then: [{ do: 'tell', who }] } })
+  await limit({ cards: { statuses: ['doing'] }, max: 3 })
+  await limit({ cards: { statuses: ['todo', 'doing'] }, per: 'person', max: 4 })
+  await limit({ name: 'Urgent work', cards: { priorities: ['urgent'] }, max: 1 })
+  await tell({ name: 'Started', cards: { statuses: ['doing'] } }, [me.id])
+  await tell({ name: 'Finished', cards: { statuses: ['done'] } }, ['@assignee', me.id])
+}
+await shot('limit-3-list', async () => {
+  await rulesOnce()
+  await openBoard()
+  const list = page.locator('[data-list-id="doing"]').first()
+  await ring(
+    list
+      .locator('header')
+      .getByText(/^\d+ \/ \d+$/)
+      .first(),
+  )
+  return around([list], 16)
+})
+await shot('limit-4-which', async () => {
+  await rulesOnce()
+  // (A taller window: the whole editor, with "Which cards" open.)
+  await page.setViewportSize({ width: 1360, height: 1340 })
+  await openBoard()
+  await page.getByRole('button', { name: /^Rules/ }).click()
+  await page.getByRole('button', { name: /^Change: At most 4 cards for each person/ }).click()
+  const box = page.getByRole('dialog').filter({ hasText: 'Which cards' })
+  await box.waitFor()
+  await page.waitForTimeout(500)
+  return box
+})
+await page.setViewportSize({ width: 1360, height: 860 })
+await shot('rules-button', async () => {
+  await rulesOnce()
+  await openBoard()
+  const button = page.getByRole('button', { name: /^Rules/ })
+  await button.click()
+  const list = page.locator('[data-slot=popover-content]').filter({ hasText: 'When this, tell someone' })
+  await list.waitFor()
+  await page.waitForTimeout(500)
+  await ring(button)
+  return around([button, list], 20)
+})
+await shot('rules-settings', async () => {
+  await rulesOnce()
+  await openBoard()
+  await page.getByRole('button', { name: 'More' }).click()
+  await page.getByRole('menuitem', { name: 'Board settings' }).click()
+  await page.getByRole('dialog').getByRole('button', { name: 'Rules', exact: true }).click()
+  // (Scrolled to the end: the last limits, then the rules that tell people.)
+  const last = page.getByRole('dialog').getByRole('button', { name: 'New rule' })
+  await last.scrollIntoViewIfNeeded()
+  await page.waitForTimeout(400)
+  return page.getByRole('dialog')
+})
+await shot('tell-1-menu', async () => {
+  await openBoard()
+  await page.getByRole('button', { name: 'To Do list options' }).click()
+  await page.getByRole('menu').waitFor()
+  await ring(page.getByRole('menuitem', { name: 'Tell people when a card arrives…' }))
+  return around([page.getByRole('menu'), page.getByText('To Do', { exact: true })], 30)
+})
+await shot('tell-2-editor', async () => {
+  await openBoard()
+  await page.getByRole('button', { name: 'To Do list options' }).click()
+  await page.getByRole('menuitem', { name: 'Tell people when a card arrives…' }).click()
+  const box = page.getByRole('dialog')
+  await box.locator('#tell-who').getByText('Ben Ortiz').click()
+  await box.locator('#tell-who').getByText('Whoever it is assigned to').click()
+  await box.locator('#tell-name').fill('New work')
+  await page.waitForTimeout(300)
+  return box
+})
+await shot('tell-3-bell', async () => {
+  await rulesOnce()
+  // Ben starts two cards: the rule "Started" tells Ann, in one line.
+  await api(ann, 'POST', '/notifications/read', {})
+  for (const id of ['pricing', 'signup'])
+    await api(benCtx, 'POST', `/boards/${board}/mutations`, {
+      mutationId: `g${stamp}-tell-${n++}`,
+      command: { type: 'task.update', id, fields: { status: 'doing' } },
+    })
+  await openBoard()
+  await page
+    .getByRole('button', { name: /Notifications/ })
+    .first()
+    .click()
+  await page.waitForTimeout(600)
+  const list = page.getByText('Mark all as read').locator('xpath=ancestor::*[@data-slot="popover-content"][1]')
+  await ring(list.getByRole('button', { name: 'Stop telling me' }).first())
+  return around([page.getByRole('button', { name: /Notifications/ }), list], 20)
+})
+await shot('tell-4-switch', async () => {
+  await rulesOnce()
+  await openBoard()
+  await page.getByRole('button', { name: /^Rules/ }).click()
+  const list = page.locator('[data-slot=popover-content]').filter({ hasText: 'When this, tell someone' })
+  await list.waitFor()
+  const row = list.locator('li').filter({ hasText: 'Started' })
+  await row.scrollIntoViewIfNeeded()
+  await page.waitForTimeout(400)
+  await ring(row.locator('label').filter({ hasText: 'Tells you' }))
+  return around([list.getByText('When this, tell someone'), row, list.locator('li').filter({ hasText: 'Finished' })], 24)
 })
 
 await browser.close()

@@ -145,11 +145,28 @@ UI ─run(command)─▶ BoardSync: execute() here ─▶ shown at once (optimis
   works out is stored: `evaluateRules` runs on the board as it is, in every browser and on the server, once for a
   version of the board. What a rule is about is a card set (`cardsOf`): the Filter menu's conditions, less the ones
   that depend on who is looking or what day it is, plus which cards count where they nest. That function is what
-  other kinds of rule are meant to reuse (a check on each card of a set; "when a card starts matching these cards,
-  tell these people", asked of the board before and after a change), and what a rule does is a list (`then`) with
-  one entry today, "show". A rule that names something that is gone is never worked out with what is left of it
+  other kinds of rule are meant to reuse, and what a rule does is a list (`then`). A rule that names something that is gone is never worked out with what is left of it
   (`ruleProblem`): a dropped condition would be a wider limit. When a board's fields get other ids (a merge, a
   move to another workspace, a file read into a new board) its rules follow, whole or not at all (`remapRule`).
+- **Rules that tell people** are the second kind (`kind: 'when'`: "when a card arrives in Quoted, tell Dana"). A
+  limit shows a state; this one acts at a moment, and only by telling, so no rule can set off another. Which cards
+  arrived in a rule's card set, or left it, is the model's to say from the board before a change and after it
+  (`firings`: the cards the change wrote and the cards above them in both trees, since a parent's list can follow
+  its subtasks without the parent being written; a card that only gained or lost subtasks did neither; a rule that
+  can't be worked out on either side says nothing, so undoing a deleted list isn't every card in it arriving). The
+  server asks at the one point every command passes: `BoardEngine.mutate` hands the board as it was to
+  `afterChange`, and `transfer` (a card moving between boards, which is no command) calls `afterMove` for each of
+  the two boards. `boards/tell.ts` then works out who hears of it (the people ticked who are still on the board,
+  the card's assignee for `@assignee`, never the actor, nobody who switched the rule off) and writes one
+  `notifications` row of kind `rule` per person and rule, with what was said kept on the row (`said`: a card that
+  left by being deleted has no title to look up later), merged with that person's unseen row from the same rule
+  and actor in the last ten minutes; one push per person per change goes out under the "cards you follow" switch.
+  It runs before the followers' step (`boards/follows.ts`), which then leaves out the move, archive, restore and
+  delete lines for the cards a rule just told that person about. Who switched a rule off is each person's own
+  business: the table `board_rule_mutes` and two routes of its own, never part of `BoardData`, which is sent
+  whole to viewers and to visitors with the public link. A browser reads rules through `limitsOf` and `whensOf`,
+  so a kind a newer server sends is left out, not tripped over. Rules aren't asked when a board's definitions
+  change (a person removed, a field's option deleted), only when cards do.
 - **A card's cover** is one of its files, a picture: `Task.cover` holds the file's id, and the Board draws
   `/api/attachments/<id>/thumb` without asking for the card's files. That is the picture's small copy, made by
   the browser of whoever chose the cover (`coverPicture` in the web app's `lib/picture.ts`: the whole picture, 640

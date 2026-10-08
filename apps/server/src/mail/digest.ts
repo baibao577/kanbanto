@@ -2,8 +2,9 @@ import { dayIn } from '@kanbanto/model/dates'
 import { fireTime } from '@kanbanto/model/reminders'
 import { and, desc, eq, inArray, isNotNull, isNull, ne, or, sql } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
-import { boards, comments, lists, notifications, tasks, users } from '../db/schema'
+import { boardRules, boards, comments, lists, notifications, tasks, users } from '../db/schema'
 import { mentionLine } from '../boards/follows'
+import { cardsInWords } from '../boards/tell'
 import { excerpt } from '../routes/comments'
 import { boardsFor } from '../routes/boards'
 import { emails, type DigestItem } from './templates'
@@ -25,8 +26,8 @@ const dayWords = (day: string) =>
 
 /**
  * The morning summary email, around 8:00 in each person's time zone (checked every 10 minutes): cards assigned to them
- * due today and overdue, reminders due later today, and mentions and news from the cards they follow that they haven't
- * seen. At most one a day, only when
+ * due today and overdue, reminders due later today, and mentions, news from the cards they follow and what their
+ * boards' rules told them that they haven't seen. At most one a day, only when
  * there's something in it, and only for people who want it (Account → Notifications). If email isn't set up, or the
  * budget is used up, it tries again at the next check.
  */
@@ -104,16 +105,19 @@ export async function sendDigests(app: FastifyInstance, now = new Date()) {
           task: tasks.title,
           description: tasks.description,
           body: comments.body,
+          said: notifications.said,
+          rule: sql<string | null>`${boardRules.rule}->>'name'`,
         })
         .from(notifications)
         .innerJoin(boards, eq(boards.id, notifications.boardId))
+        .leftJoin(boardRules, eq(boardRules.id, notifications.ruleId))
         .leftJoin(users, eq(users.id, notifications.actorId))
         .leftJoin(tasks, and(eq(tasks.boardId, notifications.boardId), eq(tasks.id, notifications.taskId)))
         .leftJoin(comments, eq(comments.id, notifications.commentId))
         .where(
           and(
             eq(notifications.userId, u.id),
-            inArray(notifications.kind, ['mention', 'comment', 'change']),
+            inArray(notifications.kind, ['mention', 'comment', 'change', 'rule']),
             isNull(notifications.readAt),
             isNull(notifications.emailedAt),
             // (Only from boards they can still open: what's quoted is read now, not when they were mentioned.)
@@ -125,7 +129,8 @@ export async function sendDigests(app: FastifyInstance, now = new Date()) {
         .limit(500)
       if (!due.length && !overdue.length && !later.length && !news.length) continue
       const mentions = news.filter((m) => m.kind === 'mention')
-      const followed = news.filter((m) => m.kind !== 'mention')
+      const byRule = news.filter((m) => m.kind === 'rule')
+      const followed = news.filter((m) => m.kind !== 'mention' && m.kind !== 'rule')
 
       later.sort((a, b) => (a.note ?? '').localeCompare(b.note ?? ''))
       const cut = <T>(xs: T[]) => ({ items: xs.slice(0, MAX_ITEMS), more: Math.max(0, xs.length - MAX_ITEMS) })
@@ -156,6 +161,14 @@ export async function sendDigests(app: FastifyInstance, now = new Date()) {
                   m.kind === 'comment'
                     ? `${m.actor ?? 'Someone'}: “${excerpt(m.body ?? '', 120)}”`
                     : excerpt(`${m.actor ?? 'Someone'} ${(m.changes ?? []).join(', ')}`, 160),
+              })),
+            ),
+            // (A line of a rule's: the cards as they were named then, what happened to them, who did it, the rule.)
+            rules: cut(
+              byRule.map((m) => ({
+                task: cardsInWords(m.said?.cards ?? [], m.said?.more ?? 0),
+                board: m.board,
+                note: [m.said?.moment, `by ${m.actor ?? 'someone'}`, m.rule].filter(Boolean).join(' · '),
               })),
             ),
           }),

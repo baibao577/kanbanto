@@ -12,8 +12,9 @@ import { cn } from '@/lib/utils'
 const fetchNotifications = () => api<{ notifications: NotificationView[]; unread: number }>('GET', '/notifications')
 
 /**
- * The bell: @mentions of you, comments and changes on the cards you follow (each with a way to stop following),
- * reminders, and boards or workspaces someone added you to, newest first. Checked every minute and when you come back
+ * The bell: @mentions of you, comments and changes on the cards you follow (each with a way to stop following), what
+ * a board's rules told you (each with a way to stop that rule telling you), reminders, and boards or workspaces
+ * someone added you to, newest first. Checked every minute and when you come back
  * to the tab.
  */
 export function NotificationBell() {
@@ -55,6 +56,17 @@ export function NotificationBell() {
     api('PUT', `/boards/${n.board.id}/tasks/${n.task.id}/follow`, { following: false }).then(
       () => {
         toast(`You no longer follow “${n.task.title}”.`)
+        if (!n.read) void api('POST', '/notifications/read', { ids: [n.id] }).then(refresh)
+      },
+      (e) => toast.error(errorMessage(e)),
+    )
+  }
+
+  /** Stops the rule behind a line telling you (it stays on for everyone else; Rules on the board switches it back). */
+  const stopRule = (n: NotificationView & { kind: 'rule' }) => {
+    api('PUT', `/boards/${n.board.id}/rules/${n.rule.id}/mute`, { muted: true }).then(
+      () => {
+        toast(`${n.rule.name ? `“${n.rule.name}”` : 'This rule'} no longer tells you. The board’s Rules button switches it back on.`)
         if (!n.read) void api('POST', '/notifications/read', { ids: [n.id] }).then(refresh)
       },
       (e) => toast.error(errorMessage(e)),
@@ -132,6 +144,25 @@ export function NotificationBell() {
                         )}
                       </>
                     )
+                  ) : n.kind === 'rule' ? (
+                    <>
+                      <p className="text-xs">
+                        <span className="font-medium">“{n.cards[0]?.title ?? n.task.title}”</span>
+                        {n.cards.length - 1 + n.more > 0 && ` and ${n.cards.length - 1 + n.more} more`} {n.moment || 'was the subject of a rule'}
+                        <span className="text-muted-foreground"> · {n.board.name}</span>
+                      </p>
+                      <p className="mt-0.5 text-xs text-muted-foreground">
+                        By {n.actor}
+                        {n.rule.name && ` · Rule: ${n.rule.name}`}
+                      </p>
+                      {n.cards.length > 1 && (
+                        <ul className="mt-0.5 line-clamp-3 list-inside list-disc text-xs text-muted-foreground">
+                          {n.cards.slice(1).map((c) => (
+                            <li key={c.id}>{c.title}</li>
+                          ))}
+                        </ul>
+                      )}
+                    </>
                   ) : n.kind === 'reminder' ? (
                     <p className="text-xs">
                       ⏰ Reminder: <span className="font-medium">“{n.task.title}”</span>
@@ -171,12 +202,21 @@ export function NotificationBell() {
                     Unfollow
                   </button>
                 )}
+                {n.kind === 'rule' && n.board.id && n.rule.id && (
+                  <button
+                    onClick={() => stopRule(n)}
+                    title="This rule stops telling you. It stays on for everyone else."
+                    className="absolute right-3 bottom-2 text-[11px] text-muted-foreground hover:text-foreground hover:underline"
+                  >
+                    Stop telling me
+                  </button>
+                )}
               </li>
             ))}
           </ul>
         ) : (
           <p className="px-3 py-6 text-center text-xs text-muted-foreground">
-            Mentions of you, news from the cards you follow, reminders and new boards show up here.
+            Mentions of you, news from the cards you follow, what your boards’ rules tell you, reminders and new boards show up here.
           </p>
         )}
       </PopoverContent>

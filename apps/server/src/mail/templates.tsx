@@ -242,6 +242,8 @@ export const emails = {
       mentions: DigestList
       /** News from the cards they follow: comments, and what changed. */
       followed: DigestList
+      /** What their boards' rules told them: cards that arrived in a list, or left it. */
+      rules: DigestList
     },
   ): EmailContent => {
     const count = (l: DigestList) => l.items.length + l.more
@@ -251,6 +253,7 @@ export const emails = {
       count(d.reminders) && `${count(d.reminders)} ${count(d.reminders) === 1 ? 'reminder' : 'reminders'}`,
       count(d.mentions) && `${count(d.mentions)} ${count(d.mentions) === 1 ? 'mention' : 'mentions'}`,
       count(d.followed) && `${count(d.followed)} ${count(d.followed) === 1 ? 'update' : 'updates'}`,
+      count(d.rules) && `${count(d.rules)} from board rules`,
     ].filter(Boolean) as string[]
     const section = (title: string, l: DigestList) =>
       count(l)
@@ -266,6 +269,7 @@ export const emails = {
         ...section('Reminders later today', d.reminders),
         ...section('You were mentioned', d.mentions),
         ...section('On cards you follow', d.followed),
+        ...section('From your boards’ rules', d.rules),
       ],
       button: { label: `Open ${brand.name}`, href: d.site },
       reason: `You’re receiving this morning summary from ${brand.name} because it’s on in Account settings → Notifications, where you can turn it off.`,
@@ -357,6 +361,7 @@ export function sampleEmail(kind: EmailKind, brand: Brand, appUrl: string): Emai
         reminders: { items: [{ task: 'Call the printer', board: 'Studio admin', note: '14:00' }], more: 0 },
         mentions: { items: [{ task: 'Logo', board: 'Website launch', note: 'Jo: “Two options attached, @Sam which one do you prefer?”' }], more: 0 },
         followed: { items: [{ task: 'Launch plan', board: 'Website launch', note: 'Jo moved “Launch plan” to Done' }], more: 0 },
+        rules: { items: [{ task: '“Okafor kitchen”', board: 'Renovation jobs', note: 'arrived in Quoted · by Jo · New quotes' }], more: 0 },
       })
     case 'test':
       return emails.test(brand, { from: `${brand.name} <noreply@example.com>`, to: 'you@example.com', site: appUrl })

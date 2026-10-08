@@ -78,8 +78,12 @@ picture: a product in a shop's orders, a design draft, a bug's screenshot.
 1. Open the card and find the picture in **Files**.
 2. Point at it and click **Use as cover**. On a phone the button is always there.
 
+![A card's files: one picture is the cover, and Use as cover is ringed on the other](/images/cover-1-use.webp)
+
 The picture is now marked **Cover**, and its button says **Remove cover**. To change the cover, click **Use as
 cover** on another picture.
+
+![A board where three cards show a cover](/images/cover-2-board.webp)
 
 A few things to know:
 

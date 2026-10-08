@@ -5,6 +5,33 @@ then `git pull` (or download the new release) and `docker compose up -d --build`
 
 ## Unreleased
 
+- **Tell people when a card arrives in a list, or leaves it.** A board's owners can have it tell people at the
+  moment something happens: every new quote, an order ready to bake, an offer that was answered. In a list's "…"
+  menu, **Tell people when a card arrives…** opens the rule about that list: tick people on the board, or
+  **Whoever it is assigned to**, and it says the rule back in words ("When a card arrives in Quoted, tell Dana").
+  A rule can be about arriving or leaving, can be given a name, and takes the same conditions as a limit under
+  **Which cards**: several lists or none, who a card is assigned to, its priority, labels, a value of one of your
+  own fields ("when a card arrives in On site where Trade is Roofing, tell Tom").
+
+  A card arrives however it comes to be one of the rule's cards: moved in, made there, brought back from the
+  archive or by Undo, arriving from another board or the Inbox, or changed so that it fits. It leaves when it
+  stops being one, which includes being archived, deleted or moved to another board. The people named get a line
+  under their bell with the card, what happened, who did it and the rule's name; several cards at once, or one
+  person's moves within ten minutes, are one line. It is in the morning summary email too, and on the desktop and
+  in Telegram for people who have those on for the cards they follow. Nobody is told about what they did
+  themselves, and someone who also follows the card hears of the move once.
+
+  Anyone a rule tells can switch it off for themselves, with **Stop telling me** under the bell or the switch
+  behind the board's **Rules** button; the board's owners see who did. That button lists both kinds of rule above
+  every view, and **Board settings → Rules** has them under two headings. A rule that
+  names something that is gone tells nobody until it is changed, and says why. A board has up to 20 rules, limits
+  included. Rules only tell: none moves or changes a card.
+
+  For assistants: `get_board` lists a board's rules that tell people, in words. For apps: a rule of
+  `kind: "when"` in the board's `rules`, a notification of `kind: "rule"`, and
+  `PUT /api/boards/<id>/rules/<rule id>/mute`. The database gains two columns and a table (migration 0043, which
+  only adds).
+
 - **Limits: how much a list may hold.** A board's owners can give a list a limit from its "…" menu (**Limit…**):
   at most so many cards, or so much of a number field (hours of Estimate, money in open offers), for the whole
   list or for each person by what is assigned to them. The list's header shows where it stands, such as `4 / 3`:
@@ -18,7 +45,7 @@ then `git pull` (or download the new release) and `docker compose up -d --build`
   are assigned to, their priority, their labels, a value of one of your own fields. So "at most 1 card in On site
   where Trade is Roofing", or "at most 4 cards for each person in Scheduled, On site or Snagging". A limit can be
   given a **name** ("Roofing crew"). A plain count sits beside the list's name; a limit that needs words with its
-  numbers sits on a line under the header ("Crew hours 166 / 160 h"). A **Limits** button above every view says
+  numbers sits on a line under the header ("Crew hours 166 / 160 h"). A **Rules** button above every view says
   how many limits are over and lists them all, which is where a limit that isn't about one list shows; **Board
   settings → Rules** has the same list, and is where owners make, change and remove them.
 

@@ -1,4 +1,6 @@
 import { Gauge } from '@phosphor-icons/react'
+import { whensOf } from '@kanbanto/model/rules'
+import { useBoard } from '@/app/board-context'
 import { useLimits } from '@/app/use-limits'
 import { Button } from '@/components/ui/button'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
@@ -6,27 +8,25 @@ import { cn } from '@/lib/utils'
 import { RulesList } from './RulesList'
 
 /**
- * Above every view, on a board that has limits: how many are over, and behind it all of them with where each
- * stands. This is where a limit that isn't about one list shows (two lists, the whole board), and where limits are
- * seen at all in a view that has no list headers (the Outline, the Timeline, a Board whose columns are parent cards).
+ * Above every view, on a board that has rules: how many limits are over, and behind it all of the board's rules,
+ * the limits with where each stands and the ones that tell people with who they tell. This is where a limit that
+ * isn't about one list shows (two lists, the whole board), where limits are seen at all in a view that has no list
+ * headers (the Outline, the Timeline, a Board whose columns are parent cards), and where anyone finds the rules that
+ * tell them, to switch one off.
  */
-export function LimitsButton() {
+export function RulesButton() {
+  const { data } = useBoard()
   const states = useLimits()
-  if (!states.length) return null
+  if (!states.length && !whensOf(data.rules).length) return null
   const over = states.filter((s) => s.standing === 'over').length
   const broken = states.filter((s) => s.problem).length
+  const said = over ? `Rules: ${over} ${over === 1 ? 'limit' : 'limits'} over` : 'Rules'
   return (
     <Popover>
       <PopoverTrigger asChild>
-        <Button
-          variant="outline"
-          size="sm"
-          className="h-8 gap-1.5 max-sm:px-2"
-          title={over ? `Limits: ${over} over` : 'Limits'}
-          aria-label={over ? `Limits: ${over} over` : 'Limits'}
-        >
+        <Button variant="outline" size="sm" className="h-8 gap-1.5 max-sm:px-2" title={said} aria-label={said}>
           <Gauge />
-          <span className="max-sm:hidden">Limits</span>
+          <span className="max-sm:hidden">Rules</span>
           {(over > 0 || broken > 0) && (
             <span
               className={cn(

@@ -1,12 +1,12 @@
 import { newId } from '@kanbanto/model/ids'
 import { indexFor } from '@kanbanto/model/indexer'
 import type { CarryOn, FieldMap } from '@kanbanto/model/fields'
-import { describeRule, MAX_RULES, namesPeople, remapRule, ruleProblem, type BoardRule } from '@kanbanto/model/rules'
+import { ASSIGNEE, describeRule, MAX_RULES, namesPeople, remapRule, ruleProblem, toldBy, type BoardRule } from '@kanbanto/model/rules'
 import { BoardRuleSchema } from '@kanbanto/model/schema'
-import { count, eq } from 'drizzle-orm'
+import { and, count, eq } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
-import type { Tx } from '../db'
-import { boardActivity, boardRules } from '../db/schema'
+import type { Db, Tx } from '../db'
+import { boardActivity, boardRuleMutes, boardRules, users } from '../db/schema'
 import { HttpError } from '../http'
 import { boardRulesOf, loadBoard } from './store'
 
@@ -23,6 +23,9 @@ const said = (actorId: string, boardId: string, text: string, via?: string | nul
   via: via ?? null,
 })
 
+/** How the board's log names a rule: a limit is a limit, one that tells people is a rule. */
+const aRule = (rule: BoardRule) => (rule.kind === 'limit' ? 'a limit' : 'a rule')
+
 /**
  * Makes a rule (no `ruleId`) or changes one, for the board's owners. The rule has to be whole and about things the
  * board has now: a rule that names a list, a label, a person or a field that's gone is refused with the reason, as
@@ -38,16 +41,19 @@ export async function saveRule(app: FastifyInstance, boardId: string, me: { id: 
     const { data } = (await loadBoard(tx, boardId))!
     const problem = ruleProblem(indexFor(data), rule, data.labels)
     if (problem) throw new HttpError(422, `That rule can’t be kept. ${problem}`)
+    // (Once kept, a rule goes on telling the others when someone it names leaves. Made or changed, it names only people here.)
+    if (rule.kind === 'when' && toldBy(rule).some((id) => id !== ASSIGNEE && !data.members.some((m) => m.id === id)))
+      throw new HttpError(422, 'That rule can’t be kept. Someone it tells isn’t on the board.')
     const words = describeRule(rule, data)
     if (ruleId) {
       const [was] = await tx.update(boardRules).set({ rule, updatedBy: me.id, updatedAt: new Date() }).where(eq(boardRules.id, ruleId)).returning()
       if (!was || was.boardId !== boardId) throw new HttpError(404, 'That rule no longer exists.')
-      await tx.insert(boardActivity).values(said(me.id, boardId, `changed a limit: ${words}`, via))
+      await tx.insert(boardActivity).values(said(me.id, boardId, `changed ${aRule(rule)}: ${words}`, via))
     } else {
       const [{ n }] = await tx.select({ n: count() }).from(boardRules).where(eq(boardRules.boardId, boardId))
       if (n >= MAX_RULES) throw new HttpError(422, `A board can have up to ${MAX_RULES} rules. Remove one first.`)
       await tx.insert(boardRules).values({ id: rule.id, boardId, rule, updatedBy: me.id })
-      await tx.insert(boardActivity).values(said(me.id, boardId, `added a limit: ${words}`, via))
+      await tx.insert(boardActivity).values(said(me.id, boardId, `added ${aRule(rule)}: ${words}`, via))
     }
   })
   app.engine.reloaded([boardId])
@@ -64,9 +70,38 @@ export async function removeRule(app: FastifyInstance, boardId: string, me: { id
     const rule = BoardRuleSchema.safeParse({ ...(was.rule as object), id: was.id })
     await tx
       .insert(boardActivity)
-      .values(said(me.id, boardId, rule.success ? `removed a limit: ${describeRule(rule.data, data)}` : 'removed a rule', via))
+      .values(said(me.id, boardId, rule.success ? `removed ${aRule(rule.data)}: ${describeRule(rule.data, data)}` : 'removed a rule', via))
   })
   app.engine.reloaded([boardId])
+}
+
+/**
+ * Who asked which of a board's rules not to tell them: your own (`mine`, rule ids), and for the board's owners
+ * (`all`) everyone's, by rule. Kept apart from the board, which is sent whole to everyone who can open it.
+ */
+export async function ruleMutes(db: Db | Tx, boardId: string, userId: string, all: boolean) {
+  const rows = await db
+    .select({ ruleId: boardRuleMutes.ruleId, userId: boardRuleMutes.userId, name: users.name })
+    .from(boardRuleMutes)
+    .innerJoin(boardRules, eq(boardRules.id, boardRuleMutes.ruleId))
+    .innerJoin(users, eq(users.id, boardRuleMutes.userId))
+    .where(and(eq(boardRules.boardId, boardId), all ? undefined : eq(boardRuleMutes.userId, userId)))
+    .orderBy(boardRuleMutes.createdAt)
+  const everyone: Record<string, { id: string; name: string }[]> = {}
+  for (const r of rows) (everyone[r.ruleId] ??= []).push({ id: r.userId, name: r.name })
+  return { mine: rows.filter((r) => r.userId === userId).map((r) => r.ruleId), ...(all && { all: everyone }) }
+}
+
+/** Asks a rule that tells people not to tell you (or to tell you again). Changes nothing about the board. */
+export async function setRuleMute(db: Db | Tx, boardId: string, ruleId: string, userId: string, muted: boolean) {
+  const [row] = await db
+    .select({ rule: boardRules.rule })
+    .from(boardRules)
+    .where(and(eq(boardRules.id, ruleId), eq(boardRules.boardId, boardId)))
+  if (!row) throw new HttpError(404, 'That rule no longer exists.')
+  if ((row.rule as { kind?: string }).kind !== 'when') throw new HttpError(422, 'That rule doesn’t tell anyone.')
+  if (muted) await db.insert(boardRuleMutes).values({ ruleId, userId }).onConflictDoNothing()
+  else await db.delete(boardRuleMutes).where(and(eq(boardRuleMutes.ruleId, ruleId), eq(boardRuleMutes.userId, userId)))
 }
 
 /**
