@@ -5,6 +5,48 @@ then `git pull` (or download the new release) and `docker compose up -d --build`
 
 ## Unreleased
 
+- **Cards have names, like WEB-12.** Every card now has a short name: a few letters for its board and a number.
+  The first card on a board is 1, the next is 2, subtasks too. A card keeps its number however it is renamed or
+  moved between lists, and no number is given twice. Say it in a call, in a message, or to an assistant ("move
+  WEB-12 to Done"). It is at the top of the open card, where a click copies a link to the card. On the board,
+  **Display → Card numbers** shows it on every card; in the Outline, switch on the **Number** column, which also
+  sorts. The board's search box finds a card by `web-12` or just `12`, and **Search cards** by `WEB-12` (with the
+  cards that mention it). A card you have just added shows its name a moment later, once it is saved.
+
+  A board's letters are made from its name (Website launch is WEB). Its owners can change them in **Board
+  settings → General → Letters for card numbers**: every card is renamed at once, and a number written with the
+  old letters still finds its card. No two boards in a workspace, or of your own, have the same letters; a board
+  moved to where its letters are taken gets new ones. Your Inbox is always IN. A card moved to another board is
+  numbered again there.
+
+  **Mention a card in a description or a comment** by its name: type `WEB-12`, or type `/`, choose **Card** and
+  pick it from a list (this board's cards at once, your other boards' as you type). Once saved, the name is a
+  link that opens the card: in place on the same board, or on its own board. Only names with the letters of a
+  board you can open become links, and not inside code or inside another link. A card that was moved to another
+  board is still found: its old name, and old links to it, open it where it is now and say where that is, for
+  everyone who can open that board.
+
+  **The "/" menu** is now in two parts, **Mention** (Card) and **Put in** (headings, lists, a table and the rest),
+  and it works in comments too, with a shorter list. Typing after the "/" puts what starts with those letters
+  first. Menus that would run off the bottom of a card's window, such as "@" and "/" in the comment box, now open
+  above the cursor.
+
+  Cards and boards you already have are given their names the first time the server starts after the upgrade:
+  cards in the order they were made, and where many were made in one go (an example board, a starter, an import)
+  in the order the Outline shows them. This needs nothing from you; the server's log says how many it did.
+
+  For assistants: every task comes with its `ref`, and a ref (`WEB-12`, or `12` on that board) is taken wherever a
+  tool takes a task id; `find_tasks` finds by it; boards say their `code`. For apps: a task has `number` and a
+  board `code` (and `pastCodes`); the number is in the answer to the command that made the task, never in the
+  command; `PUT /api/boards/<id>/code` changes a board's letters; `/api/cards` rows have `ref`, and adding a card
+  in one call answers with it. An exported board carries its numbers and letters, and gets them back when it is
+  imported (other letters when its own are taken). A board's address takes `?n=12`, a card's number there;
+  `GET /api/boards/<id>/whereis?n=12` (or `?task=<id>`) says where a card is now, across moves;
+  `/api/cards?in=titles` makes `q` look at names and titles only.
+
+- **Fixed: a card could be made with the id of an archived card,** through the API, which replaced that archived
+  card. It is refused now, as it already was for a card on the board.
+
 - **A card's history.** Beside a card's comments there is now a **History** tab: what happened to the card, newest
   first, with who did it, when, and through which app when it wasn't the website ("through Claude"). It says what a
   move was from and to ("moved it from To Do to Doing"), names the labels put on or taken off, and writes dates in

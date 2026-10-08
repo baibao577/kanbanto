@@ -2,7 +2,8 @@ import type { TaskFields } from '@kanbanto/model/commands'
 import { nameKey, parseRef, parseValue, type BoardField, type FieldValue } from '@kanbanto/model/fields'
 import { newId } from '@kanbanto/model/ids'
 import { indexFor, type TaskIndex } from '@kanbanto/model/indexer'
-import { PRIORITIES, type BoardData, type Priority } from '@kanbanto/model/types'
+import { refOf } from '@kanbanto/model/refs'
+import { PRIORITIES, type BoardData, type Priority, type Task } from '@kanbanto/model/types'
 import { dueOf, parseWhen, titleDate } from '@kanbanto/model/when'
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
@@ -146,8 +147,10 @@ export async function fieldsSaid(
 
 export interface Created {
   id: string
+  /** Its name, like WEB-12. */
+  ref?: string
   title: string
-  subtasks?: { id: string; title: string }[]
+  subtasks?: { id: string; ref?: string; title: string }[]
 }
 
 /**
@@ -175,17 +178,27 @@ export async function addCards(
     for (const k of t.subtasks ?? []) subtasks.push({ id: newId(), title: k.title, fields: await fieldsSaid(app, me, board, data, idx, k) })
     plan.push({ id: newId(), title: t.title, fields: await fieldsSaid(app, me, board, data, idx, t), subtasks })
   }
-  const run = (id: string, parent: string | null, title: string, fields: TaskFields) =>
-    app.engine.mutate(boardId, newId(), { type: 'task.create', id, parentId: parent, fields: { title, ...fields } }, me.id, who.via ?? undefined)
+  // (The answer carries the card as it was saved, with the number the server gave it: its name is board letters + that.)
+  const run = async (id: string, parent: string | null, title: string, fields: TaskFields) => {
+    const { changes } = await app.engine.mutate(
+      boardId,
+      newId(),
+      { type: 'task.create', id, parentId: parent, fields: { title, ...fields } },
+      me.id,
+      who.via ?? undefined,
+    )
+    const made = changes.find((c) => c.entity === 'task' && c.id === id)?.after as Task | undefined
+    return made && refOf(data.board, made)
+  }
   const created: Created[] = []
   try {
     for (const t of plan) {
-      await run(t.id, parentId ?? null, t.title, t.fields)
-      const row: Created = { id: t.id, title: t.title }
+      const ref = await run(t.id, parentId ?? null, t.title, t.fields)
+      const row: Created = { id: t.id, ...(ref && { ref }), title: t.title }
       created.push(row)
       for (const k of t.subtasks) {
-        await run(k.id, t.id, k.title, k.fields)
-        ;(row.subtasks ??= []).push({ id: k.id, title: k.title })
+        const kidRef = await run(k.id, t.id, k.title, k.fields)
+        ;(row.subtasks ??= []).push({ id: k.id, ...(kidRef && { ref: kidRef }), title: k.title })
       }
     }
   } catch (e) {

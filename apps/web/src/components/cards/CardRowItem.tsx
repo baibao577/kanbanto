@@ -37,6 +37,7 @@ export function CardRowItem({
           </span>
         )}
         <span className="flex min-w-0 items-center gap-2">
+          {c.ref && <span className="shrink-0 font-mono text-xs text-muted-foreground tabular-nums">{c.ref}</span>}
           <span className={`truncate text-sm font-medium group-hover:underline ${c.done && !c.archived ? 'text-muted-foreground' : ''}`}>
             {c.title}
           </span>

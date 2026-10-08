@@ -1,9 +1,9 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Archive, Tray } from '@phosphor-icons/react'
 import { toast } from 'sonner'
-import { api, errorMessage } from '@/api/client'
+import { api, ApiError, errorMessage } from '@/api/client'
 import { Button } from '@/components/ui/button'
-import type { BoardAccess } from '@kanbanto/model/api'
+import type { BoardAccess, WhereIs } from '@kanbanto/model/api'
 import { backgroundOf, boardGradient } from '@kanbanto/model/colors'
 import type { Command } from '@kanbanto/model/commands'
 import { newId } from '@kanbanto/model/ids'
@@ -285,6 +285,42 @@ function Message({ title, children }: { title: string; children: React.ReactNode
 
 type Store = ReturnType<typeof useBoardStore> & { data: BoardData; access: BoardAccess }
 
+/**
+ * A card the address asks for that this board doesn't have: by its number here (`n`), or by the id it had here
+ * (`task`). The server says where it is: archived here (its number alone doesn't say which card that is), or on
+ * the board it was moved to, and the address is changed to that. True while the answer is awaited.
+ */
+function useMovedCard(boardId: string, ask: { n: string } | { task: string } | null): boolean {
+  const key = ask && ('n' in ask ? `n=${ask.n}` : `task=${encodeURIComponent(ask.task)}`)
+  const [answered, setAnswered] = useState<string | null>(null)
+  useEffect(() => {
+    if (!key || answered === key) return
+    let alive = true
+    api<WhereIs>('GET', `/boards/${encodeURIComponent(boardId)}/whereis?${key}`)
+      .then(
+        (at) => {
+          const r = currentRoute()
+          if (!alive || r.page !== 'board' || r.id !== boardId) return
+          if (at.moved) {
+            toast(`This card was moved to ${at.board}.${at.ref ? ` It’s ${at.ref} there.` : ''}`)
+            navigate({ page: 'board', id: at.boardId, task: at.taskId }, { replace: true })
+          } else if (!('task' in r) || r.task !== at.taskId)
+            navigate({ ...r, task: at.taskId, n: undefined }, { replace: true, state: history.state })
+        },
+        (e) => {
+          // A number that isn't a card's is said; a card that's simply gone (deleted while open, an old link) closes
+          // quietly, as it did, unless it went to a board that can't be followed to.
+          if (alive && (key.startsWith('n=') || (e instanceof ApiError && e.code === 'moved'))) toast.error(errorMessage(e))
+        },
+      )
+      .finally(() => alive && setAnswered(key))
+    return () => {
+      alive = false
+    }
+  }, [boardId, key, answered])
+  return !!key && answered !== key
+}
+
 function Workspace({ store }: { store: Store }) {
   const { data, access, undo, redo } = store
   const idx = useMemo(() => indexFor(data), [data])
@@ -299,21 +335,40 @@ function Workspace({ store }: { store: Store }) {
   const focusId = wantedFocus && data.tasks[wantedFocus] ? wantedFocus : undefined
   // (An archived card isn't sent with the board: one in the address is fetched first.)
   const looking = useArchivedCard(store, route.task)
-  const openId = route.task && (data.tasks[route.task] || data.archived?.[route.task]) ? route.task : null
+  // A card can also be asked for by its number here (?n=12: what a card's name in a text links to).
+  const numbered = useMemo(() => {
+    const n = route.task ? 0 : Number(route.n ?? 0)
+    return n ? Object.values(data.tasks).find((t) => t.number === n) : undefined
+  }, [route.task, route.n, data.tasks])
+  const openId = route.task ? (data.tasks[route.task] || data.archived?.[route.task] ? route.task : null) : (numbered?.id ?? null)
+  // Asked for and not on this board (nor archived on it): it may have been moved to another one.
+  const finding = useMovedCard(
+    data.board.id,
+    route.task ? (openId || looking ? null : { task: route.task }) : route.n && !numbered ? { n: route.n } : null,
+  )
   const prefs = useMemo(() => ({ ...store.prefs, layout, focusId }), [store.prefs, layout, focusId])
 
   // Keep the address complete and pointing at things that exist.
   useEffect(() => {
     const r = currentRoute()
     if (r.page !== 'board' || r.id !== data.board.id) return
-    const fixed: BoardRoute = { page: 'board', id: r.id, layout, focus: focusId, task: openId ?? (looking ? r.task : undefined), inbox: r.inbox }
+    const fixed: BoardRoute = {
+      page: 'board',
+      id: r.id,
+      layout,
+      focus: focusId,
+      task: openId ?? (looking || finding ? r.task : undefined),
+      // (A number stays in the address only while its card is being found: then the address names the card.)
+      n: finding && !r.task ? r.n : undefined,
+      inbox: r.inbox,
+    }
     const depth = (history.state as { taskDepth?: number } | null)?.taskDepth
     if (fixed.task && !depth) {
       // Arrived with a task open (a link, or a new tab): put the page under it, so closing the task goes there.
       navigate({ ...fixed, task: undefined }, { replace: true })
       navigate(fixed, { state: { taskDepth: 1 } })
     } else if (hrefFor(fixed) !== hrefFor(r)) navigate(fixed, { replace: true, state: history.state })
-  }, [route, layout, focusId, openId, looking, data.board.id])
+  }, [route, layout, focusId, openId, looking, finding, data.board.id])
 
   // Remember the tab and focus for the next time this board is opened without them in the address.
   const { setPrefs: savePrefs } = store

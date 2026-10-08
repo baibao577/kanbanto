@@ -1,6 +1,7 @@
 import type { Token, Tokens } from 'marked'
 import { Fragment, useMemo, type ReactNode } from 'react'
 import type { AttachmentView } from '@kanbanto/model/api'
+import type { CardRefs } from '@/app/card-refs'
 import { RichText } from '@/components/task/RichText'
 import { cn } from '@/lib/utils'
 import { lex } from './mdText'
@@ -11,6 +12,8 @@ export interface MarkdownProps {
   files?: AttachmentView[]
   /** People mentioned, highlighted where their "@Name" appears. */
   mentions?: { name: string }[]
+  /** Cards' names in the text (WEB-12) become links (see RichText). Not inside code, nor inside another link. */
+  cards?: CardRefs
   /** Makes checklist items tickable: called with the item's number, in order (see toggleTask). */
   onToggleTask?: (n: number) => void
   /** Gives headings ids (h-0, h-1…), for a table of contents. */
@@ -28,21 +31,22 @@ const safeHref = (href: string) => (/^(https?:|mailto:|\/|#)/i.test(href.trim())
  * Markdown, shown safely: built as React elements from marked's tokens, so HTML in the text is shown as text, never
  * run. "📎name" file references and @mentions work anywhere in the text.
  */
-export function Markdown({ text, files, mentions, onToggleTask, headingIds, className }: MarkdownProps) {
+export function Markdown({ text, files, mentions, cards, onToggleTask, headingIds, className }: MarkdownProps) {
   const tokens = useMemo(() => lex(text), [text])
   let task = 0
   let heading = 0
 
-  const inline = (ts: Token[] | undefined, key = ''): ReactNode =>
+  // (`linked`: inside a link, where a card's name is the link's own words and not a second link.)
+  const inline = (ts: Token[] | undefined, key = '', linked = false): ReactNode =>
     ts?.map((t, i) => {
       const k = `${key}${i}`
       switch (t.type) {
         case 'strong':
-          return <strong key={k}>{inline(t.tokens, k)}</strong>
+          return <strong key={k}>{inline(t.tokens, k, linked)}</strong>
         case 'em':
-          return <em key={k}>{inline(t.tokens, k)}</em>
+          return <em key={k}>{inline(t.tokens, k, linked)}</em>
         case 'del':
-          return <del key={k}>{inline(t.tokens, k)}</del>
+          return <del key={k}>{inline(t.tokens, k, linked)}</del>
         case 'codespan':
           return <code key={k}>{decode(t.text)}</code>
         case 'br':
@@ -51,10 +55,10 @@ export function Markdown({ text, files, mentions, onToggleTask, headingIds, clas
           const href = safeHref(t.href)
           return href ? (
             <a key={k} href={href} target="_blank" rel="noreferrer noopener" onClick={(e) => e.stopPropagation()}>
-              {inline(t.tokens, k)}
+              {inline(t.tokens, k, true)}
             </a>
           ) : (
-            <Fragment key={k}>{inline(t.tokens, k)}</Fragment>
+            <Fragment key={k}>{inline(t.tokens, k, linked)}</Fragment>
           )
         }
         case 'image':
@@ -68,9 +72,9 @@ export function Markdown({ text, files, mentions, onToggleTask, headingIds, clas
           )
         case 'text':
           return 'tokens' in t && t.tokens?.length ? (
-            <Fragment key={k}>{inline(t.tokens, k)}</Fragment>
+            <Fragment key={k}>{inline(t.tokens, k, linked)}</Fragment>
           ) : (
-            <RichText key={k} text={decode(t.text)} files={files} mentions={mentions} />
+            <RichText key={k} text={decode(t.text)} files={files} mentions={mentions} cards={linked ? undefined : cards} />
           )
         case 'escape':
           return <Fragment key={k}>{decode(t.text)}</Fragment>
@@ -100,7 +104,11 @@ export function Markdown({ text, files, mentions, onToggleTask, headingIds, clas
         case 'paragraph':
           return <p key={k}>{inline(t.tokens, k)}</p>
         case 'text':
-          return <Fragment key={k}>{t.tokens ? inline(t.tokens, k) : <RichText text={decode(t.text)} files={files} mentions={mentions} />}</Fragment>
+          return (
+            <Fragment key={k}>
+              {t.tokens ? inline(t.tokens, k) : <RichText text={decode(t.text)} files={files} mentions={mentions} cards={cards} />}
+            </Fragment>
+          )
         case 'code':
           return (
             <pre key={k}>

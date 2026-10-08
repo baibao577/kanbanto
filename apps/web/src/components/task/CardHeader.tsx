@@ -8,6 +8,7 @@ import {
   CalendarBlank,
   ChatCircle,
   CheckCircle,
+  Copy,
   CircleHalf,
   Crosshair,
   DotsThree,
@@ -23,10 +24,12 @@ import { toast } from 'sonner'
 import { COLORS, tone } from '@kanbanto/model/colors'
 import type { TaskFields } from '@kanbanto/model/commands'
 import { ancestorsOf, descendantsOf, statusCol } from '@kanbanto/model/indexer'
+import { refOf } from '@kanbanto/model/refs'
 import { formatDuration } from '@kanbanto/model/time'
 import { PRIORITIES, PRIORITY_LABEL, type Priority } from '@kanbanto/model/types'
 import { api, errorMessage } from '@/api/client'
 import { useBoard } from '@/app/board-context'
+import { hrefFor } from '@/app/router'
 import { Avatar, ColorSwatches, LabelChip, PriorityIcon, StatusDot, StatusPill } from '@/components/common/bits'
 import { TitleDateChip } from '@/components/text/TitleDate'
 import { useTitleDate } from '@/components/text/useTitleDate'
@@ -53,6 +56,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { formatDay } from '@/lib/format'
+import { copyText } from '@/lib/copy'
 import { cn } from '@/lib/utils'
 import { dueWords } from './cardDates'
 import { LabelPicker } from './LabelPicker'
@@ -75,6 +79,9 @@ export function CardHeader({ id, onClose, wide, scrolled }: { id: string; onClos
   // A task can't move under itself or anything below it.
   const notParent = useMemo(() => new Set([id, ...descendantsOf(idx, id)]), [idx, id])
   const [deleting, setDeleting] = useState(false)
+  // Its name (WEB-12): there once the server has given the card its number, a moment after a new one is made.
+  const ref = refOf(data.board, t)
+  const link = `${location.origin}${location.pathname}${hrefFor({ page: 'board', id: data.board.id, task: id })}`
 
   return (
     // (No line under it until the card has scrolled under it: then one says where the card goes.)
@@ -101,6 +108,22 @@ export function CardHeader({ id, onClose, wide, scrolled }: { id: string; onClos
               </button>
             </span>
           ))}
+          {/* Last, the card's own name: never cut short, and the button that copies the card's link. */}
+          {ref && (
+            <span className="flex items-center gap-1">
+              <span aria-hidden>/</span>
+              <button
+                type="button"
+                onClick={() => void copyText(link, 'Link')}
+                title="Copy a link to this card"
+                aria-label={`${ref}: copy a link to this card`}
+                className="group/ref -mx-0.5 inline-flex items-center gap-1 rounded px-1 font-mono text-[11px] font-medium whitespace-nowrap text-foreground/80 tabular-nums hover:bg-accent hover:text-foreground"
+              >
+                {ref}
+                <Copy className="size-3 opacity-50 group-hover/ref:opacity-100" />
+              </button>
+            </span>
+          )}
         </nav>
 
         <div className="ml-auto flex shrink-0 items-center gap-1">

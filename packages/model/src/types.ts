@@ -45,6 +45,10 @@ export interface Board extends Meta {
   background?: BoardBackground
   /** What the board is for, in a sentence or two (also how assistants tell boards apart). */
   description?: string
+  /** Its letters: what its cards' names start with (WEB in WEB-12). See refs.ts. Unset only on a board not yet given any. */
+  code?: string
+  /** The letters it had before, latest first: a name written with them still finds its card. */
+  pastCodes?: string[]
 }
 
 /** Someone tasks can be assigned to. Tasks point at members by id, so renaming a person is one change. */
@@ -107,6 +111,12 @@ export const PRIORITY_LABEL: Record<Priority, string> = { urgent: 'Urgent', high
 
 export interface Task extends Meta {
   id: string
+  /**
+   * Its number on this board (the 12 in WEB-12): given by the server when the card is made, counting up, never used
+   * twice and never changed while the card stays on the board. Unset on a card just made here, until the server
+   * answers. No command sets it (see refs.ts).
+   */
+  number?: number
   title: string
   parentId: string | null
   /** Id of a StatusColumn. */
@@ -198,6 +208,8 @@ export interface ViewConfig {
    * the list is shown: the order made by hand is kept, and is back when the entry is removed.
    */
   listOrder?: Record<string, ListOrder>
+  /** Each card shows its name (WEB-12) above its title. */
+  cardNumbers?: boolean
 }
 
 /**

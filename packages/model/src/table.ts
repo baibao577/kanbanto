@@ -43,7 +43,19 @@ import {
 } from './types'
 
 /** What every card has that the Outline can sort by. */
-export const BUILT_IN_SORT_KEYS = ['title', 'status', 'progress', 'assignee', 'priority', 'start', 'due', 'labels', 'created', 'updated'] as const
+export const BUILT_IN_SORT_KEYS = [
+  'title',
+  'number',
+  'status',
+  'progress',
+  'assignee',
+  'priority',
+  'start',
+  'due',
+  'labels',
+  'created',
+  'updated',
+] as const
 export type BuiltInSortKey = (typeof BUILT_IN_SORT_KEYS)[number]
 /** Columns the Outline table can sort by: those, and each of the board's own fields ("f:" and its id). */
 export type SortKey = BuiltInSortKey | FieldKey
@@ -93,10 +105,10 @@ export interface TableFilter {
 
 /** The Outline's own settings (filters are shared by every tab; see State.filter). */
 /** The Outline's property columns (Task is always there). */
-export const OUTLINE_COLUMNS = ['status', 'progress', 'assignee', 'priority', 'start', 'due', 'labels', 'created', 'updated'] as const
+export const OUTLINE_COLUMNS = ['number', 'status', 'progress', 'assignee', 'priority', 'start', 'due', 'labels', 'created', 'updated'] as const
 export type OutlineColumn = (typeof OUTLINE_COLUMNS)[number]
 /** The columns that are off until someone switches them on (the others are on until switched off). */
-export const OUTLINE_EXTRA = ['created', 'updated'] as const satisfies readonly OutlineColumn[]
+export const OUTLINE_EXTRA = ['number', 'created', 'updated'] as const satisfies readonly OutlineColumn[]
 export type ExtraColumn = (typeof OUTLINE_EXTRA)[number]
 export const isExtraColumn = (key: string): key is ExtraColumn => (OUTLINE_EXTRA as readonly string[]).includes(key)
 
@@ -313,6 +325,8 @@ export function sortComparator(idx: TaskIndex, sort: Sort, labelById: Map<string
     switch (sort.key) {
       case 'title':
         return t.title.toLowerCase()
+      case 'number':
+        return t.number
       case 'status':
         return colIndex.get(idx.status.get(id)!)
       case 'progress': {

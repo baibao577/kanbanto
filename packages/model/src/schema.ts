@@ -4,6 +4,7 @@ import { COLORS, isBackground, type BoardBackground, type ColorName } from './co
 import { BULK_MAX, IMPORT_MAX, type Command } from './commands'
 import { FIELD_LIMITS, FIELD_TYPES, FILTER_TEXT_MAX, TEXT_FORMATS, TEXT_MATCHES, LINK_SCOPES, type FieldSettings } from './fields'
 import { isPosition } from './position'
+import { CODE, MAX_NUMBER, PAST_CODES } from './refs'
 import { CALENDAR_RANGES } from './prefs'
 import { BUILT_IN_SORT_KEYS, OUTLINE_COLUMNS, OUTLINE_EXTRA, type OutlineConfig, type TableFilter } from './table'
 import { CATEGORIES, LAYOUTS, LIST_ORDERS, PRIORITIES } from './types'
@@ -40,6 +41,8 @@ const recordId = z
   .max(100)
   .refine((s) => !CONTROL.test(s), 'Not a valid id.')
 const position = z.string().refine(isPosition, 'Not a valid position.')
+/** A board's letters (see refs.ts). */
+const code = z.string().regex(CODE, 'A board’s letters are 2 to 5 capitals or digits, starting with a letter.')
 const priority = z.enum(PRIORITIES)
 const reminder = z
   .object({
@@ -86,6 +89,7 @@ const meta = {
 
 export const TaskSchema = z.object({
   id: recordId,
+  number: z.number().int().positive().max(MAX_NUMBER).optional(),
   title: plain(500),
   parentId: recordId.nullable(),
   status: recordId,
@@ -143,6 +147,8 @@ export const BoardSchema = z.object({
   mode: z.enum(['manual', 'derived']),
   background: boardBackground.optional(),
   description: plain(1000).optional(),
+  code: code.optional(),
+  pastCodes: z.array(code).max(PAST_CODES).optional(),
   ...meta,
 })
 export const MemberSchema = z.object({ id: recordId, name: plain(200), picture: z.string().max(200).optional(), ...meta })
@@ -286,6 +292,7 @@ const viewConfig = z.object({
   doneLists: z.enum(['all', 'recent']).optional().catch(undefined),
   doneDays: z.number().int().min(1).max(365).optional(),
   listOrder: z.record(z.string(), z.enum(LIST_ORDERS)).optional().catch(undefined),
+  cardNumbers: z.boolean().optional().catch(undefined),
 })
 
 /**

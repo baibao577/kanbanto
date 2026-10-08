@@ -13,6 +13,8 @@ The board shows only cards with your words in their title, or in one of the boar
 [text fields](/everyday/fields): a company, a tracking number, an email address. Clear the box to see everything
 again: it folds back into the magnifier.
 
+A card's [name](/everyday/cards#a-card-s-name) finds it too: type `web-12`, or only its number, `12`.
+
 To look inside descriptions and comments too, use [Search cards](#search-cards-every-board-at-once).
 
 If archived cards match too, a line under the bar says how many, as a link to them.
@@ -84,7 +86,8 @@ in the menu under your initials.
 
 It can:
 
-- search **words** in titles, descriptions and comments,
+- search **words** in titles, descriptions and comments, or a card's name, like `WEB-12` (which also finds the
+  cards that mention it),
 - show cards **on their boards**, **archived** ones, or both,
 - narrow by **board** or workspace, **person**, **priority**, **label**, **due date** (with the
   [same choices](#filter-by-a-date) as on a board) and one of your [own fields](/everyday/fields), with the same

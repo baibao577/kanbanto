@@ -448,6 +448,10 @@ export interface BoardSummary {
   favoritedAt: string | null
   /** Your Inbox (see GET /api/inbox): it has its own place in the app, beside every board. */
   inbox: boolean
+  /** Its letters: what its cards' names start with (WEB in WEB-12). Null only on a board not yet given any. */
+  code: string | null
+  /** The letters it had before (a name written with them still means its card). Left out: none. */
+  pastCodes?: string[]
 }
 
 /** GET and POST /api/inbox: your Inbox board (null: not made yet), and how many of its cards aren't done. */
@@ -468,8 +472,10 @@ export interface CardsQuery {
   board?: string
   /** The boards of one place: a workspace's id, `personal` (your own) or `shared` (shared with you). */
   place?: string
-  /** Words in the title, the description or a comment. */
+  /** Words in the title, the description or a comment, or a card's name (WEB-12). */
   q?: string
+  /** `titles`: `q` looks at names and titles only (quick, for a list that answers as someone types). */
+  in?: 'titles'
   /** Done (in a done list, or archived as completed) or not; leave out for both. */
   completed?: boolean
   /** Kinds of list (an archived card counts as `done` when it was completed). */
@@ -513,6 +519,8 @@ export interface CardsQuery {
 /** A card, as a row: enough to recognise it and act on it, plus where it lives. */
 export interface CardRow {
   id: string
+  /** Its name, like WEB-12 (left out on a card that has none yet). */
+  ref?: string
   title: string
   board: { id: string; name: string; background: string | null }
   /** Where its board lives: a workspace's name, "Personal" or "Shared with you". */
@@ -1033,4 +1041,19 @@ export interface ConnectedAppView {
   scope: 'read' | 'write'
   connectedAt: string
   lastUsedAt: string | null
+}
+
+/**
+ * Where a card is now (`GET /api/boards/:id/whereis`), asked by its number on a board or by the id it had there:
+ * still on that board, or on the one it was moved to.
+ */
+export interface WhereIs {
+  boardId: string
+  taskId: string
+  /** It's on another board than the one asked. */
+  moved: boolean
+  /** When it was ever moved (even away and back, which gave it a new id and number): its board's name, and its name there. */
+  board?: string
+  ref?: string
+  archived?: boolean
 }

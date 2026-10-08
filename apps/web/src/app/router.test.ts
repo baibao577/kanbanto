@@ -10,6 +10,8 @@ describe('router', () => {
       ['#/b/abc/outline', { page: 'board', id: 'abc', layout: 'outline' }],
       ['#/b/abc/timeline?focus=t1', { page: 'board', id: 'abc', layout: 'timeline', focus: 't1' }],
       ['#/b/abc/board?focus=t1&task=t2', { page: 'board', id: 'abc', layout: 'board', focus: 't1', task: 't2' }],
+      // A card by its number on the board (what WEB-12 in a text links to).
+      ['#/b/abc?n=12', { page: 'board', id: 'abc', n: '12' }],
       // A card of your Inbox, open over a board or over your boards.
       ['#/b/abc/timeline?inbox=n1', { page: 'board', id: 'abc', layout: 'timeline', inbox: 'n1' }],
       ['#/?inbox=n1', { page: 'home', inbox: 'n1' }],
@@ -72,6 +74,10 @@ describe('router', () => {
     expect(parseRoute('#/cards?range=7d&from=2026-07-01')).toEqual({ page: 'cards', state: 'active', range: '7d' })
   })
 
+  it('a card’s number in the address is a whole number, or it isn’t read', () => {
+    for (const n of ['0', '012', '-3', '1.5', 'x', '1234567890', '']) expect(parseRoute(`#/b/abc?n=${n}`)).toEqual({ page: 'board', id: 'abc' })
+    expect(parseRoute('#/b/abc/outline?n=999999999')).toEqual({ page: 'board', id: 'abc', layout: 'outline', n: '999999999' })
+  })
   it('ignores an unknown tab rather than failing', () => {
     expect(parseRoute('#/b/abc/kanban?task=t')).toEqual({ page: 'board', id: 'abc', task: 't' })
   })

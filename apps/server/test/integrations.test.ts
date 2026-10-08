@@ -219,6 +219,40 @@ describe('MCP', () => {
     expect(r.headers['www-authenticate']).toBe('Bearer')
   })
 
+  it('a card has a name (its ref), given with every card and taken wherever a task id is', async () => {
+    const { ann, id } = await site({ apiTokens: true })
+    const mcp = withToken(await makeToken(ann, 'write'))
+    await rpc(mcp, 'initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'test', version: '1' } })
+    const tool = async (name: string, args: object) => toolResult(await rpc(mcp, 'tools/call', { name, arguments: args }))
+    // Boards say their letters, and cards their names.
+    expect((await tool('list_boards', {})).boards[0]).toMatchObject({ id, code: 'MY' })
+    const board = await tool('get_board', { board_id: id })
+    expect(board.board.code).toBe('MY')
+    expect(board.tasks.find((x: { id: string }) => x.id === 'A3')).toMatchObject({ ref: 'MY-6', title: 'Deploy' })
+    // By its name: in full, in any case, or the number alone.
+    expect(await tool('get_task', { board_id: id, task_id: 'MY-6' })).toMatchObject({ id: 'A3', ref: 'MY-6' })
+    expect(await tool('get_task', { board_id: id, task_id: 'my-6' })).toMatchObject({ id: 'A3' })
+    expect(await tool('update_task', { board_id: id, task_id: '6', priority: 'high' })).toMatchObject({ id: 'A3', priority: 'high' })
+    expect(await tool('update_tasks', { board_id: id, task_ids: ['MY-6', 'A4'], list: 'doing' })).toMatchObject({ changed: 2 })
+    expect((await tool('get_board', { board_id: id, parent_id: 'MY-1' })).tasks.length).toBeGreaterThan(3)
+    // Other letters, or a number nobody has: no such task, as for any wrong id.
+    expect((await tool('get_task', { board_id: id, task_id: 'XYZ-6' })).error).toMatch(/no such task/)
+    expect((await tool('get_task', { board_id: id, task_id: 'MY-999' })).error).toMatch(/no such task/)
+    // An id that looks like a number is still an id first.
+    await ann.ok('POST', `/api/boards/${id}/mutations`, {
+      mutationId: 'm-n',
+      command: { type: 'task.create', id: '6', parentId: null, fields: { title: 'Six' } },
+    })
+    expect(await tool('get_task', { board_id: id, task_id: '6' })).toMatchObject({ id: '6', ref: 'MY-14', title: 'Six' })
+    // Found by it, and new cards answer with theirs.
+    expect((await tool('find_tasks', { board_id: id, text: 'my-14' })).tasks.map((x: { id: string }) => x.id)).toEqual(['6'])
+    const made = await tool('create_tasks', { board_id: id, tasks: [{ title: 'Call the printer', subtasks: [{ title: 'Ask for a quote' }] }] })
+    expect([made.created[0].ref, made.created[0].subtasks[0].ref]).toEqual(['MY-15', 'MY-16'])
+    // An archived card keeps its name.
+    await tool('archive_task', { board_id: id, task_id: 'MY-13' })
+    expect(await tool('get_task', { board_id: id, task_id: 'MY-13' })).toMatchObject({ id: 'C2', ref: 'MY-13' })
+  })
+
   it('an assistant changes several tasks in one go: one change, one line of activity, nothing on a wrong name', async () => {
     const { ann, id } = await site({ apiTokens: true })
     const mcp = withToken(await makeToken(ann, 'write'))

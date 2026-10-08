@@ -19,6 +19,9 @@ The assistant reads the board, so it can answer without you explaining anything 
 It answers from what is on the board: due dates, who is assigned, what is blocked, what was commented, and when
 things last moved.
 
+To point at one card, say its [name](/everyday/cards#a-card-s-name): "What's the latest on WEB-12?", "Move WEB-12 to
+Done." The assistant gives cards' names in its answers too, so you can tell which card it means.
+
 ## Look back
 
 ::: info Try

@@ -1,4 +1,5 @@
-import type { ArchivedPage, BoardAccess, BoardSummary, CardHistory, Role } from '@kanbanto/model/api'
+import type { ArchivedPage, BoardAccess, BoardSummary, CardHistory, Role, WhereIs } from '@kanbanto/model/api'
+import { MAX_NUMBER, refOf } from '@kanbanto/model/refs'
 import { ARCHIVED_DATES, archivedFamily, archivedIn } from '@kanbanto/model/archived'
 import { isBackground, type BoardBackground } from '@kanbanto/model/colors'
 import { BoardDataSchema, CommandSchema } from '@kanbanto/model/schema'
@@ -8,17 +9,18 @@ import { fromTrello, isTrelloExport, slimTrello, type TrelloSummary } from '@kan
 import { CATEGORIES } from '@kanbanto/model/types'
 import { isTimeZone } from '@kanbanto/model/dates'
 import { newId } from '@kanbanto/model/ids'
-import { and, eq, inArray, sql } from 'drizzle-orm'
+import { and, desc, eq, inArray, sql } from 'drizzle-orm'
 import type { FastifyPluginAsync } from 'fastify'
 import { z } from 'zod'
 import { accessFor, accessOf, requireAccess, type BoardRow } from '../boards/access'
 import { parseMoment, readActivity, readTaskActivity } from '../boards/activityLog'
 import { notOnInbox } from '../boards/inbox'
+import { setBoardCode } from '../boards/numbering'
 import { canBeLinked, factOf, linksToResolve, resolveLinks, unlinkBoard } from '../boards/links'
 import { createBoard, createStarter, importBoard } from '../boards/service'
 import { requireWorkspace } from '../boards/workspaces'
 import type { Db } from '../db'
-import { boardFavorites, boards, workspaces } from '../db/schema'
+import { boardFavorites, boards, workspaces, taskMoves } from '../db/schema'
 import { addCardSaid, NewCardBody } from '../boards/newCards'
 import { importCards, ImportCardsBody } from '../boards/importCards'
 import { pictureUrl } from '../pictures'
@@ -81,8 +83,11 @@ export async function boardsFor(db: Db, userId: string): Promise<BoardSummary[]>
     archived_at: Date | null
     favorited_at: Date | null
     inbox_of: string | null
+    code: string | null
+    past_codes: string[]
   }>(sql`
       select b.id, b.name, b.description, b.background, b.visibility, b.public_link, b.workspace_id, b.workspace_role, b.inbox_of, m.role,
+        b.code, b.past_codes,
         (w.user_id is not null) as in_workspace, b.created_at, b.activity_at, b.archived_at, f.created_at as favorited_at,
         (select count(*)::int from tasks t where t.board_id = b.id and t.archived_at is null) as task_count,
         (select count(*)::int from tasks t join lists l on l.board_id = t.board_id and l.id = t.status
@@ -121,6 +126,8 @@ export async function boardsFor(db: Db, userId: string): Promise<BoardSummary[]>
       archivedAt: r.archived_at ? new Date(r.archived_at).toISOString() : null,
       favoritedAt: r.favorited_at ? new Date(r.favorited_at).toISOString() : null,
       inbox: r.inbox_of === userId,
+      code: r.code,
+      ...(r.past_codes.length && { pastCodes: r.past_codes }),
     })
   }
   return summaries
@@ -270,6 +277,69 @@ export const boardRoutes: FastifyPluginAsync = async (app) => {
     if (favorite) await app.db.insert(boardFavorites).values({ userId: me.id, boardId: id }).onConflictDoNothing()
     else await app.db.delete(boardFavorites).where(and(eq(boardFavorites.userId, me.id), eq(boardFavorites.boardId, id)))
     return { favorite }
+  })
+
+  /**
+   * Where a card is, by its number on this board (`n`) or the id it had here (`task`): still here (on the board,
+   * or archived), or on the board it was moved to (see task_moves), when that's one the asker can open. For a name
+   * written before the card moved, and for an old link to it.
+   */
+  app.get('/boards/:id/whereis', async (req): Promise<WhereIs> => {
+    const { id } = parse(Params, req.params)
+    const q = parse(
+      z.object({ n: z.coerce.number().int().positive().max(MAX_NUMBER).optional(), task: z.string().min(1).max(100).optional() }),
+      req.query,
+    )
+    if ((q.n === undefined) === (q.task === undefined)) throw new HttpError(400, 'Say which card: n (its number here) or task (its id here).')
+    await requireAccess(app.db, req.user, id, 'viewer', { archived: true })
+    const { data } = await app.engine.snapshot(id)
+    const all = { ...data.archived, ...data.tasks }
+    const here = q.task ? all[q.task] : Object.values(all).find((t) => t.number === q.n)
+    if (here) return { boardId: id, taskId: here.id, moved: false, ...(here.archivedAt && { archived: true }) }
+    const [went] = await app.db
+      .select()
+      .from(taskMoves)
+      .where(and(eq(taskMoves.fromBoardId, id), q.task ? eq(taskMoves.fromTaskId, q.task) : eq(taskMoves.fromNumber, q.n!)))
+      .orderBy(desc(taskMoves.movedAt))
+      .limit(1)
+    if (!went) throw new HttpError(404, 'There’s no such card on this board.')
+    // (A board the asker can't open isn't named, nor whether the card is still there.)
+    const dest = await requireAccess(app.db, req.user, went.toBoardId, 'viewer', { archived: true })
+      .then(() => app.engine.snapshot(went.toBoardId))
+      .catch(() => null)
+    if (!dest) throw new HttpError(404, 'That card was moved to a board you can’t open.', 'moved')
+    const t = dest.data.tasks[went.toTaskId] ?? dest.data.archived?.[went.toTaskId]
+    if (!t) throw new HttpError(404, 'That card was moved to another board, and isn’t there any more.', 'moved')
+    const ref = refOf(dest.data.board, t)
+    return {
+      boardId: went.toBoardId,
+      taskId: t.id,
+      // (Moved away and back again: it's here, as another card than it was.)
+      moved: went.toBoardId !== id,
+      board: dest.data.board.name,
+      ...(ref && { ref }),
+      ...(t.archivedAt && { archived: true }),
+    }
+  })
+
+  /**
+   * Changes a board's letters (owners): what its cards' names start with, WEB in WEB-12. Every card is called by the
+   * new ones at once; the old ones are remembered, so a number written with them still finds its card. No two boards
+   * in a workspace, or among one person's own, have the same.
+   */
+  app.put('/boards/:id/code', async (req) => {
+    const { id } = parse(Params, req.params)
+    const { code } = parse(z.object({ code: z.string().trim().toUpperCase().max(20) }).strict(), req.body)
+    const { board } = await requireAccess(app.db, requireUser(req.user), id, 'owner')
+    notOnInbox(board, 'letters')
+    const set = await app.db.transaction(async (tx) => {
+      const out = await setBoardCode(tx, id, code)
+      // (No command carries this: the board's change counter moves with it, and every open copy reads it again.)
+      await app.engine.bump(tx, [id])
+      return out
+    })
+    app.engine.reloaded([id])
+    return set
   })
 
   /** Archives a board (owners): off the boards page and read-only, until restored. Or restores it. */

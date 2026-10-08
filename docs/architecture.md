@@ -116,6 +116,27 @@ UI ─run(command)─▶ BoardSync: execute() here ─▶ shown at once (optimis
 - **Lists** are statuses. Each list *counts as* Backlog, Not started, In progress or Done; progress, "Up next" and
   roll-up read that, so lists can be named anything. Backlog is never "Up next", and any list can be hidden.
 - **Card order** within a list (`Task.rank`, set by dragging) is separate from the outline order (`Task.order`).
+- **A card's name** is its board's letters and its number: WEB-12 (`Board.code`, `Task.number`; see
+  `packages/model/src/refs.ts`). The number is given by the server and nowhere else: `BoardEngine.mutate` hands the
+  next one to each new card as it is saved, under the board's row lock, from a counter the board keeps in the
+  database (`boards.next_number`, not part of the board record commands change, so undoing "add a card" never
+  touches it). A card that has a number keeps it whatever a browser sends back, and no number is used twice. The
+  browser shows a new card without one until the server answers. Boards made without commands (the example board,
+  starters, imported files) are numbered as they are saved, and what existed before card numbers is numbered when
+  the server starts (`boards/numbering.ts`). A board's letters come from its name, are its owners' to change
+  (`PUT /api/boards/:id/code`, never a command or an undo), and are its own within a workspace or among one
+  person's boards; the letters it had before are kept, so a name written with them still finds its card. A card
+  moved to another board is a new card there, with a new number; where it went is recorded (`task_moves`), and
+  when it moves again the earlier lines are pointed at the new place, so one look finds it
+  (`GET /api/boards/:id/whereis`, by the number or the id it had: what the web app asks when an address names a
+  card the board no longer has).
+- **A card's name in text** stays text: a description or a comment that says WEB-12 is saved exactly so, and is
+  shown as a link (`components/task/RichText.tsx`) when its letters are a board's the reader can open (this
+  board's from memory, the others from the list of boards, asked once and shared: `app/card-refs.ts`). Nothing is
+  looked up to show it: the link is `#/b/<board>?n=12`, and the card is found when someone follows it. In the
+  editor, "/" opens the one menu of things to put in (`INSERTS` in `components/text/Editor.tsx`): each is a line
+  with what it does, or a `step` when it has to be chosen first, as a card is (this board's cards from memory,
+  other boards' from `GET /api/cards?in=titles`); a new kind of mention is a new line there.
 - **Labels** are board-wide and cards refer to them by id, so renaming or recolouring a label updates every card.
 
 ## Addresses

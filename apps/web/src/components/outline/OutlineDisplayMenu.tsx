@@ -15,6 +15,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 const NO_SORT = 'none'
 
 const LABEL: Record<OutlineColumn, string> = {
+  number: 'Number',
   status: 'Status',
   progress: 'Progress',
   assignee: 'Assignee',

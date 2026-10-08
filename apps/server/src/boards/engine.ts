@@ -5,14 +5,16 @@ import { execute, type Command } from '@kanbanto/model/commands'
 import { newId } from '@kanbanto/model/ids'
 import { indexFor } from '@kanbanto/model/indexer'
 import type { Change } from '@kanbanto/model/records'
+import { withNumbers } from '@kanbanto/model/refs'
 import type { BoardData } from '@kanbanto/model/types'
 import { and, eq, inArray, lt, sql } from 'drizzle-orm'
 import type { Db, Tx } from '../db'
-import { attachments, boardActivity, boardFieldRows, boards, comments, notifications, taskFollowers, timeEntries } from '../db/schema'
+import { attachments, boardActivity, boardFieldRows, boards, comments, notifications, taskFollowers, taskMoves, timeEntries } from '../db/schema'
 import { HttpError } from '../http'
 import type { LiveHub } from '../live'
 import { ACTIVITY_DAYS } from './activityLog'
 import { checkLinks, followMoved, gainedLinks, withoutLinks } from './links'
+import { numberBoard } from './numbering'
 import { loadBoard, writeChanges } from './store'
 
 export interface MutationResult {
@@ -134,10 +136,18 @@ export class BoardEngine {
     if (prior) return prior
 
     const result = await this.db.transaction(async (tx) => {
-      const [row] = await tx.select({ seq: boards.seq }).from(boards).where(eq(boards.id, boardId)).for('update')
+      const [row] = await tx
+        .select({ seq: boards.seq, nextNumber: boards.nextNumber, code: boards.code })
+        .from(boards)
+        .where(eq(boards.id, boardId))
+        .for('update')
       if (!row) throw new HttpError(404, 'This board no longer exists.')
+      // A board that slipped past the numbering done at start-up (made by a server still running the version before,
+      // while this one was starting) gets its letters and numbers now, before anything else happens to it.
+      const healed = row.code === null ? await numberBoard(tx, boardId) : null
+      if (healed) row.nextNumber = healed.nextNumber
       const hit = this.cache.get(boardId)
-      const data = hit && hit.seq === row.seq ? hit.data : (await loadBoard(tx, boardId))!.data
+      const data = !healed && hit && hit.seq === row.seq ? hit.data : (await loadBoard(tx, boardId))!.data
       if (command.type === 'records.restore') await this.fieldsStillThere(tx, boardId, data, command.changes)
       let r: ReturnType<typeof execute>
       try {
@@ -146,11 +156,12 @@ export class BoardEngine {
         throw Object.assign(new HttpError(422, 'That change couldn’t be applied to this board.'), { cause: e })
       }
       if ('error' in r) throw new HttpError(422, r.error)
-      if (!r.changes.length) return { seq: row.seq, changes: [], data, stripped: false, said: [] }
+      if (!r.changes.length && !healed) return { seq: row.seq, changes: [], data, stripped: false, said: [] }
       // Links to cards on other boards: what this board can't check by itself (see links.ts). A new link that fails
       // is refused. An undo that would bring one back goes through without it: the rest of it is still wanted.
       let changes = r.changes
-      let stripped = false
+      // (Healed: every open copy reads the board again, as when a change is written differently from how it was sent.)
+      let stripped = !!healed
       const gained = gainedLinks(data.fields, changes)
       if (gained.length) {
         const bad = await checkLinks(tx, boardId, userId, data.fields, gained)
@@ -160,6 +171,10 @@ export class BoardEngine {
           stripped = true
         }
       }
+      // Card numbers are given here, never by the command (see model/refs.ts): new cards take the next ones, and a
+      // card that has one keeps it. The answer carries them, so the person's own copy has them a moment later.
+      const numbered = withNumbers(data, changes, row.nextNumber)
+      changes = numbered.changes
       await writeChanges(
         tx,
         boardId,
@@ -172,7 +187,10 @@ export class BoardEngine {
       if (items.length)
         await tx.insert(boardActivity).values({ id: newId(), boardId, actorId: userId, command: command.type, items, via: via ?? null })
       const seq = row.seq + 1
-      await tx.update(boards).set({ seq, activityAt: new Date() }).where(eq(boards.id, boardId))
+      await tx
+        .update(boards)
+        .set({ seq, activityAt: new Date(), ...(numbered.next !== row.nextNumber && { nextNumber: numbered.next }) })
+        .where(eq(boards.id, boardId))
       return { seq, changes, data: applyChanges(data, changes), stripped, said }
     })
 
@@ -180,6 +198,8 @@ export class BoardEngine {
     const out = { seq: result.seq, changes: result.changes }
     this.done.set(key, out)
     if (this.done.size > REMEMBERED_MUTATIONS) this.done.delete(this.done.keys().next().value!)
+    // (A board numbered on the way by a command that then changed nothing: its open copies still read it again.)
+    if (!out.changes.length && result.stripped) this.hub.broadcast(boardId, { type: 'reload' })
     if (out.changes.length) {
       this.hub.broadcast(boardId, { type: 'changes', ...out, mutationId })
       // (What was written isn't quite what the person's own copy did: it fetches the board again.)
@@ -230,10 +250,12 @@ export class BoardEngine {
     const result = await this.db.transaction(async (tx) => {
       // Lock both boards, always in the same order, so two moves in opposite directions can't deadlock.
       const locked = new Map<string, number>()
+      const counters = new Map<string, number>()
       for (const id of [fromId, toId].sort()) {
-        const [row] = await tx.select({ seq: boards.seq }).from(boards).where(eq(boards.id, id)).for('update')
+        const [row] = await tx.select({ seq: boards.seq, nextNumber: boards.nextNumber }).from(boards).where(eq(boards.id, id)).for('update')
         if (!row) throw new HttpError(404, 'This board no longer exists.')
         locked.set(id, row.seq)
+        counters.set(id, row.nextNumber)
       }
       const load = async (id: string) => {
         const hit = this.cache.get(id)
@@ -241,11 +263,28 @@ export class BoardEngine {
       }
       const source = await load(fromId)
       const target = await load(toId)
-      const plan = planMove(source, target, taskId, to, { now: new Date().toISOString(), newId })
-      if ('error' in plan) throw new HttpError(422, plan.error)
+      const planned = planMove(source, target, taskId, to, { now: new Date().toISOString(), newId })
+      if ('error' in planned) throw new HttpError(422, planned.error)
+      // On the board it lands on, each card takes a number of that board's (see model/refs.ts).
+      const arriving = withNumbers(target, planned.target, counters.get(toId)!)
+      const plan = { ...planned, target: arriving.changes }
+      counters.set(toId, arriving.next)
       const ids = (d: BoardData) => d.fields.map((f) => f.id)
       await writeChanges(tx, fromId, plan.source, ids(source))
       await writeChanges(tx, toId, plan.target, ids(target))
+
+      // Where each card went, so the number and the address it had still find it; and what led to it before leads on.
+      for (const [oldId, id] of plan.ids) {
+        await tx
+          .update(taskMoves)
+          .set({ toBoardId: toId, toTaskId: id })
+          .where(and(eq(taskMoves.toBoardId, fromId), eq(taskMoves.toTaskId, oldId)))
+        const went = { fromNumber: source.tasks[oldId]?.number ?? null, toBoardId: toId, toTaskId: id, movedAt: new Date() }
+        await tx
+          .insert(taskMoves)
+          .values({ fromBoardId: fromId, fromTaskId: oldId, ...went })
+          .onConflictDoUpdate({ target: [taskMoves.fromBoardId, taskMoves.fromTaskId], set: went })
+      }
 
       // Its comments, files, mentions, followers and logged time follow it (files stay where they're stored, and count where they did).
       for (const [oldId, id] of plan.ids) {
@@ -278,7 +317,10 @@ export class BoardEngine {
       await log(toId, arrived)
       const bump = async (id: string) => {
         const seq = locked.get(id)! + 1
-        await tx.update(boards).set({ seq, activityAt: new Date() }).where(eq(boards.id, id))
+        await tx
+          .update(boards)
+          .set({ seq, activityAt: new Date(), nextNumber: counters.get(id)! })
+          .where(eq(boards.id, id))
         return seq
       }
       return {

@@ -26,7 +26,8 @@ import { CATEGORIES, LAYOUTS, PRIORITIES, type Category, type Layout, type Prior
  *   #/admin/<section>        the Platform console (overview, accounts, email, storage, integrations)
  * Hash addresses work on any static host, with no server rewrite rules.
  */
-export type BoardRoute = { page: 'board'; id: string; layout?: Layout; focus?: string; task?: string; inbox?: string }
+/** `n`: a card by its number on the board (from a name like WEB-12 written somewhere): looked up, then the address says `task`. */
+export type BoardRoute = { page: 'board'; id: string; layout?: Layout; focus?: string; task?: string; inbox?: string; n?: string }
 export type HomeRoute = { page: 'home'; inbox?: string }
 /** A workspace: its people (the default), or its plan, shown by project or by person, in weeks or days. */
 export type WorkspaceRoute = { page: 'workspace'; id: string; section?: WorkspaceSection; by?: 'person'; zoom?: 'days' | 'months' }
@@ -194,6 +195,7 @@ export function parseRoute(hash: string): Route {
     ...(q.get('focus') && { focus: q.get('focus')! }),
     ...(q.get('task') && { task: q.get('task')! }),
     ...(q.get('inbox') && { inbox: q.get('inbox')! }),
+    ...(/^[1-9]\d{0,8}$/.test(q.get('n') ?? '') && { n: q.get('n')! }),
   }
 }
 
@@ -259,6 +261,7 @@ export function hrefFor(r: Route) {
   if (r.focus) q.set('focus', r.focus)
   if (r.task) q.set('task', r.task)
   if (r.inbox) q.set('inbox', r.inbox)
+  if (r.n) q.set('n', r.n)
   const qs = q.toString()
   return `#/b/${encodeURIComponent(r.id)}${r.layout ? `/${r.layout}` : ''}${qs ? `?${qs}` : ''}`
 }

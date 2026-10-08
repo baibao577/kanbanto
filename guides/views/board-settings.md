@@ -15,6 +15,10 @@ Changes are saved as you make them.
 - **Name.**
 - **What's this board for?** A sentence or two. It shows on your boards page, and AI assistants read it to pick the
   right board when you say "add it to the launch board".
+- **Letters for card numbers.** What the board's [card names](/everyday/cards#a-card-s-name) start with: WEB in
+  WEB-12. They are made from the board's name; its **owners** can change them (2 to 5 letters or digits, starting
+  with a letter). Every card is renamed at once, and a number written with the old letters still finds its card.
+  Two boards in the same workspace, or two of your own, can't have the same letters. Your Inbox is always **IN**.
 - **When a task has subtasks, its status…**
   - **Follows its subtasks** (recommended): it is Done when all its subtasks are done, and In progress as soon as
     one of them starts.
@@ -58,6 +62,9 @@ Stats count cards without subtasks, and include archived ones.
 
 Owners can move a board between **Personal** and a workspace with **⋯ → Move to**. Moving it into a workspace does
 not share it by itself; use **Share** for that.
+
+A board keeps its [letters](#board-settings) when it moves, unless a board where it is going already has them:
+then it is given new ones from its name, and numbers written with the old letters still find its cards.
 
 ## Export and import
 

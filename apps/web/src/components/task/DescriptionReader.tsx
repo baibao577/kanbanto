@@ -1,5 +1,6 @@
 import { Check, PencilSimple } from '@phosphor-icons/react'
 import { lazy, Suspense, useMemo, useRef } from 'react'
+import type { CardRefs, CardSource } from '@/app/card-refs'
 import type { CardFiles } from '@/data/cardFiles'
 import { placeAtPoint, type Place } from '@/components/text/caret'
 import type { EditorHandle } from '@/components/text/Editor'
@@ -25,6 +26,8 @@ export function DescriptionReader({
   value,
   readOnly,
   cardFiles,
+  cardRefs,
+  cardSource,
   people,
   writing,
   start,
@@ -42,6 +45,9 @@ export function DescriptionReader({
   value: string
   readOnly: boolean
   cardFiles: CardFiles
+  /** The cards the text names, and the ones "/" → Card offers (see app/card-refs). */
+  cardRefs?: CardRefs
+  cardSource?: CardSource
   people: { id: string; name: string; picture?: string | null }[]
   writing: boolean
   /** What the editor opens with: the text, and where the cursor goes. */
@@ -150,14 +156,23 @@ export function DescriptionReader({
                     files={cardFiles.files}
                     onFiles={(fs) => cardFiles.add(fs)}
                     inserts
+                    cards={cardSource}
                     autoFocus
                     aria-label="Description"
-                    placeholder="Write here… Type / for headings, lists and tables, @ to mention someone, # to point to a file."
+                    placeholder="Write here… Type / for headings, lists, tables and cards, @ to mention someone, # to point to a file."
                     className="md-reader min-h-[50vh]"
                   />
                 </Suspense>
               ) : value ? (
-                <Markdown text={value} files={cardFiles.files} mentions={people} headingIds onToggleTask={onTick} className="md-reader" />
+                <Markdown
+                  text={value}
+                  files={cardFiles.files}
+                  mentions={people}
+                  cards={cardRefs}
+                  headingIds
+                  onToggleTask={onTick}
+                  className="md-reader"
+                />
               ) : (
                 <p className="text-muted-foreground">No description yet.</p>
               )}

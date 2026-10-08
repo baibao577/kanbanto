@@ -26,9 +26,11 @@ says <kbd>⌘</kbd>.)
 | A link | Select the words, click the link button, paste the web address | |
 | Text shown exactly as typed (for commands or code) | `</>` | `` ` `` |
 
-**Type `/`** on a new line for a menu of everything else: three sizes of heading, lists, a quote, a code block, a
-**table** and a **divider**. Keep typing to narrow it ("/tab"), and press <kbd>Enter</kbd> to choose. Inside a table,
-`/` offers its rows and columns instead: add a row, add a column, delete one, or delete the table.
+**Type `/`** on a new line, or after a space, for a menu of everything else. It has two parts: **Mention**, with
+**Card** (see [Mention a card](#mention-a-card)), and **Put in**: three sizes of heading, lists, a quote, a code
+block, a **table** and a **divider**. Keep typing to narrow it ("/tab"), and press <kbd>Enter</kbd> to choose.
+Inside a table, **Put in** offers its rows and columns instead: add a row, add a column, delete one, or delete the
+table.
 
 ![Writing a description, with the menu that "/" opens](/images/description-writing.webp)
 
@@ -38,6 +40,30 @@ and `- [ ]` checklists, comes in formatted rather than as symbols.
 **Type `#` and the start of a file's name** to point to one of the card's files, and pick it from the list. (A `#`
 followed by a space makes a big heading instead, which is why the menu shows "#" beside "Big heading".) Drop or paste
 a file into the text and it is attached to the card and mentioned where your cursor is.
+
+
+## Mention a card
+
+Write a card's [name](/everyday/cards#a-card-s-name) in a description or a comment and it becomes a link to that
+card. There are two ways, and they give the same result:
+
+- **Type it:** `WEB-12`. Capital letters, a hyphen, the number.
+- **Pick it:** type `/`, choose **Card**, then find the card by its title or its number. The cards of this board
+  show at once; cards on your other boards follow when you have typed two letters or more. Press
+  <kbd>Enter</kbd>, or click one, and its name goes in where the `/` was. <kbd>Esc</kbd> closes the list and
+  leaves you in the text.
+
+Once saved, the name is a small link. Click it to open the card: a card on the same board opens in place, and a
+card on another board takes you to that board. Hover over a card on the same board to read its title.
+
+A few things to know:
+
+- Only names with the letters of a board you can open become links. `UTF-8` or `COVID-19` stay as they are, unless
+  a board of yours has those letters.
+- A name inside `code`, or inside a link, is left alone.
+- Someone who cannot open the other board sees the name as plain text.
+- If the card is later moved to another board, the name still opens it there, and a message says where it went.
+- If a board's letters are changed, names written with the old letters still open the right cards.
 
 ## Saving
 

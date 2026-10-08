@@ -31,6 +31,11 @@ const schemas = {
   Task: obj(
     {
       id: str,
+      number: {
+        type: 'integer',
+        description:
+          'Its number on its board: with the board’s `code`, its name (WEB-12). Given by the server when the task is made, never used twice, never changed while it stays on the board. No command sets it.',
+      },
       title: str,
       parentId: nullable(str),
       status: { ...str, description: 'The id of its list.' },
@@ -94,6 +99,8 @@ const schemas = {
         name: str,
         description: { ...str, description: 'What the board is for.' },
         mode: { enum: ['manual', 'derived'], description: 'derived: a parent’s status follows its subtasks.' },
+        code: { ...str, description: 'Its letters: what its tasks’ names start with (WEB in WEB-12). Changed with `PUT /api/boards/{id}/code`.' },
+        pastCodes: { type: 'array', items: str, description: 'The letters it had before: a name written with them still means its task.' },
       },
       ['id', 'name'],
     ),
@@ -116,6 +123,7 @@ const schemas = {
     doneCount: { type: 'integer' },
     updatedAt: { ...str, format: 'date-time' },
     inbox: { type: 'boolean', description: 'Your Inbox (see `/api/inbox`).' },
+    code: nullable({ ...str, description: 'Its letters (WEB in WEB-12).' }),
   }),
   Command: { ...z.toJSONSchema(CommandSchema, { unrepresentable: 'any' }), $schema: undefined },
   Change: obj({
@@ -538,7 +546,19 @@ The answer lists the records that changed.
               in: 'query',
               schema: { ...str, description: 'A workspace’s id, `personal` (your own boards) or `shared` (shared with you).' },
             },
-            { name: 'q', in: 'query', schema: { ...str, description: 'Words in the title, the description or a comment.' } },
+            {
+              name: 'q',
+              in: 'query',
+              schema: { ...str, description: 'Words in the title, the description or a comment, or a card’s name (WEB-12).' },
+            },
+            {
+              name: 'in',
+              in: 'query',
+              schema: {
+                enum: ['titles'],
+                description: '`titles`: `q` looks at names and titles only. Quicker, for a list that answers while someone types.',
+              },
+            },
             {
               name: 'completed',
               in: 'query',
@@ -613,6 +633,45 @@ The answer lists the records that changed.
           parameters: [id('id')],
           requestBody: { content: { 'application/json': { schema: obj({ archived: { type: 'boolean' } }) } } },
           responses: ok,
+        },
+      },
+      '/api/boards/{id}/whereis': {
+        get: {
+          tags: ['Boards'],
+          summary: 'Where a task is now',
+          description:
+            'For a task’s number on this board (`n`), or the id it had here (`task`): one or the other. Answers with the board and the id it has now: still on this board (`moved: false`, with `archived` when it’s archived), or on the board it was moved to (`moved: true`, with that board’s name and the task’s name there), following a task that was moved more than once. 404 when there is no such task; 404 with `code: "moved"` when it went to a board you can’t open, or was deleted there. Anyone who can open the board may ask.',
+          parameters: [
+            id('id'),
+            { name: 'n', in: 'query', schema: { type: 'integer', minimum: 1, description: 'Its number on this board: 12 for WEB-12.' } },
+            { name: 'task', in: 'query', schema: { ...str, description: 'The id it had on this board.' } },
+          ],
+          responses: {
+            200: json(
+              obj(
+                {
+                  boardId: str,
+                  taskId: str,
+                  moved: { type: 'boolean' },
+                  board: { ...str, description: 'When it was ever moved: the name of the board it’s on.' },
+                  ref: { ...str, description: 'When it was ever moved: its name now (SHOP-3).' },
+                  archived: { type: 'boolean' },
+                },
+                ['boardId', 'taskId', 'moved'],
+              ),
+            ),
+          },
+        },
+      },
+      '/api/boards/{id}/code': {
+        put: {
+          tags: ['Boards'],
+          summary: 'Change a board’s letters',
+          description:
+            'Owners only. A board’s letters are what its tasks’ names start with: WEB in WEB-12. 2 to 5 capitals or digits, starting with a letter. Every task is called by the new ones at once, and the old ones are remembered (`pastCodes`), so a name written with them still finds its task. Refused (409) when another board in the same workspace, or among the same person’s own, has them or had them. The Inbox keeps IN.',
+          parameters: [id('id')],
+          requestBody: { content: { 'application/json': { schema: obj({ code: { ...str, example: 'WEB' } }, ['code']) } } },
+          responses: { 200: json(obj({ code: str, pastCodes: { type: 'array', items: str } })) },
         },
       },
       '/api/boards/{id}/tasks/{taskId}/move': {

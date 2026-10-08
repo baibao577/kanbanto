@@ -25,7 +25,7 @@ export function useTreeFilter(search: string) {
   useNow(300_000)
   const today = todayDay()
   return useMemo(() => {
-    const m = matcher(search, idx.fields.values())
+    const m = matcher(search, idx.fields.values(), idx.codes)
     if (!m && !filtering && !hideDone) return { keep: undefined, matched: undefined, counted: undefined, filtering, hiddenDone: 0 }
     // ("Me" in a filter is whoever is looking.)
     const ctx = { me, today }

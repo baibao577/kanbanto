@@ -5,6 +5,7 @@ import { HttpError } from '../http'
 import { addPlanPerson, bumpPlan } from '../planning/store'
 import { memberRole, workspaceRole, type BoardRow } from './access'
 import type { BoardEngine } from './engine'
+import { codeIn, spaceOf } from './numbering'
 import { clearPerson } from './people'
 
 /**
@@ -158,7 +159,12 @@ export async function moveBoard(tx: Tx, board: BoardRow, userId: string, to: str
     throw new HttpError(403, 'Only the workspace’s admins can move its boards somewhere else.')
   if (to && !(await workspaceRole(tx, to, userId))) throw new HttpError(403, 'You can only move boards into a workspace you’re in.')
   const visibility = !to && board.visibility === 'workspace' ? 'invited' : board.visibility
-  await tx.update(boards).set({ workspaceId: to, visibility }).where(eq(boards.id, board.id))
+  // Its letters go with it, unless a board where it's going has them: then it takes new ones (see boards/numbering.ts).
+  const letters = await codeIn(tx, board, to ? { workspaceId: to } : await spaceOf(tx, { id: board.id, workspaceId: null }))
+  await tx
+    .update(boards)
+    .set({ workspaceId: to, visibility, ...letters })
+    .where(eq(boards.id, board.id))
   // A plan's project can only be linked to a board in its own workspace: the link goes with the board.
   if (from) {
     const unlinked = await tx

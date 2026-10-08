@@ -14,6 +14,7 @@ import {
   type CardFacts,
   type CardFilter,
 } from '@kanbanto/model/search'
+import { refOf } from '@kanbanto/model/refs'
 import { CATEGORIES, PRIORITIES, type BoardData, type Task } from '@kanbanto/model/types'
 import type { FastifyInstance, FastifyPluginAsync } from 'fastify'
 import { z } from 'zod'
@@ -105,7 +106,9 @@ export async function searchCards(app: FastifyInstance, me: SessionUser, q: Card
     leaves: q.parents === 'hide',
   }
   // Comments: their text when there are words to find, and when each card last had one when "changed" matters.
-  const found = await commentsWith(app.db, boardIds, words)
+  // (Names and titles only, when asked: no comment is read, and a description doesn't count.)
+  const titles = q.in === 'titles'
+  const found = titles ? new Map<string, string[]>() : await commentsWith(app.db, boardIds, words)
   const dated = !q.when || q.when === 'any' || q.when === 'changed'
   const commented = dated ? await lastCommentsFor(app.db, boardIds) : new Map<string, Record<string, string>>()
 
@@ -151,7 +154,9 @@ export async function searchCards(app: FastifyInstance, me: SessionUser, q: Card
 
     const consider = (t: Task, put: boolean) => {
       if (iFollow && !iFollow(b.id, t)) return
-      const own = `${t.title} ${t.description ?? ''}`.toLowerCase()
+      // (Its name counts as its own words: "web-12" finds the card, and the cards that mention it.)
+      const ref = refOf(data.board, t)
+      const own = `${ref ? `${ref} ` : ''}${t.title} ${titles ? '' : (t.description ?? '')}`.toLowerCase()
       const bodies = found.get(`${b.id}:${t.id}`) ?? []
       const kind = put ? (t.archivedDone ? 'done' : null) : idx.category.get(t.id)!
       const done = kind === 'done'
@@ -186,6 +191,7 @@ export async function searchCards(app: FastifyInstance, me: SessionUser, q: Card
         priority: t.priority,
         row: {
           id: t.id,
+          ...(ref && { ref }),
           title: t.title,
           board: { id: b.id, name: b.name, background: b.background },
           place: b.place,
@@ -331,6 +337,7 @@ const Query = z
     board: z.string().max(100).optional(),
     place: z.string().max(100).optional(),
     q: z.string().max(200).optional(),
+    in: z.enum(['titles']).optional(),
     completed: z
       .enum(['true', 'false'])
       .transform((v) => v === 'true')

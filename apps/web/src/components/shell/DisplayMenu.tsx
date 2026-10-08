@@ -23,6 +23,7 @@ const sameConfig = (a: ViewConfig, b: ViewConfig) =>
   !!a.groupByParent === !!b.groupByParent &&
   a.parentDisplay.length === b.parentDisplay.length &&
   a.parentDisplay.every((p) => b.parentDisplay.includes(p)) &&
+  !!a.cardNumbers === !!b.cardNumbers &&
   (a.doneLists ?? 'recent') === (b.doneLists ?? 'recent') &&
   (a.doneLists === 'recent' || !a.doneLists ? (a.doneDays ?? DONE_DAYS) === (b.doneDays ?? DONE_DAYS) : true)
 
@@ -137,6 +138,12 @@ export function DisplayMenu({ rowKeys }: { rowKeys?: RefObject<string[]> }) {
         <Separator />
         <div className="space-y-3 p-4">
           <p className="text-xs font-medium text-muted-foreground">On each card</p>
+          <SwitchRow
+            label="Card numbers"
+            hint={`Its name, like ${data.board.code ?? 'WEB'}-12, above the title`}
+            checked={!!cfg.cardNumbers}
+            onChange={(on) => set({ cardNumbers: on || undefined })}
+          />
           <SwitchRow label="Where it belongs" hint="The parent tasks above the title" checked={has('label')} onChange={(on) => toggle('label', on)} />
           <SwitchRow label="Subtask checklist" checked={has('checklist')} onChange={(on) => toggle('checklist', on)} />
           <SwitchRow label="Progress bar" checked={has('progress')} onChange={(on) => toggle('progress', on)} />

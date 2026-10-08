@@ -12,6 +12,7 @@ import { sendReminders } from './reminders'
 import { logTransport } from './mail/transport'
 import { tidyFiles } from './routes/files'
 import { moveSecretsOffDevKey } from './secrets'
+import { numberBoards } from './boards/numbering'
 import { versionWords } from './version'
 
 /** A problem that stops Kanbanto from starting: said in one line, without a stack trace. */
@@ -39,6 +40,8 @@ try {
   fail(`couldn’t reach or update the database (${reason(e)}). Check DATABASE_URL and that PostgreSQL is running.`)
 }
 const secrets = await moveSecretsOffDevKey(db)
+// Boards and cards made before card numbers get their letters and numbers (nothing to do on every start after).
+const numbered = await numberBoards(db)
 const app = await buildApp(db, {
   logger: true,
   mailWorker: true,
@@ -47,6 +50,7 @@ const app = await buildApp(db, {
 
 if (keySource === 'new')
   app.log.info(`Made a new encryption key and saved it in ${env.keyFile}. Keep a copy somewhere safe: \`node dist/cli.js key\` shows it.`)
+if (numbered.boards) app.log.info(`Card numbers: gave ${numbered.boards} board(s) their letters and ${numbered.cards} card(s) their numbers.`)
 if (secrets.moved) app.log.info(`Re-encrypted ${secrets.moved} saved key(s) that used the public development key.`)
 if (secrets.unreadable)
   app.log.warn(

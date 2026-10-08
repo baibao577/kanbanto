@@ -44,6 +44,7 @@ const INBOX_SAYS = {
   people: 'Your Inbox is yours alone: nobody else can be on it.',
   leave: 'Your Inbox is yours alone: it can’t be left.',
   workspace: 'Your Inbox stays with your Personal boards: it can’t be moved to a workspace.',
+  letters: 'Your Inbox keeps its letters: its cards are IN-1, IN-2…',
   archive: 'Your Inbox can’t be archived. Archive its cards instead.',
   delete: 'Your Inbox can’t be deleted. Delete or archive its cards instead.',
 }

@@ -34,6 +34,13 @@ workspace's members.
 **@** works in a card's description too. Someone is told the first time their name is written there, not each time
 the description is edited afterwards.
 
+### Mention a card
+
+Type a card's name, like `WEB-12`, or type **/**, choose **Card** and pick it from the list. In the posted comment
+the name is a link to that card. See [Mention a card](/everyday/descriptions#mention-a-card).
+
+In a comment, **/** also offers lists, a checklist, a quote and a code block.
+
 Commenting on a card, or being mentioned on it, means you follow it: you are told about later comments and changes.
 See [notifications](/people/notifications) for how to stop.
 

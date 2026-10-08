@@ -18,10 +18,10 @@ describe('the activity log, in words', () => {
   it('says what a change did', () => {
     expect(run({ type: 'task.create', parentId: 'A', fields: { title: 'Write copy' } })).toEqual(['added “Write copy” under “Launch website”'])
     expect(run({ type: 'task.update', id: 'A3', fields: { status: 'done' } })).toEqual(['moved “Deploy” to Done'])
-    expect(run({ type: 'task.update', id: 'A3', fields: { title: 'Ship it', assigneeId: null, due: '2026-10-20' } })).toEqual([
+    expect(run({ type: 'task.update', id: 'A3', fields: { title: 'Ship it', assigneeId: null, due: '2031-03-20' } })).toEqual([
       'renamed “Deploy” to “Ship it”',
       'unassigned “Ship it”',
-      'set “Ship it” due 2026-10-20',
+      'set “Ship it” due 2031-03-20',
     ])
     expect(run({ type: 'task.move', id: 'A3', parentId: 'B' })).toEqual(['moved “Deploy” under “Event”'])
     expect(run({ type: 'column.update', id: 'todo', fields: { name: 'Next' } })).toEqual(['renamed the list “To Do” to “Next”'])
@@ -40,11 +40,11 @@ describe('the activity log, in words', () => {
     expect(own({ type: 'task.update', id: 'A3', fields: { status: 'done' } })).toEqual(['moved it from To Do to Done'])
     // A date is left for whoever shows the line to write in the reader's own words.
     expect(
-      own({ type: 'task.update', id: 'A3', fields: { title: 'Ship it', assigneeId: null, due: '2026-10-20', start: '2026-10-12T02:00:00.000Z' } }),
+      own({ type: 'task.update', id: 'A3', fields: { title: 'Ship it', assigneeId: null, due: '2031-03-20', start: '2026-10-12T02:00:00.000Z' } }),
     ).toEqual([
       'renamed it from “Deploy” to “Ship it”',
       'unassigned it',
-      'set it due {date} [2026-10-20]',
+      'set it due {date} [2031-03-20]',
       'set it to start {date} [2026-10-12T02:00:00Z]',
     ])
     expect(own({ type: 'task.update', id: 'A2a', fields: { due: '', description: 'New words', priority: 'urgent' } })).toEqual([

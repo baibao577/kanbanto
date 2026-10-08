@@ -149,7 +149,9 @@ export async function writeChanges(tx: Tx, boardId: string, changes: Change[], f
   }
   await save(lists, by.column, (c: Parameters<typeof listToRow>[1]) => listToRow(boardId, c))
   await save(labels, by.label, (l: Parameters<typeof labelToRow>[1]) => labelToRow(boardId, l))
-  await save(tasks, by.task, (t: Parameters<typeof taskToRow>[1]) => taskToRow(boardId, t), { custom })
+  // (A card's number is the row's own: once it has one, nothing saved over it changes it. See model/refs.ts.)
+  const number = sql`coalesce(${tasks.number}, excluded."number")`
+  await save(tasks, by.task, (t: Parameters<typeof taskToRow>[1]) => taskToRow(boardId, t), { custom, number })
 }
 
 /**

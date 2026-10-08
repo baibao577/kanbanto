@@ -52,8 +52,8 @@ stays first.
 
 Click **Display**:
 
-- pick the **columns** you want, the board's own fields among them (**Created** and **Updated** are off until you
-  switch them on),
+- pick the **columns** you want, the board's own fields among them (**Number**, **Created** and **Updated** are off
+  until you switch them on; Number is each card's [name](/everyday/cards#a-card-s-name), like WEB-12),
 - switch between **compact** and **comfortable** rows,
 - turn on **Hide done** to leave finished tasks out.
 

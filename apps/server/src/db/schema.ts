@@ -463,9 +463,24 @@ export const boards = pgTable(
      * in Personal, theirs alone. It can't be shared, moved, archived or deleted (see boards/inbox.ts).
      */
     inboxOf: uuid('inbox_of').references((): AnyPgColumn => users.id, { onDelete: 'cascade' }),
+    /** Its letters: what its cards' names start with (WEB in WEB-12; see model/refs.ts). Null until it's given some. */
+    code: text('code'),
+    /** The letters it had before, latest first: a name written with them still finds its card. */
+    pastCodes: text('past_codes').array().notNull().default([]),
+    /**
+     * The number its next new card gets. Only ever goes up, under the same row lock as `seq`, so no number is used
+     * twice. Not part of the model's board record: a command never touches it (see boards/engine.ts).
+     */
+    nextNumber: integer('next_number').notNull().default(1),
   },
   (t) => [
     index('boards_workspace_idx').on(t.workspaceId),
+    // (No two boards of a workspace have the same letters. Among Personal boards that's looked after in code: a
+    // board there can have several owners.)
+    uniqueIndex('boards_code_idx')
+      .on(t.workspaceId, t.code)
+      .where(sql`${t.workspaceId} is not null and ${t.code} is not null`),
+    check('boards_code_check', sql`${t.code} is null or ${t.code} ~ '^[A-Z][A-Z0-9]{1,4}$'`),
     uniqueIndex('boards_inbox_of_idx')
       .on(t.inboxOf)
       .where(sql`${t.inboxOf} is not null`),
@@ -646,9 +661,47 @@ export const tasks = pgTable(
      * field the board stopped using stay here, and are never loaded or sent (see `writeChanges`).
      */
     custom: jsonb('custom').$type<CustomValues>(),
+    /** Its number on its board (the 12 in WEB-12; see model Task.number). Null only until the server has given it one. */
+    number: integer('number'),
     ...meta,
   },
-  (t) => [primaryKey({ columns: [t.boardId, t.id] }), index('tasks_assignee_idx').on(t.assigneeId)],
+  (t) => [
+    primaryKey({ columns: [t.boardId, t.id] }),
+    index('tasks_assignee_idx').on(t.assigneeId),
+    uniqueIndex('tasks_number_idx')
+      .on(t.boardId, t.number)
+      .where(sql`${t.number} is not null`),
+    // (Small, and soon empty: how the server finds what's left to number when it starts.)
+    index('tasks_unnumbered_idx')
+      .on(t.boardId)
+      .where(sql`${t.number} is null`),
+  ],
+)
+
+/**
+ * Where a card went when it was moved to another board: it's a new card there, with a new number, and this is how
+ * its old number and its old address still find it. `to` follows it if it moves again.
+ */
+export const taskMoves = pgTable(
+  'task_moves',
+  {
+    fromBoardId: text('from_board_id')
+      .notNull()
+      .references(() => boards.id, { onDelete: 'cascade' }),
+    fromTaskId: text('from_task_id').notNull(),
+    /** The number it had there (null: it left before cards had numbers). */
+    fromNumber: integer('from_number'),
+    toBoardId: text('to_board_id')
+      .notNull()
+      .references(() => boards.id, { onDelete: 'cascade' }),
+    toTaskId: text('to_task_id').notNull(),
+    movedAt: at('moved_at').notNull().defaultNow(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.fromBoardId, t.fromTaskId] }),
+    index('task_moves_number_idx').on(t.fromBoardId, t.fromNumber),
+    index('task_moves_to_idx').on(t.toBoardId, t.toTaskId),
+  ],
 )
 
 // ── Comments and notifications ─────────────────────────────────────────────────

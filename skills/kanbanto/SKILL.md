@@ -27,6 +27,10 @@ Without MCP, use the REST API (see "REST fallback" below).
 - **Orient first.** `list_boards` (it also says who you act as, their time zone and today's date there), then
   `get_board` for the lists, labels and people you'll refer to (`tasks: false` when that's all you need). Refer to
   them by name; `"me"` is the token's owner.
+- **A task's name.** Every task has a `ref` like `WEB-12` (its board's letters and its number), which people see
+  on the card and say. Tools give it with each task and take it wherever they take a task id (`task_id`,
+  `parent_id`, `task_ids`…): `MY-6`, `my-6` or just `6` on that board. When you tell the person about a task, say
+  its ref with its title.
 - **Which board?** Boards live in places: the person's Personal boards, workspaces (a team's), or boards others shared.
   `list_boards` says which, and what each board is for (`about`). "Work" and "personal" usually mean a workspace and
   Personal. If it's still unclear, ask and name the likely boards: don't guess.

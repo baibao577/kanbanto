@@ -1,6 +1,7 @@
 import { ArrowsOut, PencilSimple, TextAlignLeft } from '@phosphor-icons/react'
 import { formatDistanceToNow } from 'date-fns'
 import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useCardRefs, useCardSource } from '@/app/card-refs'
 import type { CardFiles } from '@/data/cardFiles'
 import { clearDraft, pruneDrafts, readDraft, writeDraft, type Draft } from '@/data/drafts'
 import { placeAtPoint, type Place } from '@/components/text/caret'
@@ -50,6 +51,9 @@ export function Description({
   draftId: string
   onSave: (text: string) => void
 }) {
+  // The cards its text names (WEB-12), shown as links, and the ones "/" → Card offers.
+  const cardRefs = useCardRefs()
+  const cardSource = useCardSource()
   /** Where it's being written: in the card, full page, or not at all. */
   const [writing, setWriting] = useState<'card' | 'page' | null>(null)
   const [page, setPage] = useState(false)
@@ -187,11 +191,12 @@ export function Description({
             files={cardFiles.files}
             onFiles={(fs) => cardFiles.add(fs)}
             inserts
+            cards={cardSource}
             status={<SaveSign dirty={dirty} />}
             onExpand={toPage}
             autoFocus
             aria-label="Description"
-            placeholder={`Add more detail… Type / for headings, lists and tables, @ to mention someone, # to point to a file (${FILE_MARK}).`}
+            placeholder={`Add more detail… Type / for headings, lists, tables and cards, @ to mention someone, # to point to a file (${FILE_MARK}).`}
             className="min-h-24"
             // It grows with the text up to half the window, then scrolls: the rest of the card stays in reach.
             scrollClassName="max-h-[50vh] overflow-y-auto"
@@ -199,7 +204,7 @@ export function Description({
         </Suspense>
       ) : value ? (
         <Folded onOpen={readOnly ? undefined : (caret) => begin('card', { caret })}>
-          <Markdown text={value} files={cardFiles.files} mentions={people} onToggleTask={tick} />
+          <Markdown text={value} files={cardFiles.files} mentions={people} cards={cardRefs} onToggleTask={tick} />
         </Folded>
       ) : readOnly ? (
         <p className="text-sm text-muted-foreground">No description.</p>
@@ -220,6 +225,8 @@ export function Description({
             value={value}
             readOnly={readOnly}
             cardFiles={cardFiles}
+            cardRefs={cardRefs}
+            cardSource={cardSource}
             writing={writing === 'page'}
             start={start}
             typing={settled}

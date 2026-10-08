@@ -15,6 +15,8 @@ export interface TaskIndex {
   fields: Map<string, BoardField>
   /** The status columns, in board order. */
   columns: StatusColumn[]
+  /** The board's letters, the ones it has now first, then the ones it had (see refs.ts): what its cards' names start with. */
+  codes: readonly string[]
   colById: Map<string, StatusColumn>
   /** First column of each category: where a derived parent lands when its children are mixed. */
   firstOf: Record<Category, string>
@@ -55,6 +57,7 @@ export function buildIndex(
   columns: StatusColumn[] = DEFAULT_COLUMNS,
   memberList: Member[] = [],
   fieldList: BoardField[] = [],
+  codes: readonly string[] = [],
 ): TaskIndex {
   const members = new Map(memberList.map((m) => [m.id, m]))
   const fields = new Map(fieldList.map((f) => [f.id, f]))
@@ -190,6 +193,7 @@ export function buildIndex(
     members,
     fields,
     columns,
+    codes,
     colById,
     firstOf,
     roots,
@@ -258,7 +262,8 @@ const indexes = new WeakMap<BoardData, TaskIndex>()
 export function indexFor(data: BoardData): TaskIndex {
   let idx = indexes.get(data)
   if (!idx) {
-    idx = buildIndex(data.tasks, data.board.mode, data.columns, data.members, data.fields)
+    const codes = [...(data.board.code ? [data.board.code] : []), ...(data.board.pastCodes ?? [])]
+    idx = buildIndex(data.tasks, data.board.mode, data.columns, data.members, data.fields, codes)
     indexes.set(data, idx)
   }
   return idx

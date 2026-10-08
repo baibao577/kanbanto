@@ -47,6 +47,8 @@ interface Props {
   id: string
   idx: TaskIndex
   config: ViewConfig
+  /** The board's letters: with Display → Card numbers on, a card shows its name (WEB-12) above its title. */
+  code?: string
   labelById: Map<string, LabelDef>
   /** The board's fields that show on card fronts (up to three): a card shows the ones it has a value for. */
   frontFields?: BoardField[]
@@ -82,6 +84,7 @@ export const TaskCard = memo(function TaskCard({
   id,
   idx,
   config,
+  code,
   labelById,
   frontFields = NO_FIELDS,
   onOpen,
@@ -106,6 +109,8 @@ export const TaskCard = memo(function TaskCard({
   // The next reminder still to go off (shown as a small alarm).
   const next = t.reminders ? upcoming(t)[0] : undefined
   const path = d.includes('label') && t.parentId ? ancestorsOf(idx.tasks, id).map((a) => idx.tasks[a].title) : null
+  // (A card just made has no number until the server answers: nothing is shown for that moment.)
+  const ref = config.cardNumbers && code && t.number ? `${code}-${t.number}` : null
   const labels = t.labels.map((l) => labelById.get(l)).filter((l) => !!l)
   // Card age (Display → Card age): days without activity, once it's been a few, and never on finished cards.
   const activeAt = lastActivity(idx, id, lastComment ? { [id]: lastComment } : undefined)
@@ -136,10 +141,17 @@ export const TaskCard = memo(function TaskCard({
         </div>
       )}
 
-      {path && <p className={cn('mb-0.5 truncate text-[11px] leading-4 text-muted-foreground', !labels.length && 'pr-12')}>{path.join(' › ')}</p>}
+      {/* Its name and where it belongs share a line, apart from the title (which is found by its exact words). */}
+      {(ref || path) && (
+        <p className={cn('mb-0.5 truncate text-[11px] leading-4 text-muted-foreground', !labels.length && 'pr-12')}>
+          {ref && <span className="font-mono font-medium tabular-nums">{ref}</span>}
+          {ref && path && <span aria-hidden> · </span>}
+          {path?.join(' › ')}
+        </p>
+      )}
 
       {/* On touch screens the menu button always shows, so keep the first line clear of it. */}
-      <p className={cn('text-sm leading-snug break-words', kids && 'font-medium', !labels.length && !path && 'touch-only:pr-6')}>{t.title}</p>
+      <p className={cn('text-sm leading-snug break-words', kids && 'font-medium', !labels.length && !path && !ref && 'touch-only:pr-6')}>{t.title}</p>
 
       {d.includes('checklist') && kids && (
         <ul className="mt-2 space-y-1">

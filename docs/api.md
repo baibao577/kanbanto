@@ -133,9 +133,28 @@ curl -X POST https://kanbanto.example.com/api/boards/<board id>/mutations \
 its list's id; `parentId` makes the tree; `priority` is `urgent`, `high`, `medium` or `low`). Its archived tasks come
 separately (see above).
 
+**A card's name.** Besides its `id`, every task has a `number`, and its board has letters, `code`: together the
+name people see and say, like `WEB-12`. The server gives the number when the task is made (so it is in the answer
+to the command that made it, not in the command), counting up; it is never given to another task and never changes
+while the task stays on its board. No command sets it. A board's letters are changed by its owners with
+`PUT /api/boards/<id>/code` and `{"code": "SITE"}`; the board then lists the old ones in `pastCodes`, and names
+written with them still mean its tasks. `GET /api/cards?q=WEB-12` finds a task by its name, and each row there has
+it as `ref` (add `in=titles` and `q` looks at names and titles only, which is quicker: for a list that answers while
+someone types).
+
+In the app, a name written in a description or a comment is a link to `#/b/<board id>?n=12`: a board's address
+takes `n`, a task's number there, where it takes `task`, its id. The name is plain text in what the API returns.
+
+`GET /api/boards/<id>/whereis?n=12` says where the task with that number is now, and `?task=<id>` the same for an
+id it had on this board: `{"boardId", "taskId", "moved": false}` when it is still here (with `"archived": true` when
+it is archived), or, when it was moved to another board you can open, that board and its id there with
+`"moved": true`, `"board"` (the board's name) and `"ref"` (its name there). A task moved more than once is followed
+to where it is. 404 when there is no such task, and 404 with `"code": "moved"` when it went to a board you can't
+open or was deleted there.
+
 `POST /api/boards/<id>/tasks/<task id>/move` with `{"boardId": "<other board>"}` moves a task, with its subtasks,
 comments and files, to another board you can edit (optionally `"list": "<list id there>"`). It gets a new id there,
-which the answer gives. Lists and labels are matched by name; people who aren't on that board are unassigned. With
+which the answer gives, and a new number, with that board's letters. Lists and labels are matched by name; people who aren't on that board are unassigned. With
 `list`, `"order": {"ids": [<that list's cards, as the board shows them>], "at": 1}` gives it a place among them (0:
 first) instead of the end; then the task goes in exactly that list, even a finished one.
 

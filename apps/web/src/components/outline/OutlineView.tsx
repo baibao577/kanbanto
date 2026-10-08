@@ -31,6 +31,7 @@ import {
   type Sort,
   type SortKey,
 } from '@kanbanto/model/table'
+import { refOf } from '@kanbanto/model/refs'
 import { subtreeSums, sumOf } from '@kanbanto/model/totals'
 import { afterSubtree, defaultExpanded, flattenTree, treeTop } from '@kanbanto/model/tree'
 import { FilterMenu } from '@/components/shell/FilterMenu'
@@ -55,6 +56,8 @@ interface Column {
 }
 const COLUMNS: (Column & { key: BuiltInSortKey })[] = [
   { key: 'title', label: 'Task', width: 18 },
+  // (Off until switched on in Display, like Created and Updated.)
+  { key: 'number', label: 'Number', width: 6.5 },
   { key: 'status', label: 'Status', width: 8.5 },
   { key: 'progress', label: 'Progress', width: 9.5 },
   { key: 'assignee', label: 'Assignee', width: 9 },
@@ -273,6 +276,7 @@ export function OutlineView({ search }: { search: string }) {
             <ul className="divide-y overflow-hidden rounded-xl border bg-card" aria-label="Tasks">
               {rows.map((id) => {
                 const t = data.tasks[id]
+                const ref = refOf(data.board, t)
                 const kids = idx.childrenOf.get(id)
                 const open = forced || expanded.has(id)
                 const depth = idx.depth.get(id)! - baseDepth
@@ -328,11 +332,18 @@ export function OutlineView({ search }: { search: string }) {
                         {/* When it was made or last changed, once that column is switched on or sorted by. */}
                         {OUTLINE_EXTRA.map(
                           (k) =>
-                            (cfg.extra?.includes(k) || cfg.sort?.key === k) && (
+                            (cfg.extra?.includes(k) || cfg.sort?.key === k) &&
+                            (k === 'number' ? (
+                              ref && (
+                                <span key={k} className="font-mono tabular-nums">
+                                  {ref}
+                                </span>
+                              )
+                            ) : (
                               <span key={k}>
                                 {COLUMN_LABEL[k]} <When at={k === 'created' ? t.createdAt : changedAt(t)} />
                               </span>
-                            ),
+                            )),
                         )}
                         {isBlocked(idx, id) && <Prohibit weight="bold" className="size-3.5 text-warning" aria-label="Waiting on another task" />}
                         {/* No columns here: the fields the board shows on its cards. */}
@@ -424,6 +435,7 @@ export function OutlineView({ search }: { search: string }) {
 
                 {rows.map((id, i) => {
                   const t = data.tasks[id]
+                  const ref = refOf(data.board, t)
                   const kids = idx.childrenOf.get(id)
                   const open = forced || expanded.has(id)
                   const depth = idx.depth.get(id)! - baseDepth
@@ -548,6 +560,8 @@ export function OutlineView({ search }: { search: string }) {
                               t.due && <DueChip due={t.due} done={done} />
                             ) : c.key === 'created' || c.key === 'updated' ? (
                               <When at={c.key === 'created' ? t.createdAt : changedAt(t)} />
+                            ) : c.key === 'number' ? (
+                              ref && <span className="truncate font-mono text-xs text-muted-foreground tabular-nums">{ref}</span>
                             ) : (
                               labels.length > 0 && (
                                 <span className="flex min-w-0 gap-1 overflow-hidden">

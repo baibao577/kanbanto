@@ -87,14 +87,27 @@ export const validFocus = (idx: TaskIndex, scope: Scope) => (scope.focusId && sc
 
 /**
  * Does a card answer the search box? Its title holds what was typed, in any case, or one of its text fields does
- * (`fields`: the board's own). Null when there's no search.
+ * (`fields`: the board's own). Or what was typed is its name: its number ("12", "#12"), or the board's letters and
+ * its number ("web-12", and "web-1" on the way there; `codes`: the letters the board has, or had). Null when there's
+ * no search.
  */
-export function matcher(search?: string, fields?: Iterable<FieldDef>): ((t: Pick<Task, 'title' | 'custom'>) => boolean) | null {
+export function matcher(
+  search?: string,
+  fields?: Iterable<FieldDef>,
+  codes: readonly string[] = [],
+): ((t: Pick<Task, 'title' | 'custom' | 'number'>) => boolean) | null {
   const q = search?.trim().toLowerCase()
   if (!q) return null
   const texts = [...(fields ?? [])].filter((f) => f.type === 'text').map((f) => f.id)
   const holds = (v: unknown) => typeof v === 'string' && v.toLowerCase().includes(q)
-  return (t) => holds(t.title) || (!!t.custom && texts.some((id) => holds(t.custom![id])))
+  const alone = q.match(/^#?(\d{1,9})$/)
+  const lettered = q.match(/^([a-z][a-z0-9]{1,4})-(\d{0,9})$/)
+  const named: ((n: number) => boolean) | null = alone
+    ? (n) => n === Number(alone[1])
+    : lettered && codes.some((c) => c.toLowerCase() === lettered[1])
+      ? (n) => String(n).startsWith(lettered[2])
+      : null
+  return (t) => holds(t.title) || (!!t.custom && texts.some((id) => holds(t.custom![id]))) || (!!named && !!t.number && named(t.number))
 }
 
 /** Step 1 — which tasks are visible: the focused subtree (or everything), then the filter. */
@@ -131,7 +144,7 @@ export function buildView(idx: TaskIndex, cfg: ViewConfig, scope: Scope = {}): B
   const visible = (id: string) => !hidden.has(idx.status.get(id)!)
   const all = filterTasks(idx, cfg, scope)
   const filtered = hidden.size ? all.filter(visible) : all
-  const match = matcher(scope.search, idx.fields.values())
+  const match = matcher(scope.search, idx.fields.values(), idx.codes)
 
   // Step 2 — columns, and which (task → column) each visible card belongs to.
   let columns: Lane[]

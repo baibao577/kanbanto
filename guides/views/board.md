@@ -52,6 +52,7 @@ Click **Display**. These choices are yours alone; they do not change the board f
 
 - **Group subtasks under their parent** is on to begin with: a parent becomes a heading in each list, with its
   subtasks under it. Turn it off and every card stands alone.
+- **Card numbers** shows each card's [name](/everyday/cards#a-card-s-name), like WEB-12, above its title.
 - **Where it belongs** shows the parent's name above each card.
 - **Subtask checklist** and **Progress bar** show a parent's steps and progress on its card.
 - **Card age** adds a small tag to cards nothing has happened on for 3 days or more: the number of days, amber after

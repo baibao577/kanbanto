@@ -27,6 +27,8 @@ Click a card to open it.
 **At the top**
 
 - **Where it is.** The board's name, then the cards this one sits inside, if any. Click one to open it.
+- **Its name,** at the end of that line, like **WEB-12**: the board's letters and the card's own number. Click it to
+  copy a link to the card. See [A card's name](#a-card-s-name).
 - **Set parent** (or **Change parent**). Puts the card inside another card, or takes it out again. A card with no
   parent is called a **project**.
 - **Follow.** Be told about its comments and changes. See [notifications](/people/notifications).
@@ -84,6 +86,32 @@ Good to know:
   in the card's **Time** section.
 - Comments are under their own tab.
 - Everyone on the board can read a card's history. Visitors with the board's public link see its comments only.
+
+## A card's name
+
+Every card has a short name, like **WEB-12**: a few letters for its board, and a number. The first card on a board
+is 1, the next is 2, and so on; subtasks are numbered too. A card keeps its number however often it is renamed or
+moved between lists, and a number is never given to another card, even after its card is deleted.
+
+Use it to say which card you mean: in a call, in a message, or to an [assistant](/ai/connect) ("move WEB-12 to
+Done").
+
+- **See it** at the top of the open card. On the board, turn on **Display → Card numbers** to show it on every
+  card; in the Outline, switch on the **Number** column.
+- **Find a card by it:** type `web-12`, or just `12`, in the board's [search](/everyday/search-and-filters), or
+  `WEB-12` in Search cards.
+- **Copy a link to the card:** click the name at the top of the open card.
+
+- **Mention it in a description or a comment:** type the name (`WEB-12`), or type `/`, choose **Card** and pick
+  the card from the list. Either way the name becomes a link once the text is saved. See
+  [descriptions](/everyday/descriptions#mention-a-card).
+
+A card you have just added shows its name a moment later, once it is saved. A card moved to
+[another board](#the-rest-of-the-card-s-menu) is numbered again there, with that board's letters. Its old name
+and old links still open it, for everyone who can open the board it went to, and say where it is now.
+
+The letters come from the board's name. Its owners can change them in
+[Board settings](/views/board-settings#board-settings).
 
 ## What a card shows on the board
 

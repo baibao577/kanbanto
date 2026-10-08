@@ -281,6 +281,13 @@
       "when": 1791346644185,
       "tag": "0039_profile_picture",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1791435230747,
+      "tag": "0040_card_numbers",
+      "breakpoints": true
     }
   ]
 }

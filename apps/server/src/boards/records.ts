@@ -27,6 +27,8 @@ export const boardFromRow = (r: Row<typeof boards>): Board => ({
   mode: r.mode,
   ...(r.background ? { background: r.background as BoardBackground } : {}),
   ...(r.description ? { description: r.description } : {}),
+  ...(r.code ? { code: r.code } : {}),
+  ...(r.pastCodes.length ? { pastCodes: r.pastCodes } : {}),
   ...toMeta(r),
 })
 
@@ -88,6 +90,7 @@ export function taskFromRow(r: Row<typeof tasks>, uses: ReadonlySet<string>): Ta
     blockedBy: r.blockedBy,
     ...toMeta(r),
   }
+  if (r.number) t.number = r.number
   if (r.description) t.description = r.description
   if (r.priority) t.priority = r.priority
   if (r.archivedAt) t.archivedAt = r.archivedAt.toISOString()
@@ -131,6 +134,7 @@ export const taskToRow = (boardId: string, t: Task): Row<typeof tasks> => ({
   blockedBy: t.blockedBy,
   color: t.color ?? null,
   custom: t.custom && Object.keys(t.custom).length ? t.custom : null,
+  number: t.number ?? null,
   ...fromMeta(t),
 })
 
@@ -139,6 +143,7 @@ export const boardFields = (b: Board) => ({
   mode: b.mode,
   background: b.background ?? null,
   description: b.description ?? null,
+  // (Not its letters: no command or undo changes those. See boards/numbering.ts.)
   ...fromMeta(b),
 })
 

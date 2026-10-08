@@ -120,7 +120,8 @@ export function planMove(
   const lastSibling = (parent ? tIdx.childrenOf.get(parent) : tIdx.roots)?.at(-1)
   for (const id of moving) {
     const t = source.tasks[id]
-    const { rank: _rank, assigneeId, doneAt, custom: held, ...rest } = t
+    // (Its number stays behind: it's this board's. The board it lands on gives it one of its own.)
+    const { rank: _rank, number: _number, assigneeId, doneAt, custom: held, ...rest } = t
     const custom = carryCustom(held, fieldMap, { relink, isMember: (u) => onTarget.has(u) })
     for (const f of source.fields) {
       const went = fieldMap.get(f.id)

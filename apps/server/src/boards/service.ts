@@ -3,7 +3,9 @@ import { newId } from '@kanbanto/model/ids'
 import { emptyBoard, exampleData } from '@kanbanto/model/sample'
 import { isTimeZone } from '@kanbanto/model/dates'
 import { carryCustom, FIELD_LIMITS, linkRef, nameKey, valueText, type CustomValues } from '@kanbanto/model/fields'
+import { indexFor } from '@kanbanto/model/indexer'
 import { remapPreset } from '@kanbanto/model/prefs'
+import { INBOX_CODE, isCode, numbersFor, suggestCode } from '@kanbanto/model/refs'
 import { CLIENT_FIELD, CLIENT_NAME, clientsBoard, EXAMPLE_CLIENTS, starterBoard, type Starter } from '@kanbanto/model/starters'
 import type { BoardData, Meta, Task } from '@kanbanto/model/types'
 import { and, eq, isNull } from 'drizzle-orm'
@@ -13,6 +15,7 @@ import { boardMembers, boardPresets, boards, comments, tasks, workspaces, type V
 import { HttpError } from '../http'
 import { accessOf, workspaceRole } from './access'
 import { adoptFields, applyAdoption, clientLink, fitStarter, replaceBoardFields, type Library } from './fields'
+import { codesTaken, lockSpace } from './numbering'
 import { creations } from './records'
 import { writeChanges } from './store'
 
@@ -32,10 +35,21 @@ function freshMeta(data: BoardData, now: string): BoardData {
 /**
  * Saves a new board with `ownerId` as its owner: in a workspace (shared with everyone in it), or in Personal.
  * `inbox`: as their Inbox, private to them.
+ *
+ * It gets its letters here (the ones it brings, a file's, when no board in that space has them; else ones made from
+ * its name), and its cards their numbers: a card that brings its own keeps it, the rest are counted on in the order
+ * the outline shows them (see model/refs.ts).
  */
 export async function insertBoard(tx: Tx, data: BoardData, ownerId: string, workspaceId: string | null = null, opts: { inbox?: boolean } = {}) {
   const now = new Date()
   const visibility: Visibility = opts.inbox ? 'private' : workspaceId ? 'workspace' : 'invited'
+  const space = workspaceId ? { workspaceId } : { ownerIds: [ownerId] }
+  if (!opts.inbox) await lockSpace(tx, space)
+  const taken = opts.inbox ? null : await codesTaken(tx, space)
+  const brought = data.board.code
+  const code = !taken ? INBOX_CODE : brought && isCode(brought) && !taken.has(brought) ? brought : suggestCode(data.board.name, taken)
+  const { numbers, next } = numbersFor([...Object.values(data.tasks), ...Object.values(data.archived ?? {})], indexFor(data).preorder)
+  const numbered = (t: Task): Task => (t.number === numbers.get(t.id) ? t : { ...t, number: numbers.get(t.id) })
   await tx.insert(boards).values({
     id: data.board.id,
     name: data.board.name,
@@ -49,14 +63,17 @@ export async function insertBoard(tx: Tx, data: BoardData, ownerId: string, work
     updatedAt: now,
     version: data.board.version,
     ...(opts.inbox && { inboxOf: ownerId }),
+    code,
+    nextNumber: next,
   })
   await tx.insert(boardMembers).values({ boardId: data.board.id, userId: ownerId, role: 'owner', createdAt: now, updatedAt: now, version: 1 })
   // Cards that arrive finished (the example board, an imported one) were done by their last change, as far as we know.
   const doneLists = new Set(data.columns.filter((c) => c.category === 'done').map((c) => c.id))
   const tasks = Object.fromEntries(
-    Object.values(data.tasks).map((t) => [t.id, doneLists.has(t.status) && !t.doneAt ? { ...t, doneAt: t.activeAt ?? t.updatedAt } : t]),
+    Object.values(data.tasks).map((t) => [t.id, numbered(doneLists.has(t.status) && !t.doneAt ? { ...t, doneAt: t.activeAt ?? t.updatedAt } : t)]),
   )
-  await writeChanges(tx, data.board.id, creations({ ...data, tasks }), null)
+  const archived = data.archived && Object.fromEntries(Object.values(data.archived).map((t) => [t.id, numbered(t)]))
+  await writeChanges(tx, data.board.id, creations({ ...data, tasks, ...(archived && { archived }) }), null)
 }
 
 export type Template = 'empty' | 'example'

@@ -110,7 +110,7 @@ export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCh
 }
 
 function General() {
-  const { data, run } = useBoard()
+  const { data, run, access } = useBoard()
   return (
     <Section title="General" hint="What everyone on the board sees.">
       <Card>
@@ -145,6 +145,9 @@ function General() {
             }}
           />
         </Row>
+        {data.board.code && (
+          <Letters boardId={data.board.id} code={data.board.code} canChange={access.role === 'owner' && !access.inbox} inbox={!!access.inbox} />
+        )}
       </Card>
 
       <Card title="When a task has subtasks, its status…">
@@ -378,6 +381,64 @@ function Card({ title, children }: { title?: string; children: ReactNode }) {
       {title && <p className="border-b bg-muted/40 px-4 py-2 text-xs font-medium text-muted-foreground">{title}</p>}
       <div className="divide-y">{children}</div>
     </div>
+  )
+}
+
+/**
+ * The board's letters: what its cards' names start with (WEB in WEB-12). Its owners change them; the server says no
+ * when another board in the same place has them, and that's shown here. Saved when the field is left, like the
+ * others. (No command carries this change: the board is read again once it's made, and shows the new letters.)
+ */
+function Letters({ boardId, code, canChange, inbox }: { boardId: string; code: string; canChange: boolean; inbox: boolean }) {
+  const [busy, setBusy] = useState(false)
+  // (Counted up to put the field back to the board's letters when a change is refused.)
+  const [round, setRound] = useState(0)
+  const save = async (typed: string) => {
+    const next = typed.trim().toUpperCase()
+    if (!next || next === code) return setRound((n) => n + 1)
+    setBusy(true)
+    try {
+      await api('PUT', `/boards/${encodeURIComponent(boardId)}/code`, { code: next })
+      toast(`This board’s cards are now ${next}-1, ${next}-2…`)
+    } catch (e) {
+      toast.error(errorMessage(e))
+      setRound((n) => n + 1)
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <Row
+      label="Letters for card numbers"
+      htmlFor="board-letters"
+      hint={
+        inbox
+          ? `Cards in your Inbox are ${code}-1, ${code}-2…`
+          : canChange
+            ? `This board’s cards are ${code}-1, ${code}-2… Change the letters and every card is renamed at once. A number written with the old letters still finds its card.`
+            : `This board’s cards are ${code}-1, ${code}-2… Only the board’s owners can change the letters.`
+      }
+    >
+      <Input
+        id="board-letters"
+        key={`${code}:${round}`}
+        defaultValue={code}
+        maxLength={5}
+        disabled={!canChange || busy}
+        autoCapitalize="characters"
+        autoComplete="off"
+        spellCheck={false}
+        aria-describedby="board-letters-rule"
+        className="w-28 font-mono uppercase"
+        onBlur={(e) => void save(e.target.value)}
+        onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
+      />
+      {canChange && (
+        <p id="board-letters-rule" className="text-xs text-muted-foreground">
+          2 to 5 letters or digits, starting with a letter.
+        </p>
+      )}
+    </Row>
   )
 }
 

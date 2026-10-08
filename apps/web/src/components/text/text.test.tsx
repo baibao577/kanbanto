@@ -72,6 +72,63 @@ describe('showing Markdown', () => {
     expect(out).toContain('&lt;script&gt;')
     expect(out).toContain('href="https://evil.example/t.png"')
   })
+  describe('a card’s name in the text', () => {
+    const cards = {
+      boards: new Map([
+        ['WEB', 'b1'],
+        ['SITE', 'b1'],
+        ['SHOP', 'b2'],
+      ]),
+      here: 'b1',
+      card: (n: number) => (n === 12 ? { id: 't12', title: 'Fix the footer' } : undefined),
+      open: () => {},
+    }
+    it('is a link to the card: on this board straight to it, elsewhere by its number', () => {
+      const out = html('See WEB-12, then SHOP-3 and WEB-99.', { cards })
+      expect(out).toContain('<a href="#/b/b1?task=t12" title="Fix the footer"')
+      expect(out).toMatch(/<a href="#\/b\/b2\?n=3"[^>]*>SHOP-3<\/a>/)
+      // (A number this board hasn't got in memory: archived, moved away, or never a card. Found when followed.)
+      expect(out).toMatch(/<a href="#\/b\/b1\?n=99"[^>]*>WEB-99<\/a>/)
+    })
+    it('the letters a board had before still name its cards', () => {
+      expect(html('SITE-12', { cards })).toMatch(/<a href="#\/b\/b1\?task=t12"[^>]*>SITE-12<\/a>/)
+    })
+    it('says exactly what was typed, so a click to edit lands on the same character', () => {
+      const text = 'Before WEB-12 after'
+      const out = html(text, { cards })
+      expect(out.replace(/<[^>]+>/g, '')).toBe(text)
+    })
+    it('only letters of a board the reader can open, written as a name', () => {
+      for (const text of [
+        'UTF-8 and COVID-19',
+        'web-12',
+        'WEB-012',
+        'WEB-0',
+        'XWEB-12',
+        'WEB-12x',
+        'WEB-12-3',
+        'pre-WEB-12',
+        'WEB12',
+        'WEB-1234567890',
+      ])
+        expect(html(text, { cards }), text).not.toContain('<a ')
+      expect(html('(WEB-12), WEB-12. "WEB-12"', { cards }).match(/<a /g)).toHaveLength(3)
+    })
+    it('not in code, and not inside a link', () => {
+      expect(html('`WEB-12`', { cards })).not.toContain('<a ')
+      expect(html('```\nWEB-12\n```', { cards })).not.toContain('<a ')
+      const linked = html('[read WEB-12 first](https://example.com/x)', { cards })
+      expect(linked.match(/<a /g)).toHaveLength(1)
+      expect(linked).toContain('href="https://example.com/x"')
+      expect(html('https://example.com/WEB-12', { cards })).not.toContain('#/b/b1')
+      // (Two names with a stroke between them are two cards.)
+      expect(html('WEB-11/WEB-12', { cards }).match(/<a /g)).toHaveLength(2)
+    })
+    it('is plain text where no boards are known', () => {
+      expect(html('WEB-12')).not.toContain('<a ')
+      expect(html('WEB-12', { cards: { ...cards, boards: new Map() } })).not.toContain('<a ')
+    })
+  })
   it('lists headings for the contents', () => {
     expect(headingsOf('# One\n\ntext\n\n## Two **b**')).toEqual([
       { id: 'h-0', depth: 1, text: 'One' },

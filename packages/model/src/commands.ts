@@ -159,7 +159,8 @@ function run(data: BoardData, cmd: Command, ctx: Context): Change[] {
   switch (cmd.type) {
     case 'task.create': {
       const id = cmd.id ?? ctx.newId()
-      if (data.tasks[id]) reject('A task with that id already exists.')
+      // (An archived card's id counts too: saved, the new card would take that card's place.)
+      if (data.tasks[id] || data.archived?.[id]) reject('A task with that id already exists.')
       if (cmd.parentId && !data.tasks[cmd.parentId]) reject('The parent task no longer exists.')
       const fields = cleanFields(data, id, { status: ctx.idx.firstOf.todo, ...cmd.fields })
       const order = positionBetween(lastSibling(data, cmd.parentId, id)?.order, null)
@@ -469,6 +470,12 @@ function run(data: BoardData, cmd: Command, ctx: Context): Change[] {
   return out
 }
 
+/** Makes `record[key]` what it is in `from` (gone, when it's gone there). */
+function keep<T extends object, K extends keyof T>(record: T, from: T, key: K) {
+  if (from[key] === undefined) delete record[key]
+  else record[key] = from[key]
+}
+
 /**
  * The changes that put records back, checked so the board stays whole: parents, lists and labels that
  * the restored records point at must exist, and nothing may be left pointing at a record that's removed.
@@ -482,6 +489,13 @@ function restore(data: BoardData, changes: Change[], now: string): Change[] {
     if ((cur?.version ?? null) !== (c.before?.version ?? null)) reject('Someone changed this in the meantime, so it can’t be undone.')
     // A record that's gone keeps the version it's given (the undo already counted the restore as a new version).
     const after = c.after && { ...c.after, id: c.id, updatedAt: now, version: cur ? cur.version + 1 : c.after.version }
+    // What no undo changes: a card's number and a board's letters are as they are now, whatever the record being put
+    // back says (it may have been kept from before there were any). See refs.ts.
+    if (after && cur && c.entity === 'task') keep(after as Task, cur as Task, 'number')
+    if (after && cur && c.entity === 'board') {
+      keep(after as Board, cur as Board, 'code')
+      keep(after as Board, cur as Board, 'pastCodes')
+    }
     out.push({ entity: c.entity, id: c.id, before: cur, after } as Change)
   }
   const next = applyChanges(data, out)

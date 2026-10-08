@@ -5,6 +5,7 @@ import { toast } from 'sonner'
 import type { AttachmentView, CommentView } from '@kanbanto/model/api'
 import { api, errorMessage } from '@/api/client'
 import { useBoard } from '@/app/board-context'
+import { useCardRefs, useCardSource } from '@/app/card-refs'
 import { useAuth } from '@/app/use-auth'
 import { Avatar } from '@/components/common/bits'
 import { Button } from '@/components/ui/button'
@@ -40,6 +41,7 @@ export function CommentsSection({
   bare?: boolean
 }) {
   const { data, canComment, access, onActivity } = useBoard()
+  const cardRefs = useCardRefs()
   const { user } = useAuth()
   const boardId = data.board.id
   const [items, setItems] = useState<CommentView[]>([])
@@ -114,7 +116,7 @@ export function CommentsSection({
             <>
               <div className="mt-1 rounded-lg bg-muted/60">
                 <Folded height={220}>
-                  <Markdown text={c.body} mentions={data.members.filter((m) => c.mentions.includes(m.id))} files={cardFiles.files} />
+                  <Markdown text={c.body} mentions={data.members.filter((m) => c.mentions.includes(m.id))} files={cardFiles.files} cards={cardRefs} />
                 </Folded>
               </div>
               <FileList files={c.attachments} />
@@ -145,7 +147,7 @@ export function CommentsSection({
         members={data.members}
         files={cardFiles.files}
         onSubmit={post}
-        placeholder="Write a comment… @ to mention someone, # to point to a file."
+        placeholder="Write a comment… @ to mention someone, # to point to a file, / for a card or a list."
         submitLabel="Comment"
       />
     </div>
@@ -269,6 +271,7 @@ function Composer({
   const [opened, setOpened] = useState(!!initial)
   const [round, setRound] = useState(0)
   const input = useRef<HTMLInputElement>(null)
+  const cardSource = useCardSource()
 
   const attach = async (list: File[]) => {
     for (const f of list) {
@@ -327,6 +330,9 @@ function Composer({
             onFiles={(fs) => void attach(fs)}
             onSubmit={() => void submit()}
             onEscape={onCancel}
+            // "/": the short menu (lists, a quote, code), and a card to mention.
+            inserts="light"
+            cards={cardSource}
             autoFocus
             placeholder={placeholder}
             aria-label={initial ? 'Edit comment' : 'Write a comment'}
