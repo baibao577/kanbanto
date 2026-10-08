@@ -897,6 +897,8 @@ export type LiveMessage =
   | { type: 'changes'; seq: number; changes: Change[]; mutationId?: string }
   /** Something outside the board data changed (people, sharing): fetch the board again. */
   | { type: 'reload' }
+  /** The board's card templates changed (one was saved, renamed or removed): ask for them again. */
+  | { type: 'templates' }
   /** You can no longer open this board (removed, or it became private). */
   | { type: 'access-lost' }
   /** Your session ended (password changed elsewhere, account turned off): sign in again. */

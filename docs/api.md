@@ -88,6 +88,14 @@ curl -X POST https://kanbanto.example.com/api/boards/<board id>/mutations \
   - **In a comment:** upload with one more header, `X-Attach-To: comment` (anyone who can comment may; the file is
     yours alone until it's posted), then post the comment with its id:
     `POST …/tasks/<task id>/comments` with `{"body": "The screenshot", "attachments": ["<file id>"]}`.
+  - **Templates.** `GET /api/boards/<id>/templates` lists a board's card templates (a card with its subtasks,
+    saved to start the next one from: `cards`, the first being the top card). Save one with
+    `POST /api/boards/<id>/templates` and `{"taskId": "<a task>", "name": "New client"}` (`"replace": "<template
+    id>"` saves over one), rename with `PATCH …/templates/<id>`, remove with `DELETE`. To start a card from one,
+    send a `tasks.import` command with `"template": "<its name>"` and the cards under new ids; nobody is assigned
+    and no card has a date. A board's shape is saved with `POST /api/boards/<id>/template` (owners; it goes to the
+    board's workspace, or to you), listed with `GET /api/board-templates` (`?workspace=<id>` for a workspace's),
+    and used with `POST /api/boards` and `"templateId"`.
   - **Reactions:** a comment has `reactions`, a list of `{"emoji", "by": [{"id", "name"}]}`. Add yours with
     `PUT /api/boards/<id>/comments/<comment id>/reactions` and `{"emoji": "👍", "on": true}`, take it back with
     `"on": false`. The emoji is one of 👍 ❤️ 🎉 😄 👀 ✅; anyone who can comment may react. The comment's author gets

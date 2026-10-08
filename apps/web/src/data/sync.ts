@@ -105,6 +105,7 @@ export class BoardSync {
   private listeners = new Set<() => void>()
   private eventListeners = new Set<(e: SyncEvent) => void>()
   private activityListeners = new Set<(m: TaskActivity) => void>()
+  private templateListeners = new Set<() => void>()
 
   constructor(boardId: string, snap: BoardSnapshot) {
     this.boardId = boardId
@@ -139,6 +140,11 @@ export class BoardSync {
   onActivity(l: (m: TaskActivity) => void) {
     this.activityListeners.add(l)
     return () => void this.activityListeners.delete(l)
+  }
+  /** The board's card templates changed (someone saved, renamed or removed one): they're to be asked for again. */
+  onTemplates(l: () => void) {
+    this.templateListeners.add(l)
+    return () => void this.templateListeners.delete(l)
   }
   onEvent(l: (e: SyncEvent) => void) {
     this.eventListeners.add(l)
@@ -340,6 +346,9 @@ export class BoardSync {
       case 'attachment':
         this.bumpCount(m)
         this.activityListeners.forEach((l) => l(m))
+        break
+      case 'templates':
+        this.templateListeners.forEach((l) => l())
         break
       case 'time':
         // The card's new total, as the server counts it.

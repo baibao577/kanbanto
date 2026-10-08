@@ -32,6 +32,7 @@ import { tone } from '@kanbanto/model/colors'
 import { ancestorsOf, statusCol } from '@kanbanto/model/indexer'
 import { filterCount, matchesFilter } from '@kanbanto/model/table'
 import type { TaskFields } from '@kanbanto/model/commands'
+import type { CardTemplate } from '@kanbanto/model/templates'
 import { listOrderKey, type StatusColumn } from '@kanbanto/model/types'
 import { buildView, cellKey, groupCell, groupsSubtasks, NO_ROW, UNASSIGNED, type Lane } from '@kanbanto/model/view'
 import { ArchiveOlderDialog } from './ArchiveOlderDialog'
@@ -114,7 +115,8 @@ export function BoardView({ search }: { search: string }) {
 }
 
 function Board({ search, onRows }: { search: string; onRows: (keys: string[]) => void }) {
-  const { data, prefs, setPrefs, idx, run, openTask, createTask, focus, readOnly, counts, moveToBoard, logTime } = useBoard()
+  const { data, prefs, setPrefs, idx, run, openTask, createTask, focus, readOnly, counts, moveToBoard, logTime, templates, addFromTemplate } =
+    useBoard()
   const me = useAuth().user?.id
   // Minutes logged on each card, with its subtasks'.
   const timeOf = useMemo(() => rollUp(counts.time, idx.childrenOf), [counts.time, idx.childrenOf])
@@ -276,6 +278,12 @@ function Board({ search, onRows }: { search: string; onRows: (keys: string[]) =>
   const addIn = (row: string, col: string) => (title: string, extra?: TaskFields) => {
     const { parentId, fields, rankAfter } = newCardIn(rules, prefs.focusId, row, col, title)
     createTask(parentId, { ...fields, ...extra }, { rankAfter })
+  }
+  /** A card started from a template in a cell: the card takes the cell's place, as a typed one does, and brings its subtasks. */
+  const templateIn = (row: string, col: string) => (template: CardTemplate) => {
+    const { parentId, fields } = newCardIn(rules, prefs.focusId, row, col, '')
+    const { title: _none, status, ...top } = fields
+    addFromTemplate(template, { status, parentId, top })
   }
 
   const jumpToRow = (key: string) => {
@@ -731,7 +739,7 @@ function Board({ search, onRows }: { search: string; onRows: (keys: string[]) =>
                     {renderCards(NO_ROW, c.key)}
                   </div>
                   <div className="p-1.5 pt-1">
-                    <QuickAdd dates onAdd={addIn(NO_ROW, c.key)} />
+                    <QuickAdd dates onAdd={addIn(NO_ROW, c.key)} templates={templates} onTemplate={templateIn(NO_ROW, c.key)} />
                   </div>
                 </section>
               )
@@ -819,7 +827,7 @@ function Board({ search, onRows }: { search: string; onRows: (keys: string[]) =>
                         >
                           {renderCards(r.key, c.key)}
                           <div className="-mx-0.5 mt-auto -mb-0.5">
-                            <QuickAdd dates onAdd={addIn(r.key, c.key)} />
+                            <QuickAdd dates onAdd={addIn(r.key, c.key)} templates={templates} onTemplate={templateIn(r.key, c.key)} />
                           </div>
                         </div>
                       ),

@@ -24,7 +24,8 @@ Done." The assistant gives cards' names in its answers too, so you can tell whic
 
 It is told the board's [limits](/views/limits) and the room left under each: "Is there room in Doing?", "Who is over
 their limit?", "Pick up the next card, unless Doing is full." It is told the board's rules that
-[tell people](/views/telling-rules) too: "Who hears when a card arrives in Quoted?"
+[tell people](/views/telling-rules) too: "Who hears when a card arrives in Quoted?" And its
+[card templates](/everyday/templates): "Start a New client card for Acme in To Do."
 
 ## Look back
 

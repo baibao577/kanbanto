@@ -297,6 +297,15 @@ The app uses hash routing, so any static host or proxy works without rewrite rul
   Boards a person can no longer open have their events removed (`calendar_events` has no foreign key to the board,
   so a deleted board's events can still be found). Failures back off per connection and never give up; a refused
   connection waits to be connected again.
+- **Templates** (`model/templates.ts`) are copies taken when saved, kept apart from boards so they stay out of
+  every view, count, search and notification. A card template is a card with its subtree (`card_templates`, with
+  its board; `templateOf` says what is kept: what a card is, and never who had it or when); starting a card from
+  one is a `tasks.import` command with `template` set (`fromTemplate`), so it is one change with one undo, the log
+  says where the card came from, and the board's rules see it arrive. A board template is a board's shape
+  (`board_templates`, a workspace's or a person's: lists, labels, fields, rules, card templates, never cards or
+  people); a board is made from one the way a starter is (`createFromTemplate`: its fields are fitted into the
+  library of where it is made, its rules adopted as a file's are). Open copies of a board hear that its card
+  templates changed over the live connection (`templates`) and ask for them again.
 - **A board as a file** is made in the browser, from the board it has plus what it asks for (its archived cards).
   Two kinds. The whole board (`model/transfer.ts`: `exportFile`, read back by `readBoardFile` into a new board),
   which can carry what the board doesn't hold: its comments and logged time (`BoardExtras`, from

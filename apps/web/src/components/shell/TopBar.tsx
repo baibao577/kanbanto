@@ -26,6 +26,7 @@ import { MoreMenu, type MoreMenuProps } from './MoreMenu'
 import { LogoMark, LogoTile } from '@/components/common/Logo'
 import { backgroundOf } from '@kanbanto/model/colors'
 import { VIEW_TABS } from '@/components/views'
+import { TemplateMenu } from '@/components/templates/TemplateMenu'
 
 /** An icon in the bar that says what it is when pointed at (the bell and the Inbox tray look the same). */
 const ICON_BUTTON = 'grid size-8 shrink-0 place-items-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground'
@@ -39,7 +40,7 @@ interface Props extends MoreMenuProps {
 }
 
 export function TopBar({ search, onSearch, onNewTask, connection, unsaved, ...menu }: Props) {
-  const { data, prefs, setPrefs, run, readOnly, access, openShare } = useBoard()
+  const { data, prefs, setPrefs, run, readOnly, access, openShare, templates, addFromTemplate } = useBoard()
   const { user } = useAuth()
   const tile = backgroundOf(data.board.background)
   // Visitors of a public board aren't on it, so there's nothing for them to share or see. Your Inbox is yours alone.
@@ -133,17 +134,21 @@ export function TopBar({ search, onSearch, onNewTask, connection, unsaved, ...me
           <MoreMenu {...menu} canShare={canShare} />
         </div>
         {!readOnly && (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button size="sm" onClick={onNewTask} className="gap-1.5">
-                <Plus weight="bold" />
-                <span className="hidden sm:inline">New task</span>
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>
-              New task <Kbd>N</Kbd>
-            </TooltipContent>
-          </Tooltip>
+          <span className="flex">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button size="sm" onClick={onNewTask} className={cn('gap-1.5', templates.length > 0 && 'rounded-r-none')}>
+                  <Plus weight="bold" />
+                  <span className="hidden sm:inline">New task</span>
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                New task <Kbd>N</Kbd>
+              </TooltipContent>
+            </Tooltip>
+            {/* On a board with card templates: the arrow starts the new task from one, and opens it. */}
+            <TemplateMenu templates={templates} align="end" onPick={(t) => addFromTemplate(t, undefined, { open: true })} />
+          </span>
         )}
         {user ? (
           <>

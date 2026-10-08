@@ -56,6 +56,18 @@ export function describeAllChanges(before: BoardData, changes: Change[], command
   if (command?.type === 'tasks.import') {
     const n = changes.filter((c) => c.entity === 'task' && !c.before).length
     const lists = changes.flatMap((c) => (c.entity === 'column' && c.after ? [q((c.after as { name: string }).name)] : []))
+    // One card with its steps, started from a card template: said as the card it is.
+    const top = changes.find((c) => c.entity === 'task' && !c.before && c.after)
+    if (command.template !== undefined && top) {
+      const steps = n - 1
+      return [
+        {
+          taskId: top.id,
+          text: `added ${q((top.after as Task).title)} from the template ${q(command.template)}${steps ? `, with ${steps} ${steps === 1 ? 'subtask' : 'subtasks'}` : ''}`,
+          own: `added it from the template ${q(command.template)}`,
+        },
+      ]
+    }
     return [
       ...(n ? [{ text: `imported ${n.toLocaleString('en')} ${n === 1 ? 'card' : 'cards'}` }] : []),
       ...(lists.length ? [{ text: `added the ${lists.length === 1 ? 'list' : 'lists'} ${lists.join(', ')}` }] : []),

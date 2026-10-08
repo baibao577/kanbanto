@@ -4,6 +4,7 @@ import type { TaskIndex } from '@kanbanto/model/indexer'
 import type { Change } from '@kanbanto/model/records'
 import type { PrefsAction, ViewPrefs } from '@kanbanto/model/prefs'
 import type { BoardAccess, TaskCounts } from '@kanbanto/model/api'
+import type { CardTemplate } from '@kanbanto/model/templates'
 import type { LinkStore } from '@/data/links'
 import type { TaskActivity } from '@/data/sync'
 import type { BoardData } from '@kanbanto/model/types'
@@ -48,6 +49,18 @@ export interface BoardContextValue {
     parentId: string | null | undefined,
     fields: TaskFields & { title: string },
     opts?: { open?: boolean; rankAfter?: string },
+  ) => string | null
+  /** The board's card templates (see model templates.ts), by name. Kept up to date as people save and remove them. */
+  templates: CardTemplate[]
+  /**
+   * Adds a card from one of them, with its subtasks, as one change: in `status` (left out: the first "not started"
+   * list), under `parentId` (left out: the focused task), with what else `top` says about where it was put. Says so,
+   * with Undo. Returns the new card's id, or null if it was refused.
+   */
+  addFromTemplate: (
+    template: CardTemplate,
+    to?: { status?: string; parentId?: string | null; top?: TaskFields },
+    opts?: { open?: boolean },
   ) => string | null
   /** Show only this task's subtasks (or everything, with no id). */
   focus: (id?: string) => void

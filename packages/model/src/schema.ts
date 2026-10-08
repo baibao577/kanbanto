@@ -260,6 +260,7 @@ export const CommandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('tasks.clearField'), fieldId: id }),
   z.object({
     type: z.literal('tasks.import'),
+    template: text(100).optional(),
     lists: z
       .array(z.object({ id, name: text(200), category }))
       .max(200)

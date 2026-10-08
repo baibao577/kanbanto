@@ -5,6 +5,27 @@ then `git pull` (or download the new release) and `docker compose up -d --build`
 
 ## Unreleased
 
+- **Templates for cards and boards.** Start the next card, or the next board, from one you saved.
+
+  A **card template** is a card with all its subtasks, for work that repeats with the same steps. Open a card,
+  choose **⋯ → Save as template…**, and name it. On a board that has templates, **Add card** and **New task** get
+  a small arrow that lists them: pick one and the card arrives in that list with its subtasks, as one change that
+  one Undo takes back. A template keeps titles, descriptions, labels, priority, the board's own fields and which
+  steps wait on which. It leaves out who a card was assigned to, dates, comments, files and logged time, so a card
+  from a template starts with nobody assigned. Card templates belong to their board: everyone on it uses the same
+  set, and the people who can edit save, rename and remove them (**Board settings → Templates**).
+
+  A **board template** keeps a board's shape: its lists, labels, fields, rules and card templates, and never its
+  cards or its people. A board's owners save one from the board's **⋯** menu. It goes where the board lives: a
+  workspace's board gives the workspace a template for everyone in it, a Personal board gives you one of your
+  own. Templates are listed under **Start with** when a board is made, after the starter boards.
+
+  A template is a copy taken when it is saved. To change one, save over it (**Replace**). What was made from a
+  template stays as it is when the template changes or goes.
+
+  For assistants: `get_board` lists a board's card templates, and `create_tasks` takes `from_template`. For apps:
+  see Templates in the API docs. The database gains two tables (migration 0045, which only adds).
+
 - **Export a board as a spreadsheet, and a fuller whole-board file.** **⋯ → Export board…** now asks which kind of
   file. **A spreadsheet (.csv)** has one row for each card: its number, title, parent, list, assignee, priority,
   dates and labels, each of the board's own fields, the description, the time logged on it in hours, and when it

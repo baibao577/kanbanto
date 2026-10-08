@@ -8,6 +8,7 @@ import {
   GearSix,
   LockSimple,
   PaintBucket,
+  Stamp,
   Table,
   UsersThree,
 } from '@phosphor-icons/react'
@@ -20,6 +21,7 @@ import { navigate } from '@/app/router'
 import { BackgroundSwatches } from '@/components/common/bits'
 import { ConfirmDialog, type ConfirmRequest } from '@/components/common/ConfirmDialog'
 import { moveBoardTo } from '@/data/moveBoard'
+import { SaveBoardTemplateDialog } from '@/components/templates/SaveTemplateDialog'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -48,6 +50,7 @@ export function MoreMenu({ canShare, onOpenSettings, onOpenStats, onExport, onIm
   const owner = access.role === 'owner'
   // How many archived cards it has: asked when the menu opens (they aren't sent with the board).
   const [archived, setArchived] = useState(0)
+  const [templating, setTemplating] = useState(false)
   const countArchived = () =>
     access.via !== 'public' &&
     api<CardsPage>('GET', `/cards?state=archived&board=${encodeURIComponent(data.board.id)}&limit=1`).then(
@@ -156,8 +159,15 @@ export function MoreMenu({ canShare, onOpenSettings, onOpenStats, onExport, onIm
           <DropdownMenuItem onSelect={onExport}>
             <DownloadSimple /> Export board…
           </DropdownMenuItem>
+          {/* Its shape, to make the next board from (never its cards). Not the Inbox: there is only one. */}
+          {owner && !access.inbox && (
+            <DropdownMenuItem onSelect={() => setTemplating(true)}>
+              <Stamp /> Save as template…
+            </DropdownMenuItem>
+          )}
         </DropdownMenuContent>
       </DropdownMenu>
+      {templating && <SaveBoardTemplateDialog onClose={() => setTemplating(false)} />}
     </>
   )
 }

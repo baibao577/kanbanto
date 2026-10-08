@@ -423,7 +423,8 @@ export const commentRoutes: FastifyPluginAsync = async (app) => {
       .leftJoin(tasks, and(eq(tasks.boardId, notifications.boardId), eq(tasks.id, notifications.taskId)))
       .leftJoin(comments, eq(comments.id, notifications.commentId))
       .where(eq(notifications.userId, me.id))
-      .orderBy(desc(notifications.createdAt))
+      // (Lines written in the same moment, as two rules' are for one change, keep the order they were written in.)
+      .orderBy(desc(notifications.createdAt), desc(notifications.id))
       .limit(30)
     const [{ unread }] = await app.db
       .select({ unread: sql<number>`count(*)::int` })

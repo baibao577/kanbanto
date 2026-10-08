@@ -6,6 +6,8 @@ import { TitleDateChip } from '@/components/text/TitleDate'
 import { useTitleDate } from '@/components/text/useTitleDate'
 import { cn } from '@/lib/utils'
 import type { TaskFields } from '@kanbanto/model/commands'
+import type { CardTemplate } from '@kanbanto/model/templates'
+import { TemplateMenu } from '@/components/templates/TemplateMenu'
 
 interface Props {
   /**
@@ -28,6 +30,9 @@ interface Props {
    * a card here"). Also when it's there from the start: the key was pressed before this was on the page.
    */
   focusSignal?: number
+  /** The board's card templates: an arrow on the button starts the card from one of them (`onTemplate`) in place of typing it. */
+  templates?: readonly CardTemplate[]
+  onTemplate?: (template: CardTemplate) => void
 }
 
 /** "+ Add a card" that turns into an inline field. */
@@ -41,9 +46,13 @@ export function QuickAdd({
   onCanvas,
   dates,
   focusSignal = 0,
+  templates,
+  onTemplate,
 }: Props) {
   const [open, setOpen] = useState(false)
   const [value, setValue] = useState('')
+  // The list of templates is open: the field has lost the cursor to it, and isn't closed for that.
+  const picking = useRef(false)
   const readOnly = useReadOnly()
   const field = useRef<HTMLTextAreaElement>(null)
   const [signal, setSignal] = useState(0)
@@ -117,16 +126,37 @@ export function QuickAdd({
           placeholder={placeholder}
           onChange={(e) => setValue(e.target.value)}
           onKeyDown={keys}
-          onBlur={() => !value.trim() && close()}
+          onBlur={() => !value.trim() && !picking.current && close()}
           className={fieldClass}
         />
       )}
       {dates && <TitleDateChip state={date} />}
       <div className="flex items-center gap-1">
         {/* mousedown keeps the field from blurring (and closing) before the click lands */}
-        <Button size="sm" onMouseDown={(e) => e.preventDefault()} onClick={submit}>
-          {submitLabel}
-        </Button>
+        <span className="flex">
+          <Button
+            size="sm"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={submit}
+            className={cn(templates?.length && onTemplate && 'rounded-r-none')}
+          >
+            {submitLabel}
+          </Button>
+          {templates && onTemplate && (
+            <TemplateMenu
+              templates={templates}
+              onOpenChange={(o) => {
+                picking.current = o
+                // (Closed without choosing: back to the field, which closes again when left empty.)
+                if (!o) requestAnimationFrame(() => field.current?.focus())
+              }}
+              onPick={(t) => {
+                onTemplate(t)
+                close()
+              }}
+            />
+          )}
+        </span>
         <Button size="icon" variant="ghost" className="size-8" onClick={close} aria-label="Cancel">
           <X />
         </Button>

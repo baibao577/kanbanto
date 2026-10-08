@@ -2159,6 +2159,82 @@ await shot('tell-4-switch', async () => {
   return around([list.getByText('When this, tell someone'), row, list.locator('li').filter({ hasText: 'Finished' })], 24)
 })
 
+// Templates: a card with its steps saved to start the next one from, and the board's shape for the next board.
+/** A card worth keeping as a template, and the template made from it (once). */
+const templateOnce = async () => {
+  const have = (await api(ann, 'GET', `/boards/${board}/templates`)).templates
+  if (!(await boardNow()).tasks.page) {
+    await add('page', 'New page', null, 'todo', { labels: ['design'], priority: 'medium', description: 'Rename this card to the page it is for.' })
+    for (const [i, title] of ['Write the copy', 'Design it', 'Build it', 'Check it on a phone'].entries())
+      await add(`page${i}`, title, 'page', 'todo')
+  }
+  if (!have.some((t) => t.name === 'New page')) await api(ann, 'POST', `/boards/${board}/templates`, { taskId: 'page', name: 'New page' })
+  if (!have.some((t) => t.name === 'Launch day')) await api(ann, 'POST', `/boards/${board}/templates`, { taskId: 'announce', name: 'Launch day' })
+}
+/** The region around some boxes measured earlier (an open menu hides the page behind it from being asked). */
+const regionOf = (boxes, pad = 24) => {
+  const view = page.viewportSize()
+  const x = Math.max(0, Math.min(...boxes.map((b) => b.x)) - pad)
+  const y = Math.max(0, Math.min(...boxes.map((b) => b.y)) - pad)
+  const right = Math.min(view.width, Math.max(...boxes.map((b) => b.x + b.width)) + pad)
+  const bottom = Math.min(view.height, Math.max(...boxes.map((b) => b.y + b.height)) + pad)
+  return { clip: { x, y, width: right - x, height: bottom - y } }
+}
+await shot('template-1-save', async () => {
+  await templateOnce()
+  const card = await openCard('page')
+  const head = [await card.getByRole('navigation').boundingBox(), await card.getByLabel('Title').boundingBox()]
+  await card.getByRole('button', { name: 'More to do with this card' }).click()
+  await page.getByRole('menu').waitFor()
+  await ring(page.getByRole('menuitem', { name: 'Save as template…' }))
+  return regionOf([...head, await page.getByRole('menu').boundingBox()])
+})
+await shot('template-2-add', async () => {
+  await templateOnce()
+  await openBoard()
+  const list = page.locator('[data-list-id="todo"]').first()
+  await list.getByRole('button', { name: 'Add a card' }).click()
+  const arrow = list.getByRole('button', { name: 'From a template' })
+  const box = [
+    await list.getByRole('button', { name: 'Add card' }).boundingBox(),
+    await arrow.boundingBox(),
+    await list.locator('textarea').boundingBox(),
+  ]
+  await ring(arrow)
+  await arrow.click()
+  await page.getByRole('menu').waitFor()
+  await page.waitForTimeout(300)
+  return regionOf([...box, await page.getByRole('menu').boundingBox()], 32)
+})
+await shot('template-3-settings', async () => {
+  await templateOnce()
+  await openBoard()
+  await page.getByRole('button', { name: 'More' }).click()
+  await page.getByRole('menuitem', { name: 'Board settings' }).click()
+  await page.getByRole('dialog').getByRole('button', { name: 'Templates', exact: true }).click()
+  await page.getByRole('dialog').getByText('New page', { exact: true }).waitFor()
+  await page.waitForTimeout(400)
+  return page.getByRole('dialog')
+})
+await shot('template-4-board', async () => {
+  await templateOnce()
+  const mine = (await api(ann, 'GET', '/board-templates')).templates
+  if (!mine.some((t) => t.name === 'A website')) await api(ann, 'POST', `/boards/${board}/template`, { name: 'A website' })
+  // (A taller window: the starters, then the templates under them.)
+  await page.setViewportSize({ width: 1360, height: 1180 })
+  await page.goto(`${SITE}/#/`)
+  await page.reload()
+  await page.getByRole('button', { name: 'Create board' }).first().click()
+  const box = page.getByRole('dialog')
+  await box.getByText('Your templates').waitFor()
+  await box.getByRole('radio', { name: /A website/ }).click()
+  await box.locator('#new-board-name').fill('Spring campaign site')
+  await page.waitForTimeout(400)
+  await ring(box.getByRole('radio', { name: /A website/ }).locator('xpath=ancestor::div[1]'))
+  return box
+})
+await page.setViewportSize({ width: 1360, height: 860 })
+
 // The two kinds of file a board can be saved as.
 await shot('export-1-choice', async () => {
   await openBoard()

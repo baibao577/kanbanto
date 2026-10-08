@@ -2,6 +2,7 @@ import {
   Archive,
   Desktop,
   Gauge,
+  Stamp,
   type Icon,
   Info,
   Moon,
@@ -41,12 +42,13 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { Textarea } from '@/components/ui/textarea'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { RulesList } from '@/components/rules/RulesList'
+import { TemplatesSettings } from '@/components/templates/TemplatesSettings'
 import { cn } from '@/lib/utils'
 import { formatDuration } from '@kanbanto/model/time'
 import { backgroundOf, gradientCss } from '@kanbanto/model/colors'
 import type { StatusMode } from '@kanbanto/model/types'
 
-type Tab = 'general' | 'fields' | 'rules' | 'look' | 'people' | 'you' | 'delete'
+type Tab = 'general' | 'fields' | 'rules' | 'templates' | 'look' | 'people' | 'you' | 'delete'
 
 /**
  * Board settings, in sections: the board itself (for everyone on it), its own fields, how it looks, who's on it and what's connected,
@@ -60,6 +62,7 @@ export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCh
     { id: 'general', label: 'General', icon: Info },
     { id: 'fields', label: 'Fields', icon: Tag },
     { id: 'rules', label: 'Rules', icon: Gauge },
+    { id: 'templates', label: 'Templates', icon: Stamp },
     { id: 'look', label: 'Background', icon: PaintBrush },
     { id: 'people', label: 'People & apps', icon: UsersThree },
     { id: 'you', label: 'Just for you', icon: User },
@@ -103,6 +106,7 @@ export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCh
           {tab === 'general' && <General />}
           {tab === 'fields' && <BoardFields onLeave={() => onOpenChange(false)} />}
           {tab === 'rules' && <Rules />}
+          {tab === 'templates' && <TemplatesSettings />}
           {tab === 'look' && <Look />}
           {tab === 'people' && <People onClose={() => onOpenChange(false)} />}
           {tab === 'you' && <JustForYou />}

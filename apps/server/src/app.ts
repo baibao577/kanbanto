@@ -28,6 +28,7 @@ import { Push } from './push'
 import { servePages, siteLinks } from './pages'
 import { presetRoutes } from './routes/presets'
 import { ruleRoutes } from './routes/rules'
+import { templateRoutes } from './routes/templates'
 import { pushRoutes } from './routes/push'
 import { Mailer } from './mail/mailer'
 import { serverSender, type Sender } from './mail/senders'
@@ -297,6 +298,7 @@ export async function buildApp(
   await app.register(pushRoutes, { prefix: '/api' })
   await app.register(presetRoutes, { prefix: '/api' })
   await app.register(ruleRoutes, { prefix: '/api' })
+  await app.register(templateRoutes, { prefix: '/api' })
   await app.register(fieldRoutes, { prefix: '/api' })
   await app.register(linkRoutes, { prefix: '/api' })
   await app.register(sharingRoutes, { prefix: '/api' })

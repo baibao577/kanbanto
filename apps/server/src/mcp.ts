@@ -53,6 +53,8 @@ import { followedBy, isFollowing, setFollowing } from './boards/follows'
 import { createBoard, createStarter } from './boards/service'
 import { boardsFor, withPlaces } from './routes/boards'
 import { lastComments, mentionsIn, postComment, reactionsOf } from './routes/comments'
+import { cardTemplatesOf } from './boards/templates'
+import { fromTemplate, stepsOf } from '@kanbanto/model/templates'
 import { blockedName, cardFiles, mayUpload, pictureType, views as fileViews } from './routes/files'
 import { attachFile, newUploadLink, UPLOAD_MINUTES } from './routes/uploads'
 import { downloads } from './storage/download'
@@ -463,6 +465,7 @@ function buildServer(app: FastifyInstance, me: SessionUser, token: TokenAccess, 
         if (a.parent_id && !data.tasks[a.parent_id]) throw new HttpError(404, 'There’s no such task on this board.')
         const limits = limitsOf(data, idx)
         const tells = tellsOf(data, idx)
+        const templates = await cardTemplatesOf(app.db, a.board_id)
         const top = a.parent_id ? idx.depth.get(a.parent_id)! + 1 : 0
         const levels = a.depth ?? 2
         const list = a.list ? pick(idx.columns, a.list, 'list').id : null
@@ -512,6 +515,8 @@ function buildServer(app: FastifyInstance, me: SessionUser, token: TokenAccess, 
           // that tell people when a card arrives somewhere or leaves (the app does the telling; nothing to do here).
           ...(limits.length && { limits }),
           ...(tells.length && { rules_that_tell_people: tells }),
+          // Its card templates: a card with its steps, saved to start the next one from (create_tasks, from_template).
+          ...(templates.length && { card_templates: templates.map((x) => ({ name: x.name, subtasks: stepsOf(x) })) }),
           ...(a.tasks !== false && {
             tasks: shown.slice(0, 300).map((id) => ({ depth: idx.depth.get(id)! - top, ...brief(data, idx, data.tasks[id], linked) })),
             ...(shown.length > 300 && { more: shown.length - 300 }),
@@ -1536,17 +1541,63 @@ function buildServer(app: FastifyInstance, me: SessionUser, token: TokenAccess, 
                   .describe('Its subtasks, made with it (notes into a task with its steps, in one call).'),
               }),
             )
-            .min(1)
-            .max(50),
+            .max(50)
+            .optional(),
+          from_template: z
+            .string()
+            .max(200)
+            .optional()
+            .describe(
+              'One of the board’s card templates, by name (get_board lists them): adds that card with its subtasks, in template_list, with nobody assigned and no dates. Use it in place of tasks for work the board has a template for.',
+            ),
+          template_list: z
+            .string()
+            .optional()
+            .describe('With from_template: the list (by name or id) the card goes in. Left out: the first not-started list.'),
+          template_title: z.string().min(1).max(500).optional().describe('With from_template: a title for the new card, in place of the template’s.'),
         },
         annotations: { destructiveHint: false, openWorldHint: false },
       },
-      tool(async (a: { board_id?: string; parent_id?: string; tasks: (NewTask & { subtasks?: NewTask[] })[] }) => {
-        // No board named: their Inbox (made now, if this is the first time it's needed).
-        const boardId = a.board_id ?? (await ensureInbox(app.db, me.id))
-        const { board, created } = await addCards(app, { me, via: token.app }, boardId, a.tasks, a.parent_id)
-        return { board: { ...board, ...(!a.board_id && { inbox: true }) }, created }
-      }),
+      tool(
+        async (a: {
+          board_id?: string
+          parent_id?: string
+          tasks?: (NewTask & { subtasks?: NewTask[] })[]
+          from_template?: string
+          template_list?: string
+          template_title?: string
+        }) => {
+          if (a.from_template !== undefined) {
+            if (!a.board_id) throw new HttpError(400, 'from_template: say which board (board_id): templates belong to a board.')
+            const { board, data, idx } = await open(a.board_id, 'editor')
+            const all = await cardTemplatesOf(app.db, a.board_id)
+            const wanted = a.from_template.trim().toLowerCase()
+            const found = all.find((x) => x.id === a.from_template) ?? all.find((x) => x.name.toLowerCase() === wanted)
+            if (!found)
+              throw new HttpError(
+                404,
+                all.length
+                  ? `This board has no card template called “${a.from_template}”. It has: ${all.map((x) => x.name).join(', ')}.`
+                  : 'This board has no card templates.',
+              )
+            if (a.parent_id && !data.tasks[a.parent_id]) throw new HttpError(404, 'There’s no such task on this board.')
+            const status = a.template_list ? pick(idx.columns, a.template_list, 'list').id : idx.firstOf.todo
+            const cards = a.template_title ? [{ ...found.cards[0], title: a.template_title }, ...found.cards.slice(1)] : found.cards
+            const made = fromTemplate(data, { name: found.name, cards }, { status, parentId: a.parent_id ?? null }, newId)
+            await app.engine.mutate(a.board_id, newId(), made.command, me.id, token.app)
+            return {
+              board: { id: board.id, name: board.name },
+              created: [{ id: made.id, title: cards[0].title, subtasks: stepsOf(found) }],
+              from_template: found.name,
+            }
+          }
+          if (!a.tasks?.length) throw new HttpError(400, 'Say what to add: tasks, or from_template.')
+          // No board named: their Inbox (made now, if this is the first time it's needed).
+          const boardId = a.board_id ?? (await ensureInbox(app.db, me.id))
+          const { board, created } = await addCards(app, { me, via: token.app }, boardId, a.tasks, a.parent_id)
+          return { board: { ...board, ...(!a.board_id && { inbox: true }) }, created }
+        },
+      ),
     )
 
     server.registerTool(

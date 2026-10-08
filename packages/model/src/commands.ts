@@ -61,10 +61,13 @@ export type Command =
   /**
    * Adds many cards at once (rows of a spreadsheet): one change, so one line in the activity and one undo. `lists`
    * and `labels` are made first: the ones its cards name that the board doesn't have. A card's parent is a card of
-   * the board or one earlier in `cards`; each goes at the end of where it lands, in the order given.
+   * the board or one earlier in `cards`; each goes at the end of where it lands, in the order given. `template`:
+   * the cards are one card with its subtasks, started from the card template of that name (see templates.ts), which
+   * the activity says instead of "imported".
    */
   | {
       type: 'tasks.import'
+      template?: string
       lists?: { id: string; name: string; category: Category }[]
       labels?: { id: string; name: string; color: ColorName }[]
       cards: { id: string; parentId: string | null; fields: TaskFields & { title: string } }[]
@@ -432,6 +435,7 @@ function run(data: BoardData, cmd: Command, ctx: Context): Change[] {
       // Where each parent's children end, so every card goes after the one before it.
       const ends = new Map<string | null, string | undefined>()
       const made = new Set<string>()
+      const together = new Set(cmd.cards.map((c) => c.id))
       for (const card of cmd.cards) {
         if (data.tasks[card.id] || data.archived?.[card.id] || made.has(card.id)) reject('A task with that id already exists.')
         if (card.parentId && !data.tasks[card.parentId] && !made.has(card.parentId)) reject('The parent task no longer exists.')
@@ -443,7 +447,17 @@ function run(data: BoardData, cmd: Command, ctx: Context): Change[] {
         made.add(card.id)
         putTask(
           null,
-          { id: card.id, parentId: card.parentId, order, labels: [], blockedBy: [], ...fields, title: fields.title!, status: fields.status! },
+          {
+            id: card.id,
+            parentId: card.parentId,
+            order,
+            labels: [],
+            ...fields,
+            // (A card may wait on another card of the same change, which the board doesn't have yet: a template's steps do.)
+            blockedBy: [...new Set(card.fields.blockedBy ?? [])].filter((b) => b !== card.id && (!!data.tasks[b] || together.has(b))),
+            title: fields.title!,
+            status: fields.status!,
+          },
           columns,
         )
       }

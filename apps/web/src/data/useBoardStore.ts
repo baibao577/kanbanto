@@ -165,6 +165,8 @@ export function useBoardStore(boardId: string, prefsStore: PrefsStore, onEvent: 
     links: sync?.links ?? null,
     /** Comments and files changing on any card (live). */
     onActivity: useCallback((l: (m: TaskActivity) => void) => sync?.onActivity(l) ?? (() => {}), [sync]),
+    /** The board's card templates changing (live). */
+    onTemplates: useCallback((l: () => void) => sync?.onTemplates(l) ?? (() => {}), [sync]),
     connection: state?.connection ?? 'connecting',
     unsaved: state?.unsaved ?? 0,
     /** Couldn't open the board (401: sign in; 404: gone or no access). */

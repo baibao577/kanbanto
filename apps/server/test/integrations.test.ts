@@ -296,6 +296,16 @@ describe('MCP', () => {
     // An archived card keeps its name.
     await tool('archive_task', { board_id: id, task_id: 'MY-13' })
     expect(await tool('get_task', { board_id: id, task_id: 'MY-13' })).toMatchObject({ id: 'C2', ref: 'MY-13' })
+    // Its card templates are listed, and a task can be started from one: the card with its subtasks, nobody assigned.
+    expect('card_templates' in (await tool('get_board', { board_id: id, tasks: false }))).toBe(false)
+    await ann.ok('POST', `/api/boards/${id}/templates`, { taskId: 'B', name: 'An event' })
+    expect((await tool('get_board', { board_id: id, tasks: false })).card_templates).toEqual([{ name: 'An event', subtasks: 2 }])
+    const started = await tool('create_tasks', { board_id: id, from_template: 'an event', template_list: 'Doing', template_title: 'Autumn party' })
+    expect(started).toMatchObject({ created: [{ title: 'Autumn party', subtasks: 2 }], from_template: 'An event' })
+    const party = await tool('get_task', { board_id: id, task_id: started.created[0].id })
+    expect(party).toMatchObject({ title: 'Autumn party', list: 'Doing' })
+    expect(party.subtasks.map((x: { title: string }) => x.title)).toEqual(['Send invites', 'Book a photographer'])
+    expect(party.assignee).toBeUndefined()
   })
 
   it('an assistant changes several tasks in one go: one change, one line of activity, nothing on a wrong name', async () => {

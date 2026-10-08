@@ -175,6 +175,9 @@ export default function InboxLive({ boardId, cardId }: { boardId: string; cardId
     memberName: (id) => (id ? (idx.members.get(id)?.name ?? '') : ''),
     links,
     canBeLinked: store.canBeLinked,
+    // (Card templates are a board's own, used on its own page.)
+    templates: [],
+    addFromTemplate: () => null,
   }
   return (
     <BoardContext.Provider value={ctx as BoardContextValue & { data: BoardData; access: BoardAccess }}>

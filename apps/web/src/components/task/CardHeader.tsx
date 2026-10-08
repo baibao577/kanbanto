@@ -13,6 +13,7 @@ import {
   Crosshair,
   DotsThree,
   Flag,
+  Stamp,
   Tag,
   Timer,
   Trash,
@@ -29,6 +30,7 @@ import { formatDuration } from '@kanbanto/model/time'
 import { PRIORITIES, PRIORITY_LABEL, type Priority } from '@kanbanto/model/types'
 import { api, errorMessage } from '@/api/client'
 import { useBoard } from '@/app/board-context'
+import { SaveCardTemplateDialog } from '@/components/templates/SaveTemplateDialog'
 import { hrefFor } from '@/app/router'
 import { Avatar, ColorSwatches, LabelChip, PriorityIcon, StatusDot, StatusPill } from '@/components/common/bits'
 import { TitleDateChip } from '@/components/text/TitleDate'
@@ -79,6 +81,7 @@ export function CardHeader({ id, onClose, wide, scrolled }: { id: string; onClos
   // A task can't move under itself or anything below it.
   const notParent = useMemo(() => new Set([id, ...descendantsOf(idx, id)]), [idx, id])
   const [deleting, setDeleting] = useState(false)
+  const [templating, setTemplating] = useState(false)
   // Its name (WEB-12): there once the server has given the card its number, a moment after a new one is made.
   const ref = refOf(data.board, t)
   const link = `${location.origin}${location.pathname}${hrefFor({ page: 'board', id: data.board.id, task: id })}`
@@ -181,6 +184,10 @@ export function CardHeader({ id, onClose, wide, scrolled }: { id: string; onClos
                     <DropdownMenuItem onSelect={() => moveToBoard(id)}>
                       <ArrowSquareRight /> Move to another board…
                     </DropdownMenuItem>
+                    {/* The next card like this one is started from it (see model templates.ts). */}
+                    <DropdownMenuItem onSelect={() => setTemplating(true)}>
+                      <Stamp /> Save as template…
+                    </DropdownMenuItem>
                     <DropdownMenuSeparator />
                     {!done && (
                       // (Its unfinished subtasks go to the done list with it.)
@@ -225,6 +232,7 @@ export function CardHeader({ id, onClose, wide, scrolled }: { id: string; onClos
 
       <CardBar id={id} />
       {!readOnly && <DeleteTask id={id} title={t.title} open={deleting} onOpenChange={setDeleting} onDeleted={onClose} />}
+      {templating && <SaveCardTemplateDialog taskId={id} onClose={() => setTemplating(false)} />}
     </header>
   )
 }

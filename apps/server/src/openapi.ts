@@ -673,6 +673,78 @@ The answer lists the records that changed.
           },
         },
       },
+      '/api/boards/{id}/templates': {
+        get: {
+          tags: ['Boards'],
+          summary: 'A board’s card templates',
+          description:
+            'A card template is a card with its subtasks, saved to start the next one from: `cards` (the first is the top card; each has `key`, `parent`, `title` and what it keeps: `description`, `labels`, `priority`, `custom`, `waits`). It keeps nobody and no dates. For everyone who can open the board. To start a card from one, send a `tasks.import` command with `template` set to its name and the cards under new ids.',
+          parameters: [id('id')],
+          responses: { 200: json(obj({ templates: { type: 'array', items: { type: 'object' } } })) },
+        },
+        post: {
+          tags: ['Boards'],
+          summary: 'Save a card as a template',
+          description:
+            'Editors and owners. Takes a copy of the task `taskId` and everything under it, as the board has it now, under `name` (left out: the card’s title); `replace` (a template’s id) saves over that one instead. Up to 30 to a board, 200 cards in one.',
+          parameters: [id('id')],
+          requestBody: { content: { 'application/json': { schema: obj({ taskId: str, name: str, replace: str }, ['taskId']) } } },
+          responses: { 200: json(obj({ template: { type: 'object' } })) },
+        },
+      },
+      '/api/boards/{id}/templates/{templateId}': {
+        patch: {
+          tags: ['Boards'],
+          summary: 'Rename a card template',
+          parameters: [id('id'), id('templateId')],
+          requestBody: { content: { 'application/json': { schema: obj({ name: str }, ['name']) } } },
+          responses: ok,
+        },
+        delete: {
+          tags: ['Boards'],
+          summary: 'Remove a card template',
+          description: 'The cards made from it stay.',
+          parameters: [id('id'), id('templateId')],
+          responses: ok,
+        },
+      },
+      '/api/boards/{id}/template': {
+        post: {
+          tags: ['Boards'],
+          summary: 'Save a board as a board template',
+          description:
+            'Owners only. Keeps the board’s shape: its lists, labels, fields, rules and card templates; never its cards or its people. It goes where the board lives: its workspace’s templates (for everyone in it), or your own. `replace` saves over one of that place you may change. Make a board from one with `POST /api/boards` and `templateId`.',
+          parameters: [id('id')],
+          requestBody: { content: { 'application/json': { schema: obj({ name: str, replace: str }) } } },
+          responses: { 200: json(obj({ template: { type: 'object' } })) },
+        },
+      },
+      '/api/board-templates': {
+        get: {
+          tags: ['Boards'],
+          summary: 'The board templates to start a board from',
+          description: 'Your own, or with `?workspace=<id>` that workspace’s (for its members). `canChange`: you may rename, replace and remove it.',
+          parameters: [{ name: 'workspace', in: 'query', schema: str }],
+          responses: { 200: json(obj({ templates: { type: 'array', items: { type: 'object' } } })) },
+        },
+      },
+      '/api/board-templates/{id}': {
+        patch: {
+          tags: ['Boards'],
+          summary: 'Rename a board template',
+          description: 'Whoever saved it, or one of the workspace’s admins.',
+          parameters: [id('id')],
+          requestBody: { content: { 'application/json': { schema: obj({ name: str }, ['name']) } } },
+          responses: ok,
+        },
+        delete: {
+          tags: ['Boards'],
+          summary: 'Remove a board template',
+          description: 'The boards made from it stay.',
+          parameters: [id('id')],
+          responses: ok,
+        },
+      },
       '/api/boards/{id}/extras': {
         get: {
           tags: ['Boards'],

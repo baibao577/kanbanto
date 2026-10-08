@@ -12,10 +12,12 @@ import { toast } from 'sonner'
 import { api, errorMessage } from '@/api/client'
 import type { BoardBackground } from '@kanbanto/model/colors'
 import { CLIENTS_BOARD_NAME, isStarter, STARTER_INFO, STARTERS, type Starter } from '@kanbanto/model/starters'
+import { TEMPLATE_NAME_MAX, type BoardTemplate } from '@kanbanto/model/templates'
 
 const PERSONAL = 'personal'
 
-type Start = 'empty' | 'example' | Starter
+/** What a new board starts with: nothing, the example, a starter, or one of the board templates of where it's made (`t:` and its id). */
+type Start = 'empty' | 'example' | Starter | `t:${string}`
 
 const joinWords = (words: string[]) => (words.length < 2 ? words.join('') : `${words.slice(0, -1).join(', ')} and ${words.at(-1)}`)
 
@@ -53,6 +55,22 @@ export function CreateBoardDialog({
   const [background, setBackground] = useState<BoardBackground | undefined>('blue')
   const [start, setStart] = useState<Start>('empty')
   const starter = isStarter(start) ? STARTER_INFO[start] : null
+  // The board templates of where the board is being made: that workspace's, or your own.
+  const [templates, setTemplates] = useState<BoardTemplate[]>([])
+  const [round, setRound] = useState(0)
+  const templatesAt = workspace?.id
+  useEffect(() => {
+    if (!open) return
+    let gone = false
+    api<{ templates: BoardTemplate[] }>('GET', `/board-templates${templatesAt ? `?workspace=${templatesAt}` : ''}`).then(
+      (r) => !gone && setTemplates(r.templates),
+      () => !gone && setTemplates([]),
+    )
+    return () => void (gone = true)
+  }, [open, templatesAt, round])
+  const template = start.startsWith('t:') ? templates.find((t) => `t:${t.id}` === start) : undefined
+  // (A template of another place, picked before "Where" changed, or one removed since, counts as an empty board.)
+  const chosen: Start = start.startsWith('t:') && !template ? 'empty' : start
   // A starter's fields go into the library of where the board is made: the workspace's, or your own.
   const library = workspace ? `${workspace.name}’s fields` : 'your own fields'
   /** Why a starter couldn't be made (it's a few lines: said in the window, not in a passing message). */
@@ -68,9 +86,9 @@ export function CreateBoardDialog({
         'POST',
         '/boards',
         {
-          name: name.trim() || starter?.name || 'Untitled board',
+          name: name.trim() || starter?.name || template?.name || 'Untitled board',
           background,
-          template: start,
+          ...(template ? { templateId: template.id } : { template: chosen }),
           workspaceId: workspace?.id ?? null,
         },
       )
@@ -84,7 +102,7 @@ export function CreateBoardDialog({
       if (leftOut?.length)
         toast(`Made without ${joinWords(leftOut)}: ${leftOut.length === 1 ? 'that field is' : 'those fields are'} archived in ${library}.`)
     } catch (e) {
-      if (starter) setProblem(errorMessage(e))
+      if (starter || template) setProblem(errorMessage(e))
       else toast.error(errorMessage(e))
     } finally {
       setBusy(false)
@@ -123,7 +141,7 @@ export function CreateBoardDialog({
               autoFocus
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder={starter ? starter.name : 'e.g. Website launch'}
+              placeholder={starter ? starter.name : template ? template.name : 'e.g. Website launch'}
             />
           </div>
           {workspaces.length > 0 && (
@@ -156,7 +174,7 @@ export function CreateBoardDialog({
           <div className="space-y-2">
             <Label>Start with</Label>
             <RadioGroup
-              value={start}
+              value={chosen}
               onValueChange={(v) => {
                 setStart(v as Start)
                 setProblem('')
@@ -174,7 +192,21 @@ export function CreateBoardDialog({
                   {STARTER_INFO[kind].hint}
                 </Choice>
               ))}
+              {templates.length > 0 && (
+                <p className="mt-1 text-xs font-medium text-muted-foreground sm:col-span-2">
+                  {workspace ? `${workspace.name}’s templates` : 'Your templates'}
+                </p>
+              )}
+              {templates.map((t) => (
+                <TemplateChoice key={t.id} template={t} onChanged={() => setRound((r) => r + 1)} />
+              ))}
             </RadioGroup>
+            {template && !problem && (
+              <p className="text-xs text-muted-foreground">
+                It starts with the template’s lists, labels, fields, rules and card templates, and no cards. Fields it needs are taken from {library},
+                or added there.
+              </p>
+            )}
             {starter && !problem && (
               <p className="text-xs text-muted-foreground">
                 It comes with its own fields, a few saved filters and example cards. Each card is for a client: a card on a “{CLIENTS_BOARD_NAME}”
@@ -209,6 +241,76 @@ export function CreateBoardDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  )
+}
+
+const some = (n: number, one: string) => `${n} ${n === 1 ? one : `${one}s`}`
+
+/** One board template to start from: its name and what it holds; whoever may change it can rename and remove it here. */
+function TemplateChoice({ template, onChanged }: { template: BoardTemplate; onChanged: () => void }) {
+  const [name, setName] = useState<string | null>(null)
+  const at = `/board-templates/${template.id}`
+  const did = (what: Promise<unknown>, said?: string) =>
+    what.then(
+      () => {
+        if (said) toast(said)
+        onChanged()
+      },
+      (e) => toast.error(errorMessage(e)),
+    )
+  const rename = () => {
+    const next = name?.trim()
+    setName(null)
+    if (next && next !== template.name) void did(api('PATCH', at, { name: next }))
+  }
+  const remove = () => {
+    if (confirm(`Remove the template “${template.name}”? Boards made from it stay as they are.`))
+      void did(api('DELETE', at), `Removed the template “${template.name}”`)
+  }
+  const holds = [
+    some(template.lists, 'list'),
+    ...(template.fields ? [some(template.fields, 'field')] : []),
+    ...(template.cardTemplates ? [some(template.cardTemplates, 'card template')] : []),
+  ]
+  return (
+    <div className="rounded-lg border transition-colors hover:bg-accent/50 has-[[data-state=checked]]:border-primary has-[[data-state=checked]]:bg-primary/5">
+      <label className="flex cursor-pointer gap-2.5 p-3">
+        <RadioGroupItem value={`t:${template.id}`} className="mt-0.5" />
+        <span className="min-w-0 space-y-0.5">
+          {name === null ? (
+            <span className="block truncate text-sm font-medium">{template.name}</span>
+          ) : (
+            <Input
+              autoFocus
+              aria-label="Template name"
+              value={name}
+              maxLength={TEMPLATE_NAME_MAX}
+              onChange={(e) => setName(e.target.value)}
+              onBlur={rename}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault()
+                  rename()
+                }
+                if (e.key === 'Escape') setName(null)
+              }}
+              className="h-7"
+            />
+          )}
+          <span className="block text-xs leading-relaxed text-muted-foreground">{holds.join(' · ')}</span>
+        </span>
+      </label>
+      {template.canChange && name === null && (
+        <p className="flex gap-3 px-3 pb-2 pl-9.5 text-xs text-muted-foreground">
+          <button type="button" className="hover:text-foreground hover:underline" onClick={() => setName(template.name)}>
+            Rename
+          </button>
+          <button type="button" className="hover:text-destructive hover:underline" onClick={remove}>
+            Remove
+          </button>
+        </p>
+      )}
+    </div>
   )
 }
 

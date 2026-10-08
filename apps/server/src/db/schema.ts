@@ -1271,6 +1271,46 @@ export const boardRuleMutes = pgTable(
   (t) => [primaryKey({ columns: [t.ruleId, t.userId] }), index('board_rule_mutes_user_idx').on(t.userId)],
 )
 
+/**
+ * A board's card templates (see model templates.ts): a card with everything under it, saved to start the next one
+ * from. `cards` is the copy taken when it was saved (checked when read). They live with their board.
+ */
+export const cardTemplates = pgTable(
+  'card_templates',
+  {
+    id: uuid('id').primaryKey(),
+    boardId: text('board_id')
+      .notNull()
+      .references(() => boards.id, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    cards: jsonb('cards').notNull(),
+    updatedBy: uuid('updated_by').references(() => users.id, { onDelete: 'set null' }),
+    createdAt: at('created_at').notNull().defaultNow(),
+    updatedAt: at('updated_at').notNull().defaultNow(),
+  },
+  (t) => [index('card_templates_board_idx').on(t.boardId)],
+)
+
+/**
+ * Board templates: a board's shape (lists, labels, fields, rules, card templates; never its cards or people), saved
+ * to make the next board from. One belongs to a workspace (saved from one of its boards, for everyone in it) or to
+ * a person (saved from a board of their own): one of the two.
+ */
+export const boardTemplates = pgTable(
+  'board_templates',
+  {
+    id: uuid('id').primaryKey(),
+    ownerId: uuid('owner_id').references(() => users.id, { onDelete: 'cascade' }),
+    workspaceId: uuid('workspace_id').references(() => workspaces.id, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    content: jsonb('content').notNull(),
+    updatedBy: uuid('updated_by').references(() => users.id, { onDelete: 'set null' }),
+    createdAt: at('created_at').notNull().defaultNow(),
+    updatedAt: at('updated_at').notNull().defaultNow(),
+  },
+  (t) => [index('board_templates_owner_idx').on(t.ownerId), index('board_templates_workspace_idx').on(t.workspaceId)],
+)
+
 /** Boards people starred as favourites (shown first on the boards page and in the board switcher). */
 export const boardFavorites = pgTable(
   'board_favorites',

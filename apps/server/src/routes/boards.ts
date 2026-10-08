@@ -18,6 +18,7 @@ import { notOnInbox } from '../boards/inbox'
 import { setBoardCode } from '../boards/numbering'
 import { canBeLinked, factOf, linksToResolve, resolveLinks, unlinkBoard } from '../boards/links'
 import { createBoard, createStarter, importBoard } from '../boards/service'
+import { createFromTemplate } from '../boards/templates'
 import { requireWorkspace } from '../boards/workspaces'
 import type { Db } from '../db'
 import { boardFavorites, boards, comments, timeEntries, users, workspaces, taskMoves } from '../db/schema'
@@ -47,6 +48,8 @@ const CreateBoard = z.object({
   template: z.enum(['empty', 'example', ...STARTERS]).default('empty'),
   /** Where it goes: a workspace you're in (shared with everyone in it), or your Personal space. */
   workspaceId: z.uuid().nullable().optional(),
+  /** A board template to make it from (see boards/templates.ts), in place of `template`: one of yours, or of a workspace you're in. */
+  templateId: z.uuid().optional(),
 })
 const Params = z.object({ id: z.string().min(1).max(100) })
 const ArchivedQuery = z.object({
@@ -154,6 +157,7 @@ export const boardRoutes: FastifyPluginAsync = async (app) => {
     const user = requireUser(req.user)
     const body = parse(CreateBoard, req.body)
     if (body.workspaceId) await requireWorkspace(app.db, body.workspaceId, user.id)
+    if (body.templateId) return createFromTemplate(app, user, body.templateId, body)
     if (isStarter(body.template)) return createStarter(app, user, body.template, body)
     return { id: await createBoard(app.db, user.id, { ...body, template: body.template }) }
   })

@@ -7,6 +7,7 @@ import type { BoardAccess, WhereIs } from '@kanbanto/model/api'
 import { backgroundOf, boardGradient } from '@kanbanto/model/colors'
 import type { Command } from '@kanbanto/model/commands'
 import { newId } from '@kanbanto/model/ids'
+import { fromTemplate, type CardTemplate } from '@kanbanto/model/templates'
 import { parseRef } from '@kanbanto/model/fields'
 import { indexFor } from '@kanbanto/model/indexer'
 import type { PrefsAction } from '@kanbanto/model/prefs'
@@ -467,6 +468,43 @@ function Workspace({ store }: { store: Store }) {
     [run, prefs.focusId],
   )
 
+  // The board's card templates: asked for when the board opens, and again whenever someone saves or removes one.
+  const [templates, setTemplates] = useState<CardTemplate[]>([])
+  const templatesOf = data.board.id
+  const { onTemplates } = store
+  useEffect(() => {
+    let gone = false
+    const ask = () =>
+      void api<{ templates: CardTemplate[] }>('GET', `/boards/${encodeURIComponent(templatesOf)}/templates`).then(
+        (r) => !gone && setTemplates(r.templates),
+        () => {},
+      )
+    ask()
+    const stop = onTemplates(ask)
+    return () => {
+      gone = true
+      stop()
+    }
+  }, [templatesOf, onTemplates])
+  const addFromTemplate = useCallback<BoardContextValue['addFromTemplate']>(
+    (template, to, opts) => {
+      const made = fromTemplate(
+        data,
+        template,
+        { status: to?.status ?? idx.firstOf.todo, parentId: to?.parentId !== undefined ? to.parentId : (prefs.focusId ?? null), top: to?.top },
+        newId,
+      )
+      if (!run(made.command)) return null
+      toast(`Added “${template.cards[0].title}” from the template “${template.name}”`, { id: 'undo' })
+      if (opts?.open) {
+        setNewId(made.id)
+        openTask(made.id)
+      }
+      return made.id
+    },
+    [data, idx, run, prefs.focusId],
+  )
+
   // A linked card: one of this board opens like any card; one of another board opens over this one, to look.
   const links = store.links!
   const [peek, setPeek] = useState<{ boardId: string; taskId: string } | null>(null)
@@ -496,6 +534,8 @@ function Workspace({ store }: { store: Store }) {
     openTask,
     moveToBoard: setMovingId,
     createTask,
+    templates,
+    addFromTemplate,
     focus: (id) => go({ focus: id }),
     memberName: (id) => (id ? (idx.members.get(id)?.name ?? '') : ''),
     openShare: () => setShareOpen(true),
