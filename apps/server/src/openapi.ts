@@ -499,7 +499,7 @@ The answer lists the records that changed.
           tags: ['Boards'],
           summary: 'Import a board from a file',
           description:
-            'Makes a new board in Personal from a file: one of Kanbanto’s own exports, or the JSON Trello gives ("Export as JSON"). A Trello board brings its lists, cards, checklists (as subtasks), comments (with their dates, in your name) and custom fields; people and uploaded files stay behind, and the answer’s `trello` says what came over.',
+            'Makes a new board in Personal from a file: one of Kanbanto’s own exports, or the JSON Trello gives ("Export as JSON"). One of Kanbanto’s own may hold `comments` and `time` beside `data` (what `GET /api/boards/{id}/extras` gives): the comments come in your name, each saying who wrote it, with their dates; logged time is yours where it was yours and nobody’s otherwise, with who logged it in the note. A Trello board brings its lists, cards, checklists (as subtasks), comments (with their dates, in your name) and custom fields; people and uploaded files stay behind, and the answer’s `trello` says what came over.',
           requestBody: {
             content: {
               'application/json': {
@@ -670,6 +670,18 @@ The answer lists the records that changed.
                 ['boardId', 'taskId', 'moved'],
               ),
             ),
+          },
+        },
+      },
+      '/api/boards/{id}/extras': {
+        get: {
+          tags: ['Boards'],
+          summary: 'A board’s comments and logged time, for its file',
+          description:
+            'What was said and logged on the board’s cards, archived ones too: `comments` (`taskId`, `by`, `body`, `at`) and `time` (`taskId`, `by`, `day`, `minutes`, `note`, `at`), each naming who it was by (`{id, name}`, or null). Put beside `data` in an export file, `POST /api/boards/import` brings them back with the board. For the board’s people, viewers too; not for visitors with the public link (403). Files and reactions aren’t in it.',
+          parameters: [id('id')],
+          responses: {
+            200: json(obj({ comments: { type: 'array', items: { type: 'object' } }, time: { type: 'array', items: { type: 'object' } } })),
           },
         },
       },

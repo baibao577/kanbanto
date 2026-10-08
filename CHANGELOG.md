@@ -5,6 +5,23 @@ then `git pull` (or download the new release) and `docker compose up -d --build`
 
 ## Unreleased
 
+- **Export a board as a spreadsheet, and a fuller whole-board file.** **⋯ → Export board…** now asks which kind of
+  file. **A spreadsheet (.csv)** has one row for each card: its number, title, parent, list, assignee, priority,
+  dates and labels, each of the board's own fields, the description, the time logged on it in hours, and when it
+  was made, changed and done. It saves the cards your search and filter find (untick for all of them), and the
+  archived cards too if you tick them. It opens correctly in Excel, Thai included, and a title that starts like a
+  formula can't run as one. Its columns are named the way **Import cards…** reads them, so a sheet can be saved,
+  changed and brought back.
+
+  **The whole board (.json)** is the file there was, now with a tick **With comments and logged time**. Brought
+  back with **Import a board…**, comments arrive in your name, each saying who wrote it, with their dates; logged
+  time that was yours is yours, and other people's stays on its cards with their name in the note. Attached files,
+  reactions and saved presets still stay behind. Anyone who can open a board can export it; visitors with the
+  public link get it without comments and logged time.
+
+  For apps: `GET /api/boards/<id>/extras` gives a board's comments and logged time, and `POST /api/boards/import`
+  reads them from a file's `comments` and `time`.
+
 - **Emoji reactions on comments.** Answer a comment with 👍 where another comment would only say "ok". Point at a
   comment and click the small smiley under it (always there on a phone), then pick one of six: 👍 agreed,
   ❤️ thanks, 🎉 well done, 😄 funny, 👀 I'm looking at it, ✅ done. Reactions sit under the comment as counts, yours

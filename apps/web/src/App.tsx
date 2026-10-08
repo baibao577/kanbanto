@@ -29,10 +29,10 @@ import { ViewBar } from '@/components/shell/ViewBar'
 import { VIEWS } from '@/components/views'
 import { lastBoard, rememberBoard } from '@/data/lastBoard'
 import { prefsStoreFor } from '@/data/prefsStore'
-import { exportBoard } from '@/data/transfer'
 import { useArchivedCard, useBoardStore } from '@/data/useBoardStore'
 
 // Dialogs load the first time they're opened.
+const ExportDialog = lazy(() => import('@/components/shell/ExportDialog').then((m) => ({ default: m.ExportDialog })))
 const ImportCardsDialog = lazy(() => import('@/components/shell/ImportCardsDialog').then((m) => ({ default: m.ImportCardsDialog })))
 const StatsDialog = lazy(() => import('@/components/shell/StatsDialog').then((m) => ({ default: m.StatsDialog })))
 const TaskDialog = lazy(() => import('@/components/task/TaskDialog').then((m) => ({ default: m.TaskDialog })))
@@ -445,6 +445,7 @@ function Workspace({ store }: { store: Store }) {
     [store, undo, say],
   )
   const [importing, setImporting] = useState(false)
+  const [exporting, setExporting] = useState(false)
 
   // The log box, open (with a card picked, from a card's menu or dialog).
   const [logging, setLogging] = useState<{ taskId?: string } | null>(null)
@@ -574,7 +575,7 @@ function Workspace({ store }: { store: Store }) {
             unsaved={store.unsaved}
             onOpenSettings={() => setSettingsOpen(true)}
             onOpenStats={() => setStatsOpen(true)}
-            onExport={() => void exportBoard(data).catch((e) => toast.error(errorMessage(e)))}
+            onExport={() => setExporting(true)}
             onImportCards={() => setImporting(true)}
           />
           {access.archivedAt && <ArchivedBanner boardId={data.board.id} owner={access.role === 'owner'} />}
@@ -621,6 +622,11 @@ function Workspace({ store }: { store: Store }) {
         {importing && (
           <Suspense fallback={null}>
             <ImportCardsDialog onClose={() => setImporting(false)} />
+          </Suspense>
+        )}
+        {exporting && (
+          <Suspense fallback={null}>
+            <ExportDialog search={search} onClose={() => setExporting(false)} />
           </Suspense>
         )}
         {movingId && (

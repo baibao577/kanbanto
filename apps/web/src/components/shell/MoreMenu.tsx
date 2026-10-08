@@ -154,7 +154,7 @@ export function MoreMenu({ canShare, onOpenSettings, onOpenStats, onExport, onIm
             </DropdownMenuItem>
           )}
           <DropdownMenuItem onSelect={onExport}>
-            <DownloadSimple /> Export board
+            <DownloadSimple /> Export board…
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>

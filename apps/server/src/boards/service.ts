@@ -11,7 +11,7 @@ import type { BoardData, Meta, Task } from '@kanbanto/model/types'
 import { and, eq, isNull } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import type { Db, Tx } from '../db'
-import { boardMembers, boardPresets, boards, comments, tasks, workspaces, type Visibility } from '../db/schema'
+import { boardMembers, boardPresets, boards, comments, tasks, timeEntries, workspaces, type Visibility } from '../db/schema'
 import { HttpError } from '../http'
 import { accessOf, workspaceRole } from './access'
 import { adoptFields, applyAdoption, clientLink, fitStarter, replaceBoardFields, type Library } from './fields'
@@ -222,12 +222,20 @@ export async function createStarter(
  * as the importer's with the dates they were written, telling nobody. `fieldText`: a field that can't come along is
  * written on each card that had a value for it, under the description, since the file can't be imported again
  * later to get it back.
+ *
+ * One of Kanbanto's own files can bring its comments too, and `time`: what was logged on its cards, each entry
+ * the importer's own or nobody's (`userId` null: the people of the board it came from aren't accounts here, and
+ * hours mustn't land in someone's week by a name; who logged it is in the entry's note).
  */
 export async function importBoard(
   app: FastifyInstance,
   ownerId: string,
   data: BoardData,
-  from: { comments?: { taskId: string; body: string; at: string }[]; fieldText?: boolean } = {},
+  from: {
+    comments?: { taskId: string; body: string; at: string }[]
+    time?: { taskId: string; userId: string | null; day: string; minutes: number; note: string; at: string }[]
+    fieldText?: boolean
+  } = {},
 ): Promise<{ id: string; lost: string[] }> {
   // (The id the file was read under: its cards' links to each other already name it. See `readBoardFile`.)
   const id = data.board.id
@@ -280,6 +288,21 @@ export async function importBoard(
             .slice(i, i + 500)
             .map((c) => ({ id: newId(), boardId: id, taskId: c.taskId, authorId: ownerId, body: c.body, createdAt: new Date(c.at) })),
         )
+    const logged = (from.time ?? []).filter((e) => tasks[e.taskId] || archived?.[e.taskId])
+    for (let i = 0; i < logged.length; i += 500)
+      await tx.insert(timeEntries).values(
+        logged.slice(i, i + 500).map((e) => ({
+          id: newId(),
+          boardId: id,
+          taskId: e.taskId,
+          userId: e.userId,
+          day: e.day,
+          minutes: e.minutes,
+          note: e.note,
+          createdAt: new Date(e.at),
+          updatedAt: new Date(e.at),
+        })),
+      )
     return plan.lose
   })
   app.engine.reloaded(touched)

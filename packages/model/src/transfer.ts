@@ -1,6 +1,7 @@
 import { linkRef, mapLinks, parseRef } from './fields'
 import { newId } from './ids'
 import { repairData, upgradeSave } from './migrate'
+import { z } from 'zod'
 import { BoardDataSchema } from './schema'
 import type { BoardData } from './types'
 
@@ -17,13 +18,60 @@ export const withoutCovers = (data: BoardData): BoardData =>
     ? { ...data, tasks: uncovered(data.tasks), ...(data.archived && { archived: uncovered(data.archived) }) }
     : data
 
-/** An export file's contents. */
-export const exportFile = (data: BoardData) => ({
+/**
+ * What was said and logged on a board's cards: its comments and its logged time, which the board itself doesn't
+ * hold. They can go in its file (`exportFile`), each naming who it was by: the name to read, and the account's id,
+ * which only means something on the site the file came from.
+ */
+export interface BoardExtras {
+  comments: { taskId: string; by: { id: string; name: string } | null; body: string; at: string }[]
+  time: { taskId: string; by: { id: string; name: string } | null; day: string; minutes: number; note: string; at: string }[]
+}
+
+/** The most of each a file brings: more than a board is likely to have, and few enough to read in one go. */
+export const EXTRAS_MAX = { comments: 50_000, time: 100_000 }
+
+/**
+ * An export file's contents: the board, and with `extras` its comments and logged time too. (The same format either
+ * way: a reader that doesn't know them reads the board and leaves them.)
+ */
+export const exportFile = (data: BoardData, extras?: BoardExtras) => ({
   app: 'kanbanto',
   format: EXPORT_FORMAT,
   exportedAt: new Date().toISOString(),
   data: withoutCovers(data),
+  ...(extras && { comments: extras.comments, time: extras.time }),
 })
+
+const who = z
+  .object({ id: z.string().max(100), name: z.string().max(200) })
+  .nullable()
+  .catch(null)
+const moment = z
+  .string()
+  .max(40)
+  .refine((s) => !Number.isNaN(Date.parse(s)))
+const saidItem = z.object({ taskId: z.string().min(1).max(100), by: who, body: z.string().min(1).max(10_000), at: moment })
+const timeItem = z.object({
+  taskId: z.string().min(1).max(100),
+  by: who,
+  day: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  minutes: z.number().int().min(1).max(1440),
+  note: z.string().max(500).catch(''),
+  at: moment,
+})
+
+/**
+ * The comments and logged time a board's file brings (already parsed from JSON), for the cards it has. A file
+ * without any, or from before they could be in one, brings none; an entry that isn't in shape is left out, and the
+ * rest still come.
+ */
+export function readExtras(raw: unknown): BoardExtras {
+  const file = (raw && typeof raw === 'object' ? raw : {}) as { comments?: unknown; time?: unknown }
+  const list = <T>(items: unknown, one: z.ZodType<T>, max: number): T[] =>
+    Array.isArray(items) ? items.slice(0, max).flatMap((item) => one.safeParse(item).data ?? []) : []
+  return { comments: list(file.comments, saidItem, EXTRAS_MAX.comments), time: list(file.time, timeItem, EXTRAS_MAX.time) }
+}
 
 /**
  * Reads an exported board (already parsed from JSON): the current format (checked against the schema) or any

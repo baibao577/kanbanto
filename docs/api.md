@@ -144,6 +144,11 @@ curl -X POST https://kanbanto.example.com/api/boards/<board id>/mutations \
   - `GET /api/boards/<id>/archived?task=<task id>` gives one, with the archived tasks above and under it (an empty
     list if that task isn't archived).
   - `GET /api/boards/<id>?archived=all` sends the board with everything, under `data.archived` (an export, a backup).
+    `GET /api/boards/<id>/extras` gives what the board doesn't hold: its `comments` and its logged `time`, each
+    naming who it was by. An export file is `{"app": "kanbanto", "format": 3, "exportedAt", "data"}` with, when
+    wanted, those `comments` and `time` beside `data`; `POST /api/boards/import` with `{"file": <that>}` makes a
+    new board from it (comments in your name, saying who wrote them; logged time yours where it was yours, and
+    nobody's otherwise).
   - `GET /api/cards?state=archived&board=<id>&q=<words>` searches them, across your boards, newest first, in pages.
 - **Searching every board**: `GET /api/cards?state=all` (or `active`, for cards still on their boards) takes the same
   filters as the Search cards page: `q` (words in the title, description or a comment), `assignee=me`, `completed`,

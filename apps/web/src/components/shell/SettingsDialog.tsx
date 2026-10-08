@@ -335,7 +335,7 @@ function DeleteBoard({ onDeleted }: { onDeleted: () => void }) {
           Deletes “{data.board.name}” and its {Object.keys(data.tasks).length.toLocaleString()} tasks for everyone, with their comments and files.
           This can’t be undone.
         </p>
-        <p className="text-xs text-muted-foreground">Want a copy first? ⋯ → Export board.</p>
+        <p className="text-xs text-muted-foreground">Want a copy first? ⋯ → Export board…</p>
         <AlertDialog>
           <AlertDialogTrigger asChild>
             <Button

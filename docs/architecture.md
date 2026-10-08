@@ -297,6 +297,17 @@ The app uses hash routing, so any static host or proxy works without rewrite rul
   Boards a person can no longer open have their events removed (`calendar_events` has no foreign key to the board,
   so a deleted board's events can still be found). Failures back off per connection and never give up; a refused
   connection waits to be connected again.
+- **A board as a file** is made in the browser, from the board it has plus what it asks for (its archived cards).
+  Two kinds. The whole board (`model/transfer.ts`: `exportFile`, read back by `readBoardFile` into a new board),
+  which can carry what the board doesn't hold: its comments and logged time (`BoardExtras`, from
+  `GET /api/boards/:id/extras`, read back leniently by `readExtras`). A board's people aren't accounts wherever
+  the file is read, so a comment comes back as the importer's and says who wrote it, and logged time is the
+  importer's only where the account is the same one; the rest is nobody's (`user_id` null, the name in the note),
+  because hours must not land in someone's week by a name. And a spreadsheet (`model/exportSheet.ts`: `cardsSheet`,
+  `toCsv`): one row a card, the columns named and the cells written the way the spreadsheet import reads them
+  (`importCards.ts`), so a sheet goes out, is changed and comes back; it starts with a byte-order mark for Excel,
+  and text someone typed that starts like a formula is marked as text with an apostrophe, which `parseSheet`
+  takes off again.
 
 ## Email
 

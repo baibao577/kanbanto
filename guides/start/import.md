@@ -5,7 +5,8 @@ You don't have to start from an empty board. There are two ways to bring in what
 - **A whole board from Trello**, with its lists, cards, checklists and comments.
 - **Rows of a spreadsheet**, each row becoming a card on a board you already have.
 
-(A board exported from Kanbanto itself comes back the same way as a Trello board: see
+(A board exported from Kanbanto itself comes back the same way as a Trello board, and a spreadsheet saved with
+**Export board…** is read by **Import cards…** as it is: see
 [Export and import](/views/board-settings#export-and-import).)
 
 ## A Trello board

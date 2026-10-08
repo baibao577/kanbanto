@@ -2159,6 +2159,18 @@ await shot('tell-4-switch', async () => {
   return around([list.getByText('When this, tell someone'), row, list.locator('li').filter({ hasText: 'Finished' })], 24)
 })
 
+// The two kinds of file a board can be saved as.
+await shot('export-1-choice', async () => {
+  await openBoard()
+  await page.getByLabel('Search tasks').fill('set up')
+  await page.waitForTimeout(500)
+  await page.getByRole('button', { name: 'More' }).click()
+  await page.getByRole('menuitem', { name: 'Export board…' }).click()
+  await page.getByRole('dialog').waitFor()
+  await page.waitForTimeout(500)
+  return page.getByRole('dialog')
+})
+
 // A comment answered with emoji (after the rest: the comments of this card are in other pictures as they were).
 await shot('comment-2-react', async () => {
   const all = (await api(ann, 'GET', `/boards/${board}/tasks/announce/comments`)).comments

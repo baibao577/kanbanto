@@ -77,15 +77,53 @@ then it is given new ones from its name, and numbers written with the old letter
 
 ## Export and import
 
-- **⋯ → Export board** downloads the whole board as one file, archived cards included. Keep it as a backup, or use
-  it to copy the board. It is a file for Kanbanto to read back (its name ends in `.json`), not one to open in a
-  spreadsheet.
+**⋯ → Export board…** saves the board as a file on your computer. Choose the kind:
+
+![Export board: a spreadsheet, or the whole board](/images/export-1-choice.webp){.medium}
+
+### A spreadsheet (.csv)
+
+One row for each card, to open in Excel, Numbers or Google Sheets: a report of what was done and by whom, hours
+for an invoice, anything you want to add up yourself.
+
+- **The columns:** the card's number, title, parent, list, assignee, priority, start, due and labels; each of the
+  board's [own fields](/everyday/fields); the description; the time logged on it, in hours; and when it was made,
+  last changed and done.
+- **Only the cards your search and filter find.** When a search or a filter is on, the sheet has the cards they
+  find. Untick it to save every card on the board.
+- **With the cards in the archive,** if you tick it. They come after the others, with the list each was in and when
+  it was archived.
+- Dates are written as `2026-10-15`, and times by your own clock. Thai and accented letters open correctly in Excel.
+- A card title that starts like a formula (`=`, `+`, `-`, `@`) gets an apostrophe in front, so it can't run as one
+  in your spreadsheet.
+
+The columns are named the way **⋯ → Import cards…** reads them. So you can save a sheet, change it, and bring it
+back; see [Bring your work in](/start/import). Importing adds cards: it does not change the ones that are there,
+and it skips rows whose title is already a card unless you ask for them. It reads up to 2,000 rows at a time.
+
+### The whole board (.json)
+
+Everything on the board in one file, archived cards included. Keep it as a backup, move the board to another
+Kanbanto site, or use it to copy the board. It is a file for Kanbanto to read back, not one to open in a
+spreadsheet.
+
+- Tick **With comments and logged time** to take those along too.
 - To bring one back, open the **⋯** menu on the boards page and choose **Import a board…**. It arrives as a new
   board.
-- The same button takes a board exported from **Trello**, and **⋯ → Import cards…** on a board adds cards from a
-  spreadsheet: see [Bring your work in](/start/import).
 
-Comments and attached files are not part of the export file.
+A few things to know about a board that comes back:
+
+- Its people are not carried over: cards are unassigned, except yours.
+- **Comments** come in your name, each saying who wrote it, with the dates they were written. Your own come back
+  as they were.
+- **Logged time** that was yours is yours again. Other people's hours stay on their cards and count in the cards'
+  totals, with the person's name in the note; they are nobody's, so they don't show up in anyone's week.
+- Attached files, reactions and saved presets stay behind.
+
+The same **Import a board…** takes a board exported from **Trello**: see [Bring your work in](/start/import).
+
+Anyone who can open a board can export it. Visitors with the board's public link get it without comments and
+logged time.
 
 ## Favourites
 

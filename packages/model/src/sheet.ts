@@ -79,5 +79,12 @@ export function parseSheet(input: string): Sheet {
   let width = Math.max(...rows.map((r) => r.length))
   while (width > 1 && rows.every((r) => !r[width - 1])) width--
   if (width > SHEET_MAX_COLUMNS) throw new Error(`That’s too many columns: ${SHEET_MAX_COLUMNS} at most.`)
-  return { rows: rows.map((r) => Array.from({ length: width }, (_, i) => r[i] ?? '')), delimiter }
+  return { rows: rows.map((r) => Array.from({ length: width }, (_, i) => plainText(r[i] ?? ''))), delimiter }
 }
+
+/**
+ * A cell as its text. A spreadsheet's way of saying "this is text, not a formula" is an apostrophe in front, and
+ * the sheets Kanbanto saves use it for what someone typed that starts like a formula (see exportSheet.ts): read
+ * back, the apostrophe is the mark, not part of the text.
+ */
+const plainText = (cell: string) => (/^'[=+\-@]/.test(cell) ? cell.slice(1) : cell)

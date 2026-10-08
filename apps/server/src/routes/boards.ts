@@ -4,7 +4,7 @@ import { ARCHIVED_DATES, archivedFamily, archivedIn } from '@kanbanto/model/arch
 import { isBackground, type BoardBackground } from '@kanbanto/model/colors'
 import { BoardDataSchema, CommandSchema } from '@kanbanto/model/schema'
 import { isStarter, STARTERS } from '@kanbanto/model/starters'
-import { readBoardFile } from '@kanbanto/model/transfer'
+import { EXTRAS_MAX, readBoardFile, readExtras, type BoardExtras } from '@kanbanto/model/transfer'
 import { fromTrello, isTrelloExport, slimTrello, type TrelloSummary } from '@kanbanto/model/trello'
 import { CATEGORIES } from '@kanbanto/model/types'
 import { isTimeZone } from '@kanbanto/model/dates'
@@ -20,7 +20,7 @@ import { canBeLinked, factOf, linksToResolve, resolveLinks, unlinkBoard } from '
 import { createBoard, createStarter, importBoard } from '../boards/service'
 import { requireWorkspace } from '../boards/workspaces'
 import type { Db } from '../db'
-import { boardFavorites, boards, workspaces, taskMoves } from '../db/schema'
+import { boardFavorites, boards, comments, timeEntries, users, workspaces, taskMoves } from '../db/schema'
 import { addCardSaid, NewCardBody } from '../boards/newCards'
 import { importCards, ImportCardsBody } from '../boards/importCards'
 import { pictureUrl } from '../pictures'
@@ -191,7 +191,69 @@ export const boardRoutes: FastifyPluginAsync = async (app) => {
     } catch (e) {
       throw new HttpError(400, e instanceof Error ? e.message : 'That file isn’t a board export.')
     }
-    return importBoard(app, user.id, data)
+    // What was said and logged on its cards, when the file has them. Its people aren't accounts here: a comment
+    // comes in the importer's name and says who wrote it, as a Trello board's do; logged time is the importer's
+    // own where it was theirs (the same account, on the site the file came from) and nobody's otherwise, with who
+    // logged it in the note.
+    const extras = readExtras(file)
+    const name = (by: { name: string } | null) => by?.name.trim().replace(/([\\*_[\]])/g, '\\$1') || ''
+    return importBoard(app, user.id, data, {
+      comments: extras.comments.map((c) => ({
+        taskId: c.taskId,
+        at: c.at,
+        body: c.by?.id === user.id ? c.body : `${name(c.by) ? `**${name(c.by)}** wrote:` : 'Someone wrote:'}\n\n${c.body}`.slice(0, 10_000),
+      })),
+      time: extras.time.map((e) => {
+        const mine = e.by?.id === user.id
+        return {
+          taskId: e.taskId,
+          userId: mine ? user.id : null,
+          day: e.day,
+          minutes: e.minutes,
+          at: e.at,
+          note: (mine ? e.note : [e.by?.name.trim() || 'Someone', e.note].filter(Boolean).join(': ')).slice(0, 500),
+        }
+      }),
+    })
+  })
+
+  /**
+   * What was said and logged on a board's cards, archived ones too: its comments and its logged time, for the
+   * board's file (see model transfer.ts: the board itself doesn't hold them). For the board's people, viewers too;
+   * not for visitors with the public link, who can't see logged time. Each names who it was by. Files posted in
+   * comments stay where they are (a comment still names them), and reactions aren't in it.
+   */
+  app.get('/boards/:id/extras', async (req): Promise<BoardExtras> => {
+    const { id } = parse(Params, req.params)
+    const me = requireUser(req.user)
+    const { access } = await requireAccess(app.db, me, id, 'viewer')
+    if (access.via === 'public') throw new HttpError(403, 'Join this board to save its comments and logged time.')
+    const by = (userId: string | null, name: string | null) => (userId ? { id: userId, name: name ?? 'Someone' } : null)
+    const said = await app.db
+      .select({ c: comments, name: users.name })
+      .from(comments)
+      .leftJoin(users, eq(users.id, comments.authorId))
+      .where(eq(comments.boardId, id))
+      .orderBy(comments.createdAt)
+      .limit(EXTRAS_MAX.comments)
+    const logged = await app.db
+      .select({ e: timeEntries, name: users.name })
+      .from(timeEntries)
+      .leftJoin(users, eq(users.id, timeEntries.userId))
+      .where(eq(timeEntries.boardId, id))
+      .orderBy(timeEntries.createdAt)
+      .limit(EXTRAS_MAX.time)
+    return {
+      comments: said.map(({ c, name }) => ({ taskId: c.taskId, by: by(c.authorId, name), body: c.body, at: c.createdAt.toISOString() })),
+      time: logged.map(({ e, name }) => ({
+        taskId: e.taskId,
+        by: by(e.userId, name),
+        day: e.day,
+        minutes: e.minutes,
+        note: e.note,
+        at: e.createdAt.toISOString(),
+      })),
+    }
   })
 
   /**
