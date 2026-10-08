@@ -22,6 +22,7 @@ export function DropLine({ zone, left }: { zone: Zone | undefined; left: number 
 /** Inline field for typing new subtasks. Enter adds one and keeps the field open for the next. */
 export function AddSubtaskRow({
   parentTitle,
+  prompt,
   indent,
   onAdd,
   onClose,
@@ -30,6 +31,8 @@ export function AddSubtaskRow({
   cellWidth,
 }: {
   parentTitle: string
+  /** What the field is for, when it isn't a subtask of that card: "New task in “Doing”". */
+  prompt?: string
   /** Left padding, so the field lines up with the subtasks. */
   indent: number
   /** With a time typed in the title: the fields it sets (due, maybe a reminder), taken out of the title. */
@@ -53,8 +56,8 @@ export function AddSubtaskRow({
           autoFocus
           value={value}
           onChange={(e) => setValue(e.target.value)}
-          placeholder={`New subtask of “${parentTitle}”, press Enter to add`}
-          aria-label={`New subtask of ${parentTitle}`}
+          placeholder={`${prompt ?? `New subtask of “${parentTitle}”`}, press Enter to add`}
+          aria-label={prompt ?? `New subtask of ${parentTitle}`}
           onKeyDown={(e) => {
             if (e.key === 'Enter' && value.trim()) {
               const { title, fields } = date.apply(value.trim())

@@ -432,6 +432,16 @@ The app uses hash routing, so any static host or proxy works without rewrite rul
   `TableFilter.fields`, with one rule per kind (`fieldMatches`, `tidyFilter` in `model/fields.ts`). View settings
   that point at a field that left the board are dropped by `cleanPrefs`, which gives the same object back when
   nothing changed (it runs on every change).
+- **The Outline grouped by a column** (`model/outlineGroups.ts`, `OutlineConfig.group`: a list, a person, a
+  priority, a label, or a choice, person or tick field by its key). The Outline is a tree and a subtask's value can
+  differ from its parent's, so a card goes under the heading of its own value (`groupCards`: headings in the order
+  that means something, every list even when empty, "none" last, a card with two labels under each) and each heading
+  lays the tree out the way a search does: its cards plus the cards above them for context (`groupKeep`, then
+  `flattenTree`). A parent can so be a row under several headings; rows aren't dragged while grouped. A heading's
+  count and totals are of its own cards; the bottom Total still counts each card once. What is added under a
+  heading starts with its value (`groupFields`). Nothing is stored but the key: it is part of the view settings,
+  saved in presets, carried when a field changes its id (`remapPreset`) and dropped when the field leaves
+  (`cleanPrefs`); a key a later version adds reads as not grouped. Which headings are folded is kept on the device.
 - **A filter's tests, and how they stay compatible.** A new test is always a new key; no key ever changes meaning
   (`in` got `notIn` beside it, the old `date: 'past' | 'week' | 'none'` got `on` / `days` / `from` / `to`, `due` got
   `dueIs` and `startIs`). A tab left open across an update, or a rollback, reads a filter with keys it doesn't know

@@ -87,8 +87,10 @@ export function remapPreset(s: PresetSettings, map: FieldMap, others: 'keep' | '
     if (Object.keys(next).length) fields[t.id] = next
   }
   const { fields: _fields, ...filter } = s.filter
-  const { sort, hidden, order, ...outline } = s.outline
+  const { sort, hidden, order, group, ...outline } = s.outline
   const sortKey = sort && key(sort.key)
+  // (Grouped by a field that has no place where the settings are going: not grouped there.)
+  const groupKey = group && (isFieldKey(group) ? key(group) : group)
   const shownOff = hidden && [...new Set(hidden.flatMap((k) => key(k) ?? []))]
   // (Two columns that land on one field keep the first one's place.)
   const arranged = order && [...new Set(order.flatMap((k) => key(k) ?? []))]
@@ -98,6 +100,7 @@ export function remapPreset(s: PresetSettings, map: FieldMap, others: 'keep' | '
     outline: {
       ...outline,
       ...(sort && sortKey && { sort: { ...sort, key: sortKey } }),
+      ...(groupKey && { group: groupKey as typeof group }),
       ...(shownOff?.length && { hidden: shownOff }),
       ...(arranged?.length && { order: arranged }),
     },
@@ -240,6 +243,7 @@ export function cleanPrefs(p: ViewPrefs, data: BoardData): ViewPrefs {
   filter.fields = sameFields || !f.fields ? f.fields : wanted.length ? Object.fromEntries(wanted) : undefined
   const o = p.outline
   const sort = o.sort && isFieldKey(o.sort.key) && !defs.has(fieldIdOf(o.sort.key)) ? undefined : o.sort
+  const group = o.group && isFieldKey(o.group) && !defs.has(fieldIdOf(o.group)) ? undefined : o.group
   const shownOff = o.hidden?.filter((k) => !isFieldKey(k) || defs.has(fieldIdOf(k)))
   const outlineHidden = !o.hidden || shownOff!.length === o.hidden.length ? o.hidden : shownOff!.length ? shownOff : undefined
   const arranged = o.order?.filter((k) => !isFieldKey(k) || defs.has(fieldIdOf(k)))
@@ -247,6 +251,7 @@ export function cleanPrefs(p: ViewPrefs, data: BoardData): ViewPrefs {
   const changed =
     filter.fields !== f.fields ||
     sort !== o.sort ||
+    group !== o.group ||
     outlineHidden !== o.hidden ||
     outlineOrder !== o.order ||
     filter.statuses !== f.statuses ||
@@ -263,7 +268,9 @@ export function cleanPrefs(p: ViewPrefs, data: BoardData): ViewPrefs {
     ...p,
     filter,
     outline:
-      sort !== o.sort || outlineHidden !== o.hidden || outlineOrder !== o.order ? { ...o, sort, hidden: outlineHidden, order: outlineOrder } : o,
+      sort !== o.sort || group !== o.group || outlineHidden !== o.hidden || outlineOrder !== o.order
+        ? { ...o, sort, group, hidden: outlineHidden, order: outlineOrder }
+        : o,
     focusId,
     display: { ...p.display, board: { ...p.display.board, hiddenColumns: nextHidden, collapsedColumns: nextFolded, listOrder: nextOrder } },
   }

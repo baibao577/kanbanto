@@ -8,10 +8,11 @@ import { Switch } from '@/components/ui/switch'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { cn } from '@/lib/utils'
 import { fieldKey, type FieldKey } from '@kanbanto/model/fields'
+import { groupKeyOf, groupKeys, groupLabel, type GroupKey } from '@kanbanto/model/outlineGroups'
 import { isExtraColumn, OUTLINE_COLUMNS, OUTLINE_EXTRA, type OutlineColumn, type Sort, type SortKey } from '@kanbanto/model/table'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 
-/** (A select can't have an empty value: this stands for not sorting.) */
+/** (A select can't have an empty value: this stands for not sorting, and for not grouping.) */
 const NO_SORT = 'none'
 
 const LABEL: Record<OutlineColumn, string> = {
@@ -29,8 +30,9 @@ const LABEL: Record<OutlineColumn, string> = {
 
 /** The Outline's "Display": which columns show, and how tall rows are. Saved per board, like the board's display. */
 export function OutlineDisplayMenu() {
-  const { data, prefs, setPrefs } = useBoard()
+  const { data, prefs, setPrefs, idx } = useBoard()
   const cfg = prefs.outline
+  const group = groupKeyOf(cfg.group, idx.fields)
   const hidden = new Set<string>(cfg.hidden ?? [])
   // (Created and Updated are off until switched on; the others are on until switched off.)
   const extra = new Set<string>(cfg.extra ?? [])
@@ -56,6 +58,32 @@ export function OutlineDisplayMenu() {
         </Button>
       </PopoverTrigger>
       <PopoverContent align="end" className="max-h-(--radix-popover-content-available-height) w-64 overflow-y-auto p-0">
+        {/* The rows under a heading for each list, person, priority, label, or value of a field (see OutlineView). */}
+        <div className="space-y-2 p-4">
+          <p className="text-xs font-medium text-muted-foreground">Group by</p>
+          <Select
+            value={group ?? NO_SORT}
+            onValueChange={(v) => setPrefs({ type: 'setOutline', config: { ...cfg, group: v === NO_SORT ? undefined : (v as GroupKey) } })}
+          >
+            <SelectTrigger size="sm" className="w-full" aria-label="Group by">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={NO_SORT}>Nothing</SelectItem>
+              {groupKeys(data.fields).map((k) => (
+                <SelectItem key={k} value={k}>
+                  {groupLabel(k, idx.fields)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {group && (
+            <p className="text-[11px] text-muted-foreground">
+              Each task is under its own heading. The tasks above it come along in grey, to show where it belongs.
+            </p>
+          )}
+        </div>
+        <Separator />
         <div className="space-y-1.5 p-4">
           <p className="mb-2 text-xs font-medium text-muted-foreground">Columns</p>
           {OUTLINE_COLUMNS.map((c) => (

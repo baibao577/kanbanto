@@ -5,6 +5,14 @@ then `git pull` (or download the new release) and `docker compose up -d --build`
 
 ## Unreleased
 
+- **Group the Outline's rows.** **Display → Group by** gathers the rows under a heading for each list, person,
+  priority or label, or for each value of one of the board's own fields (a choice, a person or a tick). Each task
+  is under its own heading, with the tasks above it in grey to show where it belongs, so a step that is Ben's shows
+  under Ben inside Ann's project; a task with two labels is under both. A heading says how many tasks are its own
+  and what they add up to in the number columns, folds, and has a **+** that adds a task with its value. Sorting,
+  filters and search work under the headings; rows aren't dragged while grouped. The grouping is saved with a
+  preset. On a phone the headings are in the list. No database change.
+
 - **Templates for cards and boards.** Start the next card, or the next board, from one you saved.
 
   A **card template** is a card with all its subtasks, for work that repeats with the same steps. Open a card,

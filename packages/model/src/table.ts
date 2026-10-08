@@ -114,6 +114,11 @@ export const isExtraColumn = (key: string): key is ExtraColumn => (OUTLINE_EXTRA
 
 export interface OutlineConfig {
   sort?: Sort
+  /**
+   * The rows gathered under a heading for each value of a column (see outlineGroups.ts): a list, a person, a
+   * priority, a label, or a value of one of the board's fields (by its key). Unset: the plain tree.
+   */
+  group?: 'status' | 'assignee' | 'priority' | 'labels' | FieldKey
   /** Property columns switched off (Display → Columns): built-in ones, and the board's fields by their key (kept sorted). */
   hidden?: (OutlineColumn | FieldKey)[]
   /** Columns that are off by default and were switched on (see OUTLINE_EXTRA; kept in that order). */

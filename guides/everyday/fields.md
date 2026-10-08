@@ -77,6 +77,8 @@ In the [Outline](/views/outline), every field of the board is a column.
 
 - **Change a value** right in the table: click the cell and type, pick, or tick. No need to open the card.
 - **Sort** by a field: click its heading. Click again for the other way round. Cards without a value come last.
+- **Group** the rows by a choice, a person or a tick field: **Display → Group by**. Each value becomes a heading
+  with its cards under it. See [group the rows](/views/outline#group-the-rows).
 - **Hide** columns you don't need: **Display**, then untick them, or switch **Fields** off to hide them all.
 
 ## Filter by a field

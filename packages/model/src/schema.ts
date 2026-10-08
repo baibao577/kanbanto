@@ -348,6 +348,11 @@ export const PresetSettingsSchema = z.object({
   display: z.object({ board: viewConfig }),
   outline: z.object({
     sort: z.object({ key: z.union([z.enum(BUILT_IN_SORT_KEYS), fieldKey]), dir: z.enum(['asc', 'desc']) }).optional(),
+    // (Like any setting added later: a value this version doesn't know reads as not set.)
+    group: z
+      .union([z.enum(['status', 'assignee', 'priority', 'labels']), fieldKey])
+      .optional()
+      .catch(undefined),
     hidden: z
       .array(z.union([z.enum(OUTLINE_COLUMNS), fieldKey]))
       .max(100)

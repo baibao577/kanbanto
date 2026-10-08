@@ -34,6 +34,35 @@ Drag rows to put them in the order you want.
 - **On a phone** there are no headings to click: choose what to sort by, and which way, under **Display → Sort by**.
 - **Filter** and search work as in the other views.
 
+## Group the rows
+
+**Display → Group by** gathers the rows under a heading for each list, each person, each priority or each label.
+The board's [own fields](/everyday/fields) work too, when their values are a short set: a choice, a person or a
+tick. (Text, numbers and dates don't group.)
+
+![The Outline grouped by assignee: Ben's steps show inside Ann's project, which is greyed](/images/outline-groups.webp)
+
+- **Each task is under its own heading.** A subtask can belong to someone else than its parent, so the tasks above
+  it come along in grey to show where it belongs: under Ben, his steps sit inside Ann's project, and the project
+  itself is under Ann. A task with two labels is under both.
+- **A heading says how many tasks are its own**, and what they add up to in each number column that
+  [adds up](/everyday/fields#totals). The **Total** row at the bottom still counts every task once.
+- **Headings come in the order that means something:** lists as on the board (every list, empty ones too),
+  priorities from Urgent down, labels and options in their own order, people by name. Tasks with no value come
+  last, under "No assignee", "No label" and so on.
+- **Fold a heading** with its arrow. The two small buttons in the **Task** heading fold or unfold all of them. What
+  you folded is remembered on this device.
+- **Add a task under a heading** with the **+** that shows when you point at it: the new task starts with that
+  heading's value. A subtask added to a row gets it too, so it shows where you typed it.
+- Sorting, **Filter** and search work under the headings. Rows can't be dragged while they are grouped: clear the
+  grouping (the **×** on **Grouped by**) to reorder.
+
+![Deals grouped by where they came from, a field of the board, with what each source's deals add up to](/images/outline-groups-field.webp)
+
+Grouping is your own choice and changes nothing for other people. A
+[preset](/everyday/search-and-filters#presets-save-a-combination) saves it with its filters, for everyone on the
+board to pick: "By crew", "By source".
+
 ## Put the columns in your order
 
 Drag a column's heading sideways and let go where you want it. A line shows where it will land. **Task** always
@@ -52,6 +81,7 @@ stays first.
 
 Click **Display**:
 
+- choose what to [group the rows](#group-the-rows) by,
 - pick the **columns** you want, the board's own fields among them (**Number**, **Created** and **Updated** are off
   until you switch them on; Number is each card's [name](/everyday/cards#a-card-s-name), like WEB-12),
 - switch between **compact** and **comfortable** rows,
@@ -63,7 +93,8 @@ Use **New task** or <kbd>N</kbd>. To add a subtask, open its parent.
 
 ## On a phone
 
-The Outline becomes a nested list, with each task's details underneath it.
+The Outline becomes a nested list, with each task's details underneath it. Grouped, the headings are in the list
+too, each with its count and totals; tap one to fold it.
 
 ## Good to know
 

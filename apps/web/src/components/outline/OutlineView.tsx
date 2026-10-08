@@ -1,4 +1,17 @@
-import { ArrowDown, ArrowUp, ArrowsDownUp, CaretDown, CaretRight, Crosshair, DotsSixVertical, Plus, Prohibit, X } from '@phosphor-icons/react'
+import {
+  ArrowDown,
+  ArrowUp,
+  ArrowsDownUp,
+  CaretDown,
+  CaretRight,
+  CheckSquare,
+  Crosshair,
+  DotsSixVertical,
+  Plus,
+  Prohibit,
+  Square,
+  X,
+} from '@phosphor-icons/react'
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { useBoard } from '@/app/board-context'
 import { Avatar, DueChip, LabelChip, PriorityIcon, ProgressBar, StatusDot } from '@/components/common/bits'
@@ -7,7 +20,7 @@ import { pointerDrag } from '@/lib/pointerDrag'
 import { useMediaQuery } from '@/lib/useMediaQuery'
 import { FieldCell } from './FieldCell'
 import { OutlineDisplayMenu } from './OutlineDisplayMenu'
-import { PRIORITY_LABEL } from '@kanbanto/model/types'
+import { PRIORITY_LABEL, type LabelDef, type Priority } from '@kanbanto/model/types'
 import { Empty } from '@/components/common/Empty'
 import { StatusMenu } from '@/components/common/StatusMenu'
 import { QuickAdd } from '@/components/board/QuickAdd'
@@ -18,7 +31,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { formatDay, formatMoment, formatShortDay } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { fieldIdOf, fieldKey, isFieldKey, numberText, type BoardField, type FieldType, type FieldValue } from '@kanbanto/model/fields'
-import { isBlocked, statusCol } from '@kanbanto/model/indexer'
+import { descendantsOf, isBlocked, statusCol, type TaskIndex } from '@kanbanto/model/indexer'
 import {
   arrangeColumns,
   changedAt,
@@ -31,8 +44,19 @@ import {
   type Sort,
   type SortKey,
 } from '@kanbanto/model/table'
+import {
+  groupCards,
+  groupFields,
+  groupKeep,
+  groupKeyOf,
+  groupLabel,
+  groupName,
+  TICKED,
+  type CardGroup,
+  type GroupKey,
+} from '@kanbanto/model/outlineGroups'
 import { refOf } from '@kanbanto/model/refs'
-import { subtreeSums, sumOf } from '@kanbanto/model/totals'
+import { numberOf, subtreeSums, sumOf } from '@kanbanto/model/totals'
 import { afterSubtree, defaultExpanded, flattenTree, treeTop } from '@kanbanto/model/tree'
 import { FilterMenu } from '@/components/shell/FilterMenu'
 import { PresetMenu } from '@/components/shell/PresetMenu'
@@ -77,6 +101,47 @@ const INDENT = 20
 /** Width of the drag handle before the indent. */
 const HANDLE = 28
 
+/** A heading of the grouped Outline (see the model's outlineGroups.ts) with what is laid out under it. */
+interface Section extends CardGroup {
+  /** The cards that are under it for their own sake: the other rows are their parents, for context. */
+  own: Set<string>
+  /** Those cards and the cards above them: everything that can be a row under it. */
+  keep: Set<string>
+  /** The rows under it (none while it is folded). */
+  rows: string[]
+  folded: boolean
+  /** For each number field that adds up: every row's total with its subtasks, counting this heading's cards only. */
+  sums: Map<string, Map<string, number>>
+  /** And the heading's own total for it (absent: not a single number). */
+  totals: Map<string, number>
+}
+
+/** Which headings are folded, for each column this board's Outline has been grouped by: kept on this device. */
+function useFolded(boardId: string, key: GroupKey | undefined) {
+  const name = `kankan:outline-folded:${boardId}`
+  const [all, setAll] = useState<Record<string, string[]>>(() => {
+    try {
+      const kept: unknown = JSON.parse(localStorage.getItem(name) ?? '{}')
+      return kept && typeof kept === 'object' && !Array.isArray(kept) ? (kept as Record<string, string[]>) : {}
+    } catch {
+      return {}
+    }
+  })
+  const list = key ? all[key] : undefined
+  const folded = useMemo(() => new Set(Array.isArray(list) ? list : []), [list])
+  const setFolded = (next: Iterable<string>) => {
+    if (!key) return
+    const out = { ...all, [key]: [...next] }
+    setAll(out)
+    try {
+      localStorage.setItem(name, JSON.stringify(out))
+    } catch {
+      // Only a view setting.
+    }
+  }
+  return [folded, setFolded] as const
+}
+
 /**
  * Everything as one nested table: the task tree on the left, its properties in columns.
  * Sort by clicking a header, filter from "Filter", add subtasks inline, and drag rows to reorder or move them.
@@ -88,7 +153,8 @@ export function OutlineView({ search }: { search: string }) {
 
   const [expanded, setExpanded] = useState(() => defaultExpanded(idx))
   const [limit, setLimit] = useState(ROWS_STEP)
-  const [adding, setAdding] = useState<string | null>(null)
+  // The inline "add" field: for a subtask of `parent`, or (null) a new card under the heading `group`.
+  const [adding, setAdding] = useState<{ parent: string | null; group?: string } | null>(null)
   const labelById = useMemo(() => new Map(data.labels.map((l) => [l.id, l])), [data.labels])
 
   const focusId = prefs.focusId && prefs.focusId in data.tasks ? prefs.focusId : undefined
@@ -113,9 +179,10 @@ export function OutlineView({ search }: { search: string }) {
   // Search and filters show what they found unfolded, and folding is off meanwhile. "Hide done" alone only leaves
   // rows out: folding works as usual.
   const forced = matched !== undefined
+  const groupKey = groupKeyOf(cfg.group, idx.fields)
   const { rows, truncated } = useMemo(
-    () => flattenTree(idx, top, expanded, limit, keep, order, !forced),
-    [idx, top, expanded, limit, keep, order, forced],
+    () => (groupKey ? { rows: [], truncated: false } : flattenTree(idx, top, expanded, limit, keep, order, !forced)),
+    [idx, top, expanded, limit, keep, order, forced, groupKey],
   )
 
   const toggle = (id: string) => {
@@ -128,9 +195,9 @@ export function OutlineView({ search }: { search: string }) {
     if (!expanded.has(id)) setExpanded(new Set(expanded).add(id))
   }
 
-  const startAdding = (parentId: string) => {
+  const startAdding = (parentId: string, g?: Section) => {
     expand(parentId)
-    setAdding(parentId)
+    setAdding({ parent: parentId, group: g?.value })
   }
 
   const { dragId, zoneOf, dragProps, dropProps } = useRowDrag(expand)
@@ -207,6 +274,44 @@ export function OutlineView({ search }: { search: string }) {
   const totalled = columns.some((c) => c.field && sums.has(c.field.id))
   const shownTop = keep ? top.filter((id) => keep.has(id)) : top
 
+  // Grouped by a column: the cards that are shown for their own sake, under a heading for each value of it. Under a
+  // heading the tree is laid out as a search lays it out: those cards, the cards above them greyed, nothing folded.
+  // (A parent can so be under several headings, and a card with two labels is.)
+  const [folded, setFolded] = useFolded(data.board.id, groupKey)
+  const sections = useMemo(() => {
+    if (!groupKey) return undefined
+    const scope = focusId ? descendantsOf(idx, focusId) : idx.preorder
+    const cards = counted ? scope.filter((id) => counted.has(id)) : scope
+    let left = limit
+    let more = false
+    const groups = groupCards(idx, data.labels, groupKey, cards)
+      // (A list is a place, so it is there empty too; but not while looking for something.)
+      .filter((g) => g.cards.length > 0 || !forced)
+      .map((g): Section => {
+        const own = new Set(g.cards)
+        const totals = new Map<string, number>()
+        for (const f of addingUp) {
+          const numbers = g.cards.flatMap((id) => numberOf(idx, id, f.id) ?? [])
+          if (numbers.length) totals.set(f.id, sumOf(f, numbers))
+        }
+        const shut = folded.has(g.value)
+        if (shut || !g.cards.length) return { ...g, own, keep: own, rows: [], folded: shut, sums: new Map(), totals }
+        const keep = groupKeep(idx, g.cards)
+        const laid = flattenTree(idx, top, expanded, left, keep, order)
+        left -= laid.rows.length
+        more ||= laid.truncated
+        const sums = new Map(addingUp.map((f) => [f.id, subtreeSums(idx, f, own)]))
+        return { ...g, own, keep, rows: laid.rows, folded: false, sums, totals }
+      })
+    return { groups, truncated: more, count: cards.length }
+  }, [groupKey, focusId, idx, counted, limit, data.labels, forced, addingUp, folded, top, expanded, order])
+  const foldGroup = (value: string, shut: boolean) => setFolded([...folded].filter((v) => v !== value).concat(shut ? [value] : []))
+  const foldAll = {
+    disabled: !groupKey && forced,
+    onExpand: () => (groupKey ? setFolded([]) : setExpanded(new Set(idx.childrenOf.keys()))),
+    onCollapse: () => (groupKey ? setFolded(sections!.groups.map((g) => g.value)) : setExpanded(new Set())),
+  }
+
   // Cells keep one function for good, whatever else changes around them (see FieldCell).
   const runRef = useRef(run)
   useEffect(() => {
@@ -228,7 +333,324 @@ export function OutlineView({ search }: { search: string }) {
   const height = compact ? 'h-8' : 'h-10'
 
   // Where the inline "add a subtask" field goes: right after the parent's last visible descendant.
-  const addAfter = adding ? afterSubtree(idx, rows, adding) : -1
+  const plainAddAfter = adding?.parent && !groupKey ? afterSubtree(idx, rows, adding.parent) : -1
+  const groupTitle = (g: Section) => <GroupTitle idx={idx} labels={data.labels} groupKey={groupKey!} value={g.value} memberName={memberName} />
+  /** What a heading's cards add up to, for the number fields that do. */
+  const groupTotals = (g: Section) => addingUp.flatMap((f) => (g.totals.has(f.id) ? [{ field: f, text: numberText(f, g.totals.get(f.id)!) }] : []))
+
+  /** A heading of the phone's list: the value, how many cards, what they add up to. */
+  const listHeading = (g: Section) => (
+    <li key={`g:${g.value}`} className="bg-muted">
+      <button
+        onClick={() => foldGroup(g.value, !g.folded)}
+        aria-expanded={!g.folded}
+        className="flex min-h-10 w-full items-center gap-2 py-1.5 pr-3 pl-2 text-left"
+      >
+        {g.folded ? (
+          <CaretRight className="size-3.5 shrink-0 text-muted-foreground" />
+        ) : (
+          <CaretDown className="size-3.5 shrink-0 text-muted-foreground" />
+        )}
+        {groupTitle(g)}
+        <span className="shrink-0 text-xs text-muted-foreground tabular-nums">{g.cards.length.toLocaleString()}</span>
+        <span className="ml-auto flex min-w-0 flex-wrap justify-end gap-x-2.5 text-xs text-muted-foreground tabular-nums">
+          {groupTotals(g).map((x) => (
+            <span key={x.field.id}>
+              {x.field.name} {x.text}
+            </span>
+          ))}
+        </span>
+      </button>
+    </li>
+  )
+
+  /** A heading of the table: the value and how many cards, then each column's total where numbers add up. */
+  const tableHeading = (g: Section, last: boolean) => (
+    <div key={`g:${g.value}`} role="row" data-group={g.value} style={grid} className={cn('group border-b bg-muted', last && 'border-b-0')}>
+      <div role="cell" className="sticky left-0 z-10 flex h-9 min-w-0 items-center gap-2 bg-muted pr-2 pl-1 shadow-[inset_-1px_0_0_var(--border)]">
+        <button
+          onClick={() => foldGroup(g.value, !g.folded)}
+          aria-expanded={!g.folded}
+          aria-label={g.folded ? 'Show its tasks' : 'Hide its tasks'}
+          className="grid size-6 shrink-0 place-items-center rounded text-muted-foreground hover:bg-accent"
+        >
+          {g.folded ? <CaretRight className="size-3.5" /> : <CaretDown className="size-3.5" />}
+        </button>
+        {groupTitle(g)}
+        <span className="shrink-0 text-xs text-muted-foreground tabular-nums" aria-label={`${g.cards.length} tasks`}>
+          {g.cards.length.toLocaleString()}
+        </span>
+        {!readOnly && !search && (
+          <span className="ml-auto flex shrink-0 opacity-0 group-hover:opacity-100 focus-within:opacity-100">
+            <RowAction
+              label="Add a task here"
+              onClick={() => {
+                if (g.folded) foldGroup(g.value, false)
+                setAdding({ parent: null, group: g.value })
+              }}
+            >
+              <Plus className="size-3.5" />
+            </RowAction>
+          </span>
+        )}
+      </div>
+      {columns.slice(1).map((c) => (
+        <div key={c.key} role="cell" className="flex h-9 min-w-0 items-center px-3">
+          {c.field && g.totals.has(c.field.id) && (
+            <span className="truncate text-sm font-medium tabular-nums" aria-label={`${c.label}, total`}>
+              {numberText(c.field, g.totals.get(c.field.id)!)}
+            </span>
+          )}
+        </div>
+      ))}
+    </div>
+  )
+
+  /** A row of the phone's list. Under a heading (`g`): there for itself, or greyed as the parent of a card that is. */
+  const listRow = (id: string, g?: Section) => {
+    const t = data.tasks[id]
+    const ref = refOf(data.board, t)
+    const kids = idx.childrenOf.get(id)
+    const open = !!g || forced || expanded.has(id)
+    const depth = idx.depth.get(id)! - baseDepth
+    const done = idx.category.get(id) === 'done'
+    const col = statusCol(idx, id)
+    const context = g ? !g.own.has(id) : matched && !matched.has(id)
+    // (Under a heading a card can be there twice, and its place isn't one in the tree: nothing is dragged.)
+    const zone = g ? undefined : zoneOf(id)
+    return (
+      <li
+        key={g ? `${g.value}/${id}` : id}
+        {...(!g && { ...dragProps(id), ...dropProps(id) })}
+        className={cn(
+          'relative flex items-start gap-1 py-2 pr-3',
+          !g && 'drag-handle',
+          !g && !depth && kids && 'bg-muted/40',
+          dragId === id && 'opacity-40',
+          zone === 'inside' && 'bg-primary/8',
+        )}
+        style={{ paddingLeft: 6 + depth * 16 }}
+      >
+        <button
+          disabled={!kids || !!g || forced || (!!keep && !kids.some((k) => keep.has(k)))}
+          onClick={() => toggle(id)}
+          aria-label={open ? 'Collapse' : 'Expand'}
+          className="grid size-6 shrink-0 place-items-center rounded text-muted-foreground disabled:opacity-0"
+        >
+          {open ? <CaretDown className="size-3.5" /> : <CaretRight className="size-3.5" />}
+        </button>
+        <div className="min-w-0 flex-1">
+          <button
+            onClick={() => openTask(id)}
+            className={cn(
+              'line-clamp-2 text-left text-sm',
+              kids && 'font-semibold',
+              done && !kids && 'text-muted-foreground line-through',
+              context && 'font-normal text-muted-foreground',
+            )}
+          >
+            {t.title}
+          </button>
+          <div className="mt-1 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-xs text-muted-foreground">
+            <span className="inline-flex items-center gap-1.5">
+              <StatusDot category={col.category} color={col.color} /> {col.name}
+            </span>
+            {t.priority && <PriorityIcon priority={t.priority} />}
+            {t.assigneeId && (
+              <span className="inline-flex items-center gap-1">
+                <Avatar name={memberName(t.assigneeId)} picture={idx.members.get(t.assigneeId)?.picture} className="size-4 text-[8px]" />{' '}
+                {memberName(t.assigneeId)}
+              </span>
+            )}
+            {t.due && <DueChip due={t.due} done={done} />}
+            {/* When it was made or last changed, once that column is switched on or sorted by. */}
+            {OUTLINE_EXTRA.map(
+              (k) =>
+                (cfg.extra?.includes(k) || cfg.sort?.key === k) &&
+                (k === 'number' ? (
+                  ref && (
+                    <span key={k} className="font-mono tabular-nums">
+                      {ref}
+                    </span>
+                  )
+                ) : (
+                  <span key={k}>
+                    {COLUMN_LABEL[k]} <When at={k === 'created' ? t.createdAt : changedAt(t)} />
+                  </span>
+                )),
+            )}
+            {isBlocked(idx, id) && <Prohibit weight="bold" className="size-3.5 text-warning" aria-label="Waiting on another task" />}
+            {/* No columns here: the fields the board shows on its cards. */}
+            {t.custom &&
+              data.fields.map((f) => f.front && t.custom![f.id] !== undefined && <FieldChip key={f.id} field={f} value={t.custom![f.id]} />)}
+          </div>
+        </div>
+        {kids && (
+          <span className="mt-0.5 shrink-0 text-xs text-muted-foreground tabular-nums">
+            {idx.subDone.get(id)}/{idx.subTotal.get(id)}
+          </span>
+        )}
+        <DropLine zone={zone} left={6 + depth * 16} />
+      </li>
+    )
+  }
+
+  /** A row of the table. `at`: where it is among the rows it's laid out with, for the last line and the inline add row. */
+  const tableRow = (id: string, i: number, at: { last: boolean; addAfter: number; g?: Section }) => {
+    const g = at.g
+    const t = data.tasks[id]
+    const ref = refOf(data.board, t)
+    const kids = idx.childrenOf.get(id)
+    const open = !!g || forced || expanded.has(id)
+    const depth = idx.depth.get(id)! - baseDepth
+    const done = idx.category.get(id) === 'done'
+    // Shown only because a subtask matches, or (under a heading) is one of the heading's cards.
+    const context = g ? !g.own.has(id) : matched && !matched.has(id)
+    const labels = t.labels.map((l) => labelById.get(l)).filter((l) => !!l)
+    const zone = g ? undefined : zoneOf(id)
+    // Hover is a solid color (not see-through) so the pinned Task cell can match it.
+    const row = (
+      <div
+        key={g ? `${g.value}/${id}` : id}
+        role="row"
+        {...(!g && { ...dragProps(id), ...dropProps(id) })}
+        style={grid}
+        className={cn(
+          // The row's color is a variable, so the pinned Task cell can match it (hover included).
+          'group relative border-b bg-(--row) [--row:var(--card)] hover:[--row:color-mix(in_oklab,var(--accent)_45%,var(--card))]',
+          !g && 'drag-handle',
+          // (Under a heading, the heading is the band: a tinted project under it would read as another one.)
+          !g && !depth && kids && '[--row:color-mix(in_oklab,var(--muted)_55%,var(--card))]',
+          at.last && at.addAfter !== i && !totalled && 'border-b-0',
+          dragId === id && 'opacity-40',
+          zone === 'inside' && '[--row:color-mix(in_oklab,var(--primary)_8%,var(--card))]',
+        )}
+      >
+        {/* Task: drag handle, tree indent, caret, title, add-subtask */}
+        <div
+          role="cell"
+          className={cn(
+            'sticky left-0 z-10 flex min-w-0 items-center gap-1 bg-(--row) pr-2 shadow-[inset_-1px_0_0_var(--border)]',
+            height,
+            zone === 'inside' && 'ring-2 ring-primary/40 ring-inset',
+          )}
+        >
+          {/* Indent guides: a faint line per level, so deep trees are easy to follow. */}
+          {Array.from({ length: depth }, (_, l) => (
+            <span key={l} aria-hidden className="absolute inset-y-0 w-px bg-border/60" style={{ left: HANDLE + l * INDENT + 11 }} />
+          ))}
+          <span className="grid shrink-0 place-items-center" style={{ width: HANDLE - 4 }} title={g ? undefined : 'Drag to move'}>
+            {!readOnly && !g && (
+              <DotsSixVertical weight="bold" className="size-3.5 cursor-grab text-muted-foreground/60 opacity-0 group-hover:opacity-100" />
+            )}
+          </span>
+          <span style={{ width: depth * INDENT }} className="shrink-0" />
+          <button
+            disabled={!kids || !!g || forced || (!!keep && !kids.some((k) => keep.has(k)))}
+            onClick={() => toggle(id)}
+            aria-label={open ? 'Collapse' : 'Expand'}
+            className="grid size-6 shrink-0 place-items-center rounded text-muted-foreground hover:bg-accent disabled:hover:bg-transparent"
+          >
+            {/* (Under a heading: no arrow on a card whose subtasks are all under other headings.) */}
+            {(g ? kids?.some((k) => g.keep.has(k)) : kids) ? open ? <CaretDown className="size-3.5" /> : <CaretRight className="size-3.5" /> : null}
+          </button>
+          <button
+            onClick={() => openTask(id)}
+            className={cn(
+              'min-w-0 truncate text-left text-sm hover:underline',
+              kids && 'font-semibold',
+              done && !kids && 'text-muted-foreground line-through',
+              context && 'font-normal text-muted-foreground',
+            )}
+          >
+            {t.title}
+          </button>
+          {isBlocked(idx, id) && <Prohibit weight="bold" className="size-3.5 shrink-0 text-warning" aria-label="Waiting on another task" />}
+          <span className="ml-auto flex shrink-0 gap-0.5 opacity-0 group-hover:opacity-100 focus-within:opacity-100">
+            {!readOnly && (
+              <RowAction label="Add a subtask" onClick={() => startAdding(id, g)}>
+                <Plus className="size-3.5" />
+              </RowAction>
+            )}
+            {kids && (
+              <RowAction label="Focus on its subtasks" onClick={() => focus(id)}>
+                <Crosshair className="size-3.5" />
+              </RowAction>
+            )}
+          </span>
+        </div>
+
+        {columns.slice(1).map((c, n) =>
+          c.field ? (
+            <FieldCell
+              key={c.key}
+              taskId={id}
+              field={c.field}
+              value={t.custom?.[c.field.id]}
+              total={totalText(c.field, (g?.sums ?? sums).get(c.field.id)?.get(id), kids && !context)}
+              readOnly={readOnly}
+              first={n === 0}
+              height={height}
+              onSet={setValue}
+            />
+          ) : (
+            <Cell key={c.key} first={n === 0} height={height}>
+              {c.key === 'status' ? (
+                <StatusMenu id={id} />
+              ) : c.key === 'progress' ? (
+                kids && <ProgressBar done={idx.subDone.get(id)!} total={idx.subTotal.get(id)!} className="w-full" />
+              ) : c.key === 'assignee' ? (
+                t.assigneeId && (
+                  <span className="flex min-w-0 items-center gap-2">
+                    <Avatar name={memberName(t.assigneeId)} picture={idx.members.get(t.assigneeId)?.picture} className="size-5 text-[9px]" />
+                    <span className="truncate text-sm">{memberName(t.assigneeId)}</span>
+                  </span>
+                )
+              ) : c.key === 'priority' ? (
+                t.priority && (
+                  <span className="flex items-center gap-1.5 text-xs">
+                    <PriorityIcon priority={t.priority} /> {PRIORITY_LABEL[t.priority]}
+                  </span>
+                )
+              ) : c.key === 'start' ? (
+                t.start && <span className="text-xs text-muted-foreground tabular-nums">{formatDay(t.start)}</span>
+              ) : c.key === 'due' ? (
+                t.due && <DueChip due={t.due} done={done} />
+              ) : c.key === 'created' || c.key === 'updated' ? (
+                <When at={c.key === 'created' ? t.createdAt : changedAt(t)} />
+              ) : c.key === 'number' ? (
+                ref && <span className="truncate font-mono text-xs text-muted-foreground tabular-nums">{ref}</span>
+              ) : (
+                labels.length > 0 && (
+                  <span className="flex min-w-0 gap-1 overflow-hidden">
+                    {labels.map((l) => (
+                      <LabelChip key={l.id} label={l} className="shrink-0" />
+                    ))}
+                  </span>
+                )
+              )}
+            </Cell>
+          ),
+        )}
+
+        <DropLine zone={zone} left={HANDLE + depth * INDENT} />
+      </div>
+    )
+    const parent = adding?.parent
+    if (at.addAfter !== i || !parent) return row
+    return [
+      row,
+      // (Added under a heading, a subtask starts with the heading's value, so it shows where it was typed.)
+      <AddSubtaskRow
+        key={g ? `add:${g.value}` : '__add'}
+        className={height}
+        indent={HANDLE + (idx.depth.get(parent)! - baseDepth + 1) * INDENT + 6}
+        parentTitle={data.tasks[parent].title}
+        onAdd={(title, fields) => createTask(parent, { ...fields, ...(g && groupFields(idx, groupKey!, g.value)), title })}
+        onClose={() => setAdding(null)}
+      />,
+    ]
+  }
 
   return (
     <>
@@ -242,10 +664,23 @@ export function OutlineView({ search }: { search: string }) {
         <div className="px-3 py-4 sm:px-6">
           {/* A phone's list has no "Task" heading to hold them. */}
           <div className="mb-1 flex justify-end md:hidden">
-            <FoldAll disabled={forced} onExpand={() => setExpanded(new Set(idx.childrenOf.keys()))} onCollapse={() => setExpanded(new Set())} />
+            <FoldAll {...foldAll} />
           </div>
-          {(cfg.sort || matched) && (
+          {(cfg.sort || matched || groupKey) && (
             <div className="mb-3 flex flex-wrap items-center gap-1.5">
+              {groupKey && (
+                <span className="inline-flex h-7 items-center gap-1 rounded-full border bg-card pr-1 pl-3 text-xs">
+                  <span className="text-muted-foreground">Grouped by</span>
+                  <span className="font-medium">{groupLabel(groupKey, idx.fields)}</span>
+                  <button
+                    aria-label="Stop grouping"
+                    onClick={() => setPrefs({ type: 'setOutline', config: { ...cfg, group: undefined } })}
+                    className="grid size-5 place-items-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground"
+                  >
+                    <X className="size-3" />
+                  </button>
+                </span>
+              )}
               {cfg.sort && (
                 <span className="inline-flex h-7 items-center gap-1 rounded-full border bg-card pr-1 pl-3 text-xs">
                   <span className="text-muted-foreground">Sorted by</span>
@@ -266,102 +701,19 @@ export function OutlineView({ search }: { search: string }) {
                   {matched.size.toLocaleString()} {matched.size === 1 ? 'task matches' : 'tasks match'}
                 </span>
               )}
-              {cfg.sort && <span className="px-1 text-xs text-muted-foreground">· Clear the sort to reorder by dragging</span>}
+              {(cfg.sort || groupKey) && !readOnly && (
+                <span className="px-1 text-xs text-muted-foreground">
+                  · Clear the {groupKey ? (cfg.sort ? 'grouping and the sort' : 'grouping') : 'sort'} to reorder by dragging
+                </span>
+              )}
             </div>
           )}
 
-          {rows.length === 0 ? (
+          {(sections ? sections.count === 0 : rows.length === 0) ? (
             <Empty>{search || filtering ? 'No tasks match.' : hiddenDone ? 'Everything here is done.' : 'No tasks here yet.'}</Empty>
           ) : narrow ? (
             <ul className="divide-y overflow-hidden rounded-xl border bg-card" aria-label="Tasks">
-              {rows.map((id) => {
-                const t = data.tasks[id]
-                const ref = refOf(data.board, t)
-                const kids = idx.childrenOf.get(id)
-                const open = forced || expanded.has(id)
-                const depth = idx.depth.get(id)! - baseDepth
-                const done = idx.category.get(id) === 'done'
-                const col = statusCol(idx, id)
-                const context = matched && !matched.has(id)
-                const zone = zoneOf(id)
-                return (
-                  <li
-                    key={id}
-                    {...dragProps(id)}
-                    {...dropProps(id)}
-                    className={cn(
-                      'drag-handle relative flex items-start gap-1 py-2 pr-3',
-                      !depth && kids && 'bg-muted/40',
-                      dragId === id && 'opacity-40',
-                      zone === 'inside' && 'bg-primary/8',
-                    )}
-                    style={{ paddingLeft: 6 + depth * 16 }}
-                  >
-                    <button
-                      disabled={!kids || forced || (!!keep && !kids.some((k) => keep.has(k)))}
-                      onClick={() => toggle(id)}
-                      aria-label={open ? 'Collapse' : 'Expand'}
-                      className="grid size-6 shrink-0 place-items-center rounded text-muted-foreground disabled:opacity-0"
-                    >
-                      {open ? <CaretDown className="size-3.5" /> : <CaretRight className="size-3.5" />}
-                    </button>
-                    <div className="min-w-0 flex-1">
-                      <button
-                        onClick={() => openTask(id)}
-                        className={cn(
-                          'line-clamp-2 text-left text-sm',
-                          kids && 'font-semibold',
-                          done && !kids && 'text-muted-foreground line-through',
-                          context && 'font-normal text-muted-foreground',
-                        )}
-                      >
-                        {t.title}
-                      </button>
-                      <div className="mt-1 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-xs text-muted-foreground">
-                        <span className="inline-flex items-center gap-1.5">
-                          <StatusDot category={col.category} color={col.color} /> {col.name}
-                        </span>
-                        {t.priority && <PriorityIcon priority={t.priority} />}
-                        {t.assigneeId && (
-                          <span className="inline-flex items-center gap-1">
-                            <Avatar name={memberName(t.assigneeId)} picture={idx.members.get(t.assigneeId)?.picture} className="size-4 text-[8px]" />{' '}
-                            {memberName(t.assigneeId)}
-                          </span>
-                        )}
-                        {t.due && <DueChip due={t.due} done={done} />}
-                        {/* When it was made or last changed, once that column is switched on or sorted by. */}
-                        {OUTLINE_EXTRA.map(
-                          (k) =>
-                            (cfg.extra?.includes(k) || cfg.sort?.key === k) &&
-                            (k === 'number' ? (
-                              ref && (
-                                <span key={k} className="font-mono tabular-nums">
-                                  {ref}
-                                </span>
-                              )
-                            ) : (
-                              <span key={k}>
-                                {COLUMN_LABEL[k]} <When at={k === 'created' ? t.createdAt : changedAt(t)} />
-                              </span>
-                            )),
-                        )}
-                        {isBlocked(idx, id) && <Prohibit weight="bold" className="size-3.5 text-warning" aria-label="Waiting on another task" />}
-                        {/* No columns here: the fields the board shows on its cards. */}
-                        {t.custom &&
-                          data.fields.map(
-                            (f) => f.front && t.custom![f.id] !== undefined && <FieldChip key={f.id} field={f} value={t.custom![f.id]} />,
-                          )}
-                      </div>
-                    </div>
-                    {kids && (
-                      <span className="mt-0.5 shrink-0 text-xs text-muted-foreground tabular-nums">
-                        {idx.subDone.get(id)}/{idx.subTotal.get(id)}
-                      </span>
-                    )}
-                    <DropLine zone={zone} left={6 + depth * 16} />
-                  </li>
-                )
-              })}
+              {sections ? sections.groups.flatMap((g) => [listHeading(g), ...g.rows.map((id) => listRow(id, g))]) : rows.map((id) => listRow(id))}
             </ul>
           ) : (
             // One scroll area (the page) for both directions, so the header and task column can both stay pinned.
@@ -420,177 +772,34 @@ export function OutlineView({ search }: { search: string }) {
                             <ArrowsDownUp className="size-3 shrink-0 opacity-0 group-hover/sort:opacity-60" />
                           )}
                         </button>
-                        {i === 0 && (
-                          <FoldAll
-                            className="pr-1.5"
-                            disabled={forced}
-                            onExpand={() => setExpanded(new Set(idx.childrenOf.keys()))}
-                            onCollapse={() => setExpanded(new Set())}
-                          />
-                        )}
+                        {i === 0 && <FoldAll className="pr-1.5" {...foldAll} />}
                       </div>
                     )
                   })}
                 </div>
 
-                {rows.map((id, i) => {
-                  const t = data.tasks[id]
-                  const ref = refOf(data.board, t)
-                  const kids = idx.childrenOf.get(id)
-                  const open = forced || expanded.has(id)
-                  const depth = idx.depth.get(id)! - baseDepth
-                  const done = idx.category.get(id) === 'done'
-                  const context = matched && !matched.has(id) // shown only because a subtask matches
-                  const labels = t.labels.map((l) => labelById.get(l)).filter((l) => !!l)
-                  const zone = zoneOf(id)
-                  // Hover is a solid color (not see-through) so the pinned Task cell can match it.
-                  const row = (
-                    <div
-                      key={id}
-                      role="row"
-                      {...dragProps(id)}
-                      {...dropProps(id)}
-                      style={grid}
-                      className={cn(
-                        // The row's color is a variable, so the pinned Task cell can match it (hover included).
-                        'group drag-handle relative border-b bg-(--row) [--row:var(--card)] hover:[--row:color-mix(in_oklab,var(--accent)_45%,var(--card))]',
-                        !depth && kids && '[--row:color-mix(in_oklab,var(--muted)_55%,var(--card))]',
-                        i === rows.length - 1 && addAfter !== i && !totalled && 'border-b-0',
-                        dragId === id && 'opacity-40',
-                        zone === 'inside' && '[--row:color-mix(in_oklab,var(--primary)_8%,var(--card))]',
-                      )}
-                    >
-                      {/* Task: drag handle, tree indent, caret, title, add-subtask */}
-                      <div
-                        role="cell"
-                        className={cn(
-                          'sticky left-0 z-10 flex min-w-0 items-center gap-1 bg-(--row) pr-2 shadow-[inset_-1px_0_0_var(--border)]',
-                          height,
-                          zone === 'inside' && 'ring-2 ring-primary/40 ring-inset',
-                        )}
-                      >
-                        {/* Indent guides: a faint line per level, so deep trees are easy to follow. */}
-                        {Array.from({ length: depth }, (_, l) => (
-                          <span key={l} aria-hidden className="absolute inset-y-0 w-px bg-border/60" style={{ left: HANDLE + l * INDENT + 11 }} />
-                        ))}
-                        <span className="grid shrink-0 place-items-center" style={{ width: HANDLE - 4 }} title="Drag to move">
-                          {!readOnly && (
-                            <DotsSixVertical
-                              weight="bold"
-                              className="size-3.5 cursor-grab text-muted-foreground/60 opacity-0 group-hover:opacity-100"
-                            />
-                          )}
-                        </span>
-                        <span style={{ width: depth * INDENT }} className="shrink-0" />
-                        <button
-                          disabled={!kids || forced || (!!keep && !kids.some((k) => keep.has(k)))}
-                          onClick={() => toggle(id)}
-                          aria-label={open ? 'Collapse' : 'Expand'}
-                          className="grid size-6 shrink-0 place-items-center rounded text-muted-foreground hover:bg-accent disabled:hover:bg-transparent"
-                        >
-                          {kids ? open ? <CaretDown className="size-3.5" /> : <CaretRight className="size-3.5" /> : null}
-                        </button>
-                        <button
-                          onClick={() => openTask(id)}
-                          className={cn(
-                            'min-w-0 truncate text-left text-sm hover:underline',
-                            kids && 'font-semibold',
-                            done && !kids && 'text-muted-foreground line-through',
-                            context && 'font-normal text-muted-foreground',
-                          )}
-                        >
-                          {t.title}
-                        </button>
-                        {isBlocked(idx, id) && (
-                          <Prohibit weight="bold" className="size-3.5 shrink-0 text-warning" aria-label="Waiting on another task" />
-                        )}
-                        <span className="ml-auto flex shrink-0 gap-0.5 opacity-0 group-hover:opacity-100 focus-within:opacity-100">
-                          {!readOnly && (
-                            <RowAction label="Add a subtask" onClick={() => startAdding(id)}>
-                              <Plus className="size-3.5" />
-                            </RowAction>
-                          )}
-                          {kids && (
-                            <RowAction label="Focus on its subtasks" onClick={() => focus(id)}>
-                              <Crosshair className="size-3.5" />
-                            </RowAction>
-                          )}
-                        </span>
-                      </div>
-
-                      {columns.slice(1).map((c, n) =>
-                        c.field ? (
-                          <FieldCell
-                            key={c.key}
-                            taskId={id}
-                            field={c.field}
-                            value={t.custom?.[c.field.id]}
-                            total={totalText(c.field, sums.get(c.field.id)?.get(id), kids && !context)}
-                            readOnly={readOnly}
-                            first={n === 0}
-                            height={height}
-                            onSet={setValue}
+                {sections
+                  ? sections.groups.flatMap((g, n) => {
+                      const lastGroup = n === sections.groups.length - 1
+                      const addTop = adding?.group === g.value && adding.parent === null
+                      const addAfter = adding?.parent && adding.group === g.value ? afterSubtree(idx, g.rows, adding.parent) : -1
+                      return [
+                        tableHeading(g, lastGroup && !g.rows.length && !addTop && !totalled),
+                        ...g.rows.map((id, i) => tableRow(id, i, { g, addAfter, last: lastGroup && i === g.rows.length - 1 && !addTop })),
+                        addTop && (
+                          <AddSubtaskRow
+                            key={`add:${g.value}`}
+                            className={height}
+                            indent={HANDLE + 6}
+                            parentTitle=""
+                            prompt={`New task under “${groupName(idx, data.labels, groupKey!, g.value)}”`}
+                            onAdd={(title, fields) => createTask(focusId ?? null, { ...fields, ...groupFields(idx, groupKey!, g.value), title })}
+                            onClose={() => setAdding(null)}
                           />
-                        ) : (
-                          <Cell key={c.key} first={n === 0} height={height}>
-                            {c.key === 'status' ? (
-                              <StatusMenu id={id} />
-                            ) : c.key === 'progress' ? (
-                              kids && <ProgressBar done={idx.subDone.get(id)!} total={idx.subTotal.get(id)!} className="w-full" />
-                            ) : c.key === 'assignee' ? (
-                              t.assigneeId && (
-                                <span className="flex min-w-0 items-center gap-2">
-                                  <Avatar
-                                    name={memberName(t.assigneeId)}
-                                    picture={idx.members.get(t.assigneeId)?.picture}
-                                    className="size-5 text-[9px]"
-                                  />
-                                  <span className="truncate text-sm">{memberName(t.assigneeId)}</span>
-                                </span>
-                              )
-                            ) : c.key === 'priority' ? (
-                              t.priority && (
-                                <span className="flex items-center gap-1.5 text-xs">
-                                  <PriorityIcon priority={t.priority} /> {PRIORITY_LABEL[t.priority]}
-                                </span>
-                              )
-                            ) : c.key === 'start' ? (
-                              t.start && <span className="text-xs text-muted-foreground tabular-nums">{formatDay(t.start)}</span>
-                            ) : c.key === 'due' ? (
-                              t.due && <DueChip due={t.due} done={done} />
-                            ) : c.key === 'created' || c.key === 'updated' ? (
-                              <When at={c.key === 'created' ? t.createdAt : changedAt(t)} />
-                            ) : c.key === 'number' ? (
-                              ref && <span className="truncate font-mono text-xs text-muted-foreground tabular-nums">{ref}</span>
-                            ) : (
-                              labels.length > 0 && (
-                                <span className="flex min-w-0 gap-1 overflow-hidden">
-                                  {labels.map((l) => (
-                                    <LabelChip key={l.id} label={l} className="shrink-0" />
-                                  ))}
-                                </span>
-                              )
-                            )}
-                          </Cell>
                         ),
-                      )}
-
-                      <DropLine zone={zone} left={HANDLE + depth * INDENT} />
-                    </div>
-                  )
-                  if (addAfter !== i || !adding) return row
-                  return [
-                    row,
-                    <AddSubtaskRow
-                      key="__add"
-                      className={height}
-                      indent={HANDLE + (idx.depth.get(adding)! - baseDepth + 1) * INDENT + 6}
-                      parentTitle={data.tasks[adding].title}
-                      onAdd={(title, fields) => createTask(adding, { ...fields, title })}
-                      onClose={() => setAdding(null)}
-                    />,
-                  ]
-                })}
+                      ]
+                    })
+                  : rows.map((id, i) => tableRow(id, i, { addAfter: plainAddAfter, last: i === rows.length - 1 }))}
 
                 {/* Numbers that add up, for everything the table shows: stays in sight at the bottom. */}
                 {totalled && (
@@ -621,7 +830,7 @@ export function OutlineView({ search }: { search: string }) {
             </div>
           )}
 
-          {truncated && (
+          {(sections ? sections.truncated : truncated) && (
             <Button variant="ghost" size="sm" className="mt-3 text-muted-foreground" onClick={() => setLimit(limit + ROWS_STEP)}>
               Show more
             </Button>
@@ -647,6 +856,67 @@ export function OutlineView({ search }: { search: string }) {
 /** What a card and its subtasks add up to, for its cell: only for a card that has subtasks, and a number at or under it. */
 function totalText(field: BoardField, total: number | undefined, parent: boolean | undefined) {
   return parent && total !== undefined ? `Σ ${numberText(field, total)}` : undefined
+}
+
+/** A heading's value drawn as the thing it is: a list with its dot, a person with their picture, a label as its chip. */
+function GroupTitle({
+  idx,
+  labels,
+  groupKey,
+  value,
+  memberName,
+}: {
+  idx: TaskIndex
+  labels: readonly LabelDef[]
+  groupKey: GroupKey
+  value: string
+  memberName: (id: string) => string
+}) {
+  const name = groupName(idx, labels, groupKey, value)
+  const field = isFieldKey(groupKey) ? idx.fields.get(fieldIdOf(groupKey)) : undefined
+  const text = <span className={cn('truncate text-sm font-medium', !value && 'text-muted-foreground')}>{name}</span>
+  if (!value) return text
+  if (groupKey === 'status') {
+    const col = idx.colById.get(value)
+    return (
+      <span className="flex min-w-0 items-center gap-2">
+        {col && <StatusDot category={col.category} color={col.color} />}
+        {text}
+      </span>
+    )
+  }
+  if (groupKey === 'assignee' || field?.type === 'person')
+    return (
+      <span className="flex min-w-0 items-center gap-2">
+        <Avatar name={memberName(value)} picture={idx.members.get(value)?.picture} className="size-5 text-[9px]" />
+        {text}
+      </span>
+    )
+  if (groupKey === 'priority')
+    return (
+      <span className="flex min-w-0 items-center gap-1.5">
+        <PriorityIcon priority={value as Priority} />
+        {text}
+      </span>
+    )
+  if (groupKey === 'labels') {
+    const label = labels.find((l) => l.id === value)
+    return label ? <LabelChip label={label} className="min-w-0" /> : text
+  }
+  if (field?.type === 'choice') {
+    const option = field.options?.find((o) => o.id === value)
+    return option ? <LabelChip label={option} className="min-w-0" /> : text
+  }
+  return (
+    <span className="flex min-w-0 items-center gap-1.5">
+      {value === TICKED ? (
+        <CheckSquare weight="fill" className="size-4 shrink-0 text-status-done" />
+      ) : (
+        <Square className="size-4 shrink-0 text-muted-foreground" />
+      )}
+      {text}
+    </span>
+  )
 }
 
 function RowAction({ label, onClick, children }: { label: string; onClick: () => void; children: ReactNode }) {

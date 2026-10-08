@@ -2265,6 +2265,35 @@ await shot('comment-2-react', async () => {
   return around([card.getByRole('tab', { name: /Comments/ }), theirs, mine, six], 24)
 })
 
+// The Outline grouped by a column (last: how the Outline is set here stays that way for the rest of a run).
+const groupOutline = async (by) => {
+  await page.getByRole('table', { name: 'Tasks' }).waitFor()
+  await page.getByRole('button', { name: 'Display' }).click()
+  await page.getByRole('combobox', { name: 'Group by' }).click()
+  await page.getByRole('option', { name: by, exact: true }).click()
+  // (The list closes first, then the menu.)
+  await page.waitForTimeout(450)
+  await page.keyboard.press('Escape')
+  await page.waitForTimeout(400)
+  const { clip } = await around([page.getByText('Grouped by'), page.getByRole('table', { name: 'Tasks' })], 24)
+  return clip
+}
+await shot('outline-groups', async () => {
+  await openBoard('outline')
+  const clip = await groupOutline('Assignee')
+  return { clip: { ...clip, height: Math.min(clip.height, 640) } }
+})
+// By one of the board's own fields: where each deal came from, with what each heading's deals add up to.
+await shot('outline-groups-field', async () => {
+  const id = await starter('sales', 'Sales pipeline', 'violet')
+  await page.goto(`${SITE}/#/b/${id}/outline`)
+  await page.reload()
+  const clip = await groupOutline('Source')
+  await page.mouse.move(4, 4)
+  // (Down to the table's own edge: what's under it isn't the point.)
+  return { clip: { ...clip, height: clip.height - 18 } }
+})
+
 await browser.close()
 console.log(`made ${made.length}: ${made.join(', ')}`)
 if (failed.length) console.log(`\nnot made (${failed.length}):\n  ${failed.join('\n  ')}`)
