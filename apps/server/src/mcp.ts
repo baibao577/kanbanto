@@ -52,7 +52,7 @@ import { HttpError, siteUrl } from './http'
 import { followedBy, isFollowing, setFollowing } from './boards/follows'
 import { createBoard, createStarter } from './boards/service'
 import { boardsFor, withPlaces } from './routes/boards'
-import { lastComments, mentionsIn, postComment } from './routes/comments'
+import { lastComments, mentionsIn, postComment, reactionsOf } from './routes/comments'
 import { blockedName, cardFiles, mayUpload, pictureType, views as fileViews } from './routes/files'
 import { attachFile, newUploadLink, UPLOAD_MINUTES } from './routes/uploads'
 import { downloads } from './storage/download'
@@ -1178,7 +1178,7 @@ function buildServer(app: FastifyInstance, me: SessionUser, token: TokenAccess, 
     {
       title: 'Get a task',
       description:
-        'One task in full: where it sits (its parents), description, dates, subtasks, what it waits on, whether you follow it, its latest comments, its files (read_file opens one), and the time logged on it (total, by person, latest entries). 📎name in a description or a comment points at the file of that name.',
+        'One task in full: where it sits (its parents), description, dates, subtasks, what it waits on, whether you follow it, its latest comments (with the emoji people answered each with), its files (read_file opens one), and the time logged on it (total, by person, latest entries). 📎name in a description or a comment points at the file of that name.',
       inputSchema: { board_id: z.string(), task_id: z.string() },
       annotations: readOnly,
     },
@@ -1231,6 +1231,11 @@ function buildServer(app: FastifyInstance, me: SessionUser, token: TokenAccess, 
         .where(and(eq(comments.boardId, board_id), eq(comments.taskId, task_id)))
         .orderBy(desc(comments.createdAt))
         .limit(20)
+      // (The emoji people answered a comment with, and who: "seen" and "done" are often said that way.)
+      const reactions = await reactionsOf(
+        app.db,
+        recent.map((c) => c.id),
+      )
       return {
         ...brief(data, idx, t, linked),
         path: ancestorsOf(data.tasks, task_id).map((id) => data.tasks[id].title),
@@ -1241,7 +1246,15 @@ function buildServer(app: FastifyInstance, me: SessionUser, token: TokenAccess, 
         ...(access.via !== 'public' && { you_follow_it: await isFollowing(app.db, board_id, t, me.id) }),
         comments: recent.reverse().map((c) => {
           const its = files.filter((f) => f.commentId === c.id).map((f) => f.name)
-          return { id: c.id, author: c.author ?? 'Someone', text: c.body, at: c.at.toISOString(), ...(its.length && { files: its }) }
+          const answered = (reactions.get(c.id) ?? []).map((r) => ({ emoji: r.emoji, by: r.by.map((p) => p.name) }))
+          return {
+            id: c.id,
+            author: c.author ?? 'Someone',
+            text: c.body,
+            at: c.at.toISOString(),
+            ...(its.length && { files: its }),
+            ...(answered.length && { reactions: answered }),
+          }
         }),
         // (Its cover is one of its files: the picture across the top of the card on the Board.)
         ...(files.length && { files: files.map((f) => ({ ...fileBrief(f), ...(f.id === t.cover && { cover: true }) })) }),

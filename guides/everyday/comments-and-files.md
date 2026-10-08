@@ -44,6 +44,37 @@ In a comment, **/** also offers lists, a checklist, a quote and a code block.
 Commenting on a card, or being mentioned on it, means you follow it: you are told about later comments and changes.
 See [notifications](/people/notifications) for how to stop.
 
+### React to a comment
+
+Answer a comment with an emoji when another comment would only say "ok".
+
+1. Point at the comment and click the small smiley with a **+** under it. On a phone the button is always there.
+2. Pick one of the six:
+
+   | | It says |
+   |---|---|
+   | 👍 | Agreed |
+   | ❤️ | Thanks |
+   | 🎉 | Well done |
+   | 😄 | Funny |
+   | 👀 | I'm looking at it |
+   | ✅ | Done |
+
+![A comment with two reactions, and the six to choose from](/images/comment-2-react.webp)
+
+The reaction sits under the comment with a count. Yours are tinted. Click one to add yours to it, or click yours to
+take it back. Once a comment has a reaction, the **+** stays at the end of the row.
+
+A few things to know:
+
+- **Who reacted:** point at a count. On a phone, press and hold it.
+- You can add several different emoji to one comment, each once.
+- **The comment's author is told** under their bell, in one line for the comment however many people react. There
+  is no email and no message on their computer or in Telegram: a reaction is meant to be quieter than a comment.
+- Everyone who can comment can react, including people who can only view the board. Visitors with the board's
+  public link see reactions and can't add any.
+- Reacting to a comment does not make you follow its card.
+
 ### Change or remove a comment
 
 You can **Edit** your own comments; an edited one says "(edited)". You can delete your own, and a board's owner can

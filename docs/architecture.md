@@ -334,6 +334,14 @@ The app uses hash routing, so any static host or proxy works without rewrite rul
   person to the same card within ten minutes share one line while it's unread, and nobody is told about what they did
   themselves. This runs after every board command (`afterBoardChange` in `boards/follows.ts`), whichever way the
   command arrived (the app, an API token, an assistant).
+- **Reactions** (`comment_reactions`; the set and its words are in `model/reactions.ts`): a comment can be answered
+  with an emoji. What is kept is the emoji itself, one row per person, comment and emoji, so the set people choose
+  from (six today) can grow without anything stored changing. Everyone who can comment can react
+  (`PUT /api/boards/:id/comments/:commentId/reactions`); a comment's view carries its reactions with who added each,
+  and a reaction reaches open copies as the whole comment (`action: 'reacted'` on the live `comment` message). The
+  comment's author has one notification row of kind `reaction` for the comment (a later reaction brings it back to
+  the top, unread); who reacted is read from the reactions when the bell is opened, and the row goes when every
+  reaction is taken back. Reactions are deliberately quiet: no email, no push, not in the card's history or webhooks.
 - By email, people get one morning summary a day (about 8:00 their time): what's due, today's reminders, and the
   mentions and followed-card news they haven't seen.
 - `#` in a comment or description links to one of the card's files.

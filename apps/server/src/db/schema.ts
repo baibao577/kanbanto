@@ -730,6 +730,26 @@ export const comments = pgTable(
 )
 
 /**
+ * An emoji someone answered a comment with (see model reactions.ts). The emoji itself is kept, so the set people
+ * choose from can change without touching what is here. One of each to a person on a comment; they go with the
+ * comment (deleted with it, and moved with its card, since a comment keeps its id).
+ */
+export const commentReactions = pgTable(
+  'comment_reactions',
+  {
+    commentId: uuid('comment_id')
+      .notNull()
+      .references(() => comments.id, { onDelete: 'cascade' }),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    emoji: text('emoji').notNull(),
+    createdAt: at('created_at').notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.commentId, t.userId, t.emoji] })],
+)
+
+/**
  * Time someone logged on a card. Like comments, the card is only named (no foreign key): an entry stays when its card
  * is deleted (and is back with it on undo), but only entries on cards that exist count.
  */
@@ -793,9 +813,10 @@ export const notifications = pgTable(
     /**
      * mention: in a comment (board, task, comment) or a description (no comment) · added: to a board or a workspace
      * (one of the two) · comment, change: on a card they follow · rule: one of the board's rules told them (`ruleId`,
-     * `said`; `taskId` is the first of its cards).
+     * `said`; `taskId` is the first of its cards) · reaction: people answered a comment of theirs with an emoji
+     * (`commentId`; one row for a comment while it is unseen, and who reacted is read from the reactions).
      */
-    kind: text('kind', { enum: ['mention', 'added', 'reminder', 'comment', 'change', 'rule'] }).notNull(),
+    kind: text('kind', { enum: ['mention', 'added', 'reminder', 'comment', 'change', 'rule', 'reaction'] }).notNull(),
     boardId: text('board_id').references(() => boards.id, { onDelete: 'cascade' }),
     workspaceId: uuid('workspace_id').references(() => workspaces.id, { onDelete: 'cascade' }),
     taskId: text('task_id'),

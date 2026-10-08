@@ -14,6 +14,7 @@ import { formatSize } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { Markdown } from '@/components/text/Markdown'
 import { Folded } from './Description'
+import { AddReaction, ReactionRow } from './Reactions'
 import { Section } from './Section'
 
 const Editor = lazy(() => import('@/components/text/Editor'))
@@ -88,8 +89,29 @@ export function CommentsSection({
     }
   }
 
+  /** Answers a comment with an emoji, or takes this person's back: shown at once, then as the server has it. */
+  const react = async (c: CommentView, emoji: string, on: boolean) => {
+    if (!user) return
+    const me = { id: user.id, name: user.name }
+    const without = c.reactions.map((r) => (r.emoji === emoji ? { ...r, by: r.by.filter((p) => p.id !== me.id) } : r)).filter((r) => r.by.length)
+    const next = !on
+      ? without
+      : without.some((r) => r.emoji === emoji)
+        ? without.map((r) => (r.emoji === emoji ? { ...r, by: [...r.by, me] } : r))
+        : [...without, { emoji, by: [me] }]
+    setItems((xs) => xs.map((x) => (x.id === c.id ? { ...x, reactions: next } : x)))
+    try {
+      const r = await api<{ comment: CommentView }>('PUT', `/boards/${boardId}/comments/${c.id}/reactions`, { emoji, on })
+      setItems((xs) => xs.map((x) => (x.id === c.id ? r.comment : x)))
+    } catch (e) {
+      setItems((xs) => xs.map((x) => (x.id === c.id ? { ...x, reactions: c.reactions } : x)))
+      toast.error(errorMessage(e))
+    }
+  }
+
   const item = (c: CommentView) => {
     const mine = c.author?.id === user?.id
+    const reactions = c.reactions ?? []
     return (
       <li key={c.id} className="group flex gap-3">
         <Avatar name={c.author?.name ?? '?'} picture={c.author?.picture} className="mt-0.5 size-7 text-[10px]" />
@@ -120,16 +142,29 @@ export function CommentsSection({
                 </Folded>
               </div>
               <FileList files={c.attachments} />
-              {canComment && (mine || access.role === 'owner') && (
-                <div className="mt-1 flex gap-3 text-xs text-muted-foreground opacity-0 group-hover:opacity-100 focus-within:opacity-100">
+              {/* The emoji it was answered with. Everyone who can comment can add theirs; a visitor only sees them. */}
+              <ReactionRow reactions={reactions} me={user?.id} onPick={canComment ? (emoji, on) => void react(c, emoji, on) : undefined} />
+              {canComment && (
+                <div
+                  className={cn(
+                    'mt-1 flex items-center gap-3 text-xs text-muted-foreground opacity-0 group-hover:opacity-100 focus-within:opacity-100 has-[[data-state=open]]:opacity-100',
+                    // (Where nothing can be pointed at, the way to react is always there.)
+                    !reactions.length && 'touch-only:opacity-100',
+                    reactions.length > 0 && !(mine || access.role === 'owner') && 'hidden',
+                  )}
+                >
+                  {/* (Once a comment has reactions, the button to add one sits at the end of their row.) */}
+                  {!reactions.length && <AddReaction mine={[]} onPick={(emoji, on) => void react(c, emoji, on)} />}
                   {mine && (
                     <button className="hover:text-foreground hover:underline" onClick={() => setEditing(c.id)}>
                       Edit
                     </button>
                   )}
-                  <button className="hover:text-destructive hover:underline" onClick={() => void remove(c)}>
-                    Delete
-                  </button>
+                  {(mine || access.role === 'owner') && (
+                    <button className="hover:text-destructive hover:underline" onClick={() => void remove(c)}>
+                      Delete
+                    </button>
+                  )}
                 </div>
               )}
             </>

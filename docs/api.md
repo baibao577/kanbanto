@@ -88,6 +88,10 @@ curl -X POST https://kanbanto.example.com/api/boards/<board id>/mutations \
   - **In a comment:** upload with one more header, `X-Attach-To: comment` (anyone who can comment may; the file is
     yours alone until it's posted), then post the comment with its id:
     `POST …/tasks/<task id>/comments` with `{"body": "The screenshot", "attachments": ["<file id>"]}`.
+  - **Reactions:** a comment has `reactions`, a list of `{"emoji", "by": [{"id", "name"}]}`. Add yours with
+    `PUT /api/boards/<id>/comments/<comment id>/reactions` and `{"emoji": "👍", "on": true}`, take it back with
+    `"on": false`. The emoji is one of 👍 ❤️ 🎉 😄 👀 ✅; anyone who can comment may react. The comment's author gets
+    one notification for the comment (`kind: "reaction"`), and no email.
   - **In a description or a comment's words:** write `📎` and the file's name (`See 📎report.pdf`). It shows as a
     link to that file of the card.
   - `GET /api/boards/<id>/tasks/<task id>/attachments` lists a card's files, its comments' among them (`commentId`).

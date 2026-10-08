@@ -9,10 +9,21 @@ import { useAuth } from '@/app/use-auth'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { cn } from '@/lib/utils'
 
+/** "Dana Reyes", "Dana Reyes and Priya Nair", "Dana Reyes, Priya Nair and 2 others" */
+const people = (names: string[]) =>
+  !names.length
+    ? 'Someone'
+    : names.length === 1
+      ? names[0]
+      : names.length === 2
+        ? `${names[0]} and ${names[1]}`
+        : `${names[0]}, ${names[1]} and ${names.length - 2} ${names.length === 3 ? 'other' : 'others'}`
+
 const fetchNotifications = () => api<{ notifications: NotificationView[]; unread: number }>('GET', '/notifications')
 
 /**
- * The bell: @mentions of you, comments and changes on the cards you follow (each with a way to stop following), what
+ * The bell: @mentions of you, comments and changes on the cards you follow (each with a way to stop following),
+ * reactions to your comments, what
  * a board's rules told you (each with a way to stop that rule telling you), reminders, and boards or workspaces
  * someone added you to, newest first. Checked every minute and when you come back
  * to the tab.
@@ -144,6 +155,15 @@ export function NotificationBell() {
                         )}
                       </>
                     )
+                  ) : n.kind === 'reaction' ? (
+                    <>
+                      <p className="text-xs">
+                        <span className="font-semibold">{people(n.people)}</span> reacted {n.emoji.join(' ')} to your comment on{' '}
+                        <span className="font-medium">“{n.task.title}”</span>
+                        <span className="text-muted-foreground"> · {n.board.name}</span>
+                      </p>
+                      {n.excerpt && <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">{n.excerpt}</p>}
+                    </>
                   ) : n.kind === 'rule' ? (
                     <>
                       <p className="text-xs">
@@ -216,7 +236,8 @@ export function NotificationBell() {
           </ul>
         ) : (
           <p className="px-3 py-6 text-center text-xs text-muted-foreground">
-            Mentions of you, news from the cards you follow, what your boards’ rules tell you, reminders and new boards show up here.
+            Mentions of you, news from the cards you follow, reactions to your comments, what your boards’ rules tell you, reminders and new boards
+            show up here.
           </p>
         )}
       </PopoverContent>

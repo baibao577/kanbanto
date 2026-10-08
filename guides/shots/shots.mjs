@@ -2159,6 +2159,24 @@ await shot('tell-4-switch', async () => {
   return around([list.getByText('When this, tell someone'), row, list.locator('li').filter({ hasText: 'Finished' })], 24)
 })
 
+// A comment answered with emoji (after the rest: the comments of this card are in other pictures as they were).
+await shot('comment-2-react', async () => {
+  const all = (await api(ann, 'GET', `/boards/${board}/tasks/announce/comments`)).comments
+  const [bens, anns] = [all.find((c) => c.body.startsWith('First draft')), all.find((c) => c.body.startsWith('Reads well'))]
+  const react = (who, c, emoji) => api(who, 'PUT', `/boards/${board}/comments/${c.id}/reactions`, { emoji, on: true })
+  await react(ann, bens, '👀')
+  await react(benCtx, anns, '👍')
+  await react(benCtx, anns, '✅')
+  const card = await openCard('announce')
+  const mine = card.locator('li.group').filter({ hasText: 'Reads well' }).first()
+  const theirs = card.locator('li.group').filter({ hasText: 'First draft' }).first()
+  await theirs.getByRole('button', { name: 'React to this comment' }).click()
+  const six = page.getByLabel('Reactions').last()
+  await six.waitFor()
+  await ring(theirs.getByRole('button', { name: 'React to this comment' }))
+  return around([card.getByRole('tab', { name: /Comments/ }), theirs, mine, six], 24)
+})
+
 await browser.close()
 console.log(`made ${made.length}: ${made.join(', ')}`)
 if (failed.length) console.log(`\nnot made (${failed.length}):\n  ${failed.join('\n  ')}`)

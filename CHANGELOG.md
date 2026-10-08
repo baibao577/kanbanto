@@ -5,6 +5,18 @@ then `git pull` (or download the new release) and `docker compose up -d --build`
 
 ## Unreleased
 
+- **Emoji reactions on comments.** Answer a comment with 👍 where another comment would only say "ok". Point at a
+  comment and click the small smiley under it (always there on a phone), then pick one of six: 👍 agreed,
+  ❤️ thanks, 🎉 well done, 😄 funny, 👀 I'm looking at it, ✅ done. Reactions sit under the comment as counts, yours
+  tinted; click one to add yours or take it back, and point at one (press and hold on a phone) to see who. Everyone
+  with the card open sees a reaction arrive. The comment's author gets one line under their bell for the comment,
+  however many people react, and no email or desktop message: a reaction is quieter than a comment. Everyone who
+  can comment can react, viewers too; visitors with the public link see reactions and can't add any.
+
+  For assistants: `get_task` shows each comment's reactions and who added them. For apps: a comment has
+  `reactions`, and `PUT /api/boards/<id>/comments/<comment id>/reactions` adds or takes back yours. The database
+  gains one table (migration 0044, which only adds).
+
 - **Tell people when a card arrives in a list, or leaves it.** A board's owners can have it tell people at the
   moment something happens: every new quote, an order ready to bake, an offer that was answered. In a list's "…"
   menu, **Tell people when a card arrives…** opens the rule about that list: tick people on the board, or

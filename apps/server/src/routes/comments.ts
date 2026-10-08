@@ -1,5 +1,6 @@
 import type { CommentView, NotificationView } from '@kanbanto/model/api'
 import { newId } from '@kanbanto/model/ids'
+import { isReaction, REACTIONS, type ReactionView } from '@kanbanto/model/reactions'
 import { and, desc, eq, ilike, inArray, isNull, or, sql } from 'drizzle-orm'
 import type { FastifyInstance, FastifyPluginAsync } from 'fastify'
 import { z } from 'zod'
@@ -9,7 +10,7 @@ import { openBoards, requireAccess, type BoardRow } from '../boards/access'
 import { follow, followersOf, isFollowing, mentionLine, setFollowing } from '../boards/follows'
 import { boardPeople } from '../boards/store'
 import type { Db, Tx } from '../db'
-import { attachments, boardRules, boards, comments, notifications, tasks, users, workspaces } from '../db/schema'
+import { attachments, boardRules, boards, commentReactions, comments, notifications, tasks, users, workspaces } from '../db/schema'
 import { HttpError, parse } from '../http'
 import { requireUser } from './auth'
 import { uncover } from './covers'
@@ -40,6 +41,34 @@ export const mentionsIn = (members: { id: string; name: string }[], text: string
 /** How much of a comment the bell and the daily email show. */
 export const excerpt = (body: string, n = 140) => (body.length > n ? `${body.slice(0, n - 1).trimEnd()}…` : body)
 
+/**
+ * The emoji on these comments, by comment: each with the people who added it, in the order they did. The emoji come
+ * in the order they're offered (and any from a set of another day after them, in the order they were first used).
+ */
+export async function reactionsOf(db: Db | Tx, commentIds: string[]): Promise<Map<string, ReactionView[]>> {
+  const out = new Map<string, ReactionView[]>()
+  if (!commentIds.length) return out
+  const rows = await db
+    .select({ commentId: commentReactions.commentId, emoji: commentReactions.emoji, id: commentReactions.userId, name: users.name })
+    .from(commentReactions)
+    .innerJoin(users, eq(users.id, commentReactions.userId))
+    .where(inArray(commentReactions.commentId, commentIds))
+    .orderBy(commentReactions.createdAt)
+  for (const r of rows) {
+    const list = out.get(r.commentId) ?? []
+    if (!out.has(r.commentId)) out.set(r.commentId, list)
+    const one = list.find((x) => x.emoji === r.emoji)
+    if (one) one.by.push({ id: r.id, name: r.name })
+    else list.push({ emoji: r.emoji, by: [{ id: r.id, name: r.name }] })
+  }
+  const place = (emoji: string) => {
+    const i = (REACTIONS as readonly string[]).indexOf(emoji)
+    return i < 0 ? REACTIONS.length : i
+  }
+  for (const list of out.values()) list.sort((a, b) => place(a.emoji) - place(b.emoji))
+  return out
+}
+
 async function commentViews(db: Db | Tx, where: ReturnType<typeof and>): Promise<CommentView[]> {
   const rows = await db
     .select({ c: comments, authorName: users.name, authorPicture: users.picture })
@@ -59,6 +88,10 @@ async function commentViews(db: Db | Tx, where: ReturnType<typeof and>): Promise
         ),
       )
     : []
+  const reactions = await reactionsOf(
+    db,
+    rows.map((r) => r.c.id),
+  )
   return rows.map(({ c, authorName, authorPicture }) => ({
     id: c.id,
     taskId: c.taskId,
@@ -66,6 +99,7 @@ async function commentViews(db: Db | Tx, where: ReturnType<typeof and>): Promise
     body: c.body,
     mentions: c.mentions,
     attachments: files.filter((f) => f.commentId === c.id),
+    reactions: reactions.get(c.id) ?? [],
     createdAt: c.createdAt.toISOString(),
     editedAt: c.editedAt?.toISOString() ?? null,
   }))
@@ -306,6 +340,66 @@ export const commentRoutes: FastifyPluginAsync = async (app) => {
     return { ok: true }
   })
 
+  /**
+   * Answers a comment with an emoji (`on: true`), or takes yours back. Everyone who can comment can: the board's
+   * people, viewers too; visitors with the public link can't. One of each emoji to a person on a comment, from the
+   * set in model reactions.ts. The comment's author has one line under their bell for it (never for their own, and
+   * never an email or a message elsewhere: a reaction is quieter than a comment), which goes again when every
+   * reaction is taken back. Answers with the comment as it is now, which everyone with the card
+   * open is sent too.
+   */
+  app.put('/boards/:id/comments/:commentId/reactions', async (req) => {
+    const { id, commentId } = parse(CommentParams, req.params)
+    const me = requireUser(req.user)
+    const { board, access } = await requireAccess(app.db, me, id, 'viewer', { write: true })
+    if (access.via === 'public') throw new HttpError(403, 'Join this board to react to its comments.')
+    const { emoji, on } = parse(z.object({ emoji: z.string().min(1).max(32), on: z.boolean() }), req.body)
+    if (!isReaction(emoji)) throw new HttpError(400, 'That isn’t one of the reactions to choose from.')
+    const [c] = await app.db
+      .select({ id: comments.id, taskId: comments.taskId, authorId: comments.authorId })
+      .from(comments)
+      .where(and(eq(comments.id, commentId), eq(comments.boardId, id)))
+    if (!c) throw new HttpError(404, 'That comment no longer exists.')
+    const others = and(eq(commentReactions.commentId, commentId), c.authorId ? sql`${commentReactions.userId} <> ${c.authorId}` : undefined)
+    const lines = and(eq(notifications.kind, 'reaction'), eq(notifications.commentId, commentId))
+    await app.db.transaction(async (tx) => {
+      if (on) {
+        const added = await tx.insert(commentReactions).values({ commentId, userId: me.id, emoji }).onConflictDoNothing().returning()
+        // Its author has one line for the comment, however many react and whenever: a later reaction brings that
+        // line back to the top, unread (two lines naming the same people would say nothing more).
+        if (!added.length || !c.authorId || c.authorId === me.id) return
+        if (!(await boardPeople(tx, board)).some((p) => p.userId === c.authorId)) return
+        const [open] = await tx
+          .select({ id: notifications.id })
+          .from(notifications)
+          .where(and(lines, eq(notifications.userId, c.authorId)))
+          .limit(1)
+        if (open)
+          await tx
+            .update(notifications)
+            .set({ actorId: me.id, createdAt: sql`now()`, readAt: null })
+            .where(eq(notifications.id, open.id))
+        else
+          await tx
+            .insert(notifications)
+            .values({ id: newId(), userId: c.authorId, kind: 'reaction', boardId: id, taskId: c.taskId, commentId, actorId: me.id })
+      } else {
+        await tx
+          .delete(commentReactions)
+          .where(and(eq(commentReactions.commentId, commentId), eq(commentReactions.userId, me.id), eq(commentReactions.emoji, emoji)))
+        // Nobody else's reaction is left on it: the lines its author got about them have nothing to say any more.
+        const [left] = await tx
+          .select({ n: sql<number>`count(*)::int` })
+          .from(commentReactions)
+          .where(others)
+        if (!left.n) await tx.delete(notifications).where(lines)
+      }
+    })
+    const [comment] = await commentViews(app.db, and(eq(comments.id, commentId)))
+    app.hub.broadcast(id, { type: 'comment', taskId: c.taskId, action: 'reacted', commentId, comment })
+    return { comment }
+  })
+
   // ── The bell ────────────────────────────────────────────────────────────
 
   app.get('/notifications', async (req) => {
@@ -339,7 +433,12 @@ export const commentRoutes: FastifyPluginAsync = async (app) => {
     // from a board they've left (or a card since moved to one they aren't on) says so, and nothing more.
     const open = new Set((await openBoards(app.db, me.id)).map((b) => b.id))
     const CLOSED = { id: '', name: 'A board you can no longer open' }
-    const items: NotificationView[] = rows.map((r) => {
+    // Who reacted to a comment of theirs is read now, like the rest: the reactions that are on it, less their own.
+    const reacted = await reactionsOf(
+      app.db,
+      rows.flatMap((r) => (r.n.kind === 'reaction' && r.n.commentId ? [r.n.commentId] : [])),
+    )
+    const lines = rows.map((r): NotificationView | null => {
       const common = { id: r.n.id, actor: r.actor ?? 'Someone', createdAt: r.n.createdAt.toISOString(), read: !!r.n.readAt }
       const can = !!r.n.boardId && open.has(r.n.boardId)
       if (r.n.boardId && r.boardName !== null && !can) {
@@ -347,6 +446,8 @@ export const commentRoutes: FastifyPluginAsync = async (app) => {
         if (r.n.kind === 'reminder') return { ...common, kind: 'reminder', actor: r.actor, board: CLOSED, task: { id: '', title: 'A task' } }
         if (r.n.kind === 'change') return { ...common, kind: 'change', board: CLOSED, task: { id: '', title: 'A task' }, changes: [] }
         if (r.n.kind === 'comment') return { ...common, kind: 'comment', board: CLOSED, task: { id: '', title: 'A task' }, excerpt: '' }
+        if (r.n.kind === 'reaction')
+          return { ...common, kind: 'reaction', board: CLOSED, task: { id: '', title: 'A task' }, people: [], emoji: [], excerpt: '' }
         if (r.n.kind === 'rule')
           return {
             ...common,
@@ -379,6 +480,17 @@ export const commentRoutes: FastifyPluginAsync = async (app) => {
       }
       if (r.n.kind === 'change') return { ...common, kind: 'change', ...on, changes: r.n.changes ?? [] }
       if (r.n.kind === 'comment') return { ...common, kind: 'comment', ...on, excerpt: excerpt(r.body ?? '') }
+      if (r.n.kind === 'reaction') {
+        const theirs = (reacted.get(r.n.commentId ?? '') ?? [])
+          .map((x) => ({ emoji: x.emoji, by: x.by.filter((p) => p.id !== me.id) }))
+          .filter((x) => x.by.length)
+        // (Every reaction taken back since they read it: the line has nothing left to say.)
+        if (!theirs.length) return null
+        // (Whoever reacted last is named first: the line is about them.)
+        const names = [...new Set(theirs.flatMap((x) => x.by.map((p) => p.name)))]
+        const people = [...names.filter((name) => name === common.actor), ...names.filter((name) => name !== common.actor)]
+        return { ...common, kind: 'reaction', ...on, people, emoji: theirs.map((x) => x.emoji), excerpt: excerpt(r.body ?? '') }
+      }
       // (What a rule said is kept as it was said: the cards by the titles they had, since one may be gone by now.)
       if (r.n.kind === 'rule') {
         const cards = r.n.said?.cards ?? []
@@ -398,6 +510,7 @@ export const commentRoutes: FastifyPluginAsync = async (app) => {
         ? { ...common, kind: 'mention', where: 'comment', ...on, excerpt: excerpt(r.body ?? '') }
         : { ...common, kind: 'mention', where: 'description', ...on, excerpt: excerpt(mentionLine(r.description, me.name)) }
     })
+    const items = lines.filter((n): n is NotificationView => !!n)
     return { notifications: items, unread }
   })
 

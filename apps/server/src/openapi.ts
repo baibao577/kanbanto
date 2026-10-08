@@ -144,6 +144,11 @@ const schemas = {
     body: str,
     mentions: { type: 'array', items: str },
     attachments: { type: 'array', items: { $ref: '#/components/schemas/Attachment' }, description: 'The files posted with it.' },
+    reactions: {
+      type: 'array',
+      description: 'The emoji people answered it with, each with who added it (in the order they did).',
+      items: obj({ emoji: str, by: { type: 'array', items: obj({ id: str, name: str }) } }),
+    },
     createdAt: str,
   }),
   Attachment: obj({
@@ -908,6 +913,21 @@ The answer lists the records that changed.
                   ['body'],
                 ),
               },
+            },
+          },
+          responses: { 200: json(obj({ comment: ref('Comment') })) },
+        },
+      },
+      '/api/boards/{id}/comments/{commentId}/reactions': {
+        put: {
+          tags: ['Comments'],
+          summary: 'Answer a comment with an emoji, or take yours back',
+          description:
+            'Everyone who can comment can react, viewers too; visitors with the public link can’t (403). `emoji` is one of 👍 ❤️ 🎉 😄 👀 ✅; `on: false` takes yours back. One of each to a person on a comment. The comment’s author gets one notification for it (`kind: "reaction"` in `GET /api/notifications`), never for their own, and no email. Answers with the comment as it is now.',
+          parameters: [id('id'), id('commentId')],
+          requestBody: {
+            content: {
+              'application/json': { schema: obj({ emoji: str, on: { type: 'boolean' } }, ['emoji', 'on']), example: { emoji: '👍', on: true } },
             },
           },
           responses: { 200: json(obj({ comment: ref('Comment') })) },

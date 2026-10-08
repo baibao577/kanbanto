@@ -1,5 +1,6 @@
 import type { BoardField, FieldDef } from './fields'
 import type { PresetSettings } from './prefs'
+import type { ReactionView } from './reactions'
 import type { Change } from './records'
 import type { CardDate, CardMomentKind, CardSort, CardState } from './search'
 import type { BoardData, Category, Priority, Task } from './types'
@@ -229,6 +230,8 @@ export interface CommentView {
   mentions: string[]
   /** Files attached to the comment. */
   attachments: AttachmentView[]
+  /** The emoji people answered it with (see reactions.ts), in the order they're offered. None: an empty list. */
+  reactions: ReactionView[]
   createdAt: string
   editedAt: string | null
 }
@@ -303,6 +306,22 @@ export type NotificationView =
       board: { id: string; name: string }
       task: { id: string; title: string }
       /** The start of the comment. */
+      excerpt: string
+      createdAt: string
+      read: boolean
+    }
+  | {
+      id: string
+      /** People answered a comment of yours with an emoji. One line for a comment, however many did. */
+      kind: 'reaction'
+      /** Who did last. */
+      actor: string
+      board: { id: string; name: string }
+      task: { id: string; title: string }
+      /** Everyone whose reaction is on the comment now, by name, and the emoji they used. */
+      people: string[]
+      emoji: string[]
+      /** The start of your comment. */
       excerpt: string
       createdAt: string
       read: boolean
@@ -883,7 +902,8 @@ export type LiveMessage =
   /** Your session ended (password changed elsewhere, account turned off): sign in again. */
   | { type: 'signed-out' }
   | { type: 'deleted' }
-  | { type: 'comment'; taskId: string; action: 'added' | 'edited' | 'deleted'; commentId: string; comment?: CommentView }
+  // (reacted: someone added or took back an emoji; the comment comes whole, as for an edit.)
+  | { type: 'comment'; taskId: string; action: 'added' | 'edited' | 'deleted' | 'reacted'; commentId: string; comment?: CommentView }
   | { type: 'attachment'; taskId: string; action: 'added' | 'deleted'; attachmentId: string; attachment?: AttachmentView }
   /** Time was logged, changed or removed on a card: its new total (minutes). */
   | { type: 'time'; taskId: string; total: number }
