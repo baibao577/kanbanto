@@ -85,6 +85,12 @@ on the board to pick. See [search and filters](/everyday/search-and-filters#pres
 When a list is sorted (not "By hand"), cards cannot be dragged into a new order inside it. Kanbanto tells you so,
 and you can switch back to By hand.
 
+## Several cards at once
+
+Hold <kbd>⌘</kbd> or <kbd>Ctrl</kbd> and click a card (or choose **⋯ → Select**) to tick it, then click more
+cards. A bar at the bottom moves, assigns, labels, dates or archives the ticked cards together. See
+[change several cards at once](/everyday/several-cards).
+
 ## Good to know
 
 - Long lists show the first 100 cards, with **Show more** at the bottom.

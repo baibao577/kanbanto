@@ -25,6 +25,8 @@ import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { panScroll } from '@/lib/panScroll'
 import { pointerDrag } from '@/lib/pointerDrag'
+import { SelectionBar } from '@/components/select/SelectionBar'
+import { useSelection } from '@/components/select/useSelection'
 import { useNow } from '@/lib/useNow'
 import { cn } from '@/lib/utils'
 import { rollUp } from '@/components/time/logging'
@@ -186,6 +188,23 @@ function Board({ search, onRows }: { search: string; onRows: (keys: string[]) =>
   )
   const boardRef = useRef<HTMLDivElement>(null)
   const rules: DropContext = useMemo(() => ({ data, idx, config, cells: view.cells }), [data, idx, config, view.cells])
+
+  // Ticking cards, to change several at once (see SelectionBar): Ctrl or ⌘ with a click, or "Select" in a card's
+  // menu; once one is ticked a plain click ticks the next. With Shift, the cards between two in the same list.
+  const selection = useSelection()
+  const cells = useRef(view.cells)
+  useLayoutEffect(() => {
+    cells.current = view.cells
+  })
+  const toggleCard = selection.toggle
+  const tickCard = useCallback(
+    (id: string, range: boolean) => {
+      const order = range ? [...cells.current.values()].find((ids) => ids.includes(id)) : undefined
+      toggleCard(id, { range, order })
+    },
+    [toggleCard],
+  )
+  const onBoard = useMemo(() => new Set([...view.cells.values()].flat()), [view.cells])
   const groupOf = (id: string, row: string) => groupOfIn(rules, id, row)
   const grouped = config.rows !== 'none'
   const columns = view.columns.slice(0, colLimit)
@@ -372,6 +391,9 @@ function Board({ search, onRows }: { search: string; onRows: (keys: string[]) =>
         time={timeOf(id)}
         onLogTime={logTime}
         item={item}
+        onTick={readOnly ? undefined : tickCard}
+        selecting={selection.size > 0}
+        picked={selection.has(id)}
       />
     )
     const slot = (top?: boolean) => <DropSlot key="__drop" top={top} blocked={here?.blocked} />
@@ -699,6 +721,7 @@ function Board({ search, onRows }: { search: string; onRows: (keys: string[]) =>
 
   return (
     <>
+      {!readOnly && <SelectionBar selection={selection} shown={onBoard} />}
       {!view.columns.length && !statusLists ? (
         <Empty>{search ? 'No cards match your search.' : 'Nothing to show with these display settings.'}</Empty>
       ) : !grouped || !view.columns.length ? (

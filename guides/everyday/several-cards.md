@@ -1,13 +1,15 @@
 # Change several cards at once
 
-Tick a few cards in the [Outline](/views/outline), then move, assign, label, date or archive them together. It is
-one change: one **Undo** takes all of it back.
+Tick a few cards, in the [Outline](/views/outline) or on the [Board](/views/board), then move, assign, label, date
+or archive them together. It is one change: one **Undo** takes all of it back.
 
 ![Three rows ticked in the Outline, and the bar that changes them](/images/several-1-bar.webp)
 
 ## Tick the cards
 
-Open the **Outline** tab.
+### In the Outline
+
+The Outline is the quickest place for many cards: every card is a row, and a filter can do the choosing.
 
 - **Point at a row.** A box appears at its start. Click it to tick the row. Once one row is ticked, every row
   shows its box.
@@ -18,6 +20,24 @@ Open the **Outline** tab.
   the heading's box, and you have them. Click it again to untick them.
 - **On a phone or a tablet** there is nothing to point with. On a tablet the boxes are always there; on a phone,
   tap **Select** above the list to show them.
+
+### On the Board
+
+A click on a card opens it, so ticking starts another way:
+
+- Hold <kbd>⌘</kbd> (Mac) or <kbd>Ctrl</kbd> and click a card. Or open the card's **⋯** menu and choose **Select**.
+- **Once one card is ticked, a plain click ticks the next one.** Every card shows a box in its corner; click a
+  ticked card, or its box, to untick it. To open a card meanwhile, use **Open** in its **⋯** menu.
+- **A run of cards in one list:** hold <kbd>Shift</kbd> and click, and the cards between the last one you ticked
+  and this one are ticked.
+- **On a phone**, use **⋯ → Select** on the first card, then tap the others.
+
+![Three cards ticked on the Board, with the bar at the bottom](/images/several-3-board.webp)
+
+When the last card is unticked, clicks open cards again. A ticked card can still be dragged; dragging moves that
+one card. A parent shown as a heading above its subtasks can't be ticked on the Board: tick it in the Outline.
+
+### The bar
 
 A bar appears at the bottom of the view. It says how many cards are ticked, and stays in sight while you scroll
 and tick more. Press <kbd>Esc</kbd>, or the **✕** at the end of the bar, to let go of them all.
@@ -69,7 +89,7 @@ subtasks and stays"). Move its subtasks instead: tick the card, click **Add thei
   three cards in one change is one line.
 - **The selection is yours.** Nobody else sees what you ticked. It is kept while you search, filter, sort or
   [group](/views/outline#group-the-rows) (the bar says how many ticked cards aren't shown just now), and forgotten
-  when you leave the Outline or the board.
+  when you switch to another view or leave the board.
 - **A card that goes** (archived or deleted, by you or by someone else) is no longer ticked, also when an Undo
   brings it back.
 - **Grouped**, a card that shows under two headings is ticked under both, and counts once.

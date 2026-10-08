@@ -453,8 +453,10 @@ The app uses hash routing, so any static host or proxy works without rewrite rul
   `task.archive` and `task.delete` do to one, for the named cards that have none of the others above them).
   A change with news for one person about more than three cards is told to them once, each kind of thing said
   about all the cards it happened to (`manyInWords` in `boards/follows.ts`). The Outline has it (a tick box where
-  a row is pointed at, Shift for a range, the Task heading's box for all that is shown); the Board is to follow
-  with the same bar.
+  a row is pointed at, Shift for a range, the Task heading's box for all that is shown) and so does the Board,
+  where a click already opens a card: Ctrl or ⌘ with a click, or "Select" in a card's menu, ticks the first, and
+  while any card is ticked a plain click ticks (`TaskCard`: `onTick`, `selecting`, `picked`), with Shift for the
+  cards between two in one list.
 - **A filter's tests, and how they stay compatible.** A new test is always a new key; no key ever changes meaning
   (`in` got `notIn` beside it, the old `date: 'past' | 'week' | 'none'` got `on` / `days` / `from` / `to`, `due` got
   `dueIs` and `startIs`). A tab left open across an update, or a rollback, reads a filter with keys it doesn't know

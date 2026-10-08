@@ -10,7 +10,9 @@ import {
   ArrowSquareRight,
   ArrowsLeftRight,
   ChatCircle,
+  Check,
   CheckCircle,
+  CheckSquare,
   Crosshair,
   DotsThree,
   ListChecks,
@@ -80,6 +82,15 @@ interface Props {
   time?: number
   /** Opens the log box on this card (when you can log time). */
   onLogTime?: (id: string) => void
+  /**
+   * Ticking cards to change several at once (the Board: see SelectionBar). `onTick` ticks this card or unticks it
+   * (`range`: with Shift held, the cards between the last one ticked and this one). It's how the card's menu has
+   * "Select", and what a click with Ctrl or ⌘ does. `selecting`: some card is ticked, so every card shows a box and
+   * a plain click ticks, where it would open the card. `picked`: this one is.
+   */
+  onTick?: (id: string, range: boolean) => void
+  selecting?: boolean
+  picked?: boolean
 }
 
 export const TaskCard = memo(function TaskCard({
@@ -101,6 +112,9 @@ export const TaskCard = memo(function TaskCard({
   lastComment,
   time = 0,
   onLogTime,
+  onTick,
+  selecting,
+  picked,
 }: Props) {
   const t = idx.tasks[id]
   const kids = idx.childrenOf.get(id)
@@ -132,9 +146,12 @@ export const TaskCard = memo(function TaskCard({
       data-drag={readOnly ? undefined : 'card'}
       tabIndex={0}
       aria-label={t.title}
-      onClick={() => onOpen(id)}
+      onClick={(e) => (onTick && (selecting || e.metaKey || e.ctrlKey) ? onTick(id, e.shiftKey) : onOpen(id))}
       onKeyDown={(e) => e.key === 'Enter' && e.target === e.currentTarget && onOpen(id)}
-      className="group/card drag-handle relative cursor-pointer rounded-lg border border-(--card-edge) bg-(--tile) px-3 py-2.5 text-card-foreground shadow-tile transition-[border-color,box-shadow,opacity] outline-none hover:border-foreground/20 hover:shadow-tile-hover focus-visible:ring-2 focus-visible:ring-ring/50"
+      className={cn(
+        'group/card drag-handle relative cursor-pointer rounded-lg border border-(--card-edge) bg-(--tile) px-3 py-2.5 text-card-foreground shadow-tile transition-[border-color,box-shadow,opacity] outline-none hover:border-foreground/20 hover:shadow-tile-hover focus-visible:ring-2 focus-visible:ring-ring/50',
+        picked && 'border-primary ring-2 ring-primary/50',
+      )}
     >
       {/* Its cover: one of its pictures, across the top (the file's small copy: see the server's routes/covers.ts).
           The frame has its height before the picture arrives, so nothing under it jumps; the picture fills it, cut
@@ -172,7 +189,16 @@ export const TaskCard = memo(function TaskCard({
       )}
 
       {/* On touch screens the menu button always shows, so keep the first line clear of it. */}
-      <p className={cn('text-sm leading-snug break-words', kids && 'font-medium', !labels.length && !path && !ref && 'touch-only:pr-6')}>{t.title}</p>
+      {/* (And clear of the card's tick box, while cards are being ticked.) */}
+      <p
+        className={cn(
+          'text-sm leading-snug break-words',
+          kids && 'font-medium',
+          !labels.length && !path && !ref && (onTick && selecting ? 'pr-14' : 'touch-only:pr-6'),
+        )}
+      >
+        {t.title}
+      </p>
 
       {d.includes('checklist') && kids && (
         <ul className="mt-2 space-y-1">
@@ -246,12 +272,30 @@ export const TaskCard = memo(function TaskCard({
 
       {/* Hover actions. Touch screens can't hover: they get the menu only, which has these too. */}
       <div className="absolute top-1.5 right-1.5 flex gap-0.5">
-        {onJumpToRow && (
+        {/* While cards are being ticked: this card's box, where its other actions were (its menu stays). */}
+        {onTick && selecting && (
+          <button
+            role="checkbox"
+            aria-checked={!!picked}
+            aria-label={`Select ${t.title}`}
+            onClick={(e) => {
+              e.stopPropagation()
+              onTick(id, e.shiftKey)
+            }}
+            className={cn(
+              'grid size-6 place-items-center rounded-md border border-input bg-card text-muted-foreground shadow-xs',
+              picked && 'border-primary bg-primary text-primary-foreground',
+            )}
+          >
+            {picked && <Check weight="bold" className="size-3.5" />}
+          </button>
+        )}
+        {!selecting && onJumpToRow && (
           <CardAction label="Go to its row" onClick={() => onJumpToRow(id)} className="touch-only:hidden">
             <ArrowDown className="size-3.5" />
           </CardAction>
         )}
-        {kids && (
+        {!selecting && kids && (
           <CardAction label="Focus on its subtasks" onClick={() => onFocus(id)} className="touch-only:hidden">
             <Crosshair className="size-3.5" />
           </CardAction>
@@ -265,6 +309,8 @@ export const TaskCard = memo(function TaskCard({
           onJumpToRow={onJumpToRow}
           move={readOnly ? undefined : move}
           onLogTime={onLogTime}
+          onTick={onTick}
+          picked={picked}
         />
       </div>
     </article>
@@ -304,6 +350,8 @@ function CardMenu({
   onJumpToRow,
   move,
   onLogTime,
+  onTick,
+  picked,
 }: {
   id: string
   idx: TaskIndex
@@ -313,6 +361,8 @@ function CardMenu({
   onJumpToRow?: (id: string) => void
   move?: Props['move']
   onLogTime?: (id: string) => void
+  onTick?: Props['onTick']
+  picked?: boolean
 }) {
   const others = move?.lists.filter((l) => l.key !== move.col) ?? []
   return (
@@ -331,6 +381,12 @@ function CardMenu({
         <DropdownMenuItem onSelect={() => onOpen(id)}>
           <ArrowSquareOut /> Open
         </DropdownMenuItem>
+        {/* The way in to changing several cards at once, where there is no Ctrl or ⌘ to hold (a phone). */}
+        {onTick && (
+          <DropdownMenuItem onSelect={() => onTick(id, false)}>
+            <CheckSquare /> {picked ? 'Unselect' : 'Select'}
+          </DropdownMenuItem>
+        )}
         {onFocus && (
           <DropdownMenuItem onSelect={() => onFocus(id)}>
             <Crosshair /> Focus on its subtasks

@@ -5,10 +5,11 @@ then `git pull` (or download the new release) and `docker compose up -d --build`
 
 ## Unreleased
 
-- **Change several cards at once, in the Outline.** Point at a row and a box appears at its start. Tick a few
-  rows (hold Shift for a run of them; the box in the Task heading ticks everything a search or a filter found),
-  and a bar at the bottom of the view moves them to a list, assigns them, adds or removes a label, sets a
-  priority, dates or one of the board's own fields, archives or deletes them. Each is one change with one Undo,
+- **Change several cards at once.** In the Outline, point at a row and a box appears at its start. Tick a few
+  rows (hold Shift for a run of them; the box in the Task heading ticks everything a search or a filter found).
+  On the Board, hold ⌘ or Ctrl and click a card, or choose **Select** in its **⋯** menu; after that a plain click
+  ticks the next card. A bar at the bottom of the view moves the ticked cards to a list, assigns them, adds or
+  removes a label, sets a priority, dates or one of the board's own fields, archives or deletes them. Each is one change with one Undo,
   and a message says how many cards it changed. Adding a label keeps the labels a card already had. Ticking a card
   with subtasks ticks that card only; **Add their subtasks** takes what is under it too. On a phone, **Select**
   above the list shows the boxes.

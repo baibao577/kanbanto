@@ -2328,6 +2328,23 @@ await shot('several-2-labels', async () => {
 })
 await page.keyboard.press('Escape')
 await page.setViewportSize({ width: 1360, height: 860 })
+// The same on the Board: ⌘ or Ctrl with a click ticks the first card, plain clicks the next ones.
+await shot('several-3-board', async () => {
+  await openBoard()
+  const card = (title) =>
+    page
+      .locator('article[data-card-id]')
+      .filter({ has: page.getByText(title, { exact: true }) })
+      .first()
+  await card('Launch announcement').click({ modifiers: ['ControlOrMeta'] })
+  await card('Fix the sign-up form on phones').click()
+  await card('Collect customer quotes').click()
+  await page.mouse.move(4, 4)
+  const bar = await page.getByRole('toolbar', { name: 'Change the selected cards' }).boundingBox()
+  const lists = await page.locator('[data-list-row]').boundingBox()
+  return { clip: { x: 0, y: lists.y, width: 1360, height: bar.y + bar.height + 14 - lists.y } }
+})
+await page.getByRole('button', { name: 'Clear the selection' }).click()
 
 await browser.close()
 console.log(`made ${made.length}: ${made.join(', ')}`)
