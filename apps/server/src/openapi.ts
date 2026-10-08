@@ -668,6 +668,43 @@ The answer lists the records that changed.
           },
         },
       },
+      '/api/boards/{id}/rules': {
+        post: {
+          tags: ['Boards'],
+          summary: 'Make a rule (a limit)',
+          description:
+            'Owners only. A board’s rules come with the board (`rules` in `GET /api/boards/{id}`), and where each stands is worked out from the board itself. The one kind today is a limit: `cards` says which cards (`statuses`: list ids, `assignees`, `labels`, `priorities`, `fields`: by field id, as a saved filter says them; not “me”, dates or days without activity, which would say something different to different people), `counts` which of them count where cards nest (`leaves`: the cards without subtasks, `topLevel`, `all`), `measure` what is added up (`{"by":"cards"}` or `{"by":"field","field":"<a number field’s id>"}`), `per: "person"` holds each person by what is assigned to them, `max` is the number, `name` is a few words of its owner’s for it (optional), and `then` is `[{"do":"show"}]`. A rule that names a list, label, person or field the board doesn’t have is refused with the reason (422). Up to 20 to a board.',
+          parameters: [id('id')],
+          requestBody: {
+            content: {
+              'application/json': {
+                schema: obj({ rule: { type: 'object' } }, ['rule']),
+                example: {
+                  rule: { kind: 'limit', cards: { statuses: ['doing'] }, counts: 'leaves', measure: { by: 'cards' }, max: 3, then: [{ do: 'show' }] },
+                },
+              },
+            },
+          },
+          responses: { 200: json(obj({ rule: { type: 'object' } })) },
+        },
+      },
+      '/api/boards/{id}/rules/{ruleId}': {
+        patch: {
+          tags: ['Boards'],
+          summary: 'Change a rule',
+          description: 'Owners only. The whole rule, as for making one.',
+          parameters: [id('id'), id('ruleId')],
+          requestBody: { content: { 'application/json': { schema: obj({ rule: { type: 'object' } }, ['rule']) } } },
+          responses: { 200: json(obj({ rule: { type: 'object' } })) },
+        },
+        delete: {
+          tags: ['Boards'],
+          summary: 'Remove a rule',
+          description: 'Owners only.',
+          parameters: [id('id'), id('ruleId')],
+          responses: ok,
+        },
+      },
       '/api/boards/{id}/code': {
         put: {
           tags: ['Boards'],

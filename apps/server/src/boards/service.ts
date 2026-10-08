@@ -18,6 +18,7 @@ import { adoptFields, applyAdoption, clientLink, fitStarter, replaceBoardFields,
 import { codesTaken, lockSpace } from './numbering'
 import { creations } from './records'
 import { writeChanges } from './store'
+import { adoptRules } from './rules'
 
 /** Every record stamped as new: version 1, created now (templates are built from fixed sample data). */
 function freshMeta(data: BoardData, now: string): BoardData {
@@ -266,6 +267,9 @@ export async function importBoard(
       id,
       data.fields.flatMap((f) => (plan.map.has(f.id) ? [{ id: plan.map.get(f.id)!.id, front: f.front, total: f.total }] : [])),
     )
+    // Its rules come with it, under new ids and by its fields' new ones (see boards/rules.ts).
+    const people = new Set(data.fields.filter((f) => f.type === 'person').map((f) => f.id))
+    await adoptRules(tx, id, data.rules, ownerId, plan.map, (f) => people.has(f))
     // (Many rows to a statement: a board can arrive with thousands of comments.)
     const said = (from.comments ?? []).filter((c) => tasks[c.taskId] || archived?.[c.taskId])
     for (let i = 0; i < said.length; i += 500)

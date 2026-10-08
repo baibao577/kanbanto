@@ -1196,6 +1196,27 @@ export const boardPresets = pgTable(
   (t) => [index('board_presets_board_idx').on(t.boardId)],
 )
 
+/**
+ * A board's rules (see model rules.ts): what the board says about its cards, the same to everyone on it. The first
+ * kind is a limit. They are loaded with the board, like its fields, and changed by its owners (routes/rules.ts);
+ * nothing a rule works out is kept here, only the rule.
+ */
+export const boardRules = pgTable(
+  'board_rules',
+  {
+    id: uuid('id').primaryKey(),
+    boardId: text('board_id')
+      .notNull()
+      .references(() => boards.id, { onDelete: 'cascade' }),
+    /** The rule itself (a BoardRule, checked against BoardRuleSchema when saved and when read). */
+    rule: jsonb('rule').notNull(),
+    updatedBy: uuid('updated_by').references(() => users.id, { onDelete: 'set null' }),
+    createdAt: at('created_at').notNull().defaultNow(),
+    updatedAt: at('updated_at').notNull().defaultNow(),
+  },
+  (t) => [index('board_rules_board_idx').on(t.boardId)],
+)
+
 /** Boards people starred as favourites (shown first on the boards page and in the board switcher). */
 export const boardFavorites = pgTable(
   'board_favorites',

@@ -1,6 +1,8 @@
 import {
   Archive,
   Desktop,
+  Gauge,
+  type Icon,
   Info,
   Moon,
   PaintBrush,
@@ -11,7 +13,6 @@ import {
   User,
   UsersThree,
   WebhooksLogo,
-  type Icon,
 } from '@phosphor-icons/react'
 import { toast } from 'sonner'
 import { useState, type ReactNode } from 'react'
@@ -39,12 +40,13 @@ import { Input } from '@/components/ui/input'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { Textarea } from '@/components/ui/textarea'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
+import { RulesList } from '@/components/rules/RulesList'
 import { cn } from '@/lib/utils'
 import { formatDuration } from '@kanbanto/model/time'
 import { backgroundOf, gradientCss } from '@kanbanto/model/colors'
 import type { StatusMode } from '@kanbanto/model/types'
 
-type Tab = 'general' | 'fields' | 'look' | 'people' | 'you' | 'delete'
+type Tab = 'general' | 'fields' | 'rules' | 'look' | 'people' | 'you' | 'delete'
 
 /**
  * Board settings, in sections: the board itself (for everyone on it), its own fields, how it looks, who's on it and what's connected,
@@ -57,6 +59,7 @@ export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCh
   const tabs: { id: Tab; label: string; icon: Icon; danger?: boolean }[] = [
     { id: 'general', label: 'General', icon: Info },
     { id: 'fields', label: 'Fields', icon: Tag },
+    { id: 'rules', label: 'Rules', icon: Gauge },
     { id: 'look', label: 'Background', icon: PaintBrush },
     { id: 'people', label: 'People & apps', icon: UsersThree },
     { id: 'you', label: 'Just for you', icon: User },
@@ -99,6 +102,7 @@ export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCh
         <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5 sm:px-7 sm:py-6">
           {tab === 'general' && <General />}
           {tab === 'fields' && <BoardFields onLeave={() => onOpenChange(false)} />}
+          {tab === 'rules' && <Rules />}
           {tab === 'look' && <Look />}
           {tab === 'people' && <People onClose={() => onOpenChange(false)} />}
           {tab === 'you' && <JustForYou />}
@@ -106,6 +110,21 @@ export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCh
         </div>
       </DialogContent>
     </Dialog>
+  )
+}
+
+/** What the board says about its cards, the same to everyone on it (see model rules.ts). Limits, for now. */
+function Rules() {
+  return (
+    <div className="space-y-4">
+      <div>
+        <h2 className="text-base font-semibold">Rules</h2>
+        <p className="mt-1 text-sm text-muted-foreground">
+          What this board says about its cards. Everyone on it sees the same; its owners change them.
+        </p>
+      </div>
+      <RulesList />
+    </div>
   )
 }
 

@@ -5,6 +5,32 @@ then `git pull` (or download the new release) and `docker compose up -d --build`
 
 ## Unreleased
 
+- **Limits: how much a list may hold.** A board's owners can give a list a limit from its "…" menu (**Limit…**):
+  at most so many cards, or so much of a number field (hours of Estimate, money in open offers), for the whole
+  list or for each person by what is assigned to them. The list's header shows where it stands, such as `4 / 3`:
+  quiet while there is room, amber when full, red when over. Nothing is refused: a card can always be added, and
+  the list says it is over. Everyone on the board sees the same number, whatever they filter or hide; with a
+  filter on, the header says both what you see and what the limit counts. Where cards have subtasks, a limit
+  counts what the board's lists show (the cards without subtasks, or the top-level cards), and that can be chosen.
+
+  A limit can be about more than one list's cards. Under **Which cards** in the editor, tick the lists it is
+  about (none: the whole board) and anything else its cards must be, with the Filter menu's own controls: who they
+  are assigned to, their priority, their labels, a value of one of your own fields. So "at most 1 card in On site
+  where Trade is Roofing", or "at most 4 cards for each person in Scheduled, On site or Snagging". A limit can be
+  given a **name** ("Roofing crew"). A plain count sits beside the list's name; a limit that needs words with its
+  numbers sits on a line under the header ("Crew hours 166 / 160 h"). A **Limits** button above every view says
+  how many limits are over and lists them all, which is where a limit that isn't about one list shows; **Board
+  settings → Rules** has the same list, and is where owners make, change and remove them.
+
+  A limit is the first of a board's **rules**, kept with the board and worked out from it as it is, so nothing
+  can fall out of step. One that names a list, a label, a person or a field that is gone is not worked out with
+  what is left of it, and says so. Limits follow their fields when two are merged or the board moves to another
+  workspace, and come along in a board's file.
+
+  For assistants: `get_board` lists a board's limits in words, with what there is now and the room left under
+  each. For apps: a board has `rules`; its owners change them with `POST`, `PATCH` and
+  `DELETE /api/boards/<id>/rules`.
+
 - **Card covers.** A card can show one of its pictures across its top on the Board: a product in a shop's orders,
   a design draft, a bug's screenshot. Open the card, point at a picture in **Files** and click **Use as cover**;
   the picture is marked "Cover" and its button becomes **Remove cover**. Every cover has the same shape on the

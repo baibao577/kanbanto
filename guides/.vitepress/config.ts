@@ -48,6 +48,7 @@ export default defineConfig({
         text: 'Views and boards',
         items: [
           { text: 'The Board view', link: '/views/board' },
+          { text: 'Limits', link: '/views/limits' },
           { text: 'The Timeline view', link: '/views/timeline' },
           { text: 'The Outline view', link: '/views/outline' },
           { text: 'Board settings, stats and export', link: '/views/board-settings' },

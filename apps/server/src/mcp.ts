@@ -30,6 +30,7 @@ import { formatDuration, parseDuration } from '@kanbanto/model/time'
 import { ancestorsOf, descendantsOf, indexFor, isBlocked, statusCol, type TaskIndex } from '@kanbanto/model/indexer'
 import { fireTime } from '@kanbanto/model/reminders'
 import { readRef, refOf, taskByRef } from '@kanbanto/model/refs'
+import { describeRule, evaluateRules } from '@kanbanto/model/rules'
 import { hasWords, wordsOf } from '@kanbanto/model/search'
 import { STARTERS, type Starter } from '@kanbanto/model/starters'
 import { byBoard, byHand } from '@kanbanto/model/view'
@@ -122,6 +123,24 @@ const TEXT_STEP = 80_000
 const sizeText = (n: number) => (n < 1000 ? `${n} B` : n < 1_000_000 ? `${Math.ceil(n / 1000)} kB` : `${(n / 1_000_000).toFixed(1)} MB`)
 /** How text points at a file: the paperclip and its name (shown as a link to it in the app). */
 const markOf = (name: string) => `📎${name}`
+/**
+ * A board's limits for an assistant: what each says, and how much room is left under it now (below zero: it's over).
+ * For a limit that holds each person by themselves, the people who have any of its cards. One that can't be worked
+ * out (something it names is gone) says why instead.
+ */
+const limitsOf = (data: BoardData, idx: TaskIndex) =>
+  evaluateRules(idx, data).map((s) => {
+    const room = (now: number) => (s.rule.max === undefined ? {} : { room_left: Math.round((s.rule.max - now) * 1e6) / 1e6 })
+    return {
+      says: describeRule(s.rule, data),
+      ...(s.problem
+        ? { cannot_be_worked_out: s.problem }
+        : s.rule.per === 'person'
+          ? { people: s.groups.map((g) => ({ name: idx.members.get(g.person)?.name ?? 'Someone', now: g.value, ...room(g.value) })) }
+          : { now: s.groups[0].value, ...room(s.groups[0].value) }),
+    }
+  })
+
 const fileBrief = (f: AttachmentView) => ({
   id: f.id,
   name: f.name,
@@ -399,7 +418,7 @@ function buildServer(app: FastifyInstance, me: SessionUser, token: TokenAccess, 
     {
       title: 'Get a board',
       description:
-        'A board’s lists (in order), labels and people, and its open tasks: the top levels (each with how many subtasks it has, its subtasks under it), or the part under parent_id. The top-level tasks come list by list, each list in the order its cards were put in by hand. Up to 300 tasks; use find_tasks for more.',
+        'A board’s lists (in order), labels, people and limits (how much a list may hold, and the room left), and its open tasks: the top levels (each with how many subtasks it has, its subtasks under it), or the part under parent_id. The top-level tasks come list by list, each list in the order its cards were put in by hand. Up to 300 tasks; use find_tasks for more.',
       inputSchema: {
         board_id: z.string(),
         parent_id: z.string().optional().describe('Show only the tasks under this one (to look inside a big task).'),
@@ -480,6 +499,8 @@ function buildServer(app: FastifyInstance, me: SessionUser, token: TokenAccess, 
           }),
           people: data.members.map((m) => ({ id: m.id, name: m.name, ...(m.id === me.id && { you: true }) })),
           totals: { tasks: all, open: all - done, done },
+          // The board's limits (its rules: see model rules.ts), each in words with where it stands now.
+          ...(data.rules?.length && { limits: limitsOf(data, idx) }),
           ...(a.tasks !== false && {
             tasks: shown.slice(0, 300).map((id) => ({ depth: idx.depth.get(id)! - top, ...brief(data, idx, data.tasks[id], linked) })),
             ...(shown.length > 300 && { more: shown.length - 300 }),

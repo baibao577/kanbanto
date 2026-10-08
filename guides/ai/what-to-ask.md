@@ -22,6 +22,9 @@ things last moved.
 To point at one card, say its [name](/everyday/cards#a-card-s-name): "What's the latest on WEB-12?", "Move WEB-12 to
 Done." The assistant gives cards' names in its answers too, so you can tell which card it means.
 
+It is told the board's [limits](/views/limits) and the room left under each: "Is there room in Doing?", "Who is over
+their limit?", "Pick up the next card, unless Doing is full."
+
 ## Look back
 
 ::: info Try

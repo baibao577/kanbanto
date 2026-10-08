@@ -1,11 +1,25 @@
 import { comparePositions } from '@kanbanto/model/position'
 import type { Change } from '@kanbanto/model/records'
 import type { BoardField } from '@kanbanto/model/fields'
+import type { BoardRule } from '@kanbanto/model/rules'
+import { BoardRuleSchema } from '@kanbanto/model/schema'
 import type { BoardData, Member } from '@kanbanto/model/types'
 import { and, asc, eq, getTableColumns, inArray, isNull, sql } from 'drizzle-orm'
 import type { PgTable } from 'drizzle-orm/pg-core'
 import type { Db, Tx } from '../db'
-import { boardFieldRows, boardMembers, boards, labels, libraryFields, lists, tasks, users, workspaceMembers, type Role } from '../db/schema'
+import {
+  boardFieldRows,
+  boardMembers,
+  boardRules,
+  boards,
+  labels,
+  libraryFields,
+  lists,
+  tasks,
+  users,
+  workspaceMembers,
+  type Role,
+} from '../db/schema'
 import { pictureUrl } from '../pictures'
 import { higherRole, type BoardRow } from './access'
 import { boardFields, boardFromRow, fieldFromRow, labelFromRow, labelToRow, listFromRow, listToRow, taskFromRow, taskToRow } from './records'
@@ -75,6 +89,15 @@ export async function boardFieldsOf(tx: Db | Tx, boardId: string): Promise<Board
   return rows.map((r) => fieldFromRow(r.f, r.front, r.total))
 }
 
+/** A board's rules, oldest first. One that can't be read as a rule (a kind a newer version saved) is left out. */
+export async function boardRulesOf(tx: Db | Tx, boardId: string): Promise<BoardRule[]> {
+  const rows = await tx.select().from(boardRules).where(eq(boardRules.boardId, boardId)).orderBy(asc(boardRules.createdAt), asc(boardRules.id))
+  return rows.flatMap((row) => {
+    const rule = BoardRuleSchema.safeParse({ ...(row.rule as object), id: row.id })
+    return rule.success ? [rule.data] : []
+  })
+}
+
 /** The whole board as the model sees it, plus its change counter. Null if there's no such board. */
 export async function loadBoard(tx: Tx, boardId: string): Promise<{ data: BoardData; seq: number } | null> {
   const [b] = await tx.select().from(boards).where(eq(boards.id, boardId))
@@ -84,6 +107,7 @@ export async function loadBoard(tx: Tx, boardId: string): Promise<{ data: BoardD
   const taskRows = await tx.select().from(tasks).where(eq(tasks.boardId, boardId))
   const members = await loadMembers(tx, b)
   const fields = await boardFieldsOf(tx, boardId)
+  const rules = await boardRulesOf(tx, boardId)
   const uses = new Set(fields.map((f) => f.id))
   return {
     seq: b.seq,
@@ -93,6 +117,8 @@ export async function loadBoard(tx: Tx, boardId: string): Promise<{ data: BoardD
       columns: listRows.map(listFromRow).sort((x, y) => comparePositions(x.position, y.position)),
       labels: labelRows.map(labelFromRow),
       fields,
+      // (A board without rules is as it was before there were any: the key isn't there.)
+      ...(rules.length && { rules }),
       tasks: Object.fromEntries(taskRows.flatMap((r) => (r.archivedAt ? [] : [[r.id, taskFromRow(r, uses)]]))),
       archived: Object.fromEntries(taskRows.flatMap((r) => (r.archivedAt ? [[r.id, taskFromRow(r, uses)]] : []))),
     },

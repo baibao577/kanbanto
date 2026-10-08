@@ -94,6 +94,17 @@ curl -X POST https://kanbanto.example.com/api/boards/<board id>/mutations \
     `GET /api/attachments/<file id>` opens one (`curl -L`: a file kept in a bucket answers with a redirect to a
     five-minute link). `DELETE /api/boards/<id>/attachments/<file id>` puts one in a trash for 30 days, and
     `POST …/attachments/<file id>/restore` brings it back.
+  - **Rules** (limits). `GET /api/boards/<id>` has the board's `rules`. A limit looks like
+    `{"id", "kind": "limit", "cards": {"statuses": ["doing"]}, "counts": "leaves", "measure": {"by": "cards"},
+    "max": 3, "then": [{"do": "show"}]}`: `cards` says which cards the way a saved filter does (lists, people,
+    labels, priorities, the board's fields; not "me" or dates), `counts` which of them count where cards have
+    subtasks (`leaves`, `topLevel` or `all`), `measure` is the cards or a number field
+    (`{"by": "field", "field": "<id>"}`), `"per": "person"` holds each person by what is assigned to them, and
+    `name` is a few words of its owner's for it.
+    Nothing a rule works out is stored or sent: count the board's cards the same way to know where one stands.
+    A board's owners make one with `POST /api/boards/<id>/rules` and `{"rule": {…}}` (no `id`), change one with
+    `PATCH …/rules/<rule id>` (the whole rule) and remove one with `DELETE`. A rule that names something the
+    board doesn't have is refused (`422`, with the reason). Nothing is ever refused because of a limit.
   - **A card's cover** is one of its pictures, drawn across the top of the card on the Board: the task's `cover`,
     a file's id. The Board draws the picture's small copy, `GET /api/attachments/<file id>/thumb` (for whoever
     can open the file; it never changes, so keep it). The server does not make small copies, since it never opens

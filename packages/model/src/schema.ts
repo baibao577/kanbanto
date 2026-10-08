@@ -5,6 +5,7 @@ import { BULK_MAX, IMPORT_MAX, type Command } from './commands'
 import { FIELD_LIMITS, FIELD_TYPES, FILTER_TEXT_MAX, TEXT_FORMATS, TEXT_MATCHES, LINK_SCOPES, type FieldSettings } from './fields'
 import { isPosition } from './position'
 import { CODE, MAX_NUMBER, PAST_CODES } from './refs'
+import { MAX_RULES, RULE_COUNTS, type BoardRule } from './rules'
 import { CALENDAR_RANGES } from './prefs'
 import { BUILT_IN_SORT_KEYS, OUTLINE_COLUMNS, OUTLINE_EXTRA, type OutlineConfig, type TableFilter } from './table'
 import { CATEGORIES, LAYOUTS, LIST_ORDERS, PRIORITIES } from './types'
@@ -175,6 +176,18 @@ export const BoardDataSchema = z.object({
     .max(200)
     .default([])
     .transform((all) => all.flatMap((f) => (BoardFieldSchema.safeParse(f).success ? [BoardFieldSchema.parse(f)] : []))),
+  // A board from before rules has none (and stays without the key); a rule of a kind this version doesn't know, or
+  // one that isn't whole, is left out, not refused.
+  rules: z
+    .array(z.unknown())
+    .max(MAX_RULES * 5)
+    .optional()
+    .transform((all) =>
+      all?.flatMap((r) => {
+        const rule = BoardRuleSchema.safeParse(r)
+        return rule.success ? [rule.data] : []
+      }),
+    ),
   tasks: z.record(z.string(), TaskSchema),
   archived: z.record(z.string(), TaskSchema).optional(),
 })
@@ -364,6 +377,48 @@ export const PresetSettingsSchema = z.object({
 // (A key in the types and not here would be dropped from every saved filter and every device's settings without a
 // word, so the two are kept the same: this stops compiling when they drift.)
 export const filterSchemaMatchesType: SameAs<z.infer<typeof PresetSettingsSchema>['filter'], TableFilter> = true
+
+/**
+ * A board's rule (see rules.ts). What it says about its cards is a filter's lists, people, labels, priorities and
+ * fields, and nothing else: a part a rule can't have ("me" aside, which `ruleProblem` sees to) makes it not a rule.
+ */
+export const BoardRuleSchema = z
+  .object({
+    id: z.uuid(),
+    kind: z.literal('limit'),
+    name: plain(60)
+      .refine((s) => s.trim().length > 0 && s === s.trim(), 'A name can’t be empty.')
+      .optional(),
+    cards: z
+      .object({
+        statuses: z.array(recordId).min(1).max(50).optional(),
+        assignees: z.array(z.string().max(100)).min(1).max(50).optional(),
+        labels: z.array(recordId).min(1).max(50).optional(),
+        priorities: z
+          .array(z.enum([...PRIORITIES, '']))
+          .min(1)
+          .max(PRIORITIES.length + 1)
+          .optional(),
+        fields: z
+          .record(recordId, fieldFilter)
+          .refine((f) => Object.keys(f).length <= 10, 'Too many fields.')
+          .optional(),
+      })
+      .strict(),
+    counts: z.enum(RULE_COUNTS),
+    measure: z.union([z.object({ by: z.literal('cards') }).strict(), z.object({ by: z.literal('field'), field: recordId }).strict()]),
+    per: z.literal('person').optional(),
+    max: z.number().min(0).max(1e12).optional(),
+    min: z.number().min(0).max(1e12).optional(),
+    then: z
+      .array(z.object({ do: z.literal('show') }).strict())
+      .min(1)
+      .max(5),
+  })
+  .strict()
+  .refine((r) => r.max !== undefined || r.min !== undefined, 'A limit needs a number.')
+  .refine((r) => r.max === undefined || r.min === undefined || r.min <= r.max, 'The least can’t be more than the most.')
+export const ruleSchemaMatchesType: SameAs<z.infer<typeof BoardRuleSchema>, BoardRule> = true
 export const outlineSchemaMatchesType: SameAs<z.infer<typeof PresetSettingsSchema>['outline'], OutlineConfig> = true
 
 export const ViewPrefsSchema = PresetSettingsSchema.extend({

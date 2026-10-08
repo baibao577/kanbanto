@@ -1,4 +1,5 @@
 import type { BoardBackground, ColorName } from './colors'
+import type { BoardRule } from './rules'
 import type { BoardField, CustomValues } from './fields'
 
 /**
@@ -270,6 +271,12 @@ export interface BoardData {
    * against them.
    */
   fields: BoardField[]
+  /**
+   * The board's rules (see rules.ts): what it says about its cards, the same to everyone on it. Like `fields`, no
+   * command changes them (its owners do, in Board settings); every screen works them out from the board as it is.
+   * Missing: none.
+   */
+  rules?: BoardRule[]
   tasks: TaskMap
   /**
    * Archived tasks, kept apart so views, counts and rules only ever see `tasks`. They come back with task.restore,

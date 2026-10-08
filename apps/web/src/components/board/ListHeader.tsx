@@ -5,6 +5,7 @@ import {
   ArrowsInLineHorizontal,
   DotsThree,
   EyeSlash,
+  Gauge,
   PencilSimple,
   SortAscending,
   Trash,
@@ -13,6 +14,9 @@ import { useState } from 'react'
 import { toast } from 'sonner'
 import { useBoard } from '@/app/board-context'
 import { ColorSwatches, StatusDot } from '@/components/common/bits'
+import { LimitChip } from '@/components/rules/LimitChip'
+import { STANDING } from '@/components/rules/standing'
+import { LimitEditor } from '@/components/rules/LimitEditor'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -40,6 +44,7 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { cn } from '@/lib/utils'
 import { tone } from '@kanbanto/model/colors'
+import { isPlainCount, type RuleState } from '@kanbanto/model/rules'
 import { listSort, sortComparator } from '@kanbanto/model/table'
 import {
   CATEGORIES,
@@ -59,6 +64,8 @@ import { ORDER_LABEL, withListCollapsed, withListOrder } from './listOrder'
 interface Props {
   col: StatusColumn
   count: number
+  /** The limits that are about this list (see app/use-limits), worked out on the whole board. */
+  limits?: RuleState[]
   editing: boolean
   setEditing: (id: string | null) => void
   /** Asks which of a done list's older cards to archive (see ArchiveOlderDialog). */
@@ -70,9 +77,14 @@ interface Props {
  * A status list's header: rename in place, color, the order of its cards, what it counts as, reorder, hide, delete;
  * and, for a list of finished work, archiving its older cards.
  */
-export function ListHeader({ col, count, editing, setEditing, onArchiveOlder, className }: Props) {
-  const { data, idx, prefs, setPrefs, run, undo, readOnly } = useBoard()
+export function ListHeader({ col, count, limits = NO_LIMITS, editing, setEditing, onArchiveOlder, className }: Props) {
+  const { data, idx, prefs, setPrefs, run, undo, readOnly, access } = useBoard()
   const [deleting, setDeleting] = useState(false)
+  const [limiting, setLimiting] = useState(false)
+  // What the list's own number says is this person's view (their filter, what they hide). A limit's is everyone's:
+  // where the two are the same number, it's said once, by the limit.
+  const whole = limits.find((s) => !s.problem && s.rule.per !== 'person' && isPlainCount(s.rule))
+  const sameCount = !!whole && whole.groups[0].value === count
   const columns = data.columns
   const i = columns.findIndex((c) => c.id === col.id)
   const onlyList = columns.length < 2
@@ -132,7 +144,20 @@ export function ListHeader({ col, count, editing, setEditing, onArchiveOlder, cl
           {col.name}
         </button>
       )}
-      <span className={cn('text-xs tabular-nums', col.color ? 'text-foreground/70' : 'text-muted-foreground')}>{count}</span>
+      {!sameCount && (
+        <span
+          title={limits.length ? 'The cards you see here. The limit counts the whole list, whatever you filter or hide.' : undefined}
+          className={cn('text-xs tabular-nums', col.color ? 'text-foreground/70' : 'text-muted-foreground')}
+        >
+          {count}
+        </span>
+      )}
+      {/* Beside the name: the plain counts ("4 / 3", "2 each"). A limit that needs words is under the header (LimitLines). */}
+      {limits
+        .filter((s) => isPlainCount(s.rule))
+        .map((s) => (
+          <LimitChip key={s.rule.id} state={s} />
+        ))}
       {order && (
         <span
           title={`Ordered by ${ORDER_LABEL[listOrderKey(order)][0].toLowerCase()}: ${ORDER_LABEL[listOrderKey(order)][isReversed(order) ? 2 : 1].toLowerCase()}`}
@@ -260,6 +285,12 @@ export function ListHeader({ col, count, editing, setEditing, onArchiveOlder, cl
             </DropdownMenuRadioGroup>
 
             <DropdownMenuSeparator />
+            {/* A limit is one of the board's rules, which are its owners' to make (see model rules.ts). */}
+            {access.role === 'owner' && (
+              <DropdownMenuItem onSelect={() => setLimiting(true)}>
+                <Gauge /> {limits.length ? 'Change limit…' : 'Limit…'}
+              </DropdownMenuItem>
+            )}
             {col.category === 'done' && (
               <DropdownMenuItem onSelect={onArchiveOlder}>
                 <Archive /> Archive older cards…
@@ -276,9 +307,14 @@ export function ListHeader({ col, count, editing, setEditing, onArchiveOlder, cl
       )}
 
       <DeleteListDialog col={col} open={deleting} onOpenChange={setDeleting} />
+      {limiting && (
+        <LimitEditor listId={col.id} rule={(limits.find((s) => isPlainCount(s.rule)) ?? limits[0])?.rule} onClose={() => setLimiting(false)} />
+      )}
     </header>
   )
 }
+
+const NO_LIMITS: RuleState[] = []
 
 /**
  * A folded list: a narrow strip with what it counts as, how many cards and (given the height, `tall`) its name. Click
@@ -288,13 +324,23 @@ export function ListHeader({ col, count, editing, setEditing, onArchiveOlder, cl
 export function CollapsedList({
   col,
   count,
+  limits = NO_LIMITS,
   totals,
   tall,
   dropping,
   className,
   ...rest
-}: { col: StatusColumn; count: number; totals?: string; tall?: boolean; dropping?: 'ok' | 'blocked' } & React.ComponentProps<'button'>) {
+}: {
+  col: StatusColumn
+  count: number
+  limits?: RuleState[]
+  totals?: string
+  tall?: boolean
+  dropping?: 'ok' | 'blocked'
+} & React.ComponentProps<'button'>) {
   const { prefs, setPrefs, readOnly } = useBoard()
+  // (Folded, a list has room for a dot: it takes the color of the worst of its limits.)
+  const worst = (['over', 'near', 'under'] as const).find((st) => limits.some((s) => s.standing === st))
   return (
     <button
       {...rest}
@@ -302,7 +348,7 @@ export function CollapsedList({
       data-drag={readOnly ? undefined : 'list'}
       aria-label={`Expand ${col.name}`}
       aria-expanded={false}
-      title={`${col.name} · ${count} ${count === 1 ? 'card' : 'cards'}${totals ? `\n${totals}` : ''}\nClick to expand`}
+      title={`${col.name} · ${count} ${count === 1 ? 'card' : 'cards'}${worst === 'over' ? '\nOver its limit' : worst === 'near' ? '\nAt its limit' : ''}${totals ? `\n${totals}` : ''}\nClick to expand`}
       onClick={() => setPrefs({ type: 'setDisplay', config: withListCollapsed(prefs.display.board, col.id, false) })}
       className={cn(
         'drag-handle flex w-10 shrink-0 cursor-pointer items-center rounded-xl bg-lane text-sm font-semibold transition-[opacity,box-shadow] hover:bg-lane-hover',
@@ -313,7 +359,7 @@ export function CollapsedList({
       )}
     >
       <StatusDot category={col.category} className={col.color ? 'ring-2 ring-card/70' : undefined} />
-      <span className="text-xs font-normal text-muted-foreground tabular-nums">{count}</span>
+      <span className={cn('rounded-full px-1 text-xs font-normal tabular-nums', worst ? STANDING[worst] : 'text-muted-foreground')}>{count}</span>
       {tall && <span className="min-h-0 truncate [writing-mode:vertical-rl]">{col.name}</span>}
     </button>
   )

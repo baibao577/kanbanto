@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { ancestorsOf } from '@kanbanto/model/indexer'
 import { FilterChips } from './FilterChips'
+import { LimitsButton } from '@/components/rules/LimitsButton'
 
 const SlotContext = createContext<HTMLElement | null>(null)
 
@@ -41,6 +42,8 @@ export function ViewBar({ children, search, style }: { children: ReactNode; sear
           <div className="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-1.5 [&_:where(button[data-variant=outline])]:bg-background/40 [&_:where(button[data-variant=outline])]:shadow-none">
             {/* `contents`: the view's buttons and Log time flow as one row, so they wrap together. */}
             <div ref={setMain} className="contents" />
+            {/* The board's limits, in every view (nothing when it has none). */}
+            <LimitsButton />
             {logTime && (
               <Tooltip>
                 <TooltipTrigger asChild>

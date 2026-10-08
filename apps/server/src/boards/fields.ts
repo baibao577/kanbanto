@@ -32,6 +32,7 @@ import { and, asc, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import type { Db, Tx } from '../db'
 import { boardActivity, boardFieldRows, boardPresets, boards, libraryFields, tasks, users, workspaces } from '../db/schema'
+import { moveRuleFields } from './rules'
 import { dbErrorCode } from '../errors'
 import { HttpError } from '../http'
 import { workspaceRole, type Access, type BoardRow } from './access'
@@ -525,6 +526,8 @@ export async function mergeFields(app: FastifyInstance, lib: Library, fromId: st
         const next = remapPreset(read.data as PresetSettings, map, 'keep')
         if (JSON.stringify(next) !== JSON.stringify(read.data)) await tx.update(boardPresets).set({ settings: next }).where(eq(boardPresets.id, p.id))
       }
+      // …and so do its rules (a limit on the field that goes is a limit on the kept one).
+      await moveRuleFields(tx, boardId, map, 'keep')
       if (!was.removedAt)
         await tx.insert(boardActivity).values({
           id: newId(),
@@ -879,6 +882,8 @@ export async function moveBoardFields(app: FastifyInstance, tx: Tx, board: Board
     const next = remapPreset(read.data as PresetSettings, plan.map, 'drop', { relink: own, isMember: (u) => people.has(u) })
     if (JSON.stringify(next) !== JSON.stringify(read.data)) await tx.update(boardPresets).set({ settings: next }).where(eq(boardPresets.id, p.id))
   }
+  // Its rules too. One that can't come along whole is kept as it was, and says it can't be worked out (see rules.ts).
+  await moveRuleFields(tx, board.id, plan.map, 'drop', { relink: own, isMember: (u) => people.has(u) })
   await replaceBoardFields(
     tx,
     board.id,

@@ -244,6 +244,25 @@ describe('MCP', () => {
       [front, undefined],
       [back, true],
     ])
+    // The board's limits are said in words, with what there is now and the room left under each (below zero: over).
+    const limit = (list: string, max: number, more: object = {}) =>
+      ann.ok('POST', `/api/boards/${id}/rules`, {
+        rule: { kind: 'limit', cards: { statuses: [list] }, counts: 'leaves', measure: { by: 'cards' }, max, then: [{ do: 'show' }], ...more },
+      })
+    expect('limits' in (await tool('get_board', { board_id: id, tasks: false }))).toBe(false)
+    await limit('doing', 1)
+    await limit('todo', 5, { per: 'person' })
+    expect((await tool('get_board', { board_id: id, tasks: false })).limits).toEqual([
+      { says: 'At most 1 card in Doing', now: 2, room_left: -1 },
+      { says: 'At most 5 cards for each person in To Do', people: [{ name: 'Ann', now: 1, room_left: 4 }] },
+    ])
+    // One that names something that's gone (here a label) isn't worked out, and says so.
+    const run = (command: object) => ann.ok('POST', `/api/boards/${id}/mutations`, { mutationId: mid(), command })
+    await run({ type: 'label.create', id: 'soon', name: 'soon', color: 'red' })
+    await limit('todo', 2, { cards: { statuses: ['todo'], labels: ['soon'] } })
+    await run({ type: 'label.delete', id: 'soon' })
+    const broken = (await tool('get_board', { board_id: id, tasks: false })).limits[2]
+    expect(broken).toEqual({ says: 'At most 2 cards in To Do', cannot_be_worked_out: 'A label it names is gone.' })
     const board = await tool('get_board', { board_id: id })
     expect(board.board.code).toBe('MY')
     expect(board.tasks.find((x: { id: string }) => x.id === 'A3')).toMatchObject({ ref: 'MY-6', title: 'Deploy' })

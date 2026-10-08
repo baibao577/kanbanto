@@ -4,6 +4,9 @@ import { flushSync } from 'react-dom'
 import { toast } from 'sonner'
 import { useBoard } from '@/app/board-context'
 import { useAuth } from '@/app/use-auth'
+import { limitsOn, useLimits } from '@/app/use-limits'
+import { LimitLines } from '@/components/rules/LimitChip'
+import { hasConditions } from '@kanbanto/model/rules'
 import { Avatar, ProgressBar, StatusDot, StatusPill } from '@/components/common/bits'
 import { Empty } from '@/components/common/Empty'
 import { DisplayMenu } from '@/components/shell/DisplayMenu'
@@ -136,7 +139,7 @@ function Board({ search, onRows }: { search: string; onRows: (keys: string[]) =>
   // shows, the ones its count is of. A list with no number at all says nothing.
   const totalFields = useMemo(() => data.fields.filter((f) => f.total), [data.fields])
   const listTotals = useMemo(() => {
-    const out = new Map<string, { name: string; text: string }[]>()
+    const out = new Map<string, { id: string; name: string; text: string; sum: number }[]>()
     if (!totalFields.length) return out
     // Where subtasks stay on their parent's card, a card counts with its subtasks.
     const deep = config.filter === 'topLevel' || config.filter === 'main'
@@ -145,7 +148,8 @@ function Board({ search, onRows }: { search: string; onRows: (keys: string[]) =>
       const ids = view.rows.flatMap((r) => view.cells.get(cellKey(r.key, c.key)) ?? [])
       const lines = totalFields.flatMap((f, i) => {
         const numbers = ids.flatMap((id) => (sums[i] ? sums[i].get(id) : numberOf(idx, id, f.id)) ?? [])
-        return numbers.length ? [{ name: f.name, text: numberText(f, sumOf(f, numbers)) }] : []
+        const sum = sumOf(f, numbers)
+        return numbers.length ? [{ id: f.id, name: f.name, text: numberText(f, sum), sum }] : []
       })
       if (lines.length) out.set(c.key, lines)
     }
@@ -205,6 +209,8 @@ function Board({ search, onRows }: { search: string; onRows: (keys: string[]) =>
   }
   const hiddenLists = statusLists ? data.columns.filter((c) => config.hiddenColumns?.includes(c.id)) : []
 
+  // The board's limits, worked out on the whole board: each list's header shows the ones about it.
+  const limits = useLimits()
   const colCount = (col: string) => view.rows.reduce((n, r) => n + (view.cells.get(cellKey(r.key, col))?.length ?? 0), 0)
   const cellIds = (k: string) => (view.cells.get(k) ?? []).slice(0, cellLimits[k] ?? CARDS_STEP)
 
@@ -605,8 +611,16 @@ function Board({ search, onRows }: { search: string; onRows: (keys: string[]) =>
   }
   /** Under a list's header: what its cards add up to, for the fields the board totals. */
   const totalsLine = (key: string) => {
-    const lines = listTotals.get(key)
-    if (!lines) return null
+    // (A total that a limit on the same field already says, just above, isn't said twice.)
+    const said = new Map(
+      limitsOn(limits, key).flatMap((s) =>
+        !s.problem && s.rule.measure.by === 'field' && s.rule.per !== 'person' && !hasConditions(s.rule)
+          ? [[s.rule.measure.field, s.groups[0].value] as const]
+          : [],
+      ),
+    )
+    const lines = listTotals.get(key)?.filter((l) => said.get(l.id) !== l.sum)
+    if (!lines?.length) return null
     return (
       <p className={cn('flex flex-wrap gap-x-3 px-3 pb-1.5 text-xs text-muted-foreground', idx.colById.get(key)?.color && 'pt-1.5')}>
         {lines.map((l) => (
@@ -628,11 +642,13 @@ function Board({ search, onRows }: { search: string; onRows: (keys: string[]) =>
         <ListHeader
           col={idx.colById.get(c.key)!}
           count={colCount(c.key)}
+          limits={limitsOn(limits, c.key)}
           editing={editingList === c.key}
           setEditing={setEditingList}
           onArchiveOlder={() => setArchivingList(c.key)}
           className={joined ? 'rounded-t-xl' : 'rounded-xl'}
         />
+        <LimitLines limits={limitsOn(limits, c.key)} />
         {totalsLine(c.key)}
         {doneLine(c.key)}
       </div>
@@ -690,6 +706,7 @@ function Board({ search, onRows }: { search: string; onRows: (keys: string[]) =>
                     key={c.key}
                     col={col}
                     count={colCount(c.key)}
+                    limits={limitsOn(limits, c.key)}
                     totals={totalsText(c.key)}
                     tall
                     dropping={dropping(cellKey(NO_ROW, c.key))}
@@ -746,6 +763,7 @@ function Board({ search, onRows }: { search: string; onRows: (keys: string[]) =>
                       key={c.key}
                       col={idx.colById.get(c.key)!}
                       count={colCount(c.key)}
+                      limits={limitsOn(limits, c.key)}
                       totals={totalsText(c.key)}
                       style={laneTint(idx.colById.get(c.key))}
                       className={cn(listDrag?.id === c.key && 'opacity-40')}

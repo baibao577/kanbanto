@@ -137,6 +137,19 @@ UI ─run(command)─▶ BoardSync: execute() here ─▶ shown at once (optimis
   editor, "/" opens the one menu of things to put in (`INSERTS` in `components/text/Editor.tsx`): each is a line
   with what it does, or a `step` when it has to be chosen first, as a card is (this board's cards from memory,
   other boards' from `GET /api/cards?in=titles`); a new kind of mention is a new line there.
+- **Rules** (`packages/model/src/rules.ts`) are what a board says about its cards, the same to everyone on it. The
+  first kind is a limit ("at most 3 cards in Doing", "at most 40 h of Estimate in This week", "at most 2 cards for
+  each person"). A rule is a record of the board (`BoardData.rules`, the table `board_rules`), loaded with it the
+  way its fields are and changed by its owners through routes (`boards/rules.ts`: the board's change number moves
+  and every open copy reads it again), never by a command; `applyChanges` carries the rules along. Nothing a rule
+  works out is stored: `evaluateRules` runs on the board as it is, in every browser and on the server, once for a
+  version of the board. What a rule is about is a card set (`cardsOf`): the Filter menu's conditions, less the ones
+  that depend on who is looking or what day it is, plus which cards count where they nest. That function is what
+  other kinds of rule are meant to reuse (a check on each card of a set; "when a card starts matching these cards,
+  tell these people", asked of the board before and after a change), and what a rule does is a list (`then`) with
+  one entry today, "show". A rule that names something that is gone is never worked out with what is left of it
+  (`ruleProblem`): a dropped condition would be a wider limit. When a board's fields get other ids (a merge, a
+  move to another workspace, a file read into a new board) its rules follow, whole or not at all (`remapRule`).
 - **A card's cover** is one of its files, a picture: `Task.cover` holds the file's id, and the Board draws
   `/api/attachments/<id>/thumb` without asking for the card's files. That is the picture's small copy, made by
   the browser of whoever chose the cover (`coverPicture` in the web app's `lib/picture.ts`: the whole picture, 640

@@ -238,6 +238,8 @@ type Props = {
   onChange: (next: FieldFilter | undefined) => void
   /** The people a person field can be asked for: the board's, or everyone on the boards searched. */
   people?: { id: string; name: string; picture?: string | null }[]
+  /** A person field isn't offered "Me". */
+  noMe?: boolean
   /**
    * The cards a card link can be asked for (the ones the board's cards link to), how to name one and how to draw
    * one. Without it (several boards at once), only whether there is a link.
@@ -553,7 +555,8 @@ export function FieldCriteria(p: Props) {
           noneLabel="No one"
           hasLabel="Has someone"
           rows={[
-            { id: ME, row: <span>Me</span> },
+            // ("Me" is whoever is looking: not for a rule, which says the same to everyone.)
+            ...(p.noMe ? [] : [{ id: ME, row: <span>Me</span> }]),
             ...(p.people ?? []).map((m) => ({
               id: m.id,
               name: m.name,

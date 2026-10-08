@@ -50,7 +50,17 @@ export function applyChanges(data: BoardData, changes: Change[]): BoardData {
   if (lists.member) members = [...(lists.member.values() as Iterable<Records['member']>)]
   if (lists.label) labels = [...(lists.label.values() as Iterable<Records['label']>)]
   if (lists.column) columns = [...(lists.column.values() as Iterable<Records['column']>)].sort((a, b) => comparePositions(a.position, b.position))
-  return { board, members, columns, labels, fields, tasks, ...(Object.keys(archived).length || data.archived ? { archived } : {}) }
+  // (Like its fields, a board's rules are no command's to change: they're carried along as they are.)
+  return {
+    board,
+    members,
+    columns,
+    labels,
+    fields,
+    ...(data.rules && { rules: data.rules }),
+    tasks,
+    ...(Object.keys(archived).length || data.archived ? { archived } : {}),
+  }
 }
 
 /** The record a change is about, as it is now in `data` (null if it doesn't exist). */

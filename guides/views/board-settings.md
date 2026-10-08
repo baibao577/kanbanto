@@ -28,6 +28,10 @@ Changes are saved as you make them.
 under each list. See
 [your own fields](/everyday/fields).
 
+**Rules.** What the board says about its cards, the same to everyone on it. Today that is its
+[limits](/views/limits): how much a list, a person or the whole board may hold. Every limit is listed with where it
+stands; the board's owners make, change and remove them here.
+
 **Background.** One of 12 colors, 12 designs, or your own: pick any hue and a light, medium or deep shade.
 
 **People & apps.** Who can work on this board (a shortcut to Share), and webhooks, which tell other apps when
