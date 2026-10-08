@@ -77,7 +77,9 @@ const words = (l: CardHistoryEntry['lines'][number]) => (l.date ? l.text.replace
 function History({ taskId, column }: { taskId: string; column?: boolean }) {
   const { data, onActivity } = useBoard()
   const boardId = data.board.id
-  const version = (data.tasks[taskId] ?? data.archived?.[taskId])?.version
+  // (With its cover: that changes without the card counting as edited.)
+  const card = data.tasks[taskId] ?? data.archived?.[taskId]
+  const version = `${card?.version}:${card?.cover ?? ''}`
   const [entries, setEntries] = useState<CardHistoryEntry[] | null>(null)
   const [next, setNext] = useState<string | null>(null)
   const [failed, setFailed] = useState(false)

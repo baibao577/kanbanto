@@ -52,6 +52,9 @@ Click **Display**. These choices are yours alone; they do not change the board f
 
 - **Group subtasks under their parent** is on to begin with: a parent becomes a heading in each list, with its
   subtasks under it. Turn it off and every card stands alone.
+- **Covers** shows each card's [cover](/everyday/comments-and-files#use-a-picture-as-the-card-s-cover): its
+  picture, across its top. It is on to begin with. Turn it off to fit more cards on the screen; this is your own
+  choice and changes nothing for other people.
 - **Card numbers** shows each card's [name](/everyday/cards#a-card-s-name), like WEB-12, above its title.
 - **Where it belongs** shows the parent's name above each card.
 - **Subtask checklist** and **Progress bar** show a parent's steps and progress on its card.

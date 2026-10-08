@@ -6,13 +6,25 @@ import { newId } from '@kanbanto/model/ids'
 import { indexFor } from '@kanbanto/model/indexer'
 import type { Change } from '@kanbanto/model/records'
 import { withNumbers } from '@kanbanto/model/refs'
-import type { BoardData } from '@kanbanto/model/types'
+import type { BoardData, Task } from '@kanbanto/model/types'
 import { and, eq, inArray, lt, sql } from 'drizzle-orm'
 import type { Db, Tx } from '../db'
-import { attachments, boardActivity, boardFieldRows, boards, comments, notifications, taskFollowers, taskMoves, timeEntries } from '../db/schema'
+import {
+  attachments,
+  attachmentThumbs,
+  boardActivity,
+  boardFieldRows,
+  boards,
+  comments,
+  notifications,
+  taskFollowers,
+  taskMoves,
+  tasks,
+  timeEntries,
+} from '../db/schema'
 import { HttpError } from '../http'
 import type { LiveHub } from '../live'
-import { ACTIVITY_DAYS } from './activityLog'
+import { ACTIVITY_DAYS, logLine } from './activityLog'
 import { checkLinks, followMoved, gainedLinks, withoutLinks } from './links'
 import { numberBoard } from './numbering'
 import { loadBoard, writeChanges } from './store'
@@ -171,6 +183,24 @@ export class BoardEngine {
           stripped = true
         }
       }
+      // A cover is the server's to set (`setCover`), so the only one a command can bring is on a card that's coming
+      // back: an undo of its delete. It keeps it when the file is still that card's; otherwise it comes back without.
+      const covered = changes.filter((c) => c.entity === 'task' && !c.before && c.after?.cover)
+      if (covered.length) {
+        const lost = await this.coversGone(
+          tx,
+          boardId,
+          covered.map((c) => ({ taskId: c.id, file: (c.after as Task).cover! })),
+        )
+        if (lost.size) {
+          changes = changes.map((c) => {
+            if (c.entity !== 'task' || !c.after || !lost.has(c.id)) return c
+            const { cover: _gone, ...after } = c.after
+            return { ...c, after }
+          })
+          stripped = true
+        }
+      }
       // Card numbers are given here, never by the command (see model/refs.ts): new cards take the next ones, and a
       // card that has one keeps it. The answer carries them, so the person's own copy has them a moment later.
       const numbered = withNumbers(data, changes, row.nextNumber)
@@ -233,6 +263,101 @@ export class BoardEngine {
           .where(and(eq(boardFieldRows.boardId, boardId), inArray(boardFieldRows.fieldId, ids)))
       : []
     if (kept.length < named.size) throw new HttpError(422, 'This board’s fields changed since, so it can’t be undone.')
+  }
+
+  /**
+   * Of these cards coming back with a cover, the ones whose cover can't come with them: the file isn't theirs, was
+   * removed, or has no small copy. A file that went to the trash because its card was deleted (which housekeeping
+   * does some hours later) comes back with the card here, since the Board is about to draw it.
+   */
+  private async coversGone(tx: Tx, boardId: string, cards: { taskId: string; file: string }[]) {
+    const files = [...new Set(cards.map((c) => c.file))].slice(0, 2000)
+    const rows = await tx
+      .select({ id: attachments.id, taskId: attachments.taskId, trashed: attachments.deletedAt, orphaned: attachments.orphaned })
+      .from(attachments)
+      .innerJoin(attachmentThumbs, eq(attachmentThumbs.attachmentId, attachments.id))
+      .where(and(eq(attachments.boardId, boardId), inArray(attachments.id, files), eq(attachments.draft, false)))
+    const usable = new Map(rows.filter((r) => !r.trashed || r.orphaned).map((r) => [r.id, r]))
+    const kept = cards.filter((c) => usable.get(c.file)?.taskId === c.taskId)
+    const back = kept.filter((c) => usable.get(c.file)!.trashed).map((c) => c.file)
+    if (back.length) await tx.update(attachments).set({ deletedAt: null, orphaned: false }).where(inArray(attachments.id, back))
+    const ok = new Set(kept.map((c) => c.taskId))
+    return new Set(cards.filter((c) => !ok.has(c.taskId)).map((c) => c.taskId))
+  }
+
+  /**
+   * Makes one of a card's files its cover, or (`file` null) takes its cover away. Not a command: nothing a browser
+   * sends sets a cover, an undo doesn't change one, and the card isn't counted as edited (its version stays, so what
+   * was done to it before can still be undone). The board is locked as for a command, the file is checked there (it
+   * is this card's, it isn't in the trash, and it has its small copy: see routes/covers.ts), and the change goes to
+   * every open copy as any other does. Answers with the change, or with none when the cover was already that.
+   * `said`: left out when the cover goes because its file did, which has its own line in the log.
+   */
+  async setCover(
+    boardId: string,
+    taskId: string,
+    file: string | null,
+    by: { userId: string; via?: string | null; said?: boolean },
+  ): Promise<MutationResult> {
+    const result = await this.db.transaction(async (tx) => {
+      const [row] = await tx.select({ seq: boards.seq }).from(boards).where(eq(boards.id, boardId)).for('update')
+      if (!row) throw new HttpError(404, 'This board no longer exists.')
+      const hit = this.cache.get(boardId)
+      const data = hit && hit.seq === row.seq ? hit.data : (await loadBoard(tx, boardId))!.data
+      const card = data.tasks[taskId]
+      if (!card)
+        throw new HttpError(
+          data.archived?.[taskId] ? 409 : 404,
+          data.archived?.[taskId] ? 'An archived card can’t be changed.' : 'That card no longer exists.',
+        )
+      if ((card.cover ?? null) === file) return { seq: row.seq, changes: [] as Change[], data }
+      let name: string | null = null
+      if (file) {
+        const [a] = await tx
+          .select({ name: attachments.name, small: attachmentThumbs.attachmentId })
+          .from(attachments)
+          .leftJoin(attachmentThumbs, eq(attachmentThumbs.attachmentId, attachments.id))
+          .where(
+            and(
+              eq(attachments.id, file),
+              eq(attachments.boardId, boardId),
+              eq(attachments.taskId, taskId),
+              eq(attachments.draft, false),
+              sql`${attachments.deletedAt} is null`,
+            ),
+          )
+        if (!a) throw new HttpError(404, 'That file is no longer on this card.')
+        // (The app sends the small copy first; see routes/covers.ts.)
+        if (!a.small) throw new HttpError(409, 'This picture has no small copy yet.', 'needs-thumb')
+        name = a.name
+      }
+      const { cover: _was, ...rest } = card
+      const after: Task = file ? { ...rest, cover: file } : rest
+      const changes: Change[] = [{ entity: 'task', id: taskId, before: card, after }]
+      await tx
+        .update(tasks)
+        .set({ cover: file })
+        .where(and(eq(tasks.boardId, boardId), eq(tasks.id, taskId)))
+      if (by.said !== false)
+        await logLine(tx, {
+          boardId,
+          actorId: by.userId,
+          command: file ? 'cover.set' : 'cover.remove',
+          via: by.via,
+          item: {
+            taskId,
+            text: file ? `made “${name}” the cover of “${card.title}”` : `removed the cover of “${card.title}”`,
+            own: file ? `made “${name}” the cover` : 'removed the cover',
+          },
+        })
+      const seq = row.seq + 1
+      await tx.update(boards).set({ seq, activityAt: new Date() }).where(eq(boards.id, boardId))
+      return { seq, changes, data: applyChanges(data, changes) }
+    })
+    if (!result.changes.length) return { seq: result.seq, changes: [] }
+    this.remember(boardId, { seq: result.seq, data: result.data })
+    this.hub.broadcast(boardId, { type: 'changes', seq: result.seq, changes: result.changes })
+    return { seq: result.seq, changes: result.changes }
   }
 
   /**

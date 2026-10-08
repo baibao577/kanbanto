@@ -70,6 +70,28 @@ Everyone on the board, including people who can only view it. If a board has bee
 Click a file to open it. Point at a file and two buttons appear: one to download it and, if you can edit the board,
 one to remove it.
 
+### Use a picture as the card's cover
+
+A cover is one of a card's pictures shown across the top of the card on the Board, so the card is found by its
+picture: a product in a shop's orders, a design draft, a bug's screenshot.
+
+1. Open the card and find the picture in **Files**.
+2. Point at it and click **Use as cover**. On a phone the button is always there.
+
+The picture is now marked **Cover**, and its button says **Remove cover**. To change the cover, click **Use as
+cover** on another picture.
+
+A few things to know:
+
+- Any picture among the card's files can be the cover: PNG, JPEG, WebP, AVIF, or a GIF (its first frame).
+- On the Board every cover has the same shape. A picture that is taller or wider is cut from the middle; the file
+  itself is not changed.
+- The cover is seen by everyone who can open the board, visitors with its public link too.
+- Remove the file and the cover goes with it. **Undo** brings both back.
+- A card moved to another board keeps its cover.
+- Each person can hide covers on a board: [Display → Covers](/views/board#display-how-cards-look-and-group).
+- Covers use none of your file space.
+
 ### Point to a file in your writing
 
 Type **#** in a description or comment and pick a file. It appears as a small tag with the file's name that opens

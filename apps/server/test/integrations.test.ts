@@ -226,6 +226,24 @@ describe('MCP', () => {
     const tool = async (name: string, args: object) => toolResult(await rpc(mcp, 'tools/call', { name, arguments: args }))
     // Boards say their letters, and cards their names.
     expect((await tool('list_boards', {})).boards[0]).toMatchObject({ id, code: 'MY' })
+    // Which of a card's files is its cover (the picture across its top on the Board) is said too.
+    const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52])
+    const file = async (name: string) =>
+      (
+        await ann.request('POST', `/api/boards/${id}/tasks/A3/attachments`, png, {
+          'content-type': 'application/octet-stream',
+          'x-file-name': name,
+          'x-file-type': 'image/png',
+        })
+      ).body.attachment.id as string
+    const [front, back] = [await file('front.png'), await file('back.png')]
+    await ann.request('PUT', `/api/boards/${id}/attachments/${back}/thumb`, png, { 'content-type': 'image/png' })
+    await ann.ok('PUT', `/api/boards/${id}/tasks/A3/cover`, { attachmentId: back })
+    const seen = (await tool('get_task', { board_id: id, task_id: 'A3' })).files as { id: string; cover?: boolean }[]
+    expect(seen.map((f) => [f.id, f.cover])).toEqual([
+      [front, undefined],
+      [back, true],
+    ])
     const board = await tool('get_board', { board_id: id })
     expect(board.board.code).toBe('MY')
     expect(board.tasks.find((x: { id: string }) => x.id === 'A3')).toMatchObject({ ref: 'MY-6', title: 'Deploy' })

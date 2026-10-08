@@ -489,9 +489,12 @@ function restore(data: BoardData, changes: Change[], now: string): Change[] {
     if ((cur?.version ?? null) !== (c.before?.version ?? null)) reject('Someone changed this in the meantime, so it can’t be undone.')
     // A record that's gone keeps the version it's given (the undo already counted the restore as a new version).
     const after = c.after && { ...c.after, id: c.id, updatedAt: now, version: cur ? cur.version + 1 : c.after.version }
-    // What no undo changes: a card's number and a board's letters are as they are now, whatever the record being put
-    // back says (it may have been kept from before there were any). See refs.ts.
-    if (after && cur && c.entity === 'task') keep(after as Task, cur as Task, 'number')
+    // What no undo changes: a card's number and cover, and a board's letters, are as they are now, whatever the
+    // record being put back says (it may have been kept from before there were any). See refs.ts.
+    if (after && cur && c.entity === 'task') {
+      keep(after as Task, cur as Task, 'number')
+      keep(after as Task, cur as Task, 'cover')
+    }
     if (after && cur && c.entity === 'board') {
       keep(after as Board, cur as Board, 'code')
       keep(after as Board, cur as Board, 'pastCodes')

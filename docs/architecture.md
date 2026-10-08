@@ -137,6 +137,18 @@ UI ─run(command)─▶ BoardSync: execute() here ─▶ shown at once (optimis
   editor, "/" opens the one menu of things to put in (`INSERTS` in `components/text/Editor.tsx`): each is a line
   with what it does, or a `step` when it has to be chosen first, as a card is (this board's cards from memory,
   other boards' from `GET /api/cards?in=titles`); a new kind of mention is a new line there.
+- **A card's cover** is one of its files, a picture: `Task.cover` holds the file's id, and the Board draws
+  `/api/attachments/<id>/thumb` without asking for the card's files. That is the picture's small copy, made by
+  the browser of whoever chose the cover (`coverPicture` in the web app's `lib/picture.ts`: the whole picture, 640
+  pixels wide; the Board cuts it to its frame) and kept in the database for the file (`attachment_thumbs`), apart
+  from the files' storage: the server never opens a picture, the copy uses no file space, and it is checked like
+  the file whenever it is asked for. It is written once and never replaced, so browsers keep it. The cover is the
+  server's to set, like a card's number: `BoardEngine.setCover` locks the board, checks the file is that card's,
+  writes it and sends the change to every open copy, without raising the card's version (what was done to the
+  card before can still be undone). No command carries it, `restore()` pins it through undo, and the database
+  write keeps the stored one (`boards/store.ts`). A card that comes back from being deleted keeps its cover when
+  the file is still its own, and one moved to another board takes it along with its files. Removing the file,
+  or the comment it was posted in, removes the cover (`routes/covers.ts`).
 - **Labels** are board-wide and cards refer to them by id, so renaming or recolouring a label updates every card.
 
 ## Addresses

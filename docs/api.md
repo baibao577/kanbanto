@@ -94,6 +94,14 @@ curl -X POST https://kanbanto.example.com/api/boards/<board id>/mutations \
     `GET /api/attachments/<file id>` opens one (`curl -L`: a file kept in a bucket answers with a redirect to a
     five-minute link). `DELETE /api/boards/<id>/attachments/<file id>` puts one in a trash for 30 days, and
     `POST …/attachments/<file id>/restore` brings it back.
+  - **A card's cover** is one of its pictures, drawn across the top of the card on the Board: the task's `cover`,
+    a file's id. The Board draws the picture's small copy, `GET /api/attachments/<file id>/thumb` (for whoever
+    can open the file; it never changes, so keep it). The server does not make small copies, since it never opens
+    a picture: whoever sets a cover sends one first, `PUT /api/boards/<id>/attachments/<file id>/thumb` with the
+    small picture as the body (PNG, JPEG or WebP, up to 300 KB; the app's are 640 pixels wide). Then
+    `PUT /api/boards/<id>/tasks/<task id>/cover` with `{"attachmentId": "<file id>"}` makes it the cover (`409`
+    with the code `needs-thumb` when the small copy is missing), and `DELETE` on the same address takes it away.
+    No command sets `cover`, and deleting the file removes the cover with it.
   - Pictures open in the page and everything else downloads. Programs and scripts (`.exe`, `.sh`, `.js`…) are
     refused. The largest file and the space a person or a workspace has are set by the site (`413` when over).
 - **Archiving** (`task.archive`) puts a task and its subtasks away: they're out of the board and its counts, kept (with

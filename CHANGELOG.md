@@ -5,6 +5,23 @@ then `git pull` (or download the new release) and `docker compose up -d --build`
 
 ## Unreleased
 
+- **Card covers.** A card can show one of its pictures across its top on the Board: a product in a shop's orders,
+  a design draft, a bug's screenshot. Open the card, point at a picture in **Files** and click **Use as cover**;
+  the picture is marked "Cover" and its button becomes **Remove cover**. Every cover has the same shape on the
+  Board, and a picture that is taller or wider is cut from the middle. Everyone who can open the board sees covers,
+  visitors with its public link too. **Display → Covers** hides them for you on that board. Removing the file
+  removes the cover (Undo brings both back), a card moved to another board keeps its cover, and the card's History
+  says who set and removed it.
+
+  The Board never loads the full picture: your browser makes a small copy when you choose a cover, and that is
+  what is drawn and what browsers keep. Small copies use none of your file space. The Files list of a card draws
+  them too, where a picture has one.
+
+  For apps: a task has `cover`, a file's id; `GET /api/attachments/<file id>/thumb` is the small copy;
+  `PUT /api/boards/<id>/attachments/<file id>/thumb` takes one (the server does not make them), and `PUT` or
+  `DELETE /api/boards/<id>/tasks/<task id>/cover` sets or removes a cover. Assistants are told which of a card's
+  files is its cover; they cannot set one yet.
+
 - **Cards have names, like WEB-12.** Every card now has a short name: a few letters for its board and a number.
   The first card on a board is 1, the next is 2, subtasks too. A card keeps its number however it is renamed or
   moved between lists, and no number is given twice. Say it in a call, in a message, or to an assistant ("move

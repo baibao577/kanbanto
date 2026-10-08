@@ -352,6 +352,8 @@ export interface AttachmentView {
   url: string
   /** Shown as a picture. */
   image: boolean
+  /** Where its small copy is, when it has one (a picture that is, or was, a card's cover): what a list of pictures draws. */
+  thumb?: string
   /** The comment it's attached to (null: attached to the card). */
   commentId: string | null
 }

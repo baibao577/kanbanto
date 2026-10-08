@@ -12,6 +12,7 @@ import type { Db, Tx } from '../db'
 import { attachments, boards, comments, notifications, tasks, users, workspaces } from '../db/schema'
 import { HttpError, parse } from '../http'
 import { requireUser } from './auth'
+import { uncover } from './covers'
 import { attachDrafts, trashCommentFiles, views as attachmentViews } from './files'
 import { pictureUrl } from '../pictures'
 
@@ -297,8 +298,10 @@ export const commentRoutes: FastifyPluginAsync = async (app) => {
       .where(and(eq(comments.id, commentId), eq(comments.boardId, id)))
     if (!c) throw new HttpError(404, 'That comment no longer exists.')
     if (c.authorId !== me.id && access.role !== 'owner') throw new HttpError(403, 'Only its author or a board owner can delete a comment.')
-    await trashCommentFiles(app.db, commentId)
+    const files = await trashCommentFiles(app.db, commentId)
     await app.db.delete(comments).where(eq(comments.id, commentId))
+    // (A picture posted in the comment may have been made the card's cover: it goes with the comment.)
+    await uncover(app, id, c.taskId, files, { userId: me.id, via: req.apiToken?.app }).catch(() => false)
     app.hub.broadcast(id, { type: 'comment', taskId: c.taskId, action: 'deleted', commentId })
     return { ok: true }
   })

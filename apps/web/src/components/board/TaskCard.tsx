@@ -70,6 +70,8 @@ interface Props {
   item?: boolean
   /** View only: the card can't be dragged. */
   readOnly?: boolean
+  /** Draw its cover, when it has one (the Board does, unless covers are switched off in Display). */
+  covers?: boolean
   /** How many comments and files it has, and when the latest comment was written (card age). */
   comments?: number
   files?: number
@@ -93,6 +95,7 @@ export const TaskCard = memo(function TaskCard({
   move,
   item,
   readOnly,
+  covers,
   comments = 0,
   files = 0,
   lastComment,
@@ -133,6 +136,24 @@ export const TaskCard = memo(function TaskCard({
       onKeyDown={(e) => e.key === 'Enter' && e.target === e.currentTarget && onOpen(id)}
       className="group/card drag-handle relative cursor-pointer rounded-lg border border-(--card-edge) bg-(--tile) px-3 py-2.5 text-card-foreground shadow-tile transition-[border-color,box-shadow,opacity] outline-none hover:border-foreground/20 hover:shadow-tile-hover focus-visible:ring-2 focus-visible:ring-ring/50"
     >
+      {/* Its cover: one of its pictures, across the top (the file's small copy: see the server's routes/covers.ts).
+          The frame has its height before the picture arrives, so nothing under it jumps; the picture fills it, cut
+          from the middle. Not something to drag by itself: the browser dragging a picture would end the card's drag. */}
+      {covers && t.cover && (
+        <div className="-mx-3 -mt-2.5 mb-2 aspect-video overflow-hidden rounded-t-[7px] border-b border-(--card-edge) bg-muted">
+          <img
+            src={`/api/attachments/${t.cover}/thumb`}
+            alt=""
+            draggable={false}
+            loading="lazy"
+            decoding="async"
+            // (A cover that can't be had, its file gone meanwhile, leaves the card without one.)
+            onError={(e) => (e.currentTarget.parentElement!.hidden = true)}
+            className="size-full bg-white object-cover select-none"
+          />
+        </div>
+      )}
+
       {labels.length > 0 && (
         <div className="mb-1.5 flex flex-wrap gap-1 pr-12">
           {labels.map((l) => (

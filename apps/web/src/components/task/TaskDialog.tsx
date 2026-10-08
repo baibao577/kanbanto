@@ -203,7 +203,7 @@ function TaskDetail({ id, onClose }: { id: string; onClose: () => void }) {
             )}
           </Section>
 
-          <AttachmentsSection cardFiles={cardFiles} />
+          <AttachmentsSection cardFiles={cardFiles} cover={t.cover} />
 
           <Section icon={<Prohibit />} title="Waiting on" count={waitingOn.length}>
             {waitingOn.length > 0 && (

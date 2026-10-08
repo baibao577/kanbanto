@@ -41,6 +41,7 @@ import { inboxRoutes } from './routes/inbox'
 import { commentRoutes } from './routes/comments'
 import { timeRoutes } from './routes/time'
 import { emailRoutes } from './routes/email'
+import { coverRoutes } from './routes/covers'
 import { fileRoutes } from './routes/files'
 import { pictureRoutes } from './routes/pictures'
 import { uploadRoutes } from './routes/uploads'
@@ -299,6 +300,7 @@ export async function buildApp(
   await app.register(timeRoutes, { prefix: '/api' })
   await app.register(fileRoutes, { prefix: '/api' })
   await app.register(pictureRoutes, { prefix: '/api' })
+  await app.register(coverRoutes, { prefix: '/api' })
   await app.register(uploadRoutes, { prefix: '/api' })
   app.get('/api/health', async () => ({ ok: true }))
 

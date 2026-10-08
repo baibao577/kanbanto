@@ -36,6 +36,11 @@ const schemas = {
         description:
           'Its number on its board: with the board’s `code`, its name (WEB-12). Given by the server when the task is made, never used twice, never changed while it stays on the board. No command sets it.',
       },
+      cover: {
+        ...str,
+        description:
+          'Its cover: the id of one of its files, a picture, drawn across the top of the card on the Board (from `GET /api/attachments/{attId}/thumb`). Set with `PUT /api/boards/{id}/tasks/{taskId}/cover`. No command sets it.',
+      },
       title: str,
       parentId: nullable(str),
       status: { ...str, description: 'The id of its list.' },
@@ -887,8 +892,58 @@ The answer lists the records that changed.
         delete: {
           tags: ['Files'],
           summary: 'Delete a file',
-          description: 'Editors and owners. It goes to a trash for 30 days: `…/restore` brings it back.',
+          description:
+            'Editors and owners. It goes to a trash for 30 days: `…/restore` brings it back. A file that was its card’s cover takes the cover with it (the answer then has `wasCover: true`).',
           parameters: [id('id'), id('attId')],
+          responses: ok,
+        },
+      },
+      '/api/attachments/{attId}/thumb': {
+        get: {
+          tags: ['Files'],
+          summary: 'A picture’s small copy',
+          description:
+            'What the Board draws when the picture is a card’s cover. For anyone who can view its board, like the file itself. It never changes once made, so it can be kept. 404 when the picture has none yet.',
+          parameters: [id('attId')],
+          responses: { 200: { description: 'The small picture (WebP, JPEG or PNG).' } },
+        },
+      },
+      '/api/boards/{id}/attachments/{attId}/thumb': {
+        put: {
+          tags: ['Files'],
+          summary: 'Give a picture its small copy',
+          description:
+            'Editors and owners. The body is the small picture itself (a PNG, JPEG or WebP, by its first bytes, at most 300 KB; the app makes it 640 pixels wide). The server does not make it: it never opens a picture. Kept once: a second one for the same file changes nothing.',
+          parameters: [id('id'), id('attId')],
+          requestBody: { content: { 'image/webp': { schema: { type: 'string', format: 'binary' } } } },
+          responses: { 200: json(obj({ thumb: str })), 413: json(ref('Error'), 'Bigger than 300 KB.'), 415: json(ref('Error'), 'Not a picture.') },
+        },
+      },
+      '/api/boards/{id}/attachments/{attId}/original': {
+        get: {
+          tags: ['Files'],
+          summary: 'A picture as it was attached, through the server',
+          description:
+            'Editors and owners, pictures only. The same bytes as `GET /api/attachments/{attId}`, but always from this server (never a redirect to a bucket): for a page that has to read the picture to make its small copy.',
+          parameters: [id('id'), id('attId')],
+          responses: { 200: { description: 'The picture.' } },
+        },
+      },
+      '/api/boards/{id}/tasks/{taskId}/cover': {
+        put: {
+          tags: ['Files'],
+          summary: 'Make a picture the card’s cover',
+          description:
+            'Editors and owners. `attachmentId`: one of this card’s files, a picture, that has its small copy (else 409 with the code `needs-thumb`: send it first). Answers like a command, with the change to the card. Not a command: it is not undone with the board’s undo, and the card does not count as edited.',
+          parameters: [id('id'), id('taskId')],
+          requestBody: { content: { 'application/json': { schema: obj({ attachmentId: str }, ['attachmentId']) } } },
+          responses: ok,
+        },
+        delete: {
+          tags: ['Files'],
+          summary: 'Take a card’s cover away',
+          description: 'Editors and owners. The picture stays among the card’s files.',
+          parameters: [id('id'), id('taskId')],
           responses: ok,
         },
       },

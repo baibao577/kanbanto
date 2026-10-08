@@ -8,7 +8,7 @@ import { requireAccess } from '../boards/access'
 import { logLine } from '../boards/activityLog'
 import { encryptionReady } from '../crypto'
 import type { Db, Tx } from '../db'
-import { attachments, boards, siteSettings, storageBackends, tasks, users } from '../db/schema'
+import { attachments, attachmentThumbs, boards, siteSettings, storageBackends, tasks, users } from '../db/schema'
 import { serial } from '../serial'
 import { HttpError, parse } from '../http'
 import {
@@ -30,6 +30,7 @@ import {
 import { moveStatus, startMove, stopMove, stopMoves } from '../storage/move'
 import { contentDisposition, DiskStore, S3Store, StorageError } from '../storage/stores'
 import { requireUser } from './auth'
+import { thumbUrl, uncover } from './covers'
 
 const Params = z.object({ id: z.string().min(1).max(100) })
 const TaskParams = Params.extend({ taskId: z.string().min(1).max(100) })
@@ -56,7 +57,7 @@ const TRASH_DAYS = 30
 const MAX_DRAFTS = 10
 const MAX_DRAFT_FILES_OF_SPACE = 3
 /** Pictures shown in the app; everything else downloads (so nothing uploaded can run as a web page). */
-const IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/avif'])
+export const IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/avif'])
 /**
  * Files that run when double-clicked, refused by name. Kanbanto never runs files (they download, sandboxed), and
  * computers warn about downloaded programs; this just stops the obvious ones being passed around by accident.
@@ -112,12 +113,14 @@ type AttRow = typeof attachments.$inferSelect
 
 export async function views(db: Db | Tx, where: ReturnType<typeof and>): Promise<AttachmentView[]> {
   const rows = await db
-    .select({ a: attachments, uploader: users.name })
+    // (Whether it has a small copy, not the copy itself: see routes/covers.ts.)
+    .select({ a: attachments, uploader: users.name, small: attachmentThumbs.attachmentId })
     .from(attachments)
     .leftJoin(users, eq(users.id, attachments.uploaderId))
+    .leftJoin(attachmentThumbs, eq(attachmentThumbs.attachmentId, attachments.id))
     .where(where)
     .orderBy(attachments.createdAt)
-  return rows.map(({ a, uploader }) => ({
+  return rows.map(({ a, uploader, small }) => ({
     id: a.id,
     taskId: a.taskId,
     name: a.name,
@@ -127,6 +130,7 @@ export async function views(db: Db | Tx, where: ReturnType<typeof and>): Promise
     createdAt: a.createdAt.toISOString(),
     url: `/api/attachments/${a.id}`,
     image: IMAGE_TYPES.has(a.mime),
+    ...(small && { thumb: thumbUrl(a.id) }),
     commentId: a.commentId,
   }))
 }
@@ -221,10 +225,12 @@ export async function attachDrafts(db: Db | Tx, c: { boardId: string; taskId: st
 
 /** A deleted comment's files go to the trash. */
 export async function trashCommentFiles(db: Db | Tx, commentId: string) {
-  await db
+  const gone = await db
     .update(attachments)
     .set({ deletedAt: new Date() })
     .where(and(eq(attachments.commentId, commentId), isNull(attachments.deletedAt)))
+    .returning({ id: attachments.id })
+  return gone.map((a) => a.id)
 }
 
 /** Who may put a file here: editors and owners on a card, anyone who can comment for a comment's (not a visitor with the public link). */
@@ -604,8 +610,10 @@ export const fileRoutes: FastifyPluginAsync = async (app) => {
       .returning()
     if (!a) throw new HttpError(404, 'That file no longer exists.')
     await logFileLine(app, me, a, 'removed', req.apiToken?.app)
+    // (A card's cover goes with its file. The answer says so: bringing the file back can make it the cover again.)
+    const wasCover = !a.draft && (await uncover(app, id, a.taskId, [attId], { userId: me.id, via: req.apiToken?.app }))
     app.hub.broadcast(id, { type: 'attachment', taskId: a.taskId, action: 'deleted', attachmentId: attId })
-    return { ok: true }
+    return { ok: true, ...(wasCover && { wasCover }) }
   })
 
   /** Takes a file back out of the trash (undo). */

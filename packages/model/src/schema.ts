@@ -90,6 +90,8 @@ const meta = {
 export const TaskSchema = z.object({
   id: recordId,
   number: z.number().int().positive().max(MAX_NUMBER).optional(),
+  // (A file's id. Anything else is read as no cover, not refused: it's the server's to set, see types.ts.)
+  cover: z.uuid().optional().catch(undefined),
   title: plain(500),
   parentId: recordId.nullable(),
   status: recordId,
@@ -293,6 +295,7 @@ const viewConfig = z.object({
   doneDays: z.number().int().min(1).max(365).optional(),
   listOrder: z.record(z.string(), z.enum(LIST_ORDERS)).optional().catch(undefined),
   cardNumbers: z.boolean().optional().catch(undefined),
+  covers: z.boolean().optional().catch(undefined),
 })
 
 /**

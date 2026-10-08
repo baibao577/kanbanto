@@ -115,7 +115,8 @@ The letters come from the board's name. Its owners can change them in
 
 ## What a card shows on the board
 
-Without opening it, a card shows its labels, its title, and a line of small signs:
+Without opening it, a card shows its [cover](/everyday/comments-and-files#use-a-picture-as-the-card-s-cover) if
+it has one, its labels, its title, and a line of small signs:
 
 | Sign | Means |
 |---|---|

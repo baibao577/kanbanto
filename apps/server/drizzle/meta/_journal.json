@@ -288,6 +288,13 @@
       "when": 1791435230747,
       "tag": "0040_card_numbers",
       "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1791443171878,
+      "tag": "0041_card_covers",
+      "breakpoints": true
     }
   ]
 }

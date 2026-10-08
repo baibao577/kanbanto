@@ -1211,7 +1211,8 @@ function buildServer(app: FastifyInstance, me: SessionUser, token: TokenAccess, 
           const its = files.filter((f) => f.commentId === c.id).map((f) => f.name)
           return { id: c.id, author: c.author ?? 'Someone', text: c.body, at: c.at.toISOString(), ...(its.length && { files: its }) }
         }),
-        ...(files.length && { files: files.map(fileBrief) }),
+        // (Its cover is one of its files: the picture across the top of the card on the Board.)
+        ...(files.length && { files: files.map((f) => ({ ...fileBrief(f), ...(f.id === t.cover && { cover: true }) })) }),
         ...(await timeOf(task_id)),
       }
     }),

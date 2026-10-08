@@ -24,6 +24,7 @@ const sameConfig = (a: ViewConfig, b: ViewConfig) =>
   a.parentDisplay.length === b.parentDisplay.length &&
   a.parentDisplay.every((p) => b.parentDisplay.includes(p)) &&
   !!a.cardNumbers === !!b.cardNumbers &&
+  (a.covers !== false) === (b.covers !== false) &&
   (a.doneLists ?? 'recent') === (b.doneLists ?? 'recent') &&
   (a.doneLists === 'recent' || !a.doneLists ? (a.doneDays ?? DONE_DAYS) === (b.doneDays ?? DONE_DAYS) : true)
 
@@ -138,6 +139,12 @@ export function DisplayMenu({ rowKeys }: { rowKeys?: RefObject<string[]> }) {
         <Separator />
         <div className="space-y-3 p-4">
           <p className="text-xs font-medium text-muted-foreground">On each card</p>
+          <SwitchRow
+            label="Covers"
+            hint="A card’s picture, across its top"
+            checked={cfg.covers !== false}
+            onChange={(on) => set({ covers: on ? undefined : false })}
+          />
           <SwitchRow
             label="Card numbers"
             hint={`Its name, like ${data.board.code ?? 'WEB'}-12, above the title`}

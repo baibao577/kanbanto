@@ -663,6 +663,11 @@ export const tasks = pgTable(
     custom: jsonb('custom').$type<CustomValues>(),
     /** Its number on its board (the 12 in WEB-12; see model Task.number). Null only until the server has given it one. */
     number: integer('number'),
+    /**
+     * Its cover: one of its files, a picture (see model Task.cover). Written by `BoardEngine.setCover` alone; a file
+     * that's deleted for good takes the cover with it.
+     */
+    cover: uuid('cover').references((): AnyPgColumn => attachments.id, { onDelete: 'set null' }),
     ...meta,
   },
   (t) => [
@@ -876,6 +881,21 @@ export const attachments = pgTable(
     index('attachments_workspace_idx').on(t.workspaceId),
   ],
 )
+
+/**
+ * A picture's small copy, made by a browser when the picture became a card's cover (see routes/covers.ts): what the
+ * Board draws, so it never fetches originals. Kept here and not with the files: it uses no file space, there is
+ * nothing to move between storages, and it is in the database's backup. Written once for a file and never changed
+ * (browsers keep it), and gone with the file.
+ */
+export const attachmentThumbs = pgTable('attachment_thumbs', {
+  attachmentId: uuid('attachment_id')
+    .primaryKey()
+    .references(() => attachments.id, { onDelete: 'cascade' }),
+  mime: text('mime').notNull(),
+  bytes: bytes('bytes').notNull(),
+  createdAt: at('created_at').notNull().defaultNow(),
+})
 
 // ── Integrations: API tokens and webhooks ───────────────────────────────────────
 

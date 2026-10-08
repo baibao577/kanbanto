@@ -344,6 +344,7 @@ function Board({ search, onRows }: { search: string; onRows: (keys: string[]) =>
         idx={idx}
         config={cardConfig}
         code={data.board.code}
+        covers={cardConfig.covers !== false}
         labelById={labelById}
         frontFields={frontFields}
         onOpen={openTask}

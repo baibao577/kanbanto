@@ -151,7 +151,10 @@ export async function writeChanges(tx: Tx, boardId: string, changes: Change[], f
   await save(labels, by.label, (l: Parameters<typeof labelToRow>[1]) => labelToRow(boardId, l))
   // (A card's number is the row's own: once it has one, nothing saved over it changes it. See model/refs.ts.)
   const number = sql`coalesce(${tasks.number}, excluded."number")`
-  await save(tasks, by.task, (t: Parameters<typeof taskToRow>[1]) => taskToRow(boardId, t), { custom, number })
+  // (So is its cover, which only `BoardEngine.setCover` writes: a card that's saved again keeps the one its row has,
+  // and a card written for the first time, moved here or brought back by an undo, brings its own.)
+  const cover = sql`${tasks.cover}`
+  await save(tasks, by.task, (t: Parameters<typeof taskToRow>[1]) => taskToRow(boardId, t), { custom, number, cover })
 }
 
 /**

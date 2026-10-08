@@ -91,6 +91,7 @@ export function taskFromRow(r: Row<typeof tasks>, uses: ReadonlySet<string>): Ta
     ...toMeta(r),
   }
   if (r.number) t.number = r.number
+  if (r.cover) t.cover = r.cover
   if (r.description) t.description = r.description
   if (r.priority) t.priority = r.priority
   if (r.archivedAt) t.archivedAt = r.archivedAt.toISOString()
@@ -135,6 +136,7 @@ export const taskToRow = (boardId: string, t: Task): Row<typeof tasks> => ({
   color: t.color ?? null,
   custom: t.custom && Object.keys(t.custom).length ? t.custom : null,
   number: t.number ?? null,
+  cover: t.cover ?? null,
   ...fromMeta(t),
 })
 

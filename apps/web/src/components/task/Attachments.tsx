@@ -9,11 +9,11 @@ import { cn } from '@/lib/utils'
 import { Section } from './Section'
 
 /** A card's files: pictures show as thumbnails; drop files anywhere on the section (or pick them) to attach. */
-export function AttachmentsSection({ cardFiles }: { cardFiles: CardFiles }) {
+export function AttachmentsSection({ cardFiles, cover }: { cardFiles: CardFiles; /** The file that is the card's cover. */ cover?: string }) {
   const { readOnly } = useBoard()
   // The card's own files (files in comments show with their comment).
   const items = cardFiles.files.filter((f) => !f.commentId)
-  const { uploading, add, remove } = cardFiles
+  const { uploading, covering, add, remove, setCover } = cardFiles
   const [over, setOver] = useState(false)
   const input = useRef<HTMLInputElement>(null)
 
@@ -57,16 +57,38 @@ export function AttachmentsSection({ cardFiles }: { cardFiles: CardFiles }) {
                   rel="noreferrer"
                   className="grid h-12 w-16 shrink-0 place-items-center overflow-hidden rounded-md border bg-muted text-muted-foreground"
                 >
-                  {a.image ? <img src={a.url} alt="" className="size-full object-cover" loading="lazy" /> : <File className="size-5" />}
+                  {/* (Its small copy where it has one: the original can be megabytes.) */}
+                  {a.image ? <img src={a.thumb ?? a.url} alt="" className="size-full object-cover" loading="lazy" /> : <File className="size-5" />}
                 </a>
                 <div className="min-w-0 flex-1">
-                  <a href={a.url} target="_blank" rel="noreferrer" className="block truncate text-sm font-medium hover:underline">
-                    {a.name}
-                  </a>
+                  <span className="flex min-w-0 items-center gap-1.5">
+                    <a href={a.url} target="_blank" rel="noreferrer" className="min-w-0 truncate text-sm font-medium hover:underline">
+                      {a.name}
+                    </a>
+                    {a.id === cover && (
+                      <span className="shrink-0 rounded-full bg-primary/10 px-1.5 py-px text-[10px] leading-4 font-semibold text-primary">Cover</span>
+                    )}
+                  </span>
                   <p className="truncate text-xs text-muted-foreground">
                     {formatSize(a.size)} · {a.uploader ?? 'Someone'} · {formatDistanceToNow(parseISO(a.createdAt), { addSuffix: true })}
                   </p>
                 </div>
+                {/* A picture can be the card's cover: the one across the top of the card on the Board. */}
+                {!readOnly && a.image && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={covering !== null}
+                    onClick={() => void setCover(a.id === cover ? null : a)}
+                    className={cn(
+                      'h-7 shrink-0 px-2 text-xs',
+                      // (The cover's own button always shows; the others' come with the pointer, or always on a touch screen.)
+                      a.id !== cover && covering !== a.id && 'opacity-0 group-hover:opacity-100 focus-visible:opacity-100 touch-only:opacity-100',
+                    )}
+                  >
+                    {covering === a.id ? 'Making the cover…' : a.id === cover ? 'Remove cover' : 'Use as cover'}
+                  </Button>
+                )}
                 <a
                   href={a.url}
                   target="_blank"

@@ -3,7 +3,7 @@ import { fetch as request } from 'undici'
 import { createReadStream } from 'node:fs'
 import { mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import path from 'node:path'
-import type { Readable } from 'node:stream'
+import { Readable } from 'node:stream'
 import { assertPublicEndpoint, PrivateAddressError, publicOnly } from './egress'
 
 /** Where attachment bytes live. */
@@ -12,6 +12,8 @@ export interface ObjectStore {
   /** The file's bytes (to move it to other storage), or null if it isn't there. */
   get(key: string): Promise<Buffer | null>
   delete(key: string): Promise<void>
+  /** The file as it comes, for passing on without holding all of it (`size`: when the storage says). Null if it isn't there. */
+  open(key: string): Promise<{ stream: Readable; size: number | null } | null>
 }
 
 /** The server's own disk (a Docker volume in production). The server streams downloads itself. */
@@ -142,6 +144,13 @@ export class S3Store implements ObjectStore {
   async delete(key: string) {
     const res = await this.call('DELETE', key)
     await res?.body?.cancel()
+  }
+
+  async open(key: string) {
+    const res = await this.call('GET', key)
+    if (!res?.body) return null
+    const size = Number(res.headers.get('content-length'))
+    return { stream: Readable.fromWeb(res.body), size: Number.isFinite(size) && size > 0 ? size : null }
   }
 
   /** A link that works for 5 minutes, telling the browser to show or download the file under its real name. */

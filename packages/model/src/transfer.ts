@@ -7,8 +7,23 @@ import type { BoardData } from './types'
 /** The export file format this version writes. */
 export const EXPORT_FORMAT = 3
 
+/** The cards without their covers: a cover is one of a card's files, and files don't travel in a board's file. */
+const uncovered = (tasks: BoardData['tasks']): BoardData['tasks'] =>
+  Object.fromEntries(Object.entries(tasks).map(([id, { cover: _file, ...t }]) => [id, t]))
+
+/** A board without its covers (see `uncovered`): what goes in an export file, and what comes out of one. */
+export const withoutCovers = (data: BoardData): BoardData =>
+  [...Object.values(data.tasks), ...Object.values(data.archived ?? {})].some((t) => t.cover)
+    ? { ...data, tasks: uncovered(data.tasks), ...(data.archived && { archived: uncovered(data.archived) }) }
+    : data
+
 /** An export file's contents. */
-export const exportFile = (data: BoardData) => ({ app: 'kanbanto', format: EXPORT_FORMAT, exportedAt: new Date().toISOString(), data })
+export const exportFile = (data: BoardData) => ({
+  app: 'kanbanto',
+  format: EXPORT_FORMAT,
+  exportedAt: new Date().toISOString(),
+  data: withoutCovers(data),
+})
 
 /**
  * Reads an exported board (already parsed from JSON): the current format (checked against the schema) or any
@@ -20,7 +35,7 @@ export function readBoardFile(raw: unknown, boardId: string): BoardData {
   if (file && typeof file === 'object' && file.format === EXPORT_FORMAT) {
     const parsed = BoardDataSchema.safeParse(file.data)
     if (!parsed.success) throw new Error('The file looks damaged: some of its data is missing or malformed.')
-    return rehomed(repairData(parsed.data as BoardData), boardId)
+    return rehomed(withoutCovers(repairData(parsed.data as BoardData)), boardId)
   }
   // Older exports: a bare task list, or { boardName, columns, labels, tasks }.
   const legacy = Array.isArray(raw) ? { tasks: raw } : raw

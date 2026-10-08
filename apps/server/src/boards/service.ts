@@ -49,7 +49,8 @@ export async function insertBoard(tx: Tx, data: BoardData, ownerId: string, work
   const brought = data.board.code
   const code = !taken ? INBOX_CODE : brought && isCode(brought) && !taken.has(brought) ? brought : suggestCode(data.board.name, taken)
   const { numbers, next } = numbersFor([...Object.values(data.tasks), ...Object.values(data.archived ?? {})], indexFor(data).preorder)
-  const numbered = (t: Task): Task => (t.number === numbers.get(t.id) ? t : { ...t, number: numbers.get(t.id) })
+  // (A board that's made whole has no files yet, so no card of it has a cover, whatever its record says.)
+  const numbered = ({ cover: _file, ...t }: Task): Task => (t.number === numbers.get(t.id) ? t : { ...t, number: numbers.get(t.id) })
   await tx.insert(boards).values({
     id: data.board.id,
     name: data.board.name,

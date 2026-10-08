@@ -117,6 +117,12 @@ export interface Task extends Meta {
    * answers. No command sets it (see refs.ts).
    */
   number?: number
+  /**
+   * Its cover: the id of one of its files, a picture, shown across the top of the card on the Board (drawn from the
+   * small copy kept for that file). Set and removed by the server alone, when someone asks in the card's Files: no
+   * command sets it, and an undo leaves it as it is.
+   */
+  cover?: string
   title: string
   parentId: string | null
   /** Id of a StatusColumn. */
@@ -210,6 +216,8 @@ export interface ViewConfig {
   listOrder?: Record<string, ListOrder>
   /** Each card shows its name (WEB-12) above its title. */
   cardNumbers?: boolean
+  /** Cards show their covers. Unset: they do (false hides them). */
+  covers?: boolean
 }
 
 /**
