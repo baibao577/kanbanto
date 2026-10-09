@@ -32,6 +32,7 @@ import {
   setOnCards,
   stillThere,
   theirSubtasks,
+  whatHappened,
   type BulkChange,
 } from '@kanbanto/model/bulk'
 import { PRIORITIES, PRIORITY_LABEL } from '@kanbanto/model/types'
@@ -67,10 +68,8 @@ export function SelectionBar({ selection, shown, className }: { selection: Selec
 
   /** Does one change to the selected cards, and says what it came to. */
   const apply = (change: BulkChange, said: (cards: string) => string) => {
-    const one = change.follow === 1
-    const stay = change.follow ? `${cardsWord(change.follow)} ${one ? 'follows its' : 'follow their'} subtasks and ${one ? 'stays' : 'stay'}` : ''
-    if (!change.command) return void toast(stay ? `Nothing moved: ${stay}.` : 'Nothing to change: they are like that already.', { id: 'refused' })
-    run(change.command, said(cardsWord(change.changed)) + (stay ? `. ${stay[0].toUpperCase()}${stay.slice(1)}.` : ''))
+    if (!change.command) return void toast(whatHappened(change, said), { id: 'refused' })
+    run(change.command, whatHappened(change, said))
   }
   const set = (fields: Parameters<typeof setOnCards>[3], said: (cards: string) => string) => apply(setOnCards(data, idx, ids, fields), said)
   const alsoUnder = under.length

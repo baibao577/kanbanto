@@ -13,24 +13,43 @@ A list is a stage of the work. Each list has a menu, opened with its **⋯**.
 
 ![A list's menu](/images/list-menu.webp){.medium}
 
+The menu is in three groups, by what a line changes.
+
+**This list, for everyone**
+
 - **Rename.** Or just click the list's name.
 - **Color.** Tints the list's header.
+- **Cards in this list are** what the list counts as: **Backlog** (planned, not ready yet), **Not started**, **In
+  progress** or **Done**. This is how Kanbanto knows which cards are finished, whatever you name your lists.
+- **Move left / Move right.** Or drag the list by its header.
+- **Limit…** says how much the list may hold: so many cards, or so much of a number field. The list's header then
+  shows where it stands, and turns red when it is over. For the board's owners. See [limits](/views/limits).
+- **Tell people when a card arrives…** chooses who gets a line under their bell when a card comes into the list.
+  For the board's owners. See [tell people when a card arrives](/views/telling-rules).
+
+**Its cards**
+
+- **Move all cards to** sends every card in the list to another list in one go: the week's "Done this week" into
+  "Done", a triage list emptied. The cards arrive at the end of the other list, in the order they had. It is one
+  change: **Undo**, on the message that says what moved, puts them all back.
+
+  It moves the cards the list is showing you. With a search or a filter on, or on a done list that leaves its
+  older cards out, the line reads **Move the 5 cards shown to**, and the rest stay where they are. On a board where
+  a parent's list follows its subtasks, a parent goes where its subtasks go: one whose subtasks are elsewhere stays,
+  and the message says so. People who follow the cards get one line about the move, not one for each card.
+- **Archive older cards…** on a done list. See [done cards and the archive](/everyday/done-and-archive).
+
+**Only on your screen**
+
 - **Order cards by.** By hand (as you dragged them), or sorted: by priority, due date or title, or by when the
   cards were **created** or last **updated** (newest first). **Reverse the order** turns any of them round: oldest
   first, least important first, Z to A. **Keep this order** makes a sorted order the new order by hand. (*Updated*
   is the last real change to a card: its title, list, dates, description and so on. Dragging it to another place
   doesn't count.)
-- **Move left / Move right.** Or drag the list by its header.
-- **Cards in this list are…** what the list counts as: **Backlog** (planned, not ready yet), **Not started**, **In
-  progress** or **Done**. This is how Kanbanto knows which cards are finished, whatever you name your lists.
-- **Limit…** says how much the list may hold: so many cards, or so much of a number field. The list's header then
-  shows where it stands, and turns red when it is over. For the board's owners. See [limits](/views/limits).
-- **Tell people when a card arrives…** chooses who gets a line under their bell when a card comes into the list.
-  For the board's owners. See [tell people when a card arrives](/views/telling-rules).
-- **Archive older cards…** on a done list. See [done cards and the archive](/everyday/done-and-archive).
 - **Hide list** takes it off your screen only. A line beside the lists says which are hidden, with a way to show
   them again. New boards start with a hidden Backlog.
-- **Delete list…** asks where its cards should go first.
+
+And last, **Delete list…**, which asks where its cards should go first.
 
 The button beside the **⋯** folds a list into a narrow strip. Click the strip to open it again.
 

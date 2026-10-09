@@ -5,6 +5,23 @@ then `git pull` (or download the new release) and `docker compose up -d --build`
 
 ## Unreleased
 
+- **Move all the cards of a list, and a list's menu in groups.** A list's **⋯** menu on the Board has **Move all
+  cards to**, with the board's other lists: every card in the list goes to the end of the one you pick, in the
+  order they had, as one change with one **Undo**. It moves the cards the list is showing you: with a search or a
+  filter on, or on a done list that leaves its older cards out, the line reads **Move the 5 cards shown to** and
+  the rest stay. People who follow the cards get one line about the move.
+
+  The menu is now in three groups, by what a line changes: **This list, for everyone** (rename, color, what its
+  cards count as, move left and right, its limit, who is told), **Its cards** (move all, archive older cards) and
+  **Only on your screen** (the order, hide). What a list counts as has moved into a menu of its own, with the
+  current choice beside it. Every line that was there still is.
+
+  Fixed on the way: on a touch screen, a menu inside a menu (a list's **Order cards by** and **Color**, and the new
+  one) could close again a moment after a tap opened it. And when several cards are moved at once on a board where
+  a parent's list follows its subtasks, a parent whose subtasks all moved with it is no longer said to have stayed.
+
+  The guides: **Lists** on the page about the Board.
+
 - **A page of your notifications, and "Mark as unread".** The bell shows the newest 30 lines; **See all**, at its
   foot, opens a page with all of them, newest first under the day they came, narrowed to the unread, to mentions of
   you, or to one board. A line you have read can be turned back to unread, to come back to, on the page and under

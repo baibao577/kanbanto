@@ -593,7 +593,12 @@ The app uses hash routing, so any static host or proxy works without rewrite rul
   cards, and sets any other), `tasks.archive` and `tasks.delete` for putting away and deleting (what
   `task.archive` and `task.delete` do to one, for the named cards that have none of the others above them).
   A change with news for one person about more than three cards is told to them once, each kind of thing said
-  about all the cards it happened to (`manyInWords` in `boards/follows.ts`). The Outline has it (a tick box where
+  about all the cards it happened to (`manyInWords` in `boards/follows.ts`). A list's menu on the Board has the
+  same move for every card the list shows (`moveAllTo`: the cards as this person's board has them, so a search, a
+  filter or a done list's older cards left out narrow what moves, and the line then says "shown": `moveAllWords`);
+  it and the bar say what happened in the same words (`whatHappened`). A parent that follows its subtasks counts
+  as staying only when it is still in another list once the cards have moved: its subtasks moved in the same
+  change take it with them. The Outline has it (a tick box where
   a row is pointed at, Shift for a range, the Task heading's box for all that is shown) and so does the Board,
   where a click already opens a card: Ctrl or ⌘ with a click, or "Select" in a card's menu, ticks the first, and
   while any card is ticked a plain click ticks (`TaskCard`: `onTick`, `selecting`, `picked`), with Shift for the

@@ -1,6 +1,6 @@
 import type { Command, TaskFields } from './commands'
 import { sameValue, type BoardField, type FieldValue } from './fields'
-import { descendantsOf, type TaskIndex } from './indexer'
+import { descendantsOf, indexFor, type TaskIndex } from './indexer'
 import type { BoardData, Task } from './types'
 import { byHand } from './view'
 
@@ -92,7 +92,8 @@ function differs(t: Task, f: TaskFields): boolean {
 
 /** The same fields on every one of these cards, or each card's own (`each`). */
 function update(data: BoardData, idx: TaskIndex, ids: readonly string[], each: (t: Task) => TaskFields | undefined): BulkChange {
-  let follow = 0
+  // Parents asked into a list they aren't in, where a parent's list follows its subtasks: each with the list asked.
+  const parents: [id: string, status: string][] = []
   const cards: { id: string; fields: TaskFields }[] = []
   for (const id of ids) {
     const t = data.tasks[id]
@@ -100,13 +101,21 @@ function update(data: BoardData, idx: TaskIndex, ids: readonly string[], each: (
     if (!t || !fields) continue
     // Where parents follow their subtasks, a parent has no list of its own to set.
     if (fields.status !== undefined && data.board.mode === 'derived' && idx.childrenOf.get(id)?.length) {
-      const { status: _its, ...rest } = fields
-      if (idx.status.get(id) !== fields.status) follow++
+      const { status: its, ...rest } = fields
+      if (idx.status.get(id) !== its) parents.push([id, its])
       fields = rest
     }
     if (differs(t, fields)) cards.push({ id, fields })
   }
-  if (!cards.length) return { ...none, follow }
+  if (!cards.length) return { ...none, follow: parents.length }
+  // A parent goes where its subtasks go: the ones that stay are those still in another list once the cards moved.
+  let follow = 0
+  if (parents.length) {
+    const moved = new Map(cards.flatMap((c) => (c.fields.status ? [[c.id, c.fields.status] as const] : [])))
+    const tasks = Object.fromEntries(Object.entries(data.tasks).map(([id, t]) => [id, moved.has(id) ? { ...t, status: moved.get(id)! } : t]))
+    const after = moved.size ? indexFor({ ...data, tasks }) : idx
+    follow = parents.filter(([id, status]) => after.status.get(id) !== status).length
+  }
   // The lists cards move into, each in its new order: the cards that are there, then the ones arriving.
   const into = new Map<string, string[]>()
   for (const c of cards) if (c.fields.status) into.set(c.fields.status, [...(into.get(c.fields.status) ?? []), c.id])
@@ -164,3 +173,30 @@ export function fieldOnCards(
 
 /** "3 cards", "1 card". */
 export const cardsWord = (n: number) => `${n.toLocaleString('en')} ${n === 1 ? 'card' : 'cards'}`
+
+/**
+ * What one change to several cards came to, in words: what `said` says of the cards that changed ("Moved 3 cards
+ * to Done"), then the ones that stay where they are; or, with no command, why nothing happened.
+ */
+export function whatHappened(change: BulkChange, said: (cards: string) => string): string {
+  const one = change.follow === 1
+  const stay = change.follow ? `${cardsWord(change.follow)} ${one ? 'follows its' : 'follow their'} subtasks and ${one ? 'stays' : 'stay'}` : ''
+  if (!change.command) return stay ? `Nothing moved: ${stay}.` : 'Nothing to change: they are like that already.'
+  return said(cardsWord(change.changed)) + (stay ? `. ${stay[0].toUpperCase()}${stay.slice(1)}.` : '')
+}
+
+/**
+ * Every card a list shows, moved to another list, from the list's menu ("Move all cards to"): `shown` is the cards
+ * the board has in the list as this person sees it (their filter, their search, what a done list leaves out as
+ * older), so what moves is what they are looking at. They arrive at the end of the other list in the order they
+ * had by hand, whatever order the list was shown in.
+ */
+export const moveAllTo = (data: BoardData, idx: TaskIndex, shown: readonly string[], status: string): BulkChange =>
+  setOnCards(data, idx, byHand(idx, [...shown]), { status })
+
+/**
+ * What the list's menu calls that move: "Move all 5 cards to" when the list shows every card it has, "Move the 5
+ * cards shown to" when something narrows it, so nobody takes a part of a list for the whole.
+ */
+export const moveAllWords = (n: number, narrowed: boolean): string =>
+  !n ? 'Move all cards to' : narrowed ? `Move the ${cardsWord(n)} shown to` : n === 1 ? 'Move its card to' : `Move all ${cardsWord(n)} to`

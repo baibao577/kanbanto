@@ -1,5 +1,18 @@
 import { describe, expect, it } from 'vitest'
-import { commonValue, fieldOnCards, labelOnCards, labelShares, setOnCards, stillThere, theirSubtasks, withWhatIsUnder, type BulkChange } from './bulk'
+import {
+  commonValue,
+  fieldOnCards,
+  labelOnCards,
+  labelShares,
+  moveAllTo,
+  moveAllWords,
+  setOnCards,
+  stillThere,
+  theirSubtasks,
+  whatHappened,
+  withWhatIsUnder,
+  type BulkChange,
+} from './bulk'
 import { applyChanges, invertChanges } from './changes'
 import { execute, type Command } from './commands'
 import type { BoardField } from './fields'
@@ -131,6 +144,65 @@ describe('one change to several cards', () => {
     // Mai taken away from both: Ton stays on the one he was on, and the other holds nobody.
     const taken = done(data, fieldOnCards(data, idx, two, reviewers, [], ['mai']))
     expect(two.map((id) => taken.tasks[id].custom?.who)).toEqual([['ton'], undefined])
+  })
+})
+
+describe('all of a list’s cards moved to another list', () => {
+  const said = (change: BulkChange) => whatHappened(change, (n) => `Moved ${n} to Done`)
+
+  it('takes the cards the list shows to the end of the other list in their order by hand, as one change with one undo', () => {
+    // (A board where a parent's list is set by hand: Launch website, Deploy and Event are in To Do, with Logo.)
+    const data = run(board({}, 'manual'), {
+      type: 'tasks.moveToList',
+      ids: ['B', 'A3', 'A2b', 'A'],
+      status: 'todo',
+      list: ['B', 'A3', 'A2b', 'A'],
+    }).data
+    const idx = indexFor(data)
+    // Shown in another order than the one by hand (and named in that one): they arrive in the order by hand.
+    const move = moveAllTo(data, idx, ['A', 'A2b', 'A3', 'B'], 'done')
+    expect(move).toMatchObject({ changed: 4, follow: 0 })
+    expect(said(move)).toBe('Moved 4 cards to Done')
+    const { data: after, changes } = run(data, move.command!)
+    expect(['B', 'A3', 'A2b', 'A'].map((id) => after.tasks[id].status)).toEqual(['done', 'done', 'done', 'done'])
+    const list = move.command!.type === 'tasks.update' ? move.command!.lists![0] : undefined
+    expect(list?.order).toEqual(['A1', 'B', 'A3', 'A2b', 'A'])
+    // A parent moved by hand leaves its subtasks where they are, as when it is dragged.
+    expect(after.tasks.B1.status).toBe('doing')
+    // One undo puts the four back, in their places.
+    const back = run(after, { type: 'records.restore', changes: invertChanges(after, changes, NOW) }).data
+    const places = (d: BoardData) => ['B', 'A3', 'A2b', 'A'].map((id) => [d.tasks[id].status, d.tasks[id].rank])
+    expect(places(back)).toEqual(places(data))
+    // Only the cards shown: with a filter that leaves Deploy and Logo, the two others stay.
+    expect(moveAllTo(data, idx, ['A3', 'A2b'], 'done')).toMatchObject({ changed: 2, follow: 0 })
+  })
+
+  it('says of a parent that follows its subtasks that it stays, unless its subtasks go in the same move', () => {
+    const data = board()
+    const idx = indexFor(data)
+    // Backlog shows the blog post, B2 and Newsletter with its two subtasks: Newsletter goes with them.
+    const sweep = moveAllTo(data, idx, ['A4', 'B2', 'C', 'C1', 'C2'], 'done')
+    expect(sweep).toMatchObject({ changed: 4, follow: 0 })
+    expect(indexFor(done(data, sweep)).status.get('C')).toBe('done')
+    // With parents as the only cards (subtasks kept on them), nothing can be moved from here, and it says why.
+    const parents = moveAllTo(data, idx, ['A', 'B'], 'done')
+    expect(parents).toMatchObject({ changed: 0, follow: 2 })
+    expect(parents.command).toBeUndefined()
+    expect(said(parents)).toBe('Nothing moved: 2 cards follow their subtasks and stay.')
+    // Some move and one stays: both are said.
+    const mixed = moveAllTo(data, idx, ['A', 'A2a', 'B1'], 'done')
+    expect(mixed).toMatchObject({ changed: 2, follow: 1 })
+    expect(said(mixed)).toBe('Moved 2 cards to Done. 1 card follows its subtasks and stays.')
+    expect(said(moveAllTo(data, idx, ['A1'], 'done'))).toBe('Nothing to change: they are like that already.')
+  })
+
+  it('is called by what it moves: every card of the list, or the ones shown', () => {
+    expect(moveAllWords(12, false)).toBe('Move all 12 cards to')
+    expect(moveAllWords(1, false)).toBe('Move its card to')
+    expect(moveAllWords(5, true)).toBe('Move the 5 cards shown to')
+    expect(moveAllWords(1, true)).toBe('Move the 1 card shown to')
+    expect(moveAllWords(1234, false)).toBe('Move all 1,234 cards to')
+    expect(moveAllWords(0, true)).toBe('Move all cards to')
   })
 })
 

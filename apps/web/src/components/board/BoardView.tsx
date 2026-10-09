@@ -233,6 +233,10 @@ function Board({ search, onRows }: { search: string; onRows: (keys: string[]) =>
   // The board's limits, worked out on the whole board: each list's header shows the ones about it.
   const limits = useLimits()
   const colCount = (col: string) => view.rows.reduce((n, r) => n + (view.cells.get(cellKey(r.key, col))?.length ?? 0), 0)
+  /** The cards a list shows, in every row: what its number counts, and what its menu's "Move all cards to" moves. */
+  const colCards = (col: string) => view.rows.flatMap((r) => view.cells.get(cellKey(r.key, col)) ?? [])
+  // Whether the lists show a part of their cards only: a search, a filter, one card's subtasks, "Up next".
+  const narrowed = !!search?.trim() || filterCount(filter) > 0 || !!prefs.focusId || config.filter === 'actionable'
   const cellIds = (k: string) => (view.cells.get(k) ?? []).slice(0, cellLimits[k] ?? CARDS_STEP)
 
   const blockReason = (id: string, row: string, col: string) => blockReasonIn(rules, id, row, col)
@@ -672,6 +676,8 @@ function Board({ search, onRows }: { search: string; onRows: (keys: string[]) =>
         <ListHeader
           col={idx.colById.get(c.key)!}
           count={colCount(c.key)}
+          cards={colCards(c.key)}
+          narrowed={narrowed || !!view.olderDone.get(c.key)}
           limits={limitsOn(limits, c.key)}
           editing={editingList === c.key}
           setEditing={setEditingList}

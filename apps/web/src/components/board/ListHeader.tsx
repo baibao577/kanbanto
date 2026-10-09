@@ -1,5 +1,6 @@
 import {
   Archive,
+  ArrowFatLinesRight,
   ArrowLeft,
   ArrowRight,
   ArrowsInLineHorizontal,
@@ -45,6 +46,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { cn } from '@/lib/utils'
+import { moveAllTo, moveAllWords, whatHappened } from '@kanbanto/model/bulk'
 import { tone } from '@kanbanto/model/colors'
 import { isPlainCount, listOf, type RuleState, whensOf } from '@kanbanto/model/rules'
 import { listSort, sortComparator } from '@kanbanto/model/table'
@@ -66,6 +68,10 @@ import { ORDER_LABEL, withListCollapsed, withListOrder } from './listOrder'
 interface Props {
   col: StatusColumn
   count: number
+  /** The cards the list shows on this person's board (what `count` counts), for "Move all cards to". */
+  cards: readonly string[]
+  /** Something leaves a part of the list's cards out (a filter, a search, a done list's older cards): it then says "shown". */
+  narrowed: boolean
   /** The limits that are about this list (see app/use-limits), worked out on the whole board. */
   limits?: RuleState[]
   editing: boolean
@@ -77,9 +83,9 @@ interface Props {
 
 /**
  * A status list's header: rename in place, color, the order of its cards, what it counts as, reorder, hide, delete;
- * and, for a list of finished work, archiving its older cards.
+ * all its cards moved to another list; and, for a list of finished work, archiving its older cards.
  */
-export function ListHeader({ col, count, limits = NO_LIMITS, editing, setEditing, onArchiveOlder, className }: Props) {
+export function ListHeader({ col, count, cards, narrowed, limits = NO_LIMITS, editing, setEditing, onArchiveOlder, className }: Props) {
   const { data, idx, prefs, setPrefs, run, undo, readOnly, access } = useBoard()
   const [deleting, setDeleting] = useState(false)
   const [limiting, setLimiting] = useState(false)
@@ -117,6 +123,13 @@ export function ListHeader({ col, count, limits = NO_LIMITS, editing, setEditing
     toast('This order is now the list’s order by hand', { id: 'undo', action: { label: 'Undo', onClick: back } })
   }
   const hide = () => setPrefs({ type: 'setDisplay', config: { ...board, hiddenColumns: [...(board.hiddenColumns ?? []), col.id] } })
+  /** Every card the list shows goes to another list: one change, with one Undo. */
+  const moveAll = (to: StatusColumn) => {
+    const change = moveAllTo(data, idx, cards, to.id)
+    const said = whatHappened(change, (n) => `Moved ${n} from ${col.name} to ${to.name}`)
+    if (!change.command) return void toast(said, { id: 'refused' })
+    run(change.command, said)
+  }
 
   return (
     <header
@@ -199,6 +212,8 @@ export function ListHeader({ col, count, limits = NO_LIMITS, editing, setEditing
             </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start" className="w-72">
+            {/* In groups, by what an item changes: the list as everyone has it, the cards in it, this person's own screen. */}
+            <DropdownMenuLabel className={GROUP}>This list, for everyone</DropdownMenuLabel>
             <DropdownMenuItem onSelect={() => setEditing(col.id)}>
               <PencilSimple /> Rename
             </DropdownMenuItem>
@@ -218,6 +233,79 @@ export function ListHeader({ col, count, limits = NO_LIMITS, editing, setEditing
                 />
               </DropdownMenuSubContent>
             </DropdownMenuSub>
+            <DropdownMenuSub>
+              <DropdownMenuSubTrigger className={VALUED}>
+                {/* (The dot in the room an icon takes, so the words line up with the lines around.) */}
+                <span className="grid size-4 place-items-center">
+                  <StatusDot category={col.category} />
+                </span>
+                Cards in this list are
+                <span className="ml-auto text-xs text-muted-foreground">{CATEGORY_LABEL[col.category]}</span>
+              </DropdownMenuSubTrigger>
+              <DropdownMenuSubContent className="w-64">
+                <DropdownMenuRadioGroup
+                  value={col.category}
+                  onValueChange={(v) => run({ type: 'column.update', id: col.id, fields: { category: v as Category } })}
+                >
+                  {CATEGORIES.map((c) => (
+                    <DropdownMenuRadioItem key={c} value={c} className="items-start">
+                      <StatusDot category={c} className="mt-1.5" />
+                      <span>
+                        <span className="block">{CATEGORY_LABEL[c]}</span>
+                        <span className="block text-xs text-muted-foreground">{CATEGORY_HINT[c]}</span>
+                      </span>
+                    </DropdownMenuRadioItem>
+                  ))}
+                </DropdownMenuRadioGroup>
+              </DropdownMenuSubContent>
+            </DropdownMenuSub>
+            <DropdownMenuItem disabled={i === 0} onSelect={() => run({ type: 'column.move', id: col.id, beforeId: columns[i - 1]?.id })}>
+              <ArrowLeft /> Move left
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              disabled={i === columns.length - 1}
+              onSelect={() => run({ type: 'column.move', id: col.id, beforeId: columns[i + 2]?.id })}
+            >
+              <ArrowRight /> Move right
+            </DropdownMenuItem>
+            {/* A limit is one of the board's rules, which are its owners' to make (see model rules.ts). */}
+            {access.role === 'owner' && (
+              <DropdownMenuItem onSelect={() => setLimiting(true)}>
+                <Gauge /> {limits.length ? 'Change limit…' : 'Limit…'}
+              </DropdownMenuItem>
+            )}
+            {access.role === 'owner' && (
+              <DropdownMenuItem onSelect={() => setTelling(true)}>
+                <BellRinging /> {tells ? 'Who is told when a card arrives…' : 'Tell people when a card arrives…'}
+              </DropdownMenuItem>
+            )}
+
+            <DropdownMenuSeparator />
+            <DropdownMenuLabel className={GROUP}>Its cards</DropdownMenuLabel>
+            <DropdownMenuSub>
+              <DropdownMenuSubTrigger disabled={!cards.length || onlyList}>
+                <ArrowFatLinesRight /> {moveAllWords(cards.length, narrowed)}
+              </DropdownMenuSubTrigger>
+              <DropdownMenuSubContent className="max-h-80 w-60 overflow-y-auto">
+                {columns
+                  .filter((c) => c.id !== col.id)
+                  .map((c) => (
+                    <DropdownMenuItem key={c.id} onSelect={() => moveAll(c)}>
+                      <StatusDot category={c.category} color={c.color} /> <span className="truncate">{c.name}</span>
+                      {/* (They go where this person won't see them: said, since the cards leave the screen.) */}
+                      {board.hiddenColumns?.includes(c.id) && <span className="ml-auto text-xs text-muted-foreground">Hidden</span>}
+                    </DropdownMenuItem>
+                  ))}
+              </DropdownMenuSubContent>
+            </DropdownMenuSub>
+            {col.category === 'done' && (
+              <DropdownMenuItem onSelect={onArchiveOlder}>
+                <Archive /> Archive older cards…
+              </DropdownMenuItem>
+            )}
+
+            <DropdownMenuSeparator />
+            <DropdownMenuLabel className={GROUP}>Only on your screen</DropdownMenuLabel>
             <DropdownMenuSub>
               <DropdownMenuSubTrigger>
                 <SortAscending /> Order cards by
@@ -262,53 +350,11 @@ export function ListHeader({ col, count, limits = NO_LIMITS, editing, setEditing
                 )}
               </DropdownMenuSubContent>
             </DropdownMenuSub>
-            <DropdownMenuItem disabled={i === 0} onSelect={() => run({ type: 'column.move', id: col.id, beforeId: columns[i - 1]?.id })}>
-              <ArrowLeft /> Move left
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              disabled={i === columns.length - 1}
-              onSelect={() => run({ type: 'column.move', id: col.id, beforeId: columns[i + 2]?.id })}
-            >
-              <ArrowRight /> Move right
-            </DropdownMenuItem>
-
-            <DropdownMenuSeparator />
-            <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">Cards in this list are</DropdownMenuLabel>
-            <DropdownMenuRadioGroup
-              value={col.category}
-              onValueChange={(v) => run({ type: 'column.update', id: col.id, fields: { category: v as Category } })}
-            >
-              {CATEGORIES.map((c) => (
-                <DropdownMenuRadioItem key={c} value={c} className="items-start">
-                  <StatusDot category={c} className="mt-1.5" />
-                  <span>
-                    <span className="block">{CATEGORY_LABEL[c]}</span>
-                    <span className="block text-xs text-muted-foreground">{CATEGORY_HINT[c]}</span>
-                  </span>
-                </DropdownMenuRadioItem>
-              ))}
-            </DropdownMenuRadioGroup>
-
-            <DropdownMenuSeparator />
-            {/* A limit is one of the board's rules, which are its owners' to make (see model rules.ts). */}
-            {access.role === 'owner' && (
-              <DropdownMenuItem onSelect={() => setLimiting(true)}>
-                <Gauge /> {limits.length ? 'Change limit…' : 'Limit…'}
-              </DropdownMenuItem>
-            )}
-            {access.role === 'owner' && (
-              <DropdownMenuItem onSelect={() => setTelling(true)}>
-                <BellRinging /> {tells ? 'Who is told when a card arrives…' : 'Tell people when a card arrives…'}
-              </DropdownMenuItem>
-            )}
-            {col.category === 'done' && (
-              <DropdownMenuItem onSelect={onArchiveOlder}>
-                <Archive /> Archive older cards…
-              </DropdownMenuItem>
-            )}
             <DropdownMenuItem onSelect={hide}>
               <EyeSlash /> Hide list
             </DropdownMenuItem>
+
+            <DropdownMenuSeparator />
             <DropdownMenuItem variant="destructive" disabled={onlyList} onSelect={() => setDeleting(true)}>
               <Trash /> Delete list…
             </DropdownMenuItem>
@@ -326,6 +372,10 @@ export function ListHeader({ col, count, limits = NO_LIMITS, editing, setEditing
 }
 
 const NO_LIMITS: RuleState[] = []
+// A heading over a group of the menu's items.
+const GROUP = 'text-xs font-normal text-muted-foreground'
+// A line that opens a further menu and says what is chosen now, just before its arrow.
+const VALUED = '[&>svg:last-child]:ml-0'
 
 /**
  * A folded list: a narrow strip with what it counts as, how many cards and (given the height, `tall`) its name. Click
