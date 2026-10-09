@@ -288,6 +288,57 @@ html.dragging * {
     @apply my-3 border-border;
   }
 
+  /* Headings that fold what is under them (see components/text/folds.ts): an arrow in the margin beside the heading,
+     level with its first line (so headings stay lined up with the text under them), what a folded one puts away
+     said after it (by the stylesheet: the page holds the text's letters only), and a link to the section while the
+     heading is pointed at. The arrow is as wide as the margin a card leaves beside its text; a page leaves more. */
+  .md .md-section {
+    @apply relative;
+  }
+  .md .md-fold {
+    @apply absolute top-0 right-full grid h-[1lh] w-3 place-items-center rounded text-muted-foreground/60 hover:bg-accent hover:text-foreground;
+  }
+  .md .md-fold > svg {
+    @apply size-2.5;
+  }
+  .md.md-reader .md-fold {
+    @apply w-[1.125rem];
+  }
+  .md.md-reader .md-fold > svg {
+    @apply size-3;
+  }
+  .md .md-section[data-folded]::after {
+    @apply ml-2 text-xs font-normal tracking-normal text-muted-foreground;
+    content: '· ' attr(data-folded);
+  }
+  .md .md-section-link {
+    @apply ml-1.5 inline-grid size-[1.1em] place-items-center rounded align-[-0.12em] text-muted-foreground opacity-0 hover:bg-accent hover:text-foreground focus-visible:opacity-100;
+  }
+  .md .md-section-link > svg {
+    @apply size-[0.75em];
+  }
+  .md .md-section:hover .md-section-link {
+    @apply opacity-100;
+  }
+  @media (hover: none) {
+    .md .md-section-link {
+      @apply opacity-60;
+    }
+  }
+  /* (Put away, a part takes no room: not the space there is between two parts of a text either.) */
+  .md > .md-folded,
+  .md.md-reader > .md-folded {
+    @apply mt-0;
+  }
+  .md .md-folded:not([hidden]) {
+    display: none;
+  }
+  /* (While writing, the arrow is no part of the text: it can't be selected with it.) */
+  .md.ProseMirror .md-fold {
+    user-select: none;
+    -webkit-user-select: none;
+  }
+
   /* A callout (see components/text/callouts.tsx): a box of a kind, in that kind's colour, with its icon and its name.
      The name is put there by the stylesheet, so the page holds only the letters of the text itself. */
   [data-callout='note'] {

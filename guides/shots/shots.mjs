@@ -2844,6 +2844,31 @@ await shot('desc-7-table', async () => {
 // (The writing is finished, so the next picture starts from a text nobody is in.)
 await page.keyboard.press('Escape').catch(() => {})
 
+// ── A section folded away ──────────────────────────────────────────────────────────────────────────
+await shot('desc-8-fold', async () => {
+  const { id } = await theHandbook()
+  await page.goto(`${SITE}/#/b/${id}/outline?task=launch&full=1`)
+  await page.reload()
+  await page.getByRole('navigation', { name: 'Contents' }).waitFor()
+  const sections = page.locator('.md-reader .md-section')
+  await sections.first().waitFor()
+  await page.waitForTimeout(600)
+  // (The second section is folded; the first is pointed at, which shows its link.)
+  await sections.nth(1).locator('.md-fold').click()
+  await sections.first().hover()
+  await page.waitForTimeout(300)
+  await ring(sections.nth(1).locator('.md-fold'))
+  return { clip: { x: 0, y: 0, width: 1360, height: 640 } }
+})
+// (Unfolded again: the pictures after this one show the whole text.)
+await page
+  .evaluate(() =>
+    Object.keys(localStorage)
+      .filter((k) => k.startsWith('kankan:folds:'))
+      .forEach((k) => localStorage.removeItem(k)),
+  )
+  .catch(() => {})
+
 await browser.close()
 console.log(`made ${made.length}: ${made.join(', ')}`)
 if (failed.length) console.log(`\nnot made (${failed.length}):\n  ${failed.join('\n  ')}`)

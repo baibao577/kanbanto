@@ -17,6 +17,8 @@ describe('router', () => {
         '#/b/abc/outline?task=t2&full=1&note=01a11e68-8505-7142-bd51-5539eb95e7d3',
         { page: 'board', id: 'abc', layout: 'outline', task: 't2', full: true, note: '01a11e68-8505-7142-bd51-5539eb95e7d3' },
       ],
+      // (Or at one of its sections, by what its heading says.)
+      ['#/b/abc/outline?task=t2&full=1&at=who-to-ask', { page: 'board', id: 'abc', layout: 'outline', task: 't2', full: true, at: 'who-to-ask' }],
       // A card by its number on the board (what WEB-12 in a text links to).
       ['#/b/abc?n=12', { page: 'board', id: 'abc', n: '12' }],
       // A card of your Inbox, open over a board or over your boards.

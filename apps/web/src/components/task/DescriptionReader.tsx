@@ -9,6 +9,7 @@ import type { CardFiles } from '@/data/cardFiles'
 import { useMediaQuery } from '@/lib/useMediaQuery'
 import { placeAtPoint, type Place } from '@/components/text/caret'
 import type { EditorHandle, Shared } from '@/components/text/Editor'
+import { foldsOver, useFolds } from '@/components/text/folds'
 import { Markdown } from '@/components/text/Markdown'
 import { countWords, headingsOf } from '@/components/text/mdText'
 import { Button } from '@/components/ui/button'
@@ -53,6 +54,8 @@ export function DescriptionReader({
   onTick,
   onClose,
   link,
+  foldKey,
+  section,
   note,
   versions,
   notes,
@@ -90,6 +93,10 @@ export function DescriptionReader({
   onClose: () => void
   /** A link that opens the card with this page showing: there is a button to copy it. */
   link?: string
+  /** Whose folds these are: sections folded away while reading are kept for each card (see folds.ts). */
+  foldKey?: string
+  /** The section to open at, by what its heading says (the address said so: a link copied from that heading). */
+  section?: string | null
   /** Said above the text while reading (who is writing it at this moment). */
   note?: ReactNode
   /**
@@ -133,6 +140,14 @@ export function DescriptionReader({
   const shown = writing ? typing : (old ?? value)
   const headings = useMemo(() => headingsOf(shown), [shown])
   const wordCount = useMemo(() => countWords(shown), [shown])
+  const folds = useFolds(foldKey, headings)
+  /** Something that may be under a folded heading is to be shown: unfolded first, then `then`, once it is in view. */
+  const reveal = (el: Element | null | undefined, then: () => void) => {
+    const over = foldsOver(el)
+    if (!over.length) return then()
+    folds.open(over)
+    requestAnimationFrame(() => requestAnimationFrame(then))
+  }
 
   // Comments on the text: which one is looked at, the words a new one is being written about, and whether they are
   // beside the text (by themselves when there are open ones and room for them, until the person says otherwise).
@@ -153,11 +168,15 @@ export function DescriptionReader({
   })
   /** Brings a comment's words into view in the text. */
   const showWords = (id: string) => {
-    const range = marks.rangeOf(id)
-    const view = scroller.current
-    if (!range || !view) return
-    const top = range.getBoundingClientRect().top - view.getBoundingClientRect().top
-    view.scrollBy({ top: top - Math.min(160, view.clientHeight / 3), behavior: 'smooth' })
+    const at = marks.rangeOf(id)
+    // (Words under a folded heading: the heading unfolds, and they are found again where they now are.)
+    reveal(at?.startContainer.parentElement, () => {
+      const range = marks.rangeOf(id)
+      const view = scroller.current
+      if (!range || !view) return
+      const top = range.getBoundingClientRect().top - view.getBoundingClientRect().top
+      view.scrollBy({ top: top - Math.min(160, view.clientHeight / 3), behavior: 'smooth' })
+    })
   }
   // Opened at a comment (its words were clicked in the card's Comments): its words come into view once they are found.
   const led = useRef(false)
@@ -178,8 +197,32 @@ export function DescriptionReader({
     const top = view.getBoundingClientRect().top
     onEdit(placeAtPoint(text, box.left + 40, Math.max(top, box.top) + 48) ?? undefined)
   }
-  const jump = (i: number, id: string) =>
-    writing ? editor.current?.toHeading(i) : scroller.current?.querySelector(`#${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  const jump = (i: number, id: string) => {
+    if (writing) return editor.current?.toHeading(i)
+    const heading = scroller.current?.querySelector(`#${id}`)
+    reveal(heading, () => heading?.scrollIntoView({ behavior: 'smooth', block: 'start' }))
+  }
+  // Opened at a section (a link copied from its heading): it comes into view, once. (The page is put on the screen a
+  // moment after it is made: the heading is looked for until it is there.)
+  const sectioned = useRef(false)
+  useEffect(() => {
+    const to = section ? headings.find((h) => h.slug === section) : undefined
+    if (sectioned.current || !to || writing) return
+    let frame = 0
+    let tries = 0
+    const go = () => {
+      const heading = scroller.current?.querySelector(`#${to.id}`)
+      if (!heading) {
+        if (tries++ < 60) frame = requestAnimationFrame(go)
+        return
+      }
+      sectioned.current = true
+      reveal(heading, () => heading.scrollIntoView({ block: 'start' }))
+    }
+    go()
+    return () => cancelAnimationFrame(frame)
+    // oxlint-disable-next-line react-hooks/exhaustive-deps -- once, when the text's headings are known
+  }, [headings, section])
 
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
@@ -348,6 +391,7 @@ export function DescriptionReader({
                       inserts
                       cards={cardSource}
                       pictures
+                      folds={foldKey}
                       autoFocus
                       aria-label="Description"
                       placeholder="Write here… Type / for headings, lists, tables and cards, @ to mention someone, # to point to a file."
@@ -365,6 +409,7 @@ export function DescriptionReader({
                     headingIds
                     onToggleTask={old === null ? onTick : undefined}
                     pictures
+                    fold={{ ...folds, link: link && old === null ? (i) => void copyText(`${link}&at=${headings[i].slug}`, 'Link') : undefined }}
                     className="md-reader"
                   />
                 ) : (

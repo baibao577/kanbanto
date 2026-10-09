@@ -1,6 +1,6 @@
 import { ArrowsOut, PencilSimple, TextAlignLeft } from '@phosphor-icons/react'
 import { formatDistanceToNow } from 'date-fns'
-import { lazy, Suspense, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState, useSyncExternalStore, type Ref } from 'react'
+import { lazy, Suspense, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type Ref } from 'react'
 import { useCardRefs, useCardSource } from '@/app/card-refs'
 import type { CardComments } from '@/data/cardComments'
 import type { CardFiles } from '@/data/cardFiles'
@@ -10,7 +10,8 @@ import { colorFor, namesOf, type Writer } from '@/data/writers'
 import { placeAtPoint, type Place } from '@/components/text/caret'
 import type { Shared } from '@/components/text/Editor'
 import { Markdown } from '@/components/text/Markdown'
-import { toggleTask } from '@/components/text/mdText'
+import { useFolds } from '@/components/text/folds'
+import { headingsOf, toggleTask } from '@/components/text/mdText'
 import { Button } from '@/components/ui/button'
 import { copyText } from '@/lib/copy'
 import { cn } from '@/lib/utils'
@@ -112,7 +113,7 @@ export function Description({
    * the page opens and closes, and the link to copy from the page (`note`: the comment about some of its words it
    * starts at). Left out: the page has no address (a card opened from Search cards).
    */
-  full?: { start: boolean; set: (open: boolean) => void; link: string; note?: string | null }
+  full?: { start: boolean; set: (open: boolean) => void; link: string; note?: string | null; section?: string | null }
   /** The text's earlier versions, read on the full page (see DescriptionReader). Left out: none shown. */
   versions?: { boardId: string; taskId: string; onRestore?: (text: string, said: string) => void }
   /** Written with other people at once, for someone who can edit. Left out: by one person at a time. */
@@ -137,6 +138,11 @@ export function Description({
   }
   /** The comment the full page opens at. */
   const [atNote, setAtNote] = useState<string | null>(full?.note ?? null)
+  /** The section the full page opens at (kept from the address as it was when the card opened: it then drops it). */
+  const [atSection] = useState<string | null>(full?.section ?? null)
+  // Sections folded away while reading (this person's own, for this card: see folds.ts), here and on the full page.
+  const sections = useMemo(() => headingsOf(value), [value])
+  const folds = useFolds(draftId, sections)
   useImperativeHandle(handle, () => ({
     openAt: (commentId) => {
       setAtNote(commentId)
@@ -595,6 +601,7 @@ export function Description({
               inserts
               cards={cardSource}
               pictures
+              folds={draftId}
               status={status}
               onExpand={toPage}
               autoFocus
@@ -608,7 +615,7 @@ export function Description({
         </Suspense>
       ) : value ? (
         <Folded onOpen={readOnly ? undefined : (caret) => begin('card', { caret })}>
-          <Markdown text={value} files={cardFiles.files} mentions={people} cards={cardRefs} onToggleTask={tick} pictures />
+          <Markdown text={value} files={cardFiles.files} mentions={people} cards={cardRefs} onToggleTask={tick} pictures fold={folds} />
         </Folded>
       ) : readOnly ? (
         <p className="text-sm text-muted-foreground">No description.</p>
@@ -653,6 +660,8 @@ export function Description({
               ) : undefined
             }
             notes={notes && { ...notes, focus: atNote }}
+            foldKey={draftId}
+            section={atSection}
             versions={
               versions && {
                 ...versions,

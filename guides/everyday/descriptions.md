@@ -183,6 +183,30 @@ description opens full page.
 - **Copy link** copies a link that opens the card with its description full page. The address in your browser says
   the same while the page is open. Send it when you want someone to read, not to land on the card.
 
+### Fold a section away
+
+Every heading has a small arrow in the margin beside it, while you read and while you write. Click it and
+everything under that heading is put away, down to the next heading of the same size; the heading then says how
+many words it holds. Click the arrow again to bring it back.
+
+![A long description read full page, with one of its sections folded away](/images/desc-8-fold.webp)
+
+- Folding is for you alone. Nothing changes in the text, and nobody else sees your folds, not even someone
+  writing it with you. They are remembered for that card in the browser you are using, in the card as well as full
+  page, read or written.
+- A bigger heading folds the smaller headings under it too.
+- What is folded is still found: a click in **Contents**, a comment on words in it, or, while you read, your
+  browser's own search (<kbd>⌘F</kbd>) opens the section it is in.
+- While you write, you never type into something you can't see: press <kbd>Enter</kbd> at the end of a folded
+  heading, and its section opens with your new line in it.
+
+### A link to a section
+
+Point at a heading, full page, and a link button appears after it. It copies a link that opens the page at that
+section. Use it to say "see Refunds, under Exceptions" with a link that lands there.
+
+The link goes by what the heading says. Rename the heading, and an old link opens the page at its top.
+
 A board whose cards are mostly long descriptions can be a handbook. See
 [a knowledge base on a board](/knowledge/overview).
 

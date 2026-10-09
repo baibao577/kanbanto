@@ -78,11 +78,59 @@ const plain = (s: string) =>
     .replace(/&(amp|lt|gt|quot|#39|nbsp);/g, (_, e: string) => ({ amp: '&', lt: '<', gt: '>', quot: '"', '#39': "'", nbsp: ' ' })[e]!)
     .replace(/[*_`~]/g, '')
 
-/** The top-level headings, for a table of contents (numbered like Markdown's `headingIds`: h-0, h-1…). */
-export function headingsOf(text: string): { id: string; depth: number; text: string }[] {
+/**
+ * The top-level headings, for a table of contents (numbered like Markdown's `headingIds`: h-0, h-1…). `slug`: what
+ * a heading says, as it goes in an address ("Who to ask" is who-to-ask; said twice, the second is who-to-ask-2):
+ * a link to a section, and a fold kept on it, go by it.
+ */
+export function headingsOf(text: string): { id: string; depth: number; text: string; slug: string }[] {
+  const slug = slugger()
   return lex(text)
     .filter((t: Token): t is Token & { type: 'heading'; depth: number; text: string } => t.type === 'heading')
-    .map((t, i) => ({ id: `h-${i}`, depth: t.depth, text: plain(t.text) }))
+    .map((t, i) => ({ id: `h-${i}`, depth: t.depth, text: plain(t.text), slug: slug(plain(t.text)) }))
+}
+
+/** Gives each heading of one text its slug, in order (the same words said again get a number: see `headingsOf`). */
+export function slugger(): (words: string) => string {
+  const said = new Map<string, number>()
+  return (words) => {
+    const slug =
+      words
+        .toLowerCase()
+        .normalize('NFKC')
+        .replace(/[^\p{L}\p{M}\p{N}]+/gu, '-')
+        .replace(/^-+|-+$/g, '')
+        .slice(0, 60) || 'section'
+    const n = (said.get(slug) ?? 0) + 1
+    said.set(slug, n)
+    return n > 1 ? `${slug}-${n}` : slug
+  }
+}
+
+/**
+ * What is put away when some headings are folded: for each top-level piece of the text, the folded headings it is
+ * under (a heading folds everything down to the next heading of its size or bigger, smaller headings with it), and
+ * for each folded heading how many words it puts away.
+ */
+export function foldedParts(tokens: Token[], folded: ReadonlySet<number>): { under: number[][]; words: Map<number, number> } {
+  const under: number[][] = []
+  const words = new Map<number, number>()
+  let open: { i: number; depth: number }[] = []
+  let heading = 0
+  for (const t of tokens) {
+    const h = t.type === 'heading' ? (t as Token & { depth: number }) : null
+    if (h) open = open.filter((o) => o.depth < h.depth)
+    under.push(open.map((o) => o.i))
+    if (open.length && t.type !== 'space') {
+      const n = countWords(t.raw)
+      for (const o of open) words.set(o.i, (words.get(o.i) ?? 0) + n)
+    }
+    if (h) {
+      if (folded.has(heading)) open = [...open, { i: heading, depth: h.depth }]
+      heading++
+    }
+  }
+  return { under, words }
 }
 
 /**

@@ -1,11 +1,13 @@
+import { CaretDown, CaretRight, LinkSimple } from '@phosphor-icons/react'
 import type { Token, Tokens } from 'marked'
-import { Fragment, useMemo, type ReactNode } from 'react'
+import { Fragment, useEffect, useMemo, useRef, type ReactNode } from 'react'
 import type { AttachmentView } from '@kanbanto/model/api'
 import type { CardRefs } from '@/app/card-refs'
 import { RichText } from '@/components/task/RichText'
 import { cn } from '@/lib/utils'
 import { CALLOUTS, calloutOf } from './callouts'
-import { isBreak, lex, picturesNamed } from './mdText'
+import { foldsOver } from './folds'
+import { foldedParts, isBreak, lex, picturesNamed } from './mdText'
 
 export interface MarkdownProps {
   text: string
@@ -24,6 +26,12 @@ export interface MarkdownProps {
    * description's way of having pictures in it. Named in the middle of a sentence it stays the small link it is.
    */
   pictures?: boolean
+  /**
+   * Headings fold what is under them (see folds.ts): each gets an arrow, and what is under a folded one is put away
+   * (it stays on the page, out of sight: the text's letters are all there, and a search of the page finds them and
+   * unfolds it). `link`: a heading also offers a link to itself.
+   */
+  fold?: { folded: ReadonlySet<number>; toggle: (heading: number) => void; open: (headings: number[]) => void; link?: (heading: number) => void }
   className?: string
 }
 
@@ -38,8 +46,20 @@ const safeHref = (href: string) => (/^(https?:|mailto:|\/|#)/i.test(href.trim())
  * run (but for a line break written as "<br>", which is shown as one). "📎name" file references and @mentions work
  * anywhere in the text.
  */
-export function Markdown({ text, files, mentions, cards, onToggleTask, headingIds, pictures, className }: MarkdownProps) {
+export function Markdown({ text, files, mentions, cards, onToggleTask, headingIds, pictures, fold, className }: MarkdownProps) {
   const tokens = useMemo(() => lex(text), [text])
+  const folded = fold?.folded
+  const parts = useMemo(() => (folded?.size ? foldedParts(tokens, folded) : null), [tokens, folded])
+  // What the browser's own search finds under a folded heading comes into view: the heading unfolds.
+  const root = useRef<HTMLDivElement>(null)
+  const open = fold?.open
+  useEffect(() => {
+    const el = root.current
+    if (!el || !open) return
+    const found = (e: Event) => open(foldsOver(e.target as Element))
+    el.addEventListener('beforematch', found)
+    return () => el.removeEventListener('beforematch', found)
+  }, [open])
   let task = 0
   let heading = 0
   const shown = useMemo(() => new Map(pictures ? files?.flatMap((f) => (f.image ? [[f.name, f] as const] : [])) : []), [pictures, files])
@@ -98,130 +118,185 @@ export function Markdown({ text, files, mentions, cards, onToggleTask, headingId
       }
     })
 
-  const block = (ts: Token[], key = ''): ReactNode =>
-    ts.map((t, i) => {
-      const k = `${key}${i}`
-      switch (t.type) {
-        case 'space':
-          return null
-        case 'heading': {
-          const H = `h${Math.min(t.depth + 1, 6)}` as 'h2'
-          return (
-            <H key={k} id={headingIds && !key ? `h-${heading++}` : undefined}>
-              {inline(t.tokens, k)}
-            </H>
-          )
-        }
-        case 'paragraph': {
-          // A line that is only a picture's name (or a few such lines) is the picture.
-          const named = shown.size ? picturesNamed(decode(t.text), shown) : null
-          if (named)
-            return (
-              <Fragment key={k}>
-                {named.map((f, j) => (
-                  <Picture key={j} file={f} />
-                ))}
-              </Fragment>
-            )
-          return <p key={k}>{inline(t.tokens, k)}</p>
-        }
-        case 'text':
+  const one = (t: Token, i: number, key: string): ReactNode => {
+    const k = `${key}${i}`
+    switch (t.type) {
+      case 'space':
+        return null
+      case 'heading': {
+        const H = `h${Math.min(t.depth + 1, 6)}` as 'h2'
+        // (The text's own headings are numbered: h-0, h-1…)
+        const n = key ? -1 : heading++
+        const shut = n >= 0 && !!folded?.has(n)
+        const put = shut ? (parts?.words.get(n) ?? 0) : 0
+        return (
+          <H
+            key={k}
+            id={headingIds && n >= 0 ? `h-${n}` : undefined}
+            className={fold && n >= 0 ? 'md-section' : undefined}
+            // (What is put away is said by the stylesheet: the page holds the text's own letters only.)
+            data-folded={shut ? `${put.toLocaleString()} ${put === 1 ? 'word' : 'words'}` : undefined}
+          >
+            {fold && n >= 0 && (
+              <button
+                type="button"
+                className="md-fold"
+                aria-expanded={!shut}
+                aria-label={shut ? 'Show this section' : 'Fold this section away'}
+                title={shut ? 'Show this section' : 'Fold this section away'}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  fold.toggle(n)
+                }}
+              >
+                {shut ? <CaretRight weight="bold" /> : <CaretDown weight="bold" />}
+              </button>
+            )}
+            {inline(t.tokens, k)}
+            {fold?.link && n >= 0 && (
+              <button
+                type="button"
+                className="md-section-link"
+                aria-label="Copy a link to this section"
+                title="Copy a link to this section"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  fold.link?.(n)
+                }}
+              >
+                <LinkSimple />
+              </button>
+            )}
+          </H>
+        )
+      }
+      case 'paragraph': {
+        // A line that is only a picture's name (or a few such lines) is the picture.
+        const named = shown.size ? picturesNamed(decode(t.text), shown) : null
+        if (named)
           return (
             <Fragment key={k}>
-              {t.tokens ? inline(t.tokens, k) : <RichText text={decode(t.text)} files={files} mentions={mentions} cards={cards} />}
+              {named.map((f, j) => (
+                <Picture key={j} file={f} />
+              ))}
             </Fragment>
           )
-        case 'code':
-          return (
-            <pre key={k}>
-              <code>{t.text}</code>
-            </pre>
-          )
-        case 'blockquote': {
-          // A quote that starts with a callout's mark ("[!NOTE]") is a callout: a box of that kind.
-          const box = calloutOf(t)
-          if (!box) return <blockquote key={k}>{block(t.tokens ?? [], k)}</blockquote>
-          const { icon: Mark, label } = CALLOUTS[box.kind]
-          return (
-            <div key={k} className="md-callout" data-callout={box.kind}>
-              <span className="md-callout-icon" aria-hidden>
-                <Mark weight="fill" />
-              </span>
-              {/* (The kind's name is shown by the stylesheet: the page holds the text's own letters only.) */}
-              <div className="md-callout-body" data-label={label}>
-                {block(box.tokens, k)}
-              </div>
+        return <p key={k}>{inline(t.tokens, k)}</p>
+      }
+      case 'text':
+        return (
+          <Fragment key={k}>
+            {t.tokens ? inline(t.tokens, k) : <RichText text={decode(t.text)} files={files} mentions={mentions} cards={cards} />}
+          </Fragment>
+        )
+      case 'code':
+        return (
+          <pre key={k}>
+            <code>{t.text}</code>
+          </pre>
+        )
+      case 'blockquote': {
+        // A quote that starts with a callout's mark ("[!NOTE]") is a callout: a box of that kind.
+        const box = calloutOf(t)
+        if (!box) return <blockquote key={k}>{block(t.tokens ?? [], k)}</blockquote>
+        const { icon: Mark, label } = CALLOUTS[box.kind]
+        return (
+          <div key={k} className="md-callout" data-callout={box.kind}>
+            <span className="md-callout-icon" aria-hidden>
+              <Mark weight="fill" />
+            </span>
+            {/* (The kind's name is shown by the stylesheet: the page holds the text's own letters only.) */}
+            <div className="md-callout-body" data-label={label}>
+              {block(box.tokens, k)}
             </div>
-          )
-        }
-        case 'hr':
-          return <hr key={k} />
-        case 'list': {
-          const L = t.ordered ? 'ol' : 'ul'
-          const tasks = (t.items as Tokens.ListItem[]).some((it) => it.task)
-          return (
-            <L key={k} start={t.ordered && t.start !== 1 ? Number(t.start) : undefined} data-tasks={tasks || undefined}>
-              {(t.items as Tokens.ListItem[]).map((it, j) => {
-                if (!it.task) return <li key={j}>{block(it.tokens, `${k}.${j}.`)}</li>
-                const n = task++
-                return (
-                  <li key={j} data-task={it.checked ? 'done' : 'open'}>
-                    <input
-                      type="checkbox"
-                      checked={!!it.checked}
-                      disabled={!onToggleTask}
-                      aria-label={it.checked ? 'Done' : 'Not done'}
-                      onClick={(e) => e.stopPropagation()}
-                      onChange={() => onToggleTask?.(n)}
-                    />
-                    {/* (The checkbox token itself is the first thing marked puts in the item.) */}
-                    <div>
-                      {block(
-                        it.tokens.filter((x) => x.type !== 'checkbox'),
-                        `${k}.${j}.`,
-                      )}
-                    </div>
-                  </li>
-                )
-              })}
-            </L>
-          )
-        }
-        case 'table':
-          return (
-            <div key={k} className="md-table">
-              <table>
-                <thead>
-                  <tr>
-                    {t.header.map((c: Tokens.TableCell, j: number) => (
-                      <th key={j} style={{ textAlign: t.align[j] ?? undefined }}>
-                        {inline(c.tokens, `${k}h${j}`)}
-                      </th>
+          </div>
+        )
+      }
+      case 'hr':
+        return <hr key={k} />
+      case 'list': {
+        const L = t.ordered ? 'ol' : 'ul'
+        const tasks = (t.items as Tokens.ListItem[]).some((it) => it.task)
+        return (
+          <L key={k} start={t.ordered && t.start !== 1 ? Number(t.start) : undefined} data-tasks={tasks || undefined}>
+            {(t.items as Tokens.ListItem[]).map((it, j) => {
+              if (!it.task) return <li key={j}>{block(it.tokens, `${k}.${j}.`)}</li>
+              const n = task++
+              return (
+                <li key={j} data-task={it.checked ? 'done' : 'open'}>
+                  <input
+                    type="checkbox"
+                    checked={!!it.checked}
+                    disabled={!onToggleTask}
+                    aria-label={it.checked ? 'Done' : 'Not done'}
+                    onClick={(e) => e.stopPropagation()}
+                    onChange={() => onToggleTask?.(n)}
+                  />
+                  {/* (The checkbox token itself is the first thing marked puts in the item.) */}
+                  <div>
+                    {block(
+                      it.tokens.filter((x) => x.type !== 'checkbox'),
+                      `${k}.${j}.`,
+                    )}
+                  </div>
+                </li>
+              )
+            })}
+          </L>
+        )
+      }
+      case 'table':
+        return (
+          <div key={k} className="md-table">
+            <table>
+              <thead>
+                <tr>
+                  {t.header.map((c: Tokens.TableCell, j: number) => (
+                    <th key={j} style={{ textAlign: t.align[j] ?? undefined }}>
+                      {inline(c.tokens, `${k}h${j}`)}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {t.rows.map((row: Tokens.TableCell[], r: number) => (
+                  <tr key={r}>
+                    {row.map((c, j) => (
+                      <td key={j} style={{ textAlign: t.align[j] ?? undefined }}>
+                        {inline(c.tokens, `${k}r${r}c${j}`)}
+                      </td>
                     ))}
                   </tr>
-                </thead>
-                <tbody>
-                  {t.rows.map((row: Tokens.TableCell[], r: number) => (
-                    <tr key={r}>
-                      {row.map((c, j) => (
-                        <td key={j} style={{ textAlign: t.align[j] ?? undefined }}>
-                          {inline(c.tokens, `${k}r${r}c${j}`)}
-                        </td>
-                      ))}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )
-        case 'html':
-          return isBreak(t.raw) ? <br key={k} /> : <p key={k}>{t.raw}</p>
-        default:
-          return null
-      }
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )
+      case 'html':
+        return isBreak(t.raw) ? <br key={k} /> : <p key={k}>{t.raw}</p>
+      default:
+        return null
+    }
+  }
+  const block = (ts: Token[], key = ''): ReactNode =>
+    ts.map((t, i) => {
+      const shown = one(t, i, key)
+      const under = key ? undefined : parts?.under[i]
+      // Under a folded heading: on the page, out of sight ("until found": the browser's search still looks in it).
+      return under?.length && shown ? (
+        <div key={`f${i}`} className="md-folded" data-folds={under.join(' ')} ref={(el) => el?.setAttribute('hidden', 'until-found')}>
+          {shown}
+        </div>
+      ) : (
+        shown
+      )
     })
 
-  return <div className={cn('md', className)}>{block(tokens)}</div>
+  return (
+    <div ref={root} className={cn('md', className)}>
+      {block(tokens)}
+    </div>
+  )
 }
 
 /**

@@ -5,6 +5,14 @@ then `git pull` (or download the new release) and `docker compose up -d --build`
 
 ## Unreleased
 
+- **Fold a section away, and link to one.** Every heading of a description has a small arrow in the margin, while
+  you read it and while you write it: click it and what is under that heading is put away, down to the next
+  heading of its size. It is for you alone (nothing changes in the text, and someone writing it with you sees
+  their own folds) and is remembered for that card in your browser. What is folded is still found by Contents and
+  by a comment on its words, and while reading by your browser's search, each of which opens it; while writing, a
+  section opens when the cursor gets into it. On the full page a heading also has a link button: the link it
+  copies opens the page at that section.
+
 - **Callouts, and a bar on tables.** A description can have a **callout**: a box that says Note, Tip, Important,
   Warning or Caution, for the line a reader must not miss. Type `/note` (or `/warning`, `/tip`…), and click its
   icon to change its kind. In the saved text it is a quote that starts with its kind, `> [!WARNING]`, the way

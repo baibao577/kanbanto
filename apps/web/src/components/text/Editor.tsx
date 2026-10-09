@@ -41,6 +41,7 @@ import { cn } from '@/lib/utils'
 import { CALLOUT_KINDS, CALLOUTS } from './callouts'
 import { counted, posAt, type Place } from './caret'
 import { textElements, tidyPastedTables } from './elements'
+import { FoldWhileWriting } from './foldEditing'
 import { forEditor, looksLikeMarkdown, tidyMarkdown } from './mdText'
 import { SharedCursor } from './sharedCursor'
 import { TableBar } from './TableBar'
@@ -225,6 +226,8 @@ export interface EditorProps {
    * dropped in gets such a line of its own.
    */
   pictures?: boolean
+  /** Headings fold what is under them while writing, as when the text is read: the card whose folds these are (see folds.ts). */
+  folds?: string
   /** Shown at the right of the toolbar (whether it's saved, say). */
   status?: ReactNode
   /** Adds "Write full page" to the toolbar: called with where the cursor is (see `caret`). */
@@ -263,6 +266,7 @@ export default function Editor({
   inserts,
   cards,
   pictures,
+  folds,
   status,
   onExpand,
   look = 'box',
@@ -382,6 +386,7 @@ export default function Editor({
         : []),
       Placeholder.configure({ placeholder: placeholder ?? '' }),
       ...(pictures ? [Pictures] : []),
+      ...(folds ? [FoldWhileWriting.configure({ card: folds })] : []),
     ],
     // (A shared text comes from its document.)
     ...(shared ? {} : { content: forEditor(value), contentType: 'markdown' as const }),
@@ -543,7 +548,8 @@ export default function Editor({
         const el = ed && [...ed.view.dom.children].filter((x) => /^H[1-6]$/.test(x.tagName))[n]
         if (!ed || !el) return
         ed.commands.focus(ed.view.posAtDOM(el, 0), { scrollIntoView: false })
-        el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+        // (A heading under a folded one comes into view once its section has opened, which the cursor going there does.)
+        requestAnimationFrame(() => requestAnimationFrame(() => el.scrollIntoView({ behavior: 'smooth', block: 'start' })))
       },
     }),
     [],

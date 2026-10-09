@@ -158,6 +158,16 @@ UI ─run(command)─▶ BoardSync: execute() here ─▶ shown at once (optimis
   it means (`isBreak`); typed as words it is saved as `&lt;br&gt;`. A table pasted whole gets its first row as its
   heading (`tidyPastedTables`), since a Markdown table always has one. Footnote marks are left as they came
   (`tidyMarkdown`).
+- **Sections fold while a text is read**, and nothing is saved for it (`components/text/folds.ts`): each heading
+  has an arrow in the margin, and what is under a folded one (`foldedParts`: down to the next heading of its size)
+  stays on the page, put away with `hidden="until-found"`, so the text shown still holds every letter (comments on
+  words keep their places) and the browser's own search finds it and unfolds it (`beforematch`). Which sections
+  are folded is each person's own, kept in the browser for each card by what the heading says (`headingsOf`:
+  `slug`), the same in the card and on its full page, and while the text is written: there the folds are drawn
+  over the editor's text (`foldEditing.ts`: decorations, nothing in the document, so not in what several writers
+  share), a section opens when the cursor gets into it, and a folded heading that is retyped stays folded. Going to something under a folded heading (Contents, a
+  comment's words) unfolds it first. A heading also gives a link to itself: the full page's address with
+  `&at=<slug>` (`BoardRoute.at`), which opens the page at that section.
 - **Every browser writing a text together must know the same elements**: an editor drops what it doesn't know
   from the shared document, for everyone. `EDITOR_VERSION` (the model's `api.ts`) is raised whenever the editor
   learns one; a browser says its own when it joins a session, and the server takes in only those on the version

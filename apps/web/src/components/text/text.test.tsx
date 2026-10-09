@@ -10,7 +10,9 @@ import type { AttachmentView } from '@kanbanto/model/api'
 import { clearDraft, pruneDrafts, readDraft, writeDraft } from '@/data/drafts'
 import { counted, posAt } from './caret'
 import { Markdown } from './Markdown'
-import { countWords, forEditor, headingsOf, looksLikeMarkdown, picturesNamed, tidyMarkdown, toggleTask } from './mdText'
+import { plainWords, squeeze } from '@kanbanto/model/passages'
+import { countWords, foldedParts, forEditor, headingsOf, lex, looksLikeMarkdown, picturesNamed, tidyMarkdown, toggleTask } from './mdText'
+import { lettersOf } from './passages'
 
 const roundTrip = (md: string) => {
   const ed = new Editor({
@@ -157,9 +159,66 @@ describe('showing Markdown', () => {
   })
   it('lists headings for the contents', () => {
     expect(headingsOf('# One\n\ntext\n\n## Two **b**')).toEqual([
-      { id: 'h-0', depth: 1, text: 'One' },
-      { id: 'h-1', depth: 2, text: 'Two b' },
+      { id: 'h-0', depth: 1, text: 'One', slug: 'one' },
+      { id: 'h-1', depth: 2, text: 'Two b', slug: 'two-b' },
     ])
+    // What a heading says, as it goes in an address: said twice, the second is told apart; in any language.
+    expect(headingsOf('## Who to ask?\n\n## Who to ask\n\n## การคืนเงิน & refunds\n\n## !!!').map((h) => h.slug)).toEqual([
+      'who-to-ask',
+      'who-to-ask-2',
+      'การคืนเงิน-refunds',
+      'section',
+    ])
+  })
+})
+
+describe('headings that fold what is under them', () => {
+  const TEXT =
+    'Before any heading.\n\n## Problem\n\nTwo launches went wrong.\n\n### Detail\n\nThe old prices.\n\n## What we do\n\n1. Check\n2. Launch\n\n## References\n\nThe checklist.'
+  const page = (folded: number[], link?: (i: number) => void) =>
+    renderToStaticMarkup(<Markdown text={TEXT} headingIds fold={{ folded: new Set(folded), toggle: () => {}, open: () => {}, link }} />)
+  const awayIn = (html: string) =>
+    [...html.matchAll(/<div class="md-folded" data-folds="([^"]*)">(.*?)<\/div>/g)].map(
+      (m) =>
+        `${m[1]}: ${m[2]
+          .replace(/<[^>]+>/g, ' ')
+          .replace(/\s+/g, ' ')
+          .trim()}`,
+    )
+
+  it('a folded heading puts away everything down to the next heading of its size, smaller headings with it', () => {
+    const parts = foldedParts(lex(TEXT), new Set([0]))
+    expect(parts.words.get(0)).toBe(8)
+    const problem = ['0: Two launches went wrong.', '0: Detail', '0: The old prices.']
+    expect(awayIn(page([0]))).toEqual(problem)
+    // A smaller heading folds what is under it only; folded inside a folded one, its part is put away by both.
+    expect(awayIn(page([1]))).toEqual(['1: The old prices.'])
+    expect(awayIn(page([0, 1]))).toEqual(['0: Two launches went wrong.', '0: Detail', '0 1: The old prices.'])
+    // The last heading folds to the end; what comes before the first heading is never put away.
+    expect(awayIn(page([0, 2, 3]))).toEqual([...problem, '2: Check Launch', '3: The checklist.'])
+    expect(awayIn(page([]))).toEqual([])
+  })
+
+  it('every heading has an arrow, a folded one says how much it puts away, and a link is there when asked for', () => {
+    const html = page([3])
+    expect(html.match(/class="md-fold"/g)).toHaveLength(4)
+    expect(html).toContain('<h3 id="h-3" class="md-section" data-folded="2 words">')
+    expect(html).toContain('aria-expanded="false" aria-label="Show this section"')
+    expect(html.match(/aria-expanded="true"/g)).toHaveLength(3)
+    expect(html).not.toContain('md-section-link')
+    expect(page([], () => {}).match(/class="md-section-link"/g)).toHaveLength(4)
+    // Without folding asked for, a text is shown as it always was.
+    expect(renderToStaticMarkup(<Markdown text={TEXT} headingIds />)).not.toMatch(/md-fold|md-section/)
+  })
+
+  it('what is put away is still on the page: the text holds the same letters, folded or not', () => {
+    const letters = (folded: number[]) => {
+      const root = document.createElement('div')
+      root.innerHTML = page(folded, () => {})
+      return lettersOf(root).text
+    }
+    expect(letters([0, 2])).toBe(letters([]))
+    expect(letters([])).toBe(squeeze(plainWords(TEXT)))
   })
 })
 

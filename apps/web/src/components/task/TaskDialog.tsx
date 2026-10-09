@@ -5,7 +5,7 @@ import { useMediaQuery } from '@/lib/useMediaQuery'
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { BoardContext, useBoard } from '@/app/board-context'
 import { useAuth } from '@/app/use-auth'
-import { hrefFor, setFullPage, wantsFullPage, wantsNote } from '@/app/router'
+import { hrefFor, setFullPage, wantsFullPage, wantsNote, wantsSection } from '@/app/router'
 import { ProgressBar, StatusDot, StatusPill } from '@/components/common/bits'
 import { QuickAdd } from '@/components/board/QuickAdd'
 import { Dialog, DialogContent } from '@/components/ui/dialog'
@@ -169,6 +169,7 @@ function TaskDetail({ id, onClose }: { id: string; onClose: () => void }) {
             full={{
               start: wantsFullPage(id),
               note: wantsNote(id),
+              section: wantsSection(id),
               set: (open) => setFullPage(id, open),
               link: `${location.origin}${location.pathname}${hrefFor({ page: 'board', id: data.board.id, task: id, full: true })}`,
             }}
