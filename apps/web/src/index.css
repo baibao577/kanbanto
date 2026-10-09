@@ -320,6 +320,18 @@ html.dragging * {
     @apply text-muted-foreground line-through decoration-muted-foreground/50;
   }
 
+  /* A picture in the text (a description names one of the card's pictures on a line of its own). */
+  .md .md-picture {
+    @apply mx-0 mb-0;
+  }
+  .md .md-picture a {
+    @apply block w-fit max-w-full;
+  }
+  .md .md-picture img,
+  .md img.md-picture {
+    @apply block h-auto max-h-[80vh] w-auto max-w-full rounded-md border bg-muted/40;
+  }
+
   /* Reading full page: bigger, with more air. */
   .md.md-reader {
     @apply text-[15px] leading-7;

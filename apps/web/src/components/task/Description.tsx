@@ -40,6 +40,7 @@ export function Description({
   people,
   draftId,
   onSave,
+  full,
 }: {
   title: string
   value: string
@@ -50,13 +51,24 @@ export function Description({
   /** What its draft is kept under: the board and the card. */
   draftId: string
   onSave: (text: string) => void
+  /**
+   * The full page and the address (see the router's `full`): whether to start there, how the address is told when
+   * the page opens and closes, and the link to copy from the page. Left out: the page has no address (a card opened
+   * from Search cards).
+   */
+  full?: { start: boolean; set: (open: boolean) => void; link: string }
 }) {
   // The cards its text names (WEB-12), shown as links, and the ones "/" → Card offers.
   const cardRefs = useCardRefs()
   const cardSource = useCardSource()
   /** Where it's being written: in the card, full page, or not at all. */
   const [writing, setWriting] = useState<'card' | 'page' | null>(null)
-  const [page, setPage] = useState(false)
+  // (A link to the full page opens it at once, to read: there has to be something to read.)
+  const [page, setPage] = useState(() => !!full?.start && !!value)
+  const showPage = (open: boolean) => {
+    setPage(open)
+    full?.set(open)
+  }
   /** What the editor opens with: the text, and where the cursor goes. */
   const [start, setStart] = useState<{ text: string; caret?: Place }>({ text: value })
   const [dirty, setDirty] = useState(false)
@@ -87,7 +99,7 @@ export function Description({
     setSettled(text.current)
     setLeft(null)
     setWriting(at)
-    if (at === 'page') setPage(true)
+    if (at === 'page') showPage(true)
   }
   const typed = (md: string) => {
     text.current = md
@@ -119,11 +131,11 @@ export function Description({
     setStart({ text: text.current, caret })
     setSettled(text.current)
     setWriting('page')
-    setPage(true)
+    showPage(true)
   }
   const closePage = () => {
     if (where.current === 'page') finish()
-    setPage(false)
+    showPage(false)
   }
   const discard = () => {
     clearDraft(draftId)
@@ -155,7 +167,7 @@ export function Description({
           size="sm"
           className="h-7 gap-1.5 px-2 text-xs text-muted-foreground"
           // With nothing to read yet, the full page opens ready to write.
-          onClick={() => (value ? setPage(true) : begin('page'))}
+          onClick={() => (value ? showPage(true) : begin('page'))}
         >
           <ArrowsOut /> Expand
         </Button>
@@ -192,6 +204,7 @@ export function Description({
             onFiles={(fs) => cardFiles.add(fs)}
             inserts
             cards={cardSource}
+            pictures
             status={<SaveSign dirty={dirty} />}
             onExpand={toPage}
             autoFocus
@@ -204,7 +217,7 @@ export function Description({
         </Suspense>
       ) : value ? (
         <Folded onOpen={readOnly ? undefined : (caret) => begin('card', { caret })}>
-          <Markdown text={value} files={cardFiles.files} mentions={people} cards={cardRefs} onToggleTask={tick} />
+          <Markdown text={value} files={cardFiles.files} mentions={people} cards={cardRefs} onToggleTask={tick} pictures />
         </Folded>
       ) : readOnly ? (
         <p className="text-sm text-muted-foreground">No description.</p>
@@ -237,6 +250,7 @@ export function Description({
             onEdit={(caret) => begin('page', { caret })}
             onTick={tick}
             onClose={closePage}
+            link={full?.link}
           />
         </Suspense>
       )}

@@ -4,6 +4,7 @@ import { changedAt } from '@kanbanto/model/table'
 import { useMediaQuery } from '@/lib/useMediaQuery'
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { BoardContext, useBoard } from '@/app/board-context'
+import { hrefFor, setFullPage, wantsFullPage } from '@/app/router'
 import { ProgressBar, StatusDot, StatusPill } from '@/components/common/bits'
 import { QuickAdd } from '@/components/board/QuickAdd'
 import { Dialog, DialogContent } from '@/components/ui/dialog'
@@ -149,6 +150,11 @@ function TaskDetail({ id, onClose }: { id: string; onClose: () => void }) {
             people={data.members}
             draftId={`${data.board.id}:${id}`}
             onSave={(description) => patch({ description })}
+            full={{
+              start: wantsFullPage(id),
+              set: (open) => setFullPage(id, open),
+              link: `${location.origin}${location.pathname}${hrefFor({ page: 'board', id: data.board.id, task: id, full: true })}`,
+            }}
           />
 
           <Section

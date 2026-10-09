@@ -41,6 +41,20 @@ and `- [ ]` checklists, comes in formatted rather than as symbols.
 followed by a space makes a big heading instead, which is why the menu shows "#" beside "Big heading".) Drop or paste
 a file into the text and it is attached to the card and mentioned where your cursor is.
 
+## Pictures in the text
+
+Drop a picture into a description, or paste a screenshot, and it is **shown in the text**, on a line of its own.
+
+![A description with a picture in it](/images/desc-4-picture.webp)
+
+- What the text holds is the picture's name with a paperclip in front (📎steps.png). On a line by itself, that is
+  the picture. Move the line and the picture moves.
+- A picture named in the middle of a sentence stays a small link.
+- To show a picture the card already has, type `#` and the start of its name on an empty line.
+- Click a picture to open it at its full size.
+- A file that isn't a picture is always a small link. Comments don't draw pictures in their text: a comment's
+  files are listed under it.
+
 
 ## Mention a card
 
@@ -111,6 +125,11 @@ description opens full page.
 - **Contents** on the left lists your headings and follows them as you add more. Click one to jump there.
 - The top right shows the word count and whether it is saved.
 - <kbd>Esc</kbd> or **Done** finishes writing. <kbd>Esc</kbd> again closes the page.
+- **Copy link** copies a link that opens the card with its description full page. The address in your browser says
+  the same while the page is open. Send it when you want someone to read, not to land on the card.
+
+A board whose cards are mostly long descriptions can be a handbook. See
+[a knowledge base on a board](/knowledge/overview).
 
 ## Good to know
 

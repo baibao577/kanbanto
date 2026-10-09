@@ -10,7 +10,7 @@ import type { AttachmentView } from '@kanbanto/model/api'
 import { clearDraft, pruneDrafts, readDraft, writeDraft } from '@/data/drafts'
 import { counted, posAt } from './caret'
 import { Markdown } from './Markdown'
-import { countWords, forEditor, headingsOf, looksLikeMarkdown, tidyMarkdown, toggleTask } from './mdText'
+import { countWords, forEditor, headingsOf, looksLikeMarkdown, picturesNamed, tidyMarkdown, toggleTask } from './mdText'
 
 const roundTrip = (md: string) => {
   const ed = new Editor({
@@ -62,6 +62,32 @@ describe('showing Markdown', () => {
     expect(out).toContain('href="/api/attachments/f1"')
     expect(out).toContain('>@Ann</span>')
     expect(out).toMatch(/<input type="checkbox" disabled="" aria-label="Done" checked=""/)
+  })
+  it('shows a card’s picture where a description names it on a line of its own, and nowhere else', () => {
+    const shot: AttachmentView = { ...file, id: 'p1', name: 'flow chart.png', mime: 'image/png', url: '/api/attachments/p1', image: true }
+    const files = [file, shot]
+    const out = html('See the steps:\n\n📎flow chart.png\n\nThen 📎flow chart.png again, and 📎plan v2.pdf\n\n📎plan v2.pdf', {
+      files,
+      pictures: true,
+    })
+    // By itself on a line: the picture, as a link to the file, with its name kept for a screen reader.
+    expect(out).toContain('<figure class="md-picture"><a href="/api/attachments/p1"')
+    expect(out).toContain('<img src="/api/attachments/p1" alt=""')
+    expect(out).toContain('<span class="sr-only">flow chart.png</span>')
+    expect(out.match(/<img /g)).toHaveLength(1)
+    // In a sentence it stays the small link, and a file that isn't a picture is never drawn.
+    expect(out.match(/title="Open flow chart.png"/g)).toHaveLength(2)
+    expect(out).toMatch(/<p><a href="\/api\/attachments\/f1"/)
+    // Two names on two lines of one paragraph: two pictures.
+    expect(html('📎flow chart.png\n📎flow chart.png', { files, pictures: true }).match(/<img /g)).toHaveLength(2)
+    // Where pictures aren't asked for (a comment), and a name that isn't a file of the card: as before.
+    expect(html('📎flow chart.png', { files })).not.toContain('<img')
+    expect(html('📎gone.png', { files, pictures: true })).toBe('<div class="md"><p>📎gone.png</p></div>')
+    // The shown text holds the same characters as the written text, so a click further down lands on the same word.
+    const shownText = out.replace(/<[^>]+>/g, '')
+    expect(counted(shownText)).toBe(counted('See the steps:\n\n📎flow chart.png\n\nThen 📎flow chart.png again, and 📎plan v2.pdf\n\n📎plan v2.pdf'))
+    expect(picturesNamed('📎flow chart.png\n  \n', new Map([[shot.name, shot]]))).toEqual([shot])
+    expect(picturesNamed('📎flow chart.png and more', new Map([[shot.name, shot]]))).toBeNull()
   })
   it('shows checklist items spaced apart without their [x]', () => {
     expect(html('- [x] one\n\n- [ ] two')).not.toMatch(/\[x\]|\[ \]/)

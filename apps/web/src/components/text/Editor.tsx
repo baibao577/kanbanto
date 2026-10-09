@@ -24,7 +24,9 @@ import { TaskItem, TaskList } from '@tiptap/extension-list'
 import { TableKit } from '@tiptap/extension-table'
 import { Placeholder } from '@tiptap/extensions'
 import { Markdown } from '@tiptap/markdown'
-import { EditorContent, useEditor, useEditorState, type Editor as TiptapEditor } from '@tiptap/react'
+import { Plugin, PluginKey } from '@tiptap/pm/state'
+import { Decoration, DecorationSet } from '@tiptap/pm/view'
+import { EditorContent, Extension, useEditor, useEditorState, type Editor as TiptapEditor } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import { useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type Ref } from 'react'
 import type { AttachmentView } from '@kanbanto/model/api'
@@ -91,6 +93,59 @@ const INSERTS: Insert[] = [
   { id: 'table-', label: 'Delete the table', table: true, words: 'remove', icon: <Trash />, run: (c) => c.deleteTable() },
 ]
 
+const picturesKey = new PluginKey<AttachmentView[]>('pictures')
+/**
+ * Pictures while writing (descriptions): under a line that is only a picture's name ("📎plan.png") the picture
+ * itself is drawn, as it will be when the text is read (see Markdown). Only drawn: the text stays the name.
+ * The card's files, as they are now, are part of what the editor knows: it is told when they change (a change that
+ * carries them and touches no text).
+ */
+const Pictures = Extension.create({
+  name: 'pictures',
+  addProseMirrorPlugins() {
+    return [
+      new Plugin<AttachmentView[]>({
+        key: picturesKey,
+        state: {
+          init: () => [],
+          apply: (tr, files) => (tr.getMeta(picturesKey) as AttachmentView[] | undefined) ?? files,
+        },
+        props: {
+          decorations(state) {
+            const byName = new Map((picturesKey.getState(state) ?? []).flatMap((f) => (f.image ? [[f.name, f] as const] : [])))
+            if (!byName.size) return null
+            const out: Decoration[] = []
+            state.doc.descendants((node, pos) => {
+              if (node.type.name !== 'paragraph') return true
+              const text = node.textContent.trim()
+              const file = text.startsWith(FILE_MARK) ? byName.get(text.slice(FILE_MARK.length)) : undefined
+              if (file)
+                out.push(
+                  Decoration.widget(
+                    pos + node.nodeSize,
+                    () => {
+                      const img = document.createElement('img')
+                      img.src = file.url
+                      img.alt = ''
+                      img.className = 'md-picture'
+                      img.draggable = false
+                      img.contentEditable = 'false'
+                      return img
+                    },
+                    // (The same picture in the same place is the same element: it isn't loaded again at every key.)
+                    { key: `${file.id}@${pos}`, side: -1 },
+                  ),
+                )
+              return false
+            })
+            return DecorationSet.create(state.doc, out)
+          },
+        },
+      }),
+    ]
+  },
+})
+
 /** What a page holding the editor can ask of it. */
 export interface EditorHandle {
   /** Goes to the nth heading (top-level ones, in order): the cursor is put there and it's scrolled into view. */
@@ -129,6 +184,11 @@ export interface EditorProps {
   inserts?: boolean | 'light'
   /** The cards "/" → Card offers (see app/card-refs). Left out: no Card in the menu. */
   cards?: CardSource
+  /**
+   * Pictures show in the text (a description): under a line that is only a picture's name, and a picture pasted or
+   * dropped in gets such a line of its own.
+   */
+  pictures?: boolean
   /** Shown at the right of the toolbar (whether it's saved, say). */
   status?: ReactNode
   /** Adds "Write full page" to the toolbar: called with where the cursor is (see `caret`). */
@@ -165,6 +225,7 @@ export default function Editor({
   onSave,
   inserts,
   cards,
+  pictures,
   status,
   onExpand,
   look = 'box',
@@ -230,6 +291,7 @@ export default function Editor({
       TableKit,
       Placeholder.configure({ placeholder: placeholder ?? '' }),
       Markdown,
+      ...(pictures ? [Pictures] : []),
     ],
     content: forEditor(value),
     contentType: 'markdown',
@@ -306,6 +368,11 @@ export default function Editor({
   useLayoutEffect(() => {
     editorRef.current = editor
   }, [editor])
+  // The card's files changed (one was attached just now, or removed): the pictures drawn in the text are looked at
+  // again. (A change of nothing: the text isn't touched.)
+  useEffect(() => {
+    if (pictures && editor && !editor.isDestroyed) editor.view.dispatch(editor.state.tr.setMeta(picturesKey, files))
+  }, [pictures, editor, files])
 
   // Esc while the cursor is in here is the editor's: it closes an open list of suggestions, else leaves the editor
   // (`onEscape`). It's caught before anything around it (a dialog would close on it), so one Esc never does two things.
@@ -436,10 +503,14 @@ export default function Editor({
     const added = await live.current.onFiles?.(list)
     const ed = editorRef.current
     if (!added?.length || !ed) return
-    ed.chain()
-      .focus()
-      .insertContent(added.map((a) => `${FILE_MARK}${a.name} `).join(''))
-      .run()
+    // Where pictures show in the text, a picture gets a line of its own (so it is drawn there); any other file is
+    // named where the cursor is.
+    const shown = pictures ? added.filter((a) => a.image) : []
+    const named = added.filter((a) => !shown.includes(a))
+    const chain = ed.chain().focus()
+    if (named.length) chain.insertContent(named.map((a) => `${FILE_MARK}${a.name} `).join(''))
+    if (shown.length) chain.insertContent(shown.map((a) => ({ type: 'paragraph', content: [{ type: 'text', text: `${FILE_MARK}${a.name}` }] })))
+    chain.run()
   }
 
   const page = look === 'page'

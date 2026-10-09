@@ -2344,7 +2344,265 @@ await shot('several-3-board', async () => {
   const lists = await page.locator('[data-list-row]').boundingBox()
   return { clip: { x: 0, y: lists.y, width: 1360, height: bar.y + bar.height + 14 - lists.y } }
 })
-await page.getByRole('button', { name: 'Clear the selection' }).click()
+// (Only when that picture was taken: asked for a few pictures by name, the script skips the rest.)
+if (await page.getByRole('button', { name: 'Clear the selection' }).count()) await page.getByRole('button', { name: 'Clear the selection' }).click()
+
+// ── A knowledge base on a board: the studio's handbook (last: a board of its own, made only for these) ────────────
+let handbook = null
+/** The handbook: five lists for an article's life, three fields, and articles with pictures and pages inside. */
+async function theHandbook() {
+  if (handbook) return handbook
+  const { id } = await api(ann, 'POST', '/boards', { name: 'Team handbook', background: 'teal' })
+  let k = 0
+  const go = (command) => api(ann, 'POST', `/boards/${id}/mutations`, { mutationId: `h${stamp}-${k++}`, command })
+  await go({ type: 'board.update', fields: { description: 'How we work, written down. An article is a card; its list says how far along it is.' } })
+  const lists = [
+    ['todo', 'Inbox', 'todo'],
+    ['drafting', 'Drafting', 'doing'],
+    ['doing', 'In review', 'doing'],
+    ['published', 'Published', 'doing'],
+    ['done', 'Outdated', 'done'],
+  ]
+  for (const [list, name, category] of lists) {
+    if (['todo', 'doing', 'done'].includes(list)) await go({ type: 'column.update', id: list, fields: { name, category } })
+    else await go({ type: 'column.create', id: list, name, category })
+  }
+  await go({ type: 'column.delete', id: 'backlog', moveTo: 'todo' }).catch(() => {})
+  for (const [list] of lists) await go({ type: 'column.move', id: list })
+  const invite = (await api(ann, 'PUT', `/boards/${id}/invites/link`, { role: 'editor' })).link
+  await api(benCtx, 'POST', '/join', { invite: invite.token })
+  await ann.request.delete(`${SITE}/api/boards/${id}/invites/link`)
+  const field = async (def) => {
+    const made = (await api(ann, 'POST', '/fields', def)).id
+    return (await api(ann, 'GET', '/fields')).fields.find((f) => f.id === made)
+  }
+  const topic = await field({
+    name: 'Topic',
+    type: 'choice',
+    options: [
+      { name: 'Start here', color: 'blue' },
+      { name: 'How we work', color: 'orange' },
+      { name: 'Clients', color: 'green' },
+      { name: 'Tools', color: 'teal' },
+    ],
+  })
+  const owner = await field({ name: 'Owner', type: 'person' })
+  const review = await field({ name: 'Review by', type: 'date' })
+  await api(ann, 'PUT', `/boards/${id}/fields`, { fields: [topic, owner, review].map((f, i) => ({ id: f.id, front: i === 0, total: false })) })
+  for (const [name, color] of [
+    ['how-to', 'blue'],
+    ['policy', 'red'],
+    ['decision', 'violet'],
+  ])
+    await go({ type: 'label.create', id: name, name, color })
+  const about = (t, who, days) => ({
+    [topic.id]: [topic.options.find((o) => o.name === t).id],
+    ...(who && { [owner.id]: [who] }),
+    ...(days !== undefined && { [review.id]: day(days) }),
+  })
+  const page = (card, title, parentId, status, text, fields = {}) =>
+    go({ type: 'task.create', id: card, parentId, fields: { title, status, ...(text && { description: text }), ...fields } })
+  // Its pictures: plain diagrams, drawn here.
+  const box = (x, w, text, fill = '#eef2ff', stroke = '#6366f1') =>
+    `<rect x="${x}" y="34" width="${w}" height="54" rx="10" fill="${fill}" stroke="${stroke}" stroke-width="2"/><text x="${x + w / 2}" y="67" font-family="Helvetica, Arial, sans-serif" font-size="17" font-weight="600" text-anchor="middle" fill="#1e1b4b">${text}</text>`
+  const arrow = (x) =>
+    `<path d="M${x} 61 h26 m-9 -7 l9 7 l-9 7" fill="none" stroke="#64748b" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>`
+  const steps = (names, tint = {}) =>
+    `<svg xmlns="http://www.w3.org/2000/svg" width="900" height="122" viewBox="0 0 900 122"><rect width="900" height="122" fill="#ffffff"/>${names
+      .map((t, i) => box(24 + i * 176, 138, t, ...(tint[t] ?? [])) + (i < names.length - 1 ? arrow(24 + i * 176 + 144) : ''))
+      .join('')}</svg>`
+  const attach = async (card, name, svg) => {
+    const r = await ann.request.fetch(`${SITE}/api/boards/${id}/tasks/${card}/attachments`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/octet-stream', 'x-file-name': encodeURIComponent(name), 'x-file-type': 'image/png' },
+      data: await sharp(Buffer.from(svg)).png().toBuffer(),
+    })
+    if (!r.ok()) throw new Error(`attach ${name} → ${r.status()}`)
+  }
+  await page(
+    'start',
+    'Start here: how this handbook works',
+    null,
+    'published',
+    `This board is our handbook. Every card is an article, and its description is the article.
+
+## The life of an article
+
+📎article-life.png
+
+1. **Inbox**: something worth writing down. A title is enough.
+2. **Drafting**: someone is writing it.
+3. **In review**: ready for a second pair of eyes.
+4. **Published**: it is what we do.
+5. **Outdated**: it was true once.
+
+## Reading
+
+Click **Expand** above a description to read it full page. The **Outline** tab is the table of contents.`,
+    { custom: about('Start here', me.id, 120) },
+  )
+  await attach(
+    'start',
+    'article-life.png',
+    steps(['Inbox', 'Drafting', 'In review', 'Published', 'Outdated'], { Published: ['#dcfce7', '#16a34a'], Outdated: ['#f1f5f9', '#94a3b8'] }),
+  )
+  await page(
+    'week',
+    'Your first week',
+    null,
+    'published',
+    `Welcome. This is what happens in your first five days, and who to ask.\n\n## Who to ask\n\n| About | Ask |\n|---|---|\n| Pay and holidays | Ann |\n| Which project | Ben |\n\nThe pages inside this one cover each day.`,
+    { custom: about('Start here', ben.id, 60) },
+  )
+  await page(
+    'day1',
+    'Day 1: accounts and your laptop',
+    'week',
+    'published',
+    `## Morning\n\n- [ ] Your email works\n- [ ] You can open the boards\n\n## Afternoon\n\nSit in on the launch call. You listen today.`,
+    { custom: about('Start here', ben.id) },
+  )
+  await page(
+    'day2',
+    'Day 2: how a launch runs',
+    'week',
+    'published',
+    `Read **How we launch a website**, then look at a launch on staging with whoever is running it.`,
+    { custom: about('Start here', ben.id) },
+  )
+  await page('tools', 'Tools we use', 'week', 'published', `## Every day\n\n- Kanbanto, for the work and this handbook\n- The team chat`, {
+    custom: about('Tools', ben.id),
+  })
+  await page(
+    'launch',
+    'How we launch a website',
+    null,
+    'published',
+    `## Problem
+
+Two launches went out with the old prices on them, because nobody owned the last look.
+
+## What we do
+
+📎launch-steps.png
+
+1. **Freeze** the text two days before. Changes after that wait for the next week.
+2. **Check on staging**, on a phone and on a laptop.
+3. **Sign-off** is one person's, and their name is on the launch card.
+4. **Go live** before noon, never on a Friday.
+5. **Watch** the visitor counts and the sign-up form for a day.
+
+| Check | Who |
+|---|---|
+| Prices and dates | The client |
+| Links and forms | Ben |
+| The last look | Ann |
+
+## Lessons learned
+
+- A launch after 16:00 is a launch nobody watches.
+- "One small change" on launch day is a new launch.
+
+## References
+
+- The launch checklist from 2024 is in **Outdated**. Don't use it.`,
+    { labels: ['how-to'], custom: about('How we work', me.id, 30) },
+  )
+  await attach('launch', 'launch-steps.png', steps(['Freeze', 'Staging', 'Sign-off', 'Go live', 'Watch'], { 'Go live': ['#dcfce7', '#16a34a'] }))
+  await page(
+    'names',
+    'Naming pages and files',
+    null,
+    'published',
+    `## What we do\n\nLower case, words joined with a dash, no dates in a page's address.`,
+    { labels: ['how-to'], custom: about('How we work', ben.id, -8) },
+  )
+  await page(
+    'hosting',
+    'Why we host with one provider',
+    null,
+    'published',
+    `## What we decided\n\nEvery client site is hosted in one place, on our account.\n\n## Why\n\n- One bill, one login, one way to deploy to staging.`,
+    { labels: ['decision'], custom: about('Tools', me.id, 200) },
+  )
+  await page(
+    'refunds',
+    'Refunds for retainers',
+    null,
+    'doing',
+    `## The rule\n\nA retainer month that hasn't started is refunded in full.\n\n## Open questions\n\n- What about a month that is half used?`,
+    { labels: ['policy'], assigneeId: me.id, due: day(3), custom: about('Clients', me.id) },
+  )
+  await page(
+    'handover',
+    'Handing over to a client',
+    null,
+    'drafting',
+    `## What we do\n\n1. A call to walk through the site.\n2. (To write: logins, and who they ask afterwards.)`,
+    { labels: ['how-to'], assigneeId: ben.id, custom: about('Clients', ben.id) },
+  )
+  await page('old', 'Launch checklist 2024', null, 'done', `Replaced by **How we launch a website**.`, { custom: about('How we work', me.id) })
+  await page('pricing', 'Write up how we price a redesign', null, 'todo', '')
+  await page('logins', 'Who has the domain logins?', null, 'todo', '')
+  await api(benCtx, 'POST', `/boards/${id}/tasks/refunds/comments`, { body: 'Half-used months: we said pro rata last time. Worth writing down.' })
+  return (handbook = { id, topic, owner, review })
+}
+await page.setViewportSize({ width: 1500, height: 860 })
+await shot('km-1-board', async () => {
+  const { id } = await theHandbook()
+  await page.goto(`${SITE}/#/b/${id}/board`)
+  await page.reload()
+  await page.getByText('Published', { exact: true }).first().waitFor()
+  await page.waitForTimeout(700)
+  return { clip: { x: 0, y: 0, width: 1500, height: 640 } }
+})
+await page.setViewportSize({ width: 1360, height: 860 })
+await shot('km-2-outline', async () => {
+  const { id } = await theHandbook()
+  await page.goto(`${SITE}/#/b/${id}/outline`)
+  await page.reload()
+  await page.getByRole('table', { name: 'Tasks' }).waitFor()
+  // (Fewer of the usual columns, so the board's own show: who keeps an article, and when to look at it again.)
+  await page.getByRole('button', { name: 'Display' }).click()
+  for (const name of ['Progress', 'Assignee', 'Priority', 'Start', 'Due', 'Topic']) {
+    const tick = page.getByRole('dialog').getByLabel(name, { exact: true })
+    if (await tick.isChecked()) await tick.click()
+  }
+  await page.keyboard.press('Escape')
+  await page.waitForTimeout(300)
+  const clip = await groupOutline('Topic')
+  await page.mouse.move(4, 4)
+  return { clip: { ...clip, height: Math.min(clip.height - 18, 640) } }
+})
+await shot('km-3-page', async () => {
+  const { id } = await theHandbook()
+  await page.goto(`${SITE}/#/b/${id}/outline?task=launch&full=1`)
+  await page.reload()
+  await page.getByRole('navigation', { name: 'Contents' }).waitFor()
+  await page.locator('.md-reader img').first().waitFor()
+  await page.waitForTimeout(700)
+  return { clip: { x: 0, y: 0, width: 1360, height: 800 } }
+})
+await shot('desc-4-picture', async () => {
+  const { id } = await theHandbook()
+  await page.goto(`${SITE}/#/b/${id}/board?task=start`)
+  await page.reload()
+  const card = page.getByRole('dialog').first()
+  await card.locator('.md img').first().waitFor()
+  await page.waitForTimeout(700)
+  return around(
+    [card.getByText('Description', { exact: true }), card.getByRole('button', { name: 'Expand', exact: true }), card.locator('.md').first()],
+    28,
+  )
+})
+await shot('km-5-search', async () => {
+  const { id } = await theHandbook()
+  await page.goto(`${SITE}/#/cards?board=${id}&q=staging`)
+  await page.reload()
+  await page.getByText('How we launch a website').first().waitFor()
+  await page.waitForTimeout(500)
+  return { clip: { x: 0, y: 0, width: 1360, height: 640 } }
+})
 
 await browser.close()
 console.log(`made ${made.length}: ${made.join(', ')}`)

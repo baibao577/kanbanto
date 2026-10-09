@@ -4,7 +4,7 @@ import type { AttachmentView } from '@kanbanto/model/api'
 import type { CardRefs } from '@/app/card-refs'
 import { RichText } from '@/components/task/RichText'
 import { cn } from '@/lib/utils'
-import { lex } from './mdText'
+import { lex, picturesNamed } from './mdText'
 
 export interface MarkdownProps {
   text: string
@@ -18,6 +18,11 @@ export interface MarkdownProps {
   onToggleTask?: (n: number) => void
   /** Gives headings ids (h-0, h-1…), for a table of contents. */
   headingIds?: boolean
+  /**
+   * A picture among the card's files is shown where the text names it by itself on a line ("📎plan.png"): a
+   * description's way of having pictures in it. Named in the middle of a sentence it stays the small link it is.
+   */
+  pictures?: boolean
   className?: string
 }
 
@@ -31,10 +36,11 @@ const safeHref = (href: string) => (/^(https?:|mailto:|\/|#)/i.test(href.trim())
  * Markdown, shown safely: built as React elements from marked's tokens, so HTML in the text is shown as text, never
  * run. "📎name" file references and @mentions work anywhere in the text.
  */
-export function Markdown({ text, files, mentions, cards, onToggleTask, headingIds, className }: MarkdownProps) {
+export function Markdown({ text, files, mentions, cards, onToggleTask, headingIds, pictures, className }: MarkdownProps) {
   const tokens = useMemo(() => lex(text), [text])
   let task = 0
   let heading = 0
+  const shown = useMemo(() => new Map(pictures ? files?.flatMap((f) => (f.image ? [[f.name, f] as const] : [])) : []), [pictures, files])
 
   // (`linked`: inside a link, where a card's name is the link's own words and not a second link.)
   const inline = (ts: Token[] | undefined, key = '', linked = false): ReactNode =>
@@ -101,8 +107,19 @@ export function Markdown({ text, files, mentions, cards, onToggleTask, headingId
             </H>
           )
         }
-        case 'paragraph':
+        case 'paragraph': {
+          // A line that is only a picture's name (or a few such lines) is the picture.
+          const named = shown.size ? picturesNamed(decode(t.text), shown) : null
+          if (named)
+            return (
+              <Fragment key={k}>
+                {named.map((f, j) => (
+                  <Picture key={j} file={f} />
+                ))}
+              </Fragment>
+            )
           return <p key={k}>{inline(t.tokens, k)}</p>
+        }
         case 'text':
           return (
             <Fragment key={k}>
@@ -185,4 +202,20 @@ export function Markdown({ text, files, mentions, cards, onToggleTask, headingId
     })
 
   return <div className={cn('md', className)}>{block(tokens)}</div>
+}
+
+/**
+ * A picture in the text: the file itself, as wide as the text at most, and a link to it at its full size. Its name
+ * is still there for a screen reader, and so that the shown text holds the same characters as the written text (a
+ * click on a word further down finds that word in the editor: see caret.ts).
+ */
+function Picture({ file }: { file: AttachmentView }) {
+  return (
+    <figure className="md-picture">
+      <a href={file.url} target="_blank" rel="noreferrer" title={`Open ${file.name}`} onClick={(e) => e.stopPropagation()}>
+        <img src={file.url} alt="" loading="lazy" decoding="async" draggable={false} />
+        <span className="sr-only">{file.name}</span>
+      </a>
+    </figure>
+  )
 }

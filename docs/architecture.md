@@ -442,6 +442,18 @@ The app uses hash routing, so any static host or proxy works without rewrite rul
   heading starts with its value (`groupFields`). Nothing is stored but the key: it is part of the view settings,
   saved in presets, carried when a field changes its id (`remapPreset`) and dropped when the field leaves
   (`cleanPrefs`); a key a later version adds reads as not grouped. Which headings are folded is kept on the device.
+- **Pictures in a description, and the full page's address.** A description stays Markdown that names the card's
+  files as text ("📎plan.png"). Where such a name stands alone on a line and the file is a picture, the picture is
+  drawn there: when read (`Markdown` with `pictures`, `picturesNamed` in `components/text/mdText.ts`: the
+  file's name stays in the page as hidden text, so the shown text holds the same characters as the written text and
+  a click still finds its word in the editor, see `caret.ts`) and when written (the editor's `Pictures`, which only
+  draws: a widget under the line, told the card's files by a change that carries them). A picture pasted or dropped
+  in gets a line of its own. Nothing about the text, the API or what assistants read changes; comments don't draw
+  pictures (their files are listed under them). The full page a description opens into (`DescriptionReader`) has
+  an address: `…?task=<id>&full=1` (`BoardRoute.full`, `wantsFullPage`, `setFullPage` in `app/router.ts`),
+  put there in place when the page opens and taken out when it closes, so a link leads to a card as a page to
+  read. A knowledge base is a board used that way, with no kind of its own: the guides' "A knowledge base" group
+  says how.
 - **Several cards changed at once** (`model/bulk.ts`, `components/select/`). A view keeps which cards are ticked
   (`useSelection`: the person's own, forgotten with the view; a card that leaves the board leaves it for good, so
   an undo doesn't bring it back ticked) and shows `SelectionBar`, which floats at the foot of the view. Every

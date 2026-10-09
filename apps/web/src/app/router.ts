@@ -27,7 +27,8 @@ import { CATEGORIES, LAYOUTS, PRIORITIES, type Category, type Layout, type Prior
  * Hash addresses work on any static host, with no server rewrite rules.
  */
 /** `n`: a card by its number on the board (from a name like WEB-12 written somewhere): looked up, then the address says `task`. */
-export type BoardRoute = { page: 'board'; id: string; layout?: Layout; focus?: string; task?: string; inbox?: string; n?: string }
+/** `full`: the open card's description is shown full page (so a link can lead straight to a card as a page to read). */
+export type BoardRoute = { page: 'board'; id: string; layout?: Layout; focus?: string; task?: string; full?: boolean; inbox?: string; n?: string }
 export type HomeRoute = { page: 'home'; inbox?: string }
 /** A workspace: its people (the default), or its plan, shown by project or by person, in weeks or days. */
 export type WorkspaceRoute = { page: 'workspace'; id: string; section?: WorkspaceSection; by?: 'person'; zoom?: 'days' | 'months' }
@@ -194,6 +195,7 @@ export function parseRoute(hash: string): Route {
     ...(layout && { layout }),
     ...(q.get('focus') && { focus: q.get('focus')! }),
     ...(q.get('task') && { task: q.get('task')! }),
+    ...(q.get('task') && q.get('full') === '1' && { full: true }),
     ...(q.get('inbox') && { inbox: q.get('inbox')! }),
     ...(/^[1-9]\d{0,8}$/.test(q.get('n') ?? '') && { n: q.get('n')! }),
   }
@@ -260,6 +262,7 @@ export function hrefFor(r: Route) {
   const q = new URLSearchParams()
   if (r.focus) q.set('focus', r.focus)
   if (r.task) q.set('task', r.task)
+  if (r.task && r.full) q.set('full', '1')
   if (r.inbox) q.set('inbox', r.inbox)
   if (r.n) q.set('n', r.n)
   const qs = q.toString()
@@ -286,7 +289,7 @@ const taskDepth = () => (history.state as EntryState)?.taskDepth ?? 0
 export function openTask(id: string) {
   const r = currentRoute()
   if (r.page !== 'board' || r.task === id) return
-  navigate({ ...r, task: id }, { state: { taskDepth: r.task ? taskDepth() + 1 : 1 } })
+  navigate({ ...r, task: id, full: undefined }, { state: { taskDepth: r.task ? taskDepth() + 1 : 1 } })
 }
 
 /** Closes the task dialog by going back to where you were before the first task was opened. */
@@ -295,7 +298,23 @@ export function closeTask() {
   if (r.page !== 'board' || !r.task) return
   const depth = taskDepth()
   if (depth > 0) history.go(-depth)
-  else navigate({ ...r, task: undefined }, { replace: true })
+  else navigate({ ...r, task: undefined, full: undefined }, { replace: true })
+}
+
+/** Whether the address asks for this card's description full page (it is the open card, and the address says so). */
+export function wantsFullPage(taskId: string) {
+  const r = currentRoute()
+  return r.page === 'board' && r.task === taskId && !!r.full
+}
+
+/**
+ * Says in the address that the open card's description is full page now, or no longer is: the address copied then
+ * leads to the same. The same place in history (Back still leaves the card, as before).
+ */
+export function setFullPage(taskId: string, on: boolean) {
+  const r = currentRoute()
+  if (r.page !== 'board' || r.task !== taskId || !!r.full === on) return
+  navigate({ ...r, full: on || undefined }, { replace: true, state: history.state as EntryState })
 }
 
 /** Opens a card of your Inbox on top of the current page (a board, or your boards), like `openTask`. */

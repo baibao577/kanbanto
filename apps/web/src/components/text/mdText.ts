@@ -1,4 +1,6 @@
 import { Lexer, type Token } from 'marked'
+import type { AttachmentView } from '@kanbanto/model/api'
+import { FILE_MARK } from '@/components/task/RichText'
 
 /**
  * Descriptions and comments are stored as Markdown (what assistants and the API read and write). These are the small
@@ -104,4 +106,18 @@ export function countWords(md: string): number {
   let n = 0
   for (const s of new Intl.Segmenter(undefined, { granularity: 'word' }).segment(text)) if (s.isWordLike) n++
   return n
+}
+
+/**
+ * The pictures a paragraph is, when every line of it is the name of one of the card's pictures ("📎plan.png");
+ * null when it is anything else. That is how a description has pictures in it: a picture named by itself on a line is
+ * shown there (see Markdown, and the editor's Pictures), and named inside a sentence it stays a small link.
+ */
+export function picturesNamed(paragraph: string, pictures: ReadonlyMap<string, AttachmentView>): AttachmentView[] | null {
+  const lines = paragraph
+    .split('\n')
+    .map((l) => l.trim())
+    .filter(Boolean)
+  const out = lines.map((l) => (l.startsWith(FILE_MARK) ? pictures.get(l.slice(FILE_MARK.length)) : undefined))
+  return out.length && out.every((f) => !!f) ? (out as AttachmentView[]) : null
 }

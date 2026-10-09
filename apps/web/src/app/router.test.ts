@@ -10,6 +10,8 @@ describe('router', () => {
       ['#/b/abc/outline', { page: 'board', id: 'abc', layout: 'outline' }],
       ['#/b/abc/timeline?focus=t1', { page: 'board', id: 'abc', layout: 'timeline', focus: 't1' }],
       ['#/b/abc/board?focus=t1&task=t2', { page: 'board', id: 'abc', layout: 'board', focus: 't1', task: 't2' }],
+      // (A card open with its description full page: a link to a card as a page to read.)
+      ['#/b/abc/outline?task=t2&full=1', { page: 'board', id: 'abc', layout: 'outline', task: 't2', full: true }],
       // A card by its number on the board (what WEB-12 in a text links to).
       ['#/b/abc?n=12', { page: 'board', id: 'abc', n: '12' }],
       // A card of your Inbox, open over a board or over your boards.

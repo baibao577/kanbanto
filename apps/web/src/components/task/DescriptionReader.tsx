@@ -1,4 +1,4 @@
-import { Check, PencilSimple } from '@phosphor-icons/react'
+import { Check, LinkSimple, PencilSimple } from '@phosphor-icons/react'
 import { lazy, Suspense, useMemo, useRef } from 'react'
 import type { CardRefs, CardSource } from '@/app/card-refs'
 import type { CardFiles } from '@/data/cardFiles'
@@ -8,6 +8,7 @@ import { Markdown } from '@/components/text/Markdown'
 import { countWords, headingsOf } from '@/components/text/mdText'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
+import { copyText } from '@/lib/copy'
 import { cn } from '@/lib/utils'
 import { SaveSign } from './SaveSign'
 
@@ -39,6 +40,7 @@ export function DescriptionReader({
   onEdit,
   onTick,
   onClose,
+  link,
 }: {
   title: string
   /** The saved text (what's read). */
@@ -62,6 +64,8 @@ export function DescriptionReader({
   onEdit: (caret?: Place) => void
   onTick?: (n: number) => void
   onClose: () => void
+  /** A link that opens the card with this page showing: there is a button to copy it. */
+  link?: string
 }) {
   const scroller = useRef<HTMLDivElement>(null)
   const column = useRef<HTMLDivElement>(null)
@@ -88,7 +92,11 @@ export function DescriptionReader({
         className="top-0 left-0 flex h-dvh w-screen max-w-none translate-x-0 translate-y-0 flex-col gap-0 rounded-none border-0 p-0 sm:max-w-none"
         // (Esc while writing finishes the writing: the editor sees to it. The next one closes the page.)
         // Opening to write puts the cursor in the text itself.
-        onOpenAutoFocus={(e) => writing && e.preventDefault()}
+        // Opening to read puts it on the page itself (to scroll with the keys), not on its first button.
+        onOpenAutoFocus={(e) => {
+          e.preventDefault()
+          if (!writing) (e.currentTarget as HTMLElement).focus()
+        }}
       >
         <header className="flex h-14 shrink-0 items-center gap-3 border-b px-4 pr-12 sm:px-6 sm:pr-14">
           <div className="min-w-0 flex-1">
@@ -102,6 +110,17 @@ export function DescriptionReader({
               </span>
               <SaveSign dirty={dirty} />
             </div>
+          )}
+          {link && !writing && (
+            <Button
+              size="sm"
+              variant="ghost"
+              className="gap-1.5 text-muted-foreground"
+              title="Copy a link that opens this page"
+              onClick={() => void copyText(link, 'Link')}
+            >
+              <LinkSimple /> <span className="max-sm:sr-only">Copy link</span>
+            </Button>
           )}
           {!readOnly &&
             (writing ? (
@@ -157,6 +176,7 @@ export function DescriptionReader({
                     onFiles={(fs) => cardFiles.add(fs)}
                     inserts
                     cards={cardSource}
+                    pictures
                     autoFocus
                     aria-label="Description"
                     placeholder="Write here… Type / for headings, lists, tables and cards, @ to mention someone, # to point to a file."
@@ -171,6 +191,7 @@ export function DescriptionReader({
                   cards={cardRefs}
                   headingIds
                   onToggleTask={onTick}
+                  pictures
                   className="md-reader"
                 />
               ) : (

@@ -5,6 +5,16 @@ then `git pull` (or download the new release) and `docker compose up -d --build`
 
 ## Unreleased
 
+- **Pictures in a description, and a link to the full page.** A picture dropped or pasted into a description is
+  now shown in the text, on a line of its own, while you read and while you write. The text still holds its name
+  (📎steps.png), so moving that line moves the picture; named inside a sentence, a picture stays a small link. The
+  full page a description opens into (**Expand**) has an address of its own and a **Copy link** button: the link
+  opens the card with its description full page, to read.
+
+  The guides have a new group, **A knowledge base**: how to keep a team's handbook on an ordinary board (articles
+  as cards, pages inside pages as subtasks, lists for an article's life), with a set-up, three sample boards and
+  seven article outlines to copy. No database change.
+
 - **Change several cards at once.** In the Outline, point at a row and a box appears at its start. Tick a few
   rows (hold Shift for a run of them; the box in the Task heading ticks everything a search or a filter found).
   On the Board, hold ⌘ or Ctrl and click a card, or choose **Select** in its **⋯** menu; after that a plain click
