@@ -158,6 +158,22 @@ UI ─run(command)─▶ BoardSync: execute() here ─▶ shown at once (optimis
   it means (`isBreak`); typed as words it is saved as `&lt;br&gt;`. A table pasted whole gets its first row as its
   heading (`tidyPastedTables`), since a Markdown table always has one. Footnote marks are left as they came
   (`tidyMarkdown`).
+- **Code blocks** are coloured when they say their language (`components/text/codeLangs.ts` names the ones we
+  know, and the other ways each is written): highlight.js's grammars through lowlight (`highlight.ts`), which
+  gives the pieces as data, so nothing is put into the page as HTML. It is a file of its own, fetched by the
+  reader when a text has code to colour (`Code.tsx`) and with the editor, whose code block is the same node drawn
+  with colours (`@tiptap/extension-code-block-lowlight`; no guessing: a block that names no language is plain,
+  written as read). While written, a block has a small list of languages laid over its corner (`codeEditing.ts`),
+  which stands before the block and not in its text: something that isn't text at the start of a block's own text
+  confuses where the browser has the cursor. Read, the language's name is shown by the stylesheet and Copy is an
+  icon: the page holds the code's own letters only.
+- **A diagram written as text** is a code block that says `mermaid`, drawn (`diagram.ts`). Mermaid is large and is
+  fetched the first time a text with a diagram is shown. The drawing is shown as a picture (an image whose address
+  holds the SVG), not put into the page as SVG: a picture can't run or fetch anything whatever the diagram's text
+  says (descriptions never load pictures from elsewhere), and it has no words for the page, so the text shown
+  keeps the letters of the text saved (the diagram's code stays on the page, out of sight). Mermaid is also set to
+  its strict level with labels as plain text. While written, the drawing is under the block and is drawn again a
+  moment after the typing stops; what can't be read leaves the last drawing and says why (by the stylesheet).
 - **Sections fold while a text is read**, and nothing is saved for it (`components/text/folds.ts`): each heading
   has an arrow in the margin, and what is under a folded one (`foldedParts`: down to the next heading of its size)
   stays on the page, put away with `hidden="until-found"`, so the text shown still holds every letter (comments on

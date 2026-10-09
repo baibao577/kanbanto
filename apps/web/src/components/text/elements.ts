@@ -1,6 +1,7 @@
 import { Fragment, Slice, type Node as PMNode } from '@tiptap/pm/model'
 import type { EditorState, Transaction } from '@tiptap/pm/state'
 import { isInTable, selectedRect } from '@tiptap/pm/tables'
+import { CodeBlockLowlight } from '@tiptap/extension-code-block-lowlight'
 import { TaskItem, TaskList } from '@tiptap/extension-list'
 import { TableKit } from '@tiptap/extension-table'
 import { Markdown } from '@tiptap/markdown'
@@ -8,6 +9,8 @@ import { Node, ReactNodeViewRenderer, mergeAttributes } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import { CALLOUTS, calloutOf, isCalloutKind, type CalloutKind } from './callouts'
 import { CalloutView } from './CalloutView'
+import { CodeTools } from './codeEditing'
+import { colouring } from './highlight'
 
 // What the editor knows beyond the basics, each written to Markdown in a way other readers of Markdown know:
 // callouts (see callouts.tsx), and, for tables, which way a column lines up and what a pasted table needs.
@@ -198,8 +201,13 @@ export const textElements = ({ shared = false }: { shared?: boolean } = {}) => [
     heading: { levels: [1, 2, 3] },
     underline: false,
     link: { openOnClick: false, autolink: true, protocols: ['mailto'], defaultProtocol: 'https' },
+    // (A code block's words are coloured while it is written, as when it is read: the same block, drawn with
+    // colours, so nothing about the text or what several writers share is different.)
+    codeBlock: false,
     ...(shared && { undoRedo: false }),
   }),
+  CodeBlockLowlight.configure({ lowlight: colouring, defaultLanguage: null }),
+  CodeTools,
   TaskList,
   TaskItem.configure({ nested: true }),
   TableKit,

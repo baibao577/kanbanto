@@ -6,6 +6,7 @@ import type { CardRefs } from '@/app/card-refs'
 import { RichText } from '@/components/task/RichText'
 import { cn } from '@/lib/utils'
 import { CALLOUTS, calloutOf } from './callouts'
+import { Code } from './Code'
 import { foldsOver } from './folds'
 import { foldedParts, isBreak, lex, picturesNamed } from './mdText'
 
@@ -190,11 +191,7 @@ export function Markdown({ text, files, mentions, cards, onToggleTask, headingId
           </Fragment>
         )
       case 'code':
-        return (
-          <pre key={k}>
-            <code>{t.text}</code>
-          </pre>
-        )
+        return <Code key={k} text={t.text} lang={(t as Tokens.Code).lang} />
       case 'blockquote': {
         // A quote that starts with a callout's mark ("[!NOTE]") is a callout: a box of that kind.
         const box = calloutOf(t)

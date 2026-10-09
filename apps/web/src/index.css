@@ -281,6 +281,141 @@ html.dragging * {
   .md pre code {
     @apply bg-transparent p-0 text-inherit;
   }
+
+  /* A code block (see components/text/Code.tsx and codeEditing.ts): its language named at its top right (by the
+     stylesheet when read, as a small list when written), a button that shows while it is pointed at, and its words
+     coloured by kind when it says what language it is in. */
+  .md .md-code,
+  .md.ProseMirror pre {
+    @apply relative;
+  }
+  .md .md-code[data-lang]::before {
+    @apply pointer-events-none absolute top-1.5 right-9 font-sans text-[11px] leading-5 text-muted-foreground;
+    content: attr(data-lang);
+  }
+  .md .md-code[data-lang] > pre,
+  .md.ProseMirror pre {
+    @apply pt-7;
+  }
+  .md .md-code-tool {
+    @apply absolute top-1 right-1 z-[1] grid size-6 place-items-center rounded text-muted-foreground opacity-0 hover:bg-foreground/10 hover:text-foreground focus-visible:opacity-100;
+  }
+  .md .md-code-tool > svg {
+    @apply size-3.5;
+  }
+  .md :is(.md-code, .md-diagram):hover > .md-code-tool {
+    @apply opacity-100;
+  }
+  @media (hover: none) {
+    .md .md-code-tool {
+      @apply opacity-70;
+    }
+  }
+  /* (While written, the list of languages stands before its block, taking no room, and lies over the block's corner.) */
+  .md.ProseMirror .md-code-lang-at {
+    @apply relative z-[1] h-0;
+  }
+  .md.ProseMirror .md-code-lang-at + pre {
+    @apply mt-0;
+  }
+  .md.ProseMirror .md-code-lang {
+    @apply absolute top-1 right-1 h-5 max-w-40 cursor-pointer rounded border-0 bg-transparent px-1 font-sans text-[11px] text-muted-foreground outline-none hover:bg-foreground/10 hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring;
+  }
+  .hljs-comment,
+  .hljs-quote,
+  .hljs-meta {
+    color: var(--muted-foreground);
+  }
+  .hljs-comment,
+  .hljs-quote,
+  .hljs-emphasis {
+    font-style: italic;
+  }
+  .hljs-keyword,
+  .hljs-selector-tag,
+  .hljs-literal,
+  .hljs-section,
+  .hljs-doctag {
+    color: oklch(0.5 0.17 300);
+  }
+  .hljs-string,
+  .hljs-regexp,
+  .hljs-addition,
+  .hljs-selector-attr,
+  .hljs-selector-pseudo {
+    color: oklch(0.48 0.12 152);
+  }
+  .hljs-number,
+  .hljs-symbol,
+  .hljs-bullet,
+  .hljs-link {
+    color: oklch(0.55 0.14 60);
+  }
+  .hljs-title,
+  .hljs-name,
+  .hljs-selector-id,
+  .hljs-selector-class {
+    color: oklch(0.5 0.16 255);
+  }
+  .hljs-attr,
+  .hljs-attribute,
+  .hljs-variable,
+  .hljs-template-variable,
+  .hljs-type,
+  .hljs-built_in,
+  .hljs-params {
+    color: oklch(0.5 0.1 205);
+  }
+  .hljs-deletion {
+    color: oklch(0.55 0.19 27);
+  }
+  .hljs-strong {
+    font-weight: 600;
+  }
+  .dark :is(.hljs-keyword, .hljs-selector-tag, .hljs-literal, .hljs-section, .hljs-doctag) {
+    color: oklch(0.76 0.13 300);
+  }
+  .dark :is(.hljs-string, .hljs-regexp, .hljs-addition, .hljs-selector-attr, .hljs-selector-pseudo) {
+    color: oklch(0.78 0.12 152);
+  }
+  .dark :is(.hljs-number, .hljs-symbol, .hljs-bullet, .hljs-link) {
+    color: oklch(0.8 0.12 70);
+  }
+  .dark :is(.hljs-title, .hljs-name, .hljs-selector-id, .hljs-selector-class) {
+    color: oklch(0.76 0.12 255);
+  }
+  .dark :is(.hljs-attr, .hljs-attribute, .hljs-variable, .hljs-template-variable, .hljs-type, .hljs-built_in, .hljs-params) {
+    color: oklch(0.78 0.09 205);
+  }
+  .dark .hljs-deletion {
+    color: oklch(0.72 0.16 27);
+  }
+
+  /* A diagram written as text, drawn (see components/text/diagram.ts): a picture, as wide as the text at most. Why
+     one isn't drawn is said by the stylesheet (the page holds the text's own letters only). */
+  .md .md-diagram {
+    @apply relative mx-0 rounded-lg border bg-muted/30 p-3;
+  }
+  .md .md-diagram > img {
+    @apply mx-auto block h-auto max-w-full;
+  }
+  .md .md-diagram > img:not([src]) {
+    @apply hidden;
+  }
+  .md .md-diagram > pre {
+    @apply bg-transparent p-0;
+  }
+  .md .md-diagram[data-drawing]::after {
+    @apply block text-xs text-muted-foreground;
+    content: 'Drawing…';
+  }
+  .md .md-diagram[data-error]::after {
+    @apply mt-2 block text-xs text-destructive;
+    content: 'Not drawn: ' attr(data-error);
+  }
+  .md.ProseMirror .md-diagram {
+    @apply mt-1 select-none;
+  }
   .md blockquote {
     @apply border-l-2 pl-3 text-muted-foreground;
   }

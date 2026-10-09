@@ -79,6 +79,47 @@ While the cursor is in a table, a small bar sits on it:
 - **Paste cells from a spreadsheet** and they come in as a table, with their first row as its heading.
 - A table always has a heading row. Delete it, and the next row becomes the heading.
 
+## Code
+
+Type `/code`, or three backticks and <kbd>Enter</kbd>, for a block that keeps text exactly as typed: a command, a
+snippet, a piece of a file.
+
+Say what language it is in and its words are coloured by kind. Type the language right after the backticks
+(` ```ts ` and a space), or pick it from the small list at the block's top right while you write.
+
+![A code block read, with its language named and a button to copy it](/images/desc-9-code.webp)
+
+When the description is read, the block says its language, and a **copy** button appears as you point at it. It
+copies the code exactly as written.
+
+A block that doesn't say its language is shown plain. Nothing is guessed.
+
+## Diagrams
+
+A diagram can be written as text and is drawn for you. Make a code block, pick **Diagram (Mermaid)** from its list
+of languages (or type ` ```mermaid `), and write the diagram:
+
+```
+flowchart LR
+  A[Enquiry] --> B{Site visit?}
+  B -- yes --> C[Quote sent]
+  B -- no --> D[Estimate by phone]
+  C --> E[Booked]
+  D --> E
+```
+
+![The same text drawn as a flowchart](/images/desc-10-diagram.webp)
+
+- While you write, the drawing is under the text and follows it as you type. A line that can't be read yet leaves
+  the last drawing in place and says where it stopped.
+- When the description is read, only the drawing shows. Point at it for a button that shows its text.
+- It is Mermaid's way of writing diagrams: flowcharts, sequences, timelines, and more. An AI assistant writes it
+  well: ask for "a flowchart of how a quote becomes a job, as Mermaid", and paste what it gives you.
+- The text is what is saved, so the diagram can be edited by anyone who can edit the card, and GitHub draws the
+  same picture from it.
+- The part of Kanbanto that draws is fetched the first time you open a description with a diagram, so that first
+  one takes a moment.
+
 ## Pictures in the text
 
 Drop a picture into a description, or paste a screenshot, and it is **shown in the text**, on a line of its own.

@@ -5,6 +5,23 @@ then `git pull` (or download the new release) and `docker compose up -d --build`
 
 ## Unreleased
 
+- **Code with colours, and diagrams written as text.** A code block that says its language (` ```ts `, or picked
+  from the small list on the block while writing) has its words coloured by kind, read and written, and when read
+  it names its language and has a button that copies it. A block that says no language is plain: nothing is
+  guessed.
+
+  A code block that says `mermaid` is drawn as a diagram: a flowchart, a sequence, a timeline. While you write,
+  the drawing is under the text and follows it as you type; when read, the drawing shows, with its text one click
+  away. The text is what is saved, so assistants write diagrams, anyone who can edit the card can change one, and
+  GitHub draws the same picture. The part that draws is large and is fetched the first time a description with a
+  diagram is opened, never before. A diagram is shown as a picture, so nothing in its text can run or fetch
+  anything.
+
+  Upgrading adds three packages to the web app (Mermaid, lowlight and highlight.js); the built app is about 5 MB
+  larger on disk, and no larger to load until a description has code or a diagram.
+
+  The guides: **Code** and **Diagrams** on the page about writing a description.
+
 - **Fold a section away, and link to one.** Every heading of a description has a small arrow in the margin, while
   you read it and while you write it: click it and what is under that heading is put away, down to the next
   heading of its size. It is for you alone (nothing changes in the text, and someone writing it with you sees

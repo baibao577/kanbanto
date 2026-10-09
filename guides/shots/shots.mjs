@@ -2844,6 +2844,44 @@ await shot('desc-7-table', async () => {
 // (The writing is finished, so the next picture starts from a text nobody is in.)
 await page.keyboard.press('Escape').catch(() => {})
 
+// ── Code, and a diagram written as text ───────────────────────────────────────────────────────────
+await shot('desc-9-code', async () => {
+  const { id, card } = await aPage(
+    'sessions',
+    'How long a session lasts',
+    'Sessions are kept for 30 days. The rule is one line:\n\n```ts\n// keep sessions for 30 days\nconst days = 30\nexport const rule = { days, name: "office" }\n```\n\nRun it with:\n\n```sh\nnpm run sessions -- --days 30\n```',
+  )
+  await page.goto(`${SITE}/#/b/${id}/outline?task=${card}`)
+  await page.reload()
+  const dialog = page.getByRole('dialog').first()
+  await dialog.locator('.md .md-code .hljs-keyword').first().waitFor()
+  await dialog.locator('.md .md-code').first().hover()
+  await page.waitForTimeout(500)
+  await ring(dialog.locator('.md .md-code').first().getByRole('button', { name: 'Copy the code' }))
+  return around(
+    [dialog.getByText('Description', { exact: true }), dialog.getByRole('button', { name: 'Expand', exact: true }), dialog.locator('.md').first()],
+    28,
+  )
+})
+await shot('desc-10-diagram', async () => {
+  const { id, card } = await aPage(
+    'enquiry',
+    'From enquiry to booking',
+    'How an enquiry becomes a job.\n\n```mermaid\nflowchart LR\n  A[Enquiry] --> B{Site visit?}\n  B -- yes --> C[Quote sent]\n  B -- no --> D[Estimate by phone]\n  C --> E[Booked]\n  D --> E\n```\n\nEveryone books in the diary.',
+  )
+  await page.goto(`${SITE}/#/b/${id}/outline?task=${card}`)
+  await page.reload()
+  const dialog = page.getByRole('dialog').first()
+  const drawing = dialog.locator('.md .md-diagram img')
+  await drawing.waitFor()
+  await page.waitForFunction(() => document.querySelector('[role=dialog] .md .md-diagram img')?.naturalWidth > 0)
+  await page.waitForTimeout(500)
+  return around(
+    [dialog.getByText('Description', { exact: true }), dialog.getByRole('button', { name: 'Expand', exact: true }), dialog.locator('.md').first()],
+    28,
+  )
+})
+
 // ── A section folded away ──────────────────────────────────────────────────────────────────────────
 await shot('desc-8-fold', async () => {
   const { id } = await theHandbook()
