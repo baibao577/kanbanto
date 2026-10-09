@@ -1,9 +1,13 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
-import type { Passage } from '@kanbanto/model/passages'
+import { locate, type Passage } from '@kanbanto/model/passages'
 import { letterAtPoint, lettersOf, mark, passageOf, placesOf, rangeOf, type Letters } from '@/components/text/passages'
 import type { Thread } from '@/data/cardComments'
 
-/** The words a comment is being written about, before it is posted: where they are among the text's letters. */
+/**
+ * The words a comment is being written about, before it is posted: where they were among the text's letters when
+ * they were selected. (The text can change before the comment is posted, when it is being written, by this person
+ * or by others: `usePassages` then looks for the words again, as it does for a posted comment's.)
+ */
 export interface Pending {
   passage: Passage
   start: number
@@ -34,6 +38,13 @@ export function usePassages({
 }) {
   /** Each open comment's place, by its id (not there: its words aren't in the text). Null until first looked. */
   const [places, setPlaces] = useState<Map<string, { start: number; end: number }> | null>(null)
+  // Where the words being commented on are now, once the text has changed since they were selected (null: no
+  // longer in it).
+  const [moved, setMoved] = useState<{ of: Pending; at: { start: number; end: number } | null } | null>(null)
+  const picked = useRef(pending)
+  useEffect(() => {
+    picked.current = pending
+  })
   const letters = useRef<Letters | null>(null)
   const open = threads.filter((t) => !t.root.resolved)
   // (What decides the places: the text, and which words are looked for.)
@@ -45,6 +56,7 @@ export function usePassages({
     const frame = requestAnimationFrame(() => {
       const el = root()
       if (!el) return
+      const before = letters.current?.text
       letters.current = lettersOf(el)
       setPlaces(
         placesOf(
@@ -52,6 +64,8 @@ export function usePassages({
           open.map((t) => ({ key: t.root.id, passage: t.root.passage })),
         ),
       )
+      const p = picked.current
+      if (p && before !== undefined && before !== letters.current.text) setMoved({ of: p, at: locate(letters.current.text, p.passage) })
     })
     return () => cancelAnimationFrame(frame)
     // oxlint-disable-next-line react-hooks/exhaustive-deps -- `open` and `root` are read as they are when it runs
@@ -66,9 +80,9 @@ export function usePassages({
     const shown = on && places ? [...places].filter(([id]) => id !== active).map(([, at]) => range(at)) : []
     mark('passage', some(shown))
     mark('passage-active', some([on && places && active ? range(places.get(active)) : null]))
-    mark('passage-new', some([on && pending ? range(pending) : null]))
+    mark('passage-new', some([on && pending ? range(moved?.of === pending ? moved.at : pending) : null]))
     // oxlint-disable-next-line react-hooks/exhaustive-deps -- `root` is read as it is when it runs
-  }, [places, active, pending, on])
+  }, [places, active, pending, moved, on])
   useEffect(
     () => () => {
       for (const name of ['passage', 'passage-active', 'passage-new']) mark(name, [])

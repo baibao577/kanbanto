@@ -71,6 +71,19 @@ export function lettersBefore(root: HTMLElement, letters: Letters, node: Node, o
 }
 
 /**
+ * The part of a selection that is in the text shown in `root`. A selection often reaches past the text: three
+ * clicks select a paragraph up to the start of whatever comes after it (after the last paragraph, that is outside
+ * the text), a drag can end above the text, and "select all" takes the whole page. Null: none of it is in the text.
+ */
+export function partIn(root: HTMLElement, selected: Range): Range | null {
+  if (selected.collapsed || !selected.intersectsNode(root)) return null
+  const part = selected.cloneRange()
+  if (!root.contains(part.startContainer)) part.setStart(root, 0)
+  if (!root.contains(part.endContainer)) part.setEnd(root, root.childNodes.length)
+  return part.collapsed ? null : part
+}
+
+/**
  * The passage for words someone selected in `root`: the words as they read, and where they are among its letters.
  * Null when nothing of the text is selected.
  */

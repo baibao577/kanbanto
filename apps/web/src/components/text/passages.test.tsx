@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import { locate, squeeze } from '@kanbanto/model/passages'
 import { Markdown } from './Markdown'
-import { lettersBefore, lettersOf, passageOf, placesOf, rangeOf } from './passages'
+import { lettersBefore, lettersOf, partIn, passageOf, placesOf, rangeOf } from './passages'
 
 const TEXT = `## What we recommend
 
@@ -110,6 +110,55 @@ describe('the words comments are about, on the page', () => {
     const outside = document.createRange()
     outside.selectNodeContents(document.body.appendChild(document.createElement('p')))
     expect(passageOf(root, letters, outside, 'x')).toBeNull()
+  })
+
+  it('a selection that reaches past the text counts for the words of it that are in the text', () => {
+    // The page around the text: a heading over it, and something after it.
+    const root = shown()
+    const page = document.createElement('main')
+    const title = page.appendChild(document.createElement('h1'))
+    title.textContent = 'How long a session lasts'
+    document.body.replaceChildren(page)
+    page.append(root)
+    const after = page.appendChild(document.createElement('span'))
+    after.textContent = 'Close'
+    const letters = lettersOf(root)
+    const lastCell = [...root.querySelectorAll('td')].at(-1)!
+
+    // Three clicks on the last paragraph: from its first letter to the start of whatever comes after the text.
+    const three = document.createRange()
+    three.setStart(lastCell.firstChild!, 0)
+    three.setEnd(after, 0)
+    expect(passageOf(root, letters, three, '30 days')).toBeNull()
+    const cell = partIn(root, three)!
+    expect(cell.toString()).toBe('30 days')
+    expect(letters.text.slice(passageOf(root, letters, cell, '30 days')!.start)).toBe('30days')
+
+    // A drag that ends above the text: from the page's heading to words in the text.
+    const up = document.createRange()
+    up.setStart(title.firstChild!, 4)
+    up.setEnd(stretch(root, 'Renew the session').endContainer, stretch(root, 'Renew the session').endOffset)
+    const top = passageOf(root, letters, partIn(root, up)!, 'What we recommend\n\nRenew the session')!
+    expect(top.start).toBe(0)
+    expect(letters.text.slice(top.start, top.end)).toBe('WhatwerecommendRenewthesession')
+
+    // "Select all": the whole page, of which the text is a part.
+    const all = document.createRange()
+    all.selectNodeContents(page)
+    const whole = partIn(root, all)!
+    expect(lettersBefore(root, letters, whole.startContainer, whole.startOffset)).toBe(0)
+    expect(lettersBefore(root, letters, whole.endContainer, whole.endOffset)).toBe(letters.text.length)
+
+    // A selection inside the text is itself, and one that is all outside it has no part in it.
+    const inside = stretch(root, 'ask for the password')
+    expect(partIn(root, inside)!.toString()).toBe('ask for the password')
+    const outside = document.createRange()
+    outside.selectNodeContents(title)
+    expect(partIn(root, outside)).toBeNull()
+    const nothing = document.createRange()
+    nothing.setStart(inside.startContainer, inside.startOffset)
+    nothing.collapse(true)
+    expect(partIn(root, nothing)).toBeNull()
   })
 
   it('a passage moves with its words when the text around them changes, and is gone when they are rewritten', () => {

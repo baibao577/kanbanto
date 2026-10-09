@@ -8,9 +8,9 @@ Everyone who can open the board can do this, viewers too. Nobody needs to be abl
 ## Comment on some words
 
 1. Open the article full page: open the card and click **Expand**.
-2. Select the words you mean. A **Comment** button appears under them.
+2. Select the words you mean. A **Comment** button appears by them.
 
-   ![Words selected in an article, with the Comment button under them](/images/km-8-select.webp)
+   ![Words selected in an article, with the Comment button by them](/images/km-8-select.webp)
 
 3. Click it, write your comment, and press <kbd>⌘Enter</kbd> (<kbd>Ctrl+Enter</kbd>) or click **Comment**.
 
@@ -66,8 +66,9 @@ yours, you get one line saying so.
 
 ## Good to know
 
-- Comments are made while reading. While you write (**Edit**), the marks and the comments stay in view, but
-  selecting words doesn't offer **Comment**.
+- You can comment while you write, too (**Edit**): select the words and click **Comment**, as when you read. The
+  marks and the comments stay in view, and the words you chose stay marked while you, or others, go on writing.
+  Words you typed a moment ago are saved first, so the comment is about words everyone has.
 - A visitor with the public link reads the comments and can't add any.
 - Deleting a comment on the text deletes the answers to it.
 - An earlier version of the article, read under **Versions**, isn't marked.

@@ -148,8 +148,7 @@ export function DescriptionReader({
     threads: notes?.comments.threads ?? [],
     text: shown,
     active,
-    // (Words selected to comment on are let go when the writing starts.)
-    pending: writing ? null : pending,
+    pending,
     on: !!notes && !past?.picked,
   })
   /** Brings a comment's words into view in the text. */
@@ -386,17 +385,20 @@ export function DescriptionReader({
                 setActive(id)
                 showWords(id)
               }}
-              pending={writing ? null : pending}
+              pending={pending}
               onPending={setPending}
               onClose={() => setBeside(false)}
             />
           )}
-          {notes?.canComment && !writing && !past?.picked && (
+          {notes?.canComment && !past?.picked && (
             <SelectionButton
-              within={words}
+              text={textRoot}
               onPick={(range, said) => {
                 const picked = marks.selected(range, said)
                 if (!picked) return
+                // (Words selected while writing may have been typed a moment ago: they are saved now, so the
+                // comment is about words everyone has.)
+                if (writing) onSave()
                 setPending(picked)
                 setActive(null)
                 setBeside(true)

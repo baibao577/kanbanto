@@ -373,7 +373,12 @@ The app uses hash routing, so any static host or proxy works without rewrite rul
   stays with the card's comments. The marks are the browser's own highlights (`CSS.highlights`, coloured in
   `index.css` with `::highlight()`), set from ranges worked out over the shown text (`components/text/passages.ts`:
   `lettersOf`, `rangeOf`), so what React or the editor has put on the page is never touched; a browser without
-  them shows no marks and everything else still works. Such a comment starts a thread: an answer is a comment with
+  them shows no marks and everything else still works. Words are chosen by selecting them, in the text as read
+  or as written (the letters are the same): `SelectionButton` offers Comment for the part of the selection that
+  is in the text (`partIn`: three clicks on the last paragraph, a drag that ends above the text and "select all"
+  reach past it); words selected while writing are saved first, and the ones a comment is being written about
+  are looked for again when the text changes under them, as a posted comment's are. Such a comment starts a
+  thread: an answer is a comment with
   `parent_id` (always the thread's first comment; answers go when it does), and `resolved_at` / `resolved_by` say
   it is settled (`PUT …/comments/:commentId/resolved`; a new answer opens it again). It is told like any comment
   (followers, the people mentioned), with the quoted words on the bell's line, which opens the full page at them

@@ -5,8 +5,9 @@ then `git pull` (or download the new release) and `docker compose up -d --build`
 
 ## Unreleased
 
-- **Comment on the words of a description.** Open a description full page (**Expand**), select some words, and
-  click **Comment**. The words are marked in the text and the comment sits beside it. Others **Reply** under it,
+- **Comment on the words of a description.** Open a description full page (**Expand**), select some words,
+  while you read it or while you write it, and click **Comment**. The words are marked in the text and the
+  comment sits beside it. Others **Reply** under it,
   and **Resolve** folds it away when it is settled (**Reopen**, or a new answer, brings it back). Everyone who can
   comment can do all of it, viewers too: nobody has to be able to edit the card.
 

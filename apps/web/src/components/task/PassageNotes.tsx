@@ -1,10 +1,11 @@
 import { CaretDown, CaretRight, ChatCircleText, X } from '@phosphor-icons/react'
-import { useEffect, useRef, useState, type RefObject } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { quoteLine } from '@kanbanto/model/passages'
 import { useBoard } from '@/app/board-context'
 import { Button } from '@/components/ui/button'
 import type { CardComments, Thread } from '@/data/cardComments'
 import type { CardFiles } from '@/data/cardFiles'
+import { partIn } from '@/components/text/passages'
 import { cn } from '@/lib/utils'
 import { Composer, PassageThread } from './Comments'
 import type { Pending } from './usePassages'
@@ -13,21 +14,31 @@ import type { Pending } from './usePassages'
 // text, the comments sit beside it in the order of the text, and selecting words offers to comment on them. (What a
 // comment keeps of its words and how they are found again: the model's passages.ts. The marking: text/passages.ts.)
 
+/** What is selected of the text shown in an element, just now (see `partIn`). Null: none of its words. */
+function selectedIn(el: HTMLElement | null): Range | null {
+  const sel = window.getSelection()
+  if (!el || !sel || sel.isCollapsed || !sel.rangeCount) return null
+  const part = partIn(el, sel.getRangeAt(0))
+  return part?.toString().trim() ? part : null
+}
+
 /**
- * The button that appears by words selected in the text ("Comment"), wherever the selection ends. `within`: the
- * element the words must be in. It keeps the selection while it is pressed, and hands it over.
+ * The button that appears by words selected in the text ("Comment"), read or written. `text`: the element the text
+ * is shown in. What is selected of it counts: a selection that also takes something around the text (see `partIn`)
+ * offers the button for the words that are in it. It keeps the selection while it is pressed, and hands it over.
  */
-export function SelectionButton({ within, onPick }: { within: RefObject<HTMLElement | null>; onPick: (range: Range, words: string) => void }) {
+export function SelectionButton({ text, onPick }: { text: () => HTMLElement | null; onPick: (range: Range, words: string) => void }) {
   const [at, setAt] = useState<{ x: number; y: number } | null>(null)
+  const root = useRef(text)
+  useEffect(() => {
+    root.current = text
+  })
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout> | undefined
     let pressed = false
     const look = () => {
-      const el = within.current
-      const sel = window.getSelection()
-      if (!el || !sel || sel.isCollapsed || !sel.rangeCount || !sel.toString().trim()) return setAt(null)
-      const range = sel.getRangeAt(0)
-      if (!el.contains(range.startContainer) || !el.contains(range.endContainer)) return setAt(null)
+      const range = selectedIn(root.current())
+      if (!range) return setAt(null)
       const rects = range.getClientRects()
       const first = rects[0] ?? range.getBoundingClientRect()
       const last = rects[rects.length - 1] ?? first
@@ -66,7 +77,7 @@ export function SelectionButton({ within, onPick }: { within: RefObject<HTMLElem
       document.removeEventListener('pointerup', up)
       window.removeEventListener('scroll', hide, true)
     }
-  }, [within])
+  }, [])
   if (!at) return null
   return (
     <Button
@@ -82,8 +93,16 @@ export function SelectionButton({ within, onPick }: { within: RefObject<HTMLElem
       onMouseDown={(e) => e.preventDefault()}
       onClick={() => {
         const sel = window.getSelection()
-        if (!sel?.rangeCount) return setAt(null)
-        onPick(sel.getRangeAt(0).cloneRange(), sel.toString())
+        const range = selectedIn(text())
+        if (!sel || !range) return setAt(null)
+        // (The words as they read, with their spaces and lines: what the selection says. Of a selection that took
+        // more than the text, only the part in it is asked.)
+        const whole = sel.getRangeAt(0)
+        if (whole.compareBoundaryPoints(Range.START_TO_START, range) || whole.compareBoundaryPoints(Range.END_TO_END, range)) {
+          sel.removeAllRanges()
+          sel.addRange(range)
+        }
+        onPick(range.cloneRange(), sel.toString())
         sel.removeAllRanges()
         setAt(null)
       }}
