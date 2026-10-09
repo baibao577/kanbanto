@@ -119,6 +119,8 @@ export async function sendDigests(app: FastifyInstance, now = new Date()) {
             eq(notifications.userId, u.id),
             inArray(notifications.kind, ['mention', 'comment', 'change', 'rule']),
             isNull(notifications.readAt),
+            // (Not the ones they turned back to unread themselves: they know about those.)
+            isNull(notifications.keptAt),
             isNull(notifications.emailedAt),
             // (Only from boards they can still open: what's quoted is read now, not when they were mentioned.)
             boardIds.length ? inArray(notifications.boardId, boardIds) : sql`false`,

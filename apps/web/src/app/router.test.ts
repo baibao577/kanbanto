@@ -41,6 +41,10 @@ describe('router', () => {
       ['#/cards', { page: 'cards', state: 'active' }],
       ['#/time', { page: 'time' }],
       ['#/time?week=2026-09-28', { page: 'time', week: '2026-09-28' }],
+      // The page of all your notifications, narrowed or not.
+      ['#/notifications', { page: 'notifications' }],
+      ['#/notifications?show=unread&board=abc', { page: 'notifications', show: 'unread', board: 'abc' }],
+      ['#/notifications?show=mentions', { page: 'notifications', show: 'mentions' }],
       ['#/cards?state=archived&board=b1&q=old+idea&completed=yes', { page: 'cards', state: 'archived', board: 'b1', q: 'old idea', completed: true }],
       ['#/cards?state=all&assignee=me&when=done&range=this-week', { page: 'cards', state: 'all', assignee: 'me', when: 'done', range: 'this-week' }],
       [

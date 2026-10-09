@@ -359,6 +359,8 @@ export async function afterBoardChange(
             eq(notifications.taskId, taskId),
             eq(notifications.actorId, actorId),
             isNull(notifications.readAt),
+            // (Not a line they turned back to unread to come back to: that one stays as they left it.)
+            isNull(notifications.keptAt),
             isNull(notifications.emailedAt),
             gt(notifications.createdAt, since),
           ),

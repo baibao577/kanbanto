@@ -42,6 +42,7 @@ const MyWeek = lazy(() => import('@/components/time/MyWeek'))
 const CardPeek = lazy(() => import('@/components/cards/CardPeek').then((m) => ({ default: m.CardPeek })))
 const MoveToBoardDialog = lazy(() => import('@/components/task/MoveToBoardDialog').then((m) => ({ default: m.MoveToBoardDialog })))
 const CardsView = lazy(() => import('@/components/cards/CardsView').then((m) => ({ default: m.CardsView })))
+const NotificationsPage = lazy(() => import('@/components/notifications/NotificationsPage').then((m) => ({ default: m.NotificationsPage })))
 const ShareDialog = lazy(() => import('@/components/share/ShareDialog').then((m) => ({ default: m.ShareDialog })))
 const AccountView = lazy(() => import('@/components/account/AccountView').then((m) => ({ default: m.AccountView })))
 const AddView = lazy(() => import('@/components/add/AddView').then((m) => ({ default: m.AddView })))
@@ -202,6 +203,13 @@ export default function App() {
       return (
         <Suspense fallback={null}>
           <CardsView route={route} />
+        </Suspense>
+      )
+    case 'notifications':
+      if (!user) return <Redirect to={{ page: 'signin', next: here() }} />
+      return (
+        <Suspense fallback={null}>
+          <NotificationsPage key={`${route.show ?? ''}|${route.board ?? ''}`} route={route} />
         </Suspense>
       )
     case 'workspace':

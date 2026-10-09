@@ -631,6 +631,38 @@ await shot('follow', async () => {
     24,
   )
 })
+await shot('notifications-page', async () => {
+  // Ben writes to Ann and changes cards she follows: her page has a mention, comments and changes, some read, and
+  // one read line turned back to unread.
+  const me = (await api(ann, 'GET', '/auth/me')).user
+  await api(benCtx, 'POST', `/boards/${board}/tasks/analytics/comments`, { body: `@${me.name} which pages do we count first?`, mentions: [me.id] })
+  await api(benCtx, 'POST', `/boards/${board}/tasks/newsletter/comments`, { body: 'The sign-up box is on the home page now. Have a look?' })
+  await api(benCtx, 'POST', `/boards/${board}/mutations`, {
+    mutationId: `g${stamp}-ben-${n++}`,
+    command: { type: 'task.update', id: 'newsletter', fields: { due: day(3) } },
+  })
+  const told = (await api(ann, 'GET', '/notifications?limit=50')).notifications
+  await api(ann, 'POST', '/notifications/read', { ids: told.slice(2).map((x) => x.id) })
+  if (told[3]) await api(ann, 'PUT', `/notifications/${told[3].id}/read`, { read: false })
+  await page.goto(`${SITE}/#/notifications`)
+  await page.reload()
+  await page.getByRole('heading', { name: 'Notifications', level: 1 }).waitFor()
+  const lines = page.locator('main ul > li')
+  await lines.first().waitFor()
+  await page.waitForTimeout(400)
+  // (A read line is pointed at: it offers "Mark as unread".)
+  const read = lines.filter({ has: page.locator('button', { hasText: 'Mark as unread' }) }).first()
+  if (await read.count()) await read.hover()
+  await page.waitForTimeout(300)
+  return around(
+    [
+      page.getByRole('heading', { name: 'Notifications', level: 1 }),
+      page.locator('main section').last(),
+      page.getByRole('button', { name: 'Mark all as read' }),
+    ],
+    28,
+  )
+})
 await shot('notifications', async () => {
   await page.goto(`${SITE}/#/account/notifications`)
   await page.reload()

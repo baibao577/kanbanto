@@ -104,6 +104,7 @@ export async function tellByRules(
               eq(notifications.ruleId, rule.id),
               eq(notifications.actorId, e.userId),
               isNull(notifications.readAt),
+              isNull(notifications.keptAt),
               isNull(notifications.emailedAt),
               gt(notifications.createdAt, since),
             ),

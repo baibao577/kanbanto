@@ -344,8 +344,40 @@ The answer lists the records that changed.
       '/api/notifications': {
         get: {
           tags: ['You'],
-          summary: 'Your notifications (the bell)',
-          responses: { 200: json(obj({ notifications: { type: 'array' }, unread: { type: 'integer' } })) },
+          summary: 'Your notifications (the bell, and the page of them all)',
+          description:
+            'Newest first. Without parameters: the newest 30, as the bell shows. `limit` and `before` page back through all of them (`before` is the `next` of the page before; `next` is null on the last). `unread` in the answer counts every unread one, whatever is asked for. Each notification says `read`, and `kept` when you turned it back to unread yourself. Read ones are removed three months after they came; unread ones stay.',
+          parameters: [
+            { name: 'limit', in: 'query', schema: { type: 'integer', minimum: 1, maximum: 100, default: 30 } },
+            { name: 'before', in: 'query', schema: { ...str, description: 'Where to go on from: the `next` of the page before.' } },
+            { name: 'unread', in: 'query', schema: { type: 'string', enum: ['1'], description: 'Only the unread ones.' } },
+            { name: 'mentions', in: 'query', schema: { type: 'string', enum: ['1'], description: 'Only @mentions of you.' } },
+            { name: 'board', in: 'query', schema: { ...str, description: 'Only from this board.' } },
+          ],
+          responses: {
+            200: json(obj({ notifications: { type: 'array' }, unread: { type: 'integer' }, next: { type: 'string', nullable: true } })),
+          },
+        },
+      },
+      '/api/notifications/read': {
+        post: {
+          tags: ['You'],
+          summary: 'Mark notifications read',
+          description:
+            'With `ids`: those. Without: all that are new. The ones you turned back to unread yourself (`kept`) stay: mark those read one by one.',
+          requestBody: { content: { 'application/json': { schema: obj({ ids: { type: 'array', items: str, maxItems: 100 } }) } } },
+          responses: { 200: json(obj({ ok: { type: 'boolean' } })) },
+        },
+      },
+      '/api/notifications/{notificationId}/read': {
+        put: {
+          tags: ['You'],
+          summary: 'Turn a notification back to unread, or mark it read',
+          description:
+            '`read: false` turns it back to unread, to come back to: it counts as unread again, nothing more is added to it, and the morning summary leaves it out. `read: true` marks it read.',
+          parameters: [id('notificationId')],
+          requestBody: { content: { 'application/json': { schema: obj({ read: { type: 'boolean' } }) } } },
+          responses: { 200: json(obj({ ok: { type: 'boolean' } })), 404: { description: 'Not one of yours, or no longer there' } },
         },
       },
       '/api/boards': {

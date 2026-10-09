@@ -5,6 +5,22 @@ then `git pull` (or download the new release) and `docker compose up -d --build`
 
 ## Unreleased
 
+- **A page of your notifications, and "Mark as unread".** The bell shows the newest 30 lines; **See all**, at its
+  foot, opens a page with all of them, newest first under the day they came, narrowed to the unread, to mentions of
+  you, or to one board. A line you have read can be turned back to unread, to come back to, on the page and under
+  the bell: it counts again and stays until you open it or mark it read. **Mark all as read** leaves the lines you
+  kept that way, nothing more is added to them, and the morning summary doesn't send them again.
+
+  Lines you have read are now removed three months after they came; until now they were kept for good, with
+  nowhere to see them. What is unread stays, however old. The first clean-up after upgrading removes the read lines
+  that are older than that.
+
+  For apps: `GET /api/notifications` takes `limit`, `before`, `unread`, `mentions` and `board`, and answers with
+  `next`; each notification says `kept`; `PUT /api/notifications/:id/read` turns one back to unread or marks it
+  read. Upgrading adds one column to one table.
+
+  The guides: **All your notifications** on the page about notifications.
+
 - **Code with colours, and diagrams written as text.** A code block that says its language (` ```ts `, or picked
   from the small list on the block while writing) has its words coloured by kind, read and written, and when read
   it names its language and has a button that copies it. A block that says no language is plain: nothing is

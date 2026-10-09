@@ -870,6 +870,11 @@ export const notifications = pgTable(
     said: jsonb('said').$type<RuleNotice>(),
     createdAt: at('created_at').notNull().defaultNow(),
     readAt: at('read_at'),
+    /**
+     * They turned this line back to unread themselves, to come back to it: it is theirs from then on. Nothing more
+     * is added to it, it isn't mailed (again), and "Mark all as read" leaves it. Empty again once it is read.
+     */
+    keptAt: at('kept_at'),
     /** Included in a daily email summary. */
     emailedAt: at('emailed_at'),
   },

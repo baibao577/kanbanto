@@ -17,6 +17,33 @@ The bell at the top right shows:
 
 Click one to open the card. **Mark all as read** clears the count.
 
+The bell shows the newest 30. **See all**, at its foot, opens the page with the rest.
+
+## All your notifications
+
+The page lists everything you were told, newest first, under the day it came.
+
+![The page of notifications, with one line kept as unread](/images/notifications-page.webp)
+
+- **All**, **Unread** and **Mentions** narrow the list; so does choosing a **board**.
+- Click a line to open what it is about. It is then read.
+- **Show earlier ones**, at the foot, goes further back.
+
+### Keep one for later
+
+Read something you still have to do something about? Point at the line and click **Mark as unread** (on a phone, it
+is under the line's **…**). The same works on a line under the bell.
+
+- The line counts under the bell again, and is under **Unread**, until you open it or mark it read.
+- It has a ring where new lines have a dot, so you can tell what you kept from what is new.
+- **Mark all as read** leaves the lines you kept. Clear each one when you have dealt with it.
+- Nothing more is added to a line you kept, and the morning summary doesn't send it again.
+
+### How far back
+
+Lines you have read are removed three months after they came. What is still unread stays, however old, until you
+deal with it.
+
 ## Cards you follow
 
 You follow a card when you are part of it: you made it, it is assigned to you, you commented on it, or someone

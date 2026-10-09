@@ -402,6 +402,15 @@ The app uses hash routing, so any static host or proxy works without rewrite rul
 
 - Every card has a live comment thread. Everyone on the board can comment, viewers included (not visitors with the
   public link).
+- **Notifications** are rows of one table (`notifications`), read by one address (`GET /api/notifications` in
+  `routes/comments.ts`): the bell asks for the newest 30, and the page of them all (`#/notifications`,
+  `components/notifications/NotificationsPage.tsx`) pages back with `limit` and `before`, narrowed to the unread,
+  to mentions or to a board. Both show a line with the same words (`shell/NotificationText.tsx`) and tell each
+  other when one changes something (`data/notifications.ts`). A line can be turned back to unread, to come back to
+  (`kept_at`, `PUT /api/notifications/:id/read`): it is the person's own from then on, so nothing more is added to
+  it (where news about one card is otherwise gathered into its unread line), the morning summary leaves it out,
+  and "Mark all as read" leaves it. Read lines are removed three months after they came (`pruneNotifications`,
+  with the other clean-ups in `main.ts`); unread ones stay.
 - **@mentions** (of board members) show under the bell. In a comment, the app says who was picked; in a description,
   the server compares the text before and after a change and tells only the people whose `@Name` is new (never the
   person writing, and not when undo puts a mention back).

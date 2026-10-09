@@ -1,8 +1,8 @@
-import type { CommentView, NotificationView } from '@kanbanto/model/api'
+import { NOTIFICATIONS_KEPT_MONTHS, type CommentView, type NotificationView } from '@kanbanto/model/api'
 import { newId } from '@kanbanto/model/ids'
 import { PassageSchema, quoteLine, tidyPassage, type Passage } from '@kanbanto/model/passages'
 import { isReaction, REACTIONS, type ReactionView } from '@kanbanto/model/reactions'
-import { and, desc, eq, ilike, inArray, isNull, or, sql } from 'drizzle-orm'
+import { and, desc, eq, ilike, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm'
 import { alias } from 'drizzle-orm/pg-core'
 import type { FastifyInstance, FastifyPluginAsync } from 'fastify'
 import { z } from 'zod'
@@ -331,6 +331,16 @@ export async function postComment(
   return comment
 }
 
+/**
+ * Notifications that have been read are kept for a few months (NOTIFICATIONS_KEPT_MONTHS), counted from when they
+ * came. What is still unread stays, however old: a line someone means to come back to never goes by itself.
+ */
+export async function pruneNotifications(db: Db) {
+  await db
+    .delete(notifications)
+    .where(and(isNotNull(notifications.readAt), sql`${notifications.createdAt} < now() - make_interval(months => ${NOTIFICATIONS_KEPT_MONTHS})`))
+}
+
 export const commentRoutes: FastifyPluginAsync = async (app) => {
   /** A card's comments (anyone who can view the board can read them). */
   app.get('/boards/:id/tasks/:taskId/comments', async (req) => {
@@ -481,7 +491,7 @@ export const commentRoutes: FastifyPluginAsync = async (app) => {
         if (open)
           await tx
             .update(notifications)
-            .set({ actorId: me.id, createdAt: sql`now()`, readAt: null })
+            .set({ actorId: me.id, createdAt: sql`now()`, readAt: null, keptAt: null })
             .where(eq(notifications.id, open.id))
         else
           await tx
@@ -506,11 +516,32 @@ export const commentRoutes: FastifyPluginAsync = async (app) => {
 
   // ── The bell ────────────────────────────────────────────────────────────
 
+  /**
+   * Your notifications, newest first: the newest 30 for the bell, or a page of them with `limit`, going further back
+   * with `before` (the `next` of the page before). Narrowed with `unread`, `mentions` (only @mentions of you) and
+   * `board`. `unread` in the answer is how many are unread in all, whatever is asked for.
+   */
   app.get('/notifications', async (req) => {
     const me = requireUser(req.user)
-    const rows = await app.db
+    const q = parse(
+      z.object({
+        limit: z.coerce.number().int().min(1).max(100).default(30),
+        before: z
+          .string()
+          .regex(/^[0-9T:.+ -]{10,40}\|[0-9a-f-]{36}$/)
+          .optional(),
+        unread: z.enum(['1']).optional(),
+        mentions: z.enum(['1']).optional(),
+        board: z.string().max(64).optional(),
+      }),
+      req.query,
+    )
+    // (Where the page before ended: a moment as the database keeps it, to the microsecond, and that line's id.)
+    const [stamp, last] = q.before?.split('|') ?? []
+    const found = await app.db
       .select({
         n: notifications,
+        stamp: sql<string>`${notifications.createdAt}::text`,
         actor: users.name,
         boardName: boards.name,
         workspaceName: workspaces.name,
@@ -528,10 +559,20 @@ export const commentRoutes: FastifyPluginAsync = async (app) => {
       .leftJoin(users, eq(users.id, notifications.actorId))
       .leftJoin(tasks, and(eq(tasks.boardId, notifications.boardId), eq(tasks.id, notifications.taskId)))
       .leftJoin(comments, eq(comments.id, notifications.commentId))
-      .where(eq(notifications.userId, me.id))
+      .where(
+        and(
+          eq(notifications.userId, me.id),
+          q.unread ? isNull(notifications.readAt) : undefined,
+          q.mentions ? eq(notifications.kind, 'mention') : undefined,
+          q.board ? eq(notifications.boardId, q.board) : undefined,
+          stamp ? sql`(${notifications.createdAt}, ${notifications.id}) < (${stamp}::timestamptz, ${last}::uuid)` : undefined,
+        ),
+      )
       // (Lines written in the same moment, as two rules' are for one change, keep the order they were written in.)
       .orderBy(desc(notifications.createdAt), desc(notifications.id))
-      .limit(30)
+      .limit(q.limit + 1)
+    const rows = found.slice(0, q.limit)
+    const next = found.length > q.limit && rows.length ? `${rows.at(-1)!.stamp}|${rows.at(-1)!.n.id}` : null
     const [{ unread }] = await app.db
       .select({ unread: sql<number>`count(*)::int` })
       .from(notifications)
@@ -556,7 +597,13 @@ export const commentRoutes: FastifyPluginAsync = async (app) => {
       return quote && commentId ? { about: quoteLine(quote, 70), thread: parentId ?? commentId } : {}
     }
     const lines = rows.map((r): NotificationView | null => {
-      const common = { id: r.n.id, actor: r.actor ?? 'Someone', createdAt: r.n.createdAt.toISOString(), read: !!r.n.readAt }
+      const common = {
+        id: r.n.id,
+        actor: r.actor ?? 'Someone',
+        createdAt: r.n.createdAt.toISOString(),
+        read: !!r.n.readAt,
+        kept: !r.n.readAt && !!r.n.keptAt,
+      }
       const can = !!r.n.boardId && open.has(r.n.boardId)
       if (r.n.boardId && r.boardName !== null && !can) {
         if (r.n.kind === 'added') return { ...common, kind: 'added', board: null, workspace: null }
@@ -635,7 +682,7 @@ export const commentRoutes: FastifyPluginAsync = async (app) => {
         : { ...common, kind: 'mention', where: 'description', ...on, excerpt: excerpt(mentionLine(r.description, me.name)) }
     })
     const items = lines.filter((n): n is NotificationView => !!n)
-    return { notifications: items, unread }
+    return { notifications: items, unread, next }
   })
 
   // ── Following a card ────────────────────────────────────────────────────
@@ -666,14 +713,34 @@ export const commentRoutes: FastifyPluginAsync = async (app) => {
     return { following }
   })
 
-  /** Marks notifications read (all of them without `ids`). */
+  /**
+   * Marks notifications read: the ones named, or, without `ids`, all that are new. "All" leaves the ones they turned
+   * back to unread themselves (see below): those are dealt with one by one.
+   */
   app.post('/notifications/read', async (req) => {
     const me = requireUser(req.user)
     const { ids } = parse(z.object({ ids: z.array(z.uuid()).max(100).optional() }), req.body ?? {})
     await app.db
       .update(notifications)
-      .set({ readAt: new Date() })
-      .where(and(eq(notifications.userId, me.id), isNull(notifications.readAt), ids ? inArray(notifications.id, ids) : undefined))
+      .set({ readAt: new Date(), keptAt: null })
+      .where(and(eq(notifications.userId, me.id), isNull(notifications.readAt), ids ? inArray(notifications.id, ids) : isNull(notifications.keptAt)))
+    return { ok: true }
+  })
+
+  /**
+   * Turns one notification back to unread (`read: false`), to come back to it, or marks it read. Turned back, it
+   * counts under the bell again and is theirs: nothing more is added to it, and the morning summary leaves it out.
+   */
+  app.put('/notifications/:notificationId/read', async (req) => {
+    const me = requireUser(req.user)
+    const { notificationId } = parse(z.object({ notificationId: z.uuid() }), req.params)
+    const { read } = parse(z.object({ read: z.boolean() }), req.body)
+    const changed = await app.db
+      .update(notifications)
+      .set(read ? { readAt: new Date(), keptAt: null } : { readAt: null, keptAt: new Date() })
+      .where(and(eq(notifications.id, notificationId), eq(notifications.userId, me.id)))
+      .returning({ id: notifications.id })
+    if (!changed.length) throw new HttpError(404, 'That notification is no longer there.')
     return { ok: true }
   })
 }

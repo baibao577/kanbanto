@@ -84,6 +84,9 @@ export type CardsRoute = {
   fv?: string
   sort?: CardSort
 }
+/** The page of all your notifications: `show` narrows it to the unread or to mentions of you, `board` to one board. */
+export type NotificationsRoute = { page: 'notifications'; show?: 'unread' | 'mentions'; board?: string }
+
 export type Route =
   | HomeRoute
   | BoardRoute
@@ -91,6 +94,7 @@ export type Route =
   | WorkspaceRoute
   | CardsRoute
   | { page: 'time'; week?: string }
+  | NotificationsRoute
   | { page: 'authorize'; query: string }
   | { page: 'verify'; token: string }
   | { page: 'reset'; token: string }
@@ -126,6 +130,13 @@ export function parseRoute(hash: string): Route {
     const said = (key: string, most: number) => p.get(key)?.slice(0, most) || undefined
     const [title, url, text] = [said('title', 500), said('url', 2000), said('text', 2000)]
     return { page: 'add', ...(title && { title }), ...(url && { url }), ...(text && { text }), ...(p.get('w') === '1' && { w: true }) }
+  }
+  const told = hash.match(/^#\/notifications\/?(?:\?(.*))?$/)
+  if (told) {
+    const p = new URLSearchParams(told[1] ?? '')
+    const show = p.get('show')
+    const board = p.get('board')?.slice(0, 64)
+    return { page: 'notifications', ...((show === 'unread' || show === 'mentions') && { show }), ...(board && { board }) }
   }
   const time = hash.match(/^#\/time\/?(?:\?(.*))?$/)
   if (time) {
@@ -260,6 +271,13 @@ export function hrefFor(r: Route) {
     return `#/cards${qs ? `?${qs}` : ''}`
   }
   if (r.page === 'time') return `#/time${r.week ? `?week=${r.week}` : ''}`
+  if (r.page === 'notifications') {
+    const p = new URLSearchParams()
+    if (r.show) p.set('show', r.show)
+    if (r.board) p.set('board', r.board)
+    const qs = p.toString()
+    return `#/notifications${qs ? `?${qs}` : ''}`
+  }
   if (r.page === 'add') {
     const p = new URLSearchParams()
     if (r.w) p.set('w', '1')

@@ -290,9 +290,12 @@ export interface WeekView {
   touched: Record<string, string[]>
 }
 
+/** How long a notification that has been read is kept: this many months after it came. Unread ones stay. */
+export const NOTIFICATIONS_KEPT_MONTHS = 3
+
 /**
- * Under the bell: someone @mentioned you, something happened on a card you follow, one of a board's rules told you,
- * a reminder, or someone added you to a board or a workspace.
+ * Under the bell, and on the page of them all: someone @mentioned you, something happened on a card you follow, one
+ * of a board's rules told you, a reminder, or someone added you to a board or a workspace.
  */
 export type NotificationView =
   | {
@@ -313,6 +316,8 @@ export type NotificationView =
       thread?: string
       createdAt: string
       read: boolean
+      /** You turned it back to unread yourself, to come back to it (see `PUT /api/notifications/{id}/read`). */
+      kept: boolean
     }
   | {
       id: string
@@ -331,6 +336,8 @@ export type NotificationView =
       thread?: string
       createdAt: string
       read: boolean
+      /** You turned it back to unread yourself, to come back to it (see `PUT /api/notifications/{id}/read`). */
+      kept: boolean
     }
   | {
       id: string
@@ -345,6 +352,8 @@ export type NotificationView =
       excerpt: string
       createdAt: string
       read: boolean
+      /** You turned it back to unread yourself, to come back to it (see `PUT /api/notifications/{id}/read`). */
+      kept: boolean
     }
   | {
       id: string
@@ -361,6 +370,8 @@ export type NotificationView =
       excerpt: string
       createdAt: string
       read: boolean
+      /** You turned it back to unread yourself, to come back to it (see `PUT /api/notifications/{id}/read`). */
+      kept: boolean
     }
   | {
       id: string
@@ -373,6 +384,8 @@ export type NotificationView =
       changes: string[]
       createdAt: string
       read: boolean
+      /** You turned it back to unread yourself, to come back to it (see `PUT /api/notifications/{id}/read`). */
+      kept: boolean
     }
   | {
       id: string
@@ -392,6 +405,8 @@ export type NotificationView =
       more: number
       createdAt: string
       read: boolean
+      /** You turned it back to unread yourself, to come back to it (see `PUT /api/notifications/{id}/read`). */
+      kept: boolean
     }
   | {
       id: string
@@ -402,6 +417,8 @@ export type NotificationView =
       actor: string | null
       createdAt: string
       read: boolean
+      /** You turned it back to unread yourself, to come back to it (see `PUT /api/notifications/{id}/read`). */
+      kept: boolean
     }
   | {
       id: string
@@ -412,6 +429,8 @@ export type NotificationView =
       workspace: { id: string; name: string } | null
       createdAt: string
       read: boolean
+      /** You turned it back to unread yourself, to come back to it (see `PUT /api/notifications/{id}/read`). */
+      kept: boolean
     }
 
 export interface AttachmentView {
