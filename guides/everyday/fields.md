@@ -176,8 +176,8 @@ the people on the board.
 
 - **Nobody is told** when they are put in a Person field, and the card does not show up in their week. That is what
   Assignee is for. A Person field is something to read, sort and filter by.
-- **Filter** by a person, by **Me** (whoever is looking), or by **No one**. In the Outline, sort by the column to
-  group cards by person.
+- **Filter** by a person, by **Me** (whoever is looking), or by **No one**. In the Outline,
+  **Display → Group by** gathers cards under each person.
 - **Someone who leaves the board** is taken out of its Person fields, as they are unassigned from its cards. Where a
   name can no longer be shown, it reads "Someone who left", and goes the next time that field is changed.
 - **A card moved to another board** keeps the people who are on that board too. The move tells you who is left behind.

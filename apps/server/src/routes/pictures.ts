@@ -3,9 +3,9 @@ import { z } from 'zod'
 import { changePerson } from '../boards/announce'
 import { env } from '../env'
 import { HttpError, parse } from '../http'
-import { PICTURE_MAX, PICTURE_TYPES, pictureUrl, readPicture, removePicture, savePicture } from '../pictures'
+import { PICTURE_MAX, PICTURE_SIDE_MAX, PICTURE_TYPES, pictureUrl, readPicture, removePicture, savePicture } from '../pictures'
 import { publicUser, requireUser } from './auth'
-import { pictureType } from './files'
+import { pictureSize, pictureType } from './files'
 
 const LIMIT = { config: { rateLimit: { max: env.test ? 1000 : 20, timeWindow: '1 minute' } } }
 const TOO_BIG = `A profile picture can be up to ${PICTURE_MAX / 1024} KB.`
@@ -36,6 +36,11 @@ export const pictureRoutes: FastifyPluginAsync = async (app) => {
       if (!Buffer.isBuffer(bytes) || !bytes.length) throw new HttpError(400, 'Send the picture itself: a PNG, JPEG or WebP.')
       const mime = pictureType(bytes)
       if (!mime || !PICTURE_TYPES.has(mime)) throw new HttpError(415, 'That isn’t a picture that can be used here. Use a PNG, JPEG or WebP.')
+      // (The app sends 256 pixels a side. One that says it is far bigger would be drawn, whole, by everyone's browser.)
+      const size = pictureSize(bytes, mime)
+      if (!size) throw new HttpError(415, 'That picture can’t be read: it doesn’t say how big it is. Save it again as a PNG, JPEG or WebP.')
+      if (size.width > PICTURE_SIDE_MAX || size.height > PICTURE_SIDE_MAX)
+        throw new HttpError(413, `That picture is too big: ${PICTURE_SIDE_MAX.toLocaleString('en')} pixels a side at most.`)
       let key = ''
       await changePerson(app, user.id, async (tx) => {
         key = await savePicture(tx, user.id, mime, bytes)

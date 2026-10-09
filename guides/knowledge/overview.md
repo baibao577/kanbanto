@@ -47,6 +47,8 @@ documentation site with its own design, use something made for that.
 
 1. [Set up the board](/knowledge/set-up): the lists, the fields and the rest, in about ten minutes.
 2. [Write an article](/knowledge/write): the text, pictures, the full page, and a link to send.
-3. [Pages inside pages, and finding things](/knowledge/organise): the tree, topics and search.
-4. [Review and keep it current](/knowledge/review): from draft to published to outdated.
-5. [Samples to copy](/knowledge/samples): three boards and seven article outlines.
+3. [Write together](/knowledge/together): several people in one text, and its earlier versions.
+4. [Comment on the text](/knowledge/comment): a comment on the very words it is about, answered and resolved.
+5. [Pages inside pages, and finding things](/knowledge/organise): the tree, topics and search.
+6. [Review and keep it current](/knowledge/review): from draft to published to outdated.
+7. [Samples to copy](/knowledge/samples): three boards and seven article outlines.

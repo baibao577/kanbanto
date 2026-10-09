@@ -132,8 +132,11 @@ Each message is a `POST` with a JSON body, and three headers:
 | In the app | Event | Sent when | What it holds |
 |---|---|---|---|
 | **Card changes** | `board.changed` | Anything on the board changes: a card is added, edited, moved, archived or deleted, or a list or label changes | `board`, `actor` (who did it), `command` (what they did), `seq`, and `changes`: each record `before` and `after` |
-| **Comments** | `comment.added` | Someone comments on a card | `board`, `actor`, `task` (its id and title), and `comment` (its text, who it mentions, and the `id`, `name` and `size` of each file posted with it) |
+| **Comments** | `comment.added` | Someone comments on a card | `board`, `actor`, `task` (its id and title), and `comment` (its text, who it mentions, and the `id`, `name` and `size` of each file posted with it; for a comment about words of the description, those words as `about`, and for an answer to one the comment it answers as `replyTo`) |
 | **Reminders** | `reminder.due` | A card's reminder goes off | `board`, `task` (id, title, due date, list), `reminder`, and `for` (who it is for) |
+
+A description that people write for a while is saved every few seconds as they go. A webhook hears of it once,
+when the writing has paused: one `board.changed`, with the card as it was before and as it is after.
 
 Every message also has `event`, `delivery` and `at` (when it happened).
 

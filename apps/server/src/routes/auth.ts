@@ -5,7 +5,16 @@ import type { FastifyInstance, FastifyPluginAsync, FastifyReply, FastifyRequest 
 import { z } from 'zod'
 import { createEmailToken, endEmailTokens, lastEmailToken, peekEmailToken, useEmailToken } from '../auth/email-tokens'
 import { hashPassword, verifyPassword } from '../auth/password'
-import { createSession, endAllSessions, endSession, SESSION_COOKIE, sessionUser, type SessionUser } from '../auth/sessions'
+import {
+  createSession,
+  endAllSessions,
+  endSession,
+  endWhatActsAs,
+  SESSION_COOKIE,
+  sessionStands,
+  sessionUser,
+  type SessionUser,
+} from '../auth/sessions'
 import { acceptInvite, checkInviteFor, findAnyInvite, provesEmail } from '../boards/invites'
 import { createBoard } from '../boards/service'
 import { googleApp } from '../calendar/sync'
@@ -308,18 +317,24 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
   app.post('/password', LIMIT, async (req) => {
     const user = requireUser(req.user, { allowUnverified: true })
     const body = parse(ChangePassword, req.body)
-    const [u] = await app.db.select().from(users).where(eq(users.id, user.id))
-    if (u.passwordHash !== null && !(await verifyPassword(body.current ?? '', u.passwordHash)))
-      throw new HttpError(400, 'Your current password isn’t right.')
-    await app.db
-      .update(users)
-      .set({ passwordHash: await hashPassword(body.next), updatedAt: new Date() })
-      .where(eq(users.id, user.id))
-    // Other devices are signed out (and stop getting desktop notifications); this one stays signed in.
-    await endAllSessions(app.db, user.id, req.sessionToken ?? undefined)
+    const session = req.sessionToken
+    if (!session) throw new HttpError(401, 'Please sign in.')
+    const next = await hashPassword(body.next)
+    await app.db.transaction(async (tx) => {
+      // The account as it is at this moment, held until this is done, and the session that asks still standing:
+      // an account that has just changed hands (see routes/google-auth.ts) has no password for a moment, and a
+      // session of whoever had it before must not be the one to give it a new one.
+      const [u] = await tx.select().from(users).where(eq(users.id, user.id)).for('update')
+      if (!u || !(await sessionStands(tx, session))) throw new HttpError(401, 'Please sign in.')
+      if (u.passwordHash !== null && !(await verifyPassword(body.current ?? '', u.passwordHash)))
+        throw new HttpError(400, 'Your current password isn’t right.')
+      await tx.update(users).set({ passwordHash: next, updatedAt: new Date() }).where(eq(users.id, user.id))
+      // Other devices are signed out (and stop getting desktop notifications); this one stays signed in.
+      await endAllSessions(tx, user.id, session)
+      await endEmailTokens(tx, user.id)
+    })
     await app.push.forget(user.id, { keep: body.pushEndpoint })
-    await endEmailTokens(app.db, user.id)
-    app.hub.signOut(user.id, req.sessionToken ?? undefined)
+    app.hub.signOut(user.id, session)
     return { ok: true }
   })
 
@@ -410,19 +425,26 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
     if (!t) throw new HttpError(400, 'This link has expired or was already used. Ask for a new one.')
     // An emailed link also proves the address is theirs; one an admin passed on doesn't.
     const emailed = t.purpose === 'reset'
-    const [u] = await app.db
-      .update(users)
-      .set({
-        passwordHash: await hashPassword(body.password),
-        ...(emailed && { emailVerifiedAt: sql`coalesce(${users.emailVerifiedAt}, now())` }),
-        updatedAt: new Date(),
-      })
-      .where(eq(users.id, t.userId))
-      .returning()
-    if (!u || u.disabledAt) throw new HttpError(403, 'This account has been turned off. Ask your admin.')
-    await endAllSessions(app.db, u.id)
+    const passwordHash = await hashPassword(body.password)
+    const u = await app.db.transaction(async (tx) => {
+      const [was] = await tx.select().from(users).where(eq(users.id, t.userId)).for('update')
+      if (!was || was.disabledAt) throw new HttpError(403, 'This account has been turned off. Ask your admin.')
+      const [now] = await tx
+        .update(users)
+        .set({ passwordHash, ...(emailed && { emailVerifiedAt: sql`coalesce(${users.emailVerifiedAt}, now())` }), updatedAt: new Date() })
+        .where(eq(users.id, t.userId))
+        .returning()
+      // Everyone is signed out, as one step with the new password. An emailed link that confirms an address
+      // nobody had confirmed is the account changing hands (someone else may have made it): whatever acted as it
+      // goes too, as when Google's owner of the address takes it over.
+      if (emailed && !was.emailVerifiedAt) await endWhatActsAs(tx, now.id)
+      else {
+        await endAllSessions(tx, now.id)
+        await endEmailTokens(tx, now.id)
+      }
+      return now
+    })
     await app.push.forget(u.id, {})
-    await endEmailTokens(app.db, u.id)
     app.hub.signOut(u.id)
     failures.delete(u.email)
     const session = await createSession(app.db, u.id)

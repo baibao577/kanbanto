@@ -3,22 +3,9 @@ import { and, eq, isNull, sql } from 'drizzle-orm'
 import type { FastifyPluginAsync, FastifyRequest } from 'fastify'
 import { z } from 'zod'
 import { createEmailToken } from '../auth/email-tokens'
-import { endAllSessions } from '../auth/sessions'
+import { endWhatActsAs } from '../auth/sessions'
 import { decrypt, encrypt, encryptionReady } from '../crypto'
-import {
-  apiTokens,
-  boardInvites,
-  boardMembers,
-  calendarConnections,
-  calendarFeeds,
-  oauthCodes,
-  oauthGrants,
-  siteSettings,
-  users,
-  workspaceInvites,
-  workspaceMembers,
-} from '../db/schema'
-import { endEmailTokens } from '../auth/email-tokens'
+import { boardInvites, boardMembers, calendarConnections, siteSettings, users, workspaceInvites, workspaceMembers } from '../db/schema'
 import { HttpError, parse, siteUrl } from '../http'
 import { emails } from '../mail/templates'
 import { getSettings, requireUser } from './auth'
@@ -96,15 +83,9 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       .returning({ id: users.id })
     if (!updated.length) throw new HttpError(404, 'That account doesn’t exist.')
     if (body.disabled) {
-      await endAllSessions(app.db, id)
-      await app.push.forget(id, {})
-      // Everything else that acts as them goes too: links, API tokens, connected apps, the calendar link. Turned
-      // back on, the account starts without them.
-      await endEmailTokens(app.db, id)
-      await app.db.delete(apiTokens).where(eq(apiTokens.userId, id))
-      await app.db.delete(oauthGrants).where(eq(oauthGrants.userId, id))
-      await app.db.delete(oauthCodes).where(eq(oauthCodes.userId, id))
-      await app.db.delete(calendarFeeds).where(eq(calendarFeeds.userId, id))
+      // Everything that acts as them goes: sessions, desktop notifications, links, API tokens, connected apps, the
+      // calendar link. Turned back on, the account starts without them.
+      await app.db.transaction((tx) => endWhatActsAs(tx, id))
       // And the ways back in that they hold: the share links, access codes and waiting invites of the boards they
       // own and the workspaces they run (and any they sent). The others there can make new ones.
       await app.db

@@ -132,12 +132,14 @@ const TYPED = new Set(['Title', 'Parent', 'List', 'Assignee', 'Labels', 'Descrip
  *
  * `guard`: the columns (by their name in the first row) whose cells are text someone typed. A cell of theirs that
  * starts like a formula (= + - @) gets an apostrophe in front, which a spreadsheet shows as plain text instead of
- * working it out: a card titled "=HYPERLINK(…)" mustn't run in the spreadsheet of whoever opens the file.
+ * working it out: a card titled "=HYPERLINK(…)" mustn't run in the spreadsheet of whoever opens the file. The
+ * same goes for every cell of the first row, the columns' names.
  */
 export function toCsv(rows: readonly (readonly string[])[], guard: (column: string) => boolean = () => false): string {
   const guarded = (rows[0] ?? []).map((name) => guard(name))
   const cell = (text: string, i: number, first: boolean) => {
-    const safe = !first && guarded[i] && /^[=+\-@\t\r]/.test(text) ? `'${text}` : text
+    // (The first row too: a column is named after a field, and a field's name is what someone typed.)
+    const safe = (first || guarded[i]) && /^[=+\-@\t\r]/.test(text) ? `'${text}` : text
     return /[",\r\n]/.test(safe) ? `"${safe.replaceAll('"', '""')}"` : safe
   }
   return `﻿${rows.map((r, n) => r.map((c, i) => cell(c, i, n === 0)).join(',')).join('\r\n')}\r\n`

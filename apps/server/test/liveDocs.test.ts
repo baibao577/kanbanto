@@ -1,6 +1,6 @@
 import { EDITOR_VERSION, type DocMessage, type LiveMessage } from '@kanbanto/model/api'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { Awareness, encodeAwarenessUpdate } from 'y-protocols/awareness'
+import { applyAwarenessUpdate, Awareness, encodeAwarenessUpdate } from 'y-protocols/awareness'
 import * as Y from 'yjs'
 import { LiveDocs, type Writer } from '../src/boards/liveDocs'
 
@@ -393,5 +393,84 @@ describe('people writing one description at once', () => {
     ben.say({ type: 'doc', op: 'awareness', taskId: 'T1', data: 'not-an-update' })
     ben.say({ type: 'doc', op: 'update', taskId: 'T1', session: ben.session!, data: b64(new Uint8Array([9, 9, 9])) })
     expect(ben.resets).toBeGreaterThan(0)
+  })
+
+  it('a cursor is its own browser’s: nobody moves or removes another’s, or brings more of them than a browser has', () => {
+    const ann = new Browser(docs, 'Ann').join()
+    const ben = new Browser(docs, 'Ben').join()
+    const cursor = (doc: Y.Doc, state: object | null, ids = [doc.clientID]) => {
+      const a = new Awareness(doc)
+      a.setLocalState(state)
+      return b64(encodeAwarenessUpdate(a, ids))
+    }
+    const got = (b: Browser) => b.socket.got.filter((m) => m.type === 'doc' && m.op === 'awareness').length
+    ann.say({ type: 'doc', op: 'awareness', taskId: 'T1', data: cursor(ann.doc, { user: { name: 'Ann' } }) })
+    expect(got(ben)).toBe(1)
+    // Ben says where Ann's cursor is, under her id, and then that it is gone: neither is taken in or passed on.
+    const asAnn = new Y.Doc()
+    asAnn.clientID = ann.doc.clientID
+    const fake = new Awareness(asAnn)
+    fake.setLocalState({ user: { name: 'Ann' }, cursor: 'elsewhere' })
+    fake.setLocalState({ user: { name: 'Ann' }, cursor: 'elsewhere again' })
+    ben.say({ type: 'doc', op: 'awareness', taskId: 'T1', data: b64(encodeAwarenessUpdate(fake, [ann.doc.clientID])) })
+    fake.setLocalState(null)
+    ben.say({ type: 'doc', op: 'awareness', taskId: 'T1', data: b64(encodeAwarenessUpdate(fake, [ann.doc.clientID])) })
+    expect(got(ann)).toBe(0)
+    const cy = new Browser(docs, 'Cy').join()
+    const joined = cy.socket.got.find((m) => m.type === 'doc' && m.op === 'joined') as Extract<DocMessage, { op: 'joined' }>
+    const theirs = new Awareness(new Y.Doc())
+    applyAwarenessUpdate(theirs, bytesOf(joined.awareness), 'server')
+    expect(theirs.getStates().get(ann.doc.clientID)).toEqual({ user: { name: 'Ann' } })
+    // A browser has a cursor or two (it may have joined again); one that brings them by the dozen is left out,
+    // however it sends them: many in one message, or one after the other.
+    const many = new Awareness(new Y.Doc())
+    const ids = Array.from({ length: 40 }, (_, i) => 1000 + i)
+    for (const id of ids) {
+      many.meta.set(id, { clock: 1, lastUpdated: 0 })
+      many.states.set(id, { user: { name: `Ghost ${id}` } })
+    }
+    ben.say({ type: 'doc', op: 'awareness', taskId: 'T1', data: b64(encodeAwarenessUpdate(many, ids)) })
+    for (const id of ids) ben.say({ type: 'doc', op: 'awareness', taskId: 'T1', data: b64(encodeAwarenessUpdate(many, [id])) })
+    expect(got(ann)).toBeLessThanOrEqual(8)
+    // One far bigger than a cursor is: not taken in.
+    const before = got(ann)
+    ben.say({ type: 'doc', op: 'awareness', taskId: 'T1', data: cursor(ben.doc, { user: { name: 'x'.repeat(40_000) } }) })
+    expect(got(ann)).toBe(before)
+  })
+
+  it('one browser, and one person, writes so many descriptions at once and no more, and sends so much in a minute', () => {
+    // A browser may be in four sessions; a fifth is refused, and is taken once it has left one.
+    const ann: Writer = { userId: 'ann', name: 'Ann', canWrite: true }
+    const browser = (): Sock => ({ readyState: 1, OPEN: 1, got: [] })
+    const one = browser()
+    const join = (task: string, socket = one, who = ann) => {
+      docs.handle('B1', socket, who, { type: 'doc', op: 'join', taskId: task, editor: EDITOR_VERSION })
+      return (socket.got.filter((m) => m.type === 'doc' && m.taskId === task).at(-1) as DocMessage).op
+    }
+    expect(['T1', 'T2', 'T3', 'T4'].map((task) => join(task))).toEqual(['joined', 'joined', 'joined', 'joined'])
+    expect(join('T5')).toBe('refused')
+    docs.handle('B1', one, ann, { type: 'doc', op: 'leave', taskId: 'T2' })
+    expect(join('T5')).toBe('joined')
+    // A person in many browsers: twelve descriptions in all. One that someone else is writing can still be joined.
+    for (let i = 6; i <= 13; i++) expect(join(`T${i}`, browser())).toBe('joined')
+    expect(join('T14', browser())).toBe('refused')
+    const ben = new Browser(docs, 'Ben', 'T14').join()
+    expect(ben.refused).toBeNull()
+    expect(join('T14', browser())).toBe('joined')
+    // More writing in a minute than a writer's: that browser starts again, and the session goes on for the others.
+    ben.seed('Saved.')
+    const cy = new Browser(docs, 'Cy', 'T14').join()
+    const resets = cy.resets
+    for (let i = 0; i < 40; i++) cy.type('y'.repeat(60_000))
+    expect(cy.resets).toBeGreaterThan(resets)
+    expect(ben.text.length).toBeLessThan(2_200_000)
+    ben.type(' Ben goes on.')
+    expect(ben.text).toContain('Ben goes on.')
+    // A minute later it may write again.
+    vi.advanceTimersByTime(61_000)
+    const again = new Browser(docs, 'Cy', 'T14').join()
+    again.type(' Back.')
+    all(ben)
+    expect(ben.text).toContain('Back.')
   })
 })

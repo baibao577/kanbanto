@@ -7,7 +7,7 @@ document.
 ## Start one
 
 Click **Add a card** in **Inbox** (an idea) or **Drafting** (you are writing it now). If the board has an
-**Article** template, click the small arrow beside **Add a card** and start from it.
+**Article** template, click the small arrow beside **Add card** in the box that opens, and start from it.
 
 Give it a title someone would search for. A question or a task works best: "How we quote a job", "What to do when
 a customer complains", "Why we stopped Saturday visits".

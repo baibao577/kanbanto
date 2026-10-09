@@ -5,6 +5,51 @@ then `git pull` (or download the new release) and `docker compose up -d --build`
 
 ## Unreleased
 
+- **Security: a recheck of the last days' work.** Everything added since the first release was read again by
+  independent reviewers, for what it lets people do to each other and to the server. What it found is mended here.
+  If you run Kanbanto yourself, upgrade.
+
+  - **An account made with someone else's address could be kept by whoever made it.** When the address's owner
+    signs in with Google, an account that never confirmed that address is theirs, and whoever made it is put out.
+    The account lost its password a moment before its sessions were ended, and in that moment a session of the
+    person being put out could set a new password. Losing the password, the sessions, and everything else that
+    acts as the account (API tokens, connected apps, the calendar link) is now one step, for a reset link that
+    confirms such an address too. Only a site with signing in with Google turned on was open to this.
+  - **A diagram could make a reader's browser ask another site for a picture,** which tells that site who is
+    reading and when: a `mermaid` block naming a picture for a shape, a style with a background from elsewhere, or
+    HTML labels. Diagrams are now drawn in a page of their own (`/diagram.html`) that the browser lets load
+    nothing but Kanbanto's scripts, so whatever a diagram names is never asked for. They look and work as before.
+  - **A description written to be slow to read could hold the server,** through the tools assistants use (and the
+    page of whoever opened it): thousands of empty lines took minutes to look through for a comment's words. Text
+    is now read once over whatever is in it, and so are a spreadsheet and a Trello board being imported, which
+    also have a most for their columns, lists, labels, fields and comments.
+  - **Writing together** takes so much of the server and no more: a browser writes four descriptions at once and
+    a person twelve, sends so much a minute, and moves only its own cursor (nobody shows one under someone else's
+    name).
+  - **Templates have a size:** a card template holds up to about 500,000 characters and a board template about
+    4 million, a workspace's templates are saved by its own people, and a visitor with a board's public link is
+    handed none.
+  - **Smaller things:** someone taken off a board can no longer delete their old comments through its public
+    link; an assistant's token no longer shows a workspace's field library to someone who is only on one of its
+    boards; importing cards matches people by email address for the board's owners only (the ones who see
+    addresses); a field's name can't act as a formula in an exported spreadsheet; a profile picture or a card's
+    cover that says it is thousands of pixels a side is refused; a change can't be marked as "made from the
+    board's Telegram chat" to keep it out of that chat; and the calls that reach Telegram or a chat app, and
+    imports, are limited to so many a minute.
+
+  For assistants and apps: every answer of the MCP tools that names a task now gives its ref (`ref`, or `task_ref`
+  beside a `task_id`), also reminders, what's new, the week, bulk changes, archiving and what a task waits on; a
+  ref is read on the board the task is on, so the parent of a card moved to another board can be named by its ref
+  there, and `move_to_board` says the card's new ref; a description can be as long through the tools as in the app
+  (50,000 characters). Board templates can be listed, renamed and removed with an API token, as the reference
+  said. The API reference now has the notifications page, and the machine-readable one says which fields of a
+  comment are always there. The skill (`skills/kanbanto`) knows templates, limits and rules, comments on the words
+  of a description, and what a description can hold: if you gave it to your assistant, give it the new one.
+
+  The guides, the README and the notes for whoever runs a site are brought up to date with all that the last days
+  added: the list of what a site keeps and for how long, Telegram bots and chat webhooks in the security notes,
+  troubleshooting for them, and a dozen sentences and pictures that named a menu or a button as it was.
+
 - **Move all the cards of a list, and a list's menu in groups.** A list's **⋯** menu on the Board has **Move all
   cards to**, with the board's other lists: every card in the list goes to the end of the one you pick, in the
   order they had, as one change with one **Undo**. It moves the cards the list is showing you: with a search or a

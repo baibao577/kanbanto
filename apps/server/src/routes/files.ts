@@ -299,6 +299,56 @@ export function pictureType(bytes: Buffer): string | null {
 }
 
 /**
+ * How many pixels across and down a PNG, JPEG or WebP says it is, read from where each kind says it near its start:
+ * nothing is drawn or unpacked here. Null when it doesn't say (a damaged file, or one made to look like a picture).
+ *
+ * For the small pictures everyone's browser draws without being asked (a profile picture, a card's cover): a file
+ * of a few kilobytes can say it is tens of thousands of pixels a side, and every browser that draws it would have
+ * to lay all of them out.
+ */
+export function pictureSize(bytes: Buffer, mime: string): { width: number; height: number } | null {
+  const sized = (width: number, height: number) => (width > 0 && height > 0 ? { width, height } : null)
+  try {
+    if (mime === 'image/png') {
+      // (Its first part is always the header: the two sizes are its first eight bytes.)
+      if (bytes.length < 24 || bytes.toString('latin1', 12, 16) !== 'IHDR') return null
+      return sized(bytes.readUInt32BE(16), bytes.readUInt32BE(20))
+    }
+    if (mime === 'image/jpeg') {
+      // (A row of parts, each marked and saying how long it is; the one that starts the picture has the sizes.)
+      for (let at = 2; at + 9 <= bytes.length;) {
+        if (bytes[at] !== 0xff) return null
+        const mark = bytes[at + 1]
+        if (mark === 0xff) at++
+        else if (mark === 0x01 || (mark >= 0xd0 && mark <= 0xd9)) at += 2
+        else if (mark >= 0xc0 && mark <= 0xcf && mark !== 0xc4 && mark !== 0xc8 && mark !== 0xcc)
+          return sized(bytes.readUInt16BE(at + 7), bytes.readUInt16BE(at + 5))
+        else {
+          const length = bytes.readUInt16BE(at + 2)
+          if (length < 2) return null
+          at += 2 + length
+        }
+      }
+      return null
+    }
+    if (mime === 'image/webp') {
+      if (bytes.length < 30) return null
+      const kind = bytes.toString('latin1', 12, 16)
+      if (kind === 'VP8X') return sized(1 + bytes.readUIntLE(24, 3), 1 + bytes.readUIntLE(27, 3))
+      if (kind === 'VP8L')
+        return bytes[20] === 0x2f ? sized(1 + (bytes.readUInt32LE(21) & 0x3fff), 1 + ((bytes.readUInt32LE(21) >>> 14) & 0x3fff)) : null
+      if (kind === 'VP8 ')
+        return bytes[23] === 0x9d && bytes[24] === 0x01 && bytes[25] === 0x2a
+          ? sized(bytes.readUInt16LE(26) & 0x3fff, bytes.readUInt16LE(28) & 0x3fff)
+          : null
+    }
+  } catch {
+    // (It ends before it has said.)
+  }
+  return null
+}
+
+/**
  * The kind to keep for a file nobody vouched for (one an assistant wrote, downloaded, or sent through an upload
  * link). A stored picture type is what makes a file show in the page instead of downloading, so it's a picture
  * only when its bytes are one; anything else goes by its name.

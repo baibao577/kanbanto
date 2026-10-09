@@ -16,6 +16,9 @@ docker compose ps                       # is everything running?
 [Email](#email) ·
 [Files and storage](#files-and-storage) ·
 [Database](#database) ·
+[Webhooks and Telegram](#webhooks-and-telegram) ·
+[After an upgrade](#after-an-upgrade) ·
+[Pages and frames](#pages-and-frames) ·
 [Still stuck?](#still-stuck)
 
 ## Starting up
@@ -274,13 +277,47 @@ someone's own bucket), or bring the bucket's files over with **Move here**. A de
 Restoring a file from the trash takes its space again. Delete some files (or raise the quota in Platform console →
 Storage) and restore it again.
 
-## Webhooks
+## Webhooks and Telegram
 
 ### "That address didn't answer" / "didn't confirm it wants these"
 
 Before a webhook is saved, Kanbanto sends its address a one-time code, and the address has to answer with it. See
 [API → Webhooks](api.md#webhooks) for the three lines a receiver needs. (Sites that allow webhooks to any address
 don't ask.)
+
+### A chat app "didn't take a message at that address"
+
+A webhook to Slack, Google Chat, Microsoft Teams or Discord is sent a first message in place of the code, and is
+saved only if the chat app takes it. Copy the address again from the chat app (it is long, and easy to cut short).
+On a site that sends webhooks to public addresses only, the address also has to be the chat app's own.
+
+### A board's Telegram bot doesn't answer, or its news stopped
+
+- The board's settings say why under the bot when Kanbanto knows: its key no longer works (it was replaced at
+  @BotFather: paste the new one), something else is reading the same bot's messages (a bot serves one board, on
+  one site), or the bot was removed from the chat.
+- The server has to be able to reach `api.telegram.org`: it asks Telegram for the bot's messages, nothing comes in
+  from outside. From the server, `curl -sI https://api.telegram.org` should answer.
+- **Platform console → Integrations → Boards can have a Telegram bot** has to be on: turned off, every bot stops.
+- A chat adds at most 20 cards a minute and 200 a day; the rest are left out and the bot says so.
+
+## After an upgrade
+
+### "Kanbanto has been updated since this page was opened. Load the page again to write here."
+
+A page that was open during an upgrade has the editor from before it. People writing a description together must
+all have the same one, so that page reads but doesn't write until it is loaded again. Nothing is lost.
+
+### Read notifications from long ago are gone
+
+Notifications someone has read are removed three months after they came (unread ones stay, however old). The first
+clean-up after upgrading to a version that does this removes the older read ones at once.
+
+### A diagram in a description isn't drawn
+
+Diagrams are drawn in a page of their own, `/diagram.html`, which Kanbanto serves beside the app and which may
+load nothing but Kanbanto's own scripts. A proxy that rewrites pages, adds a script to them or blocks that address
+stops diagrams drawing; the diagram's text shows in its place. Leave that page as it is served.
 
 ## Pages and frames
 

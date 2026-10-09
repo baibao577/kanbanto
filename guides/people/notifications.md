@@ -9,6 +9,8 @@ The bell at the top right shows:
 - comments and descriptions where someone **@mentioned** you,
 - new comments and changes on the **cards you follow**,
 - **reactions** to your comments: who answered one with an emoji, in one line for the comment,
+- a comment of yours on the words of a description being **resolved** (see
+  [comment on the text](/knowledge/comment)),
 - what a **board's rules** tell you: a card arrived in a list, or left it,
 - **reminders** that have come due,
 - being **added** to a board or workspace.

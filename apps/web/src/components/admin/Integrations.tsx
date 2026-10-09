@@ -78,7 +78,7 @@ export function IntegrationsSection() {
         <>
           <SettingsCard
             title="People can make API tokens"
-            description="Each person makes their own, in Account settings → API tokens. A token acts as its person, with their access, including for AI assistants (MCP). Turning this off stops every token at once."
+            description="Each person makes their own, in Account settings → API & apps. A token acts as its person, with their access, including for AI assistants (MCP). Turning this off stops every token at once."
             action={
               <Switch
                 checked={settings.apiTokens}

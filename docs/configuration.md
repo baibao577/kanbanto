@@ -50,6 +50,7 @@ the settings above.
 | `LOG_FORMAT` | readable lines | As above. |
 | `MAIL_TRANSPORT` | — | `log` prints emails to the terminal instead of sending them — for development only. |
 | `FILES_FROM_URL` | on | `off` stops assistants having the server fetch a file from a web address (the `attach_file` tool's `url`). When on, only public `https` addresses are fetched, without following redirects, up to 25 MB or the largest file allowed if that's less. Files an assistant writes itself, and upload links, are not affected. |
+| `TELEGRAM_API_URL` | `https://api.telegram.org` | Where Telegram's bot API is, for boards' Telegram bots. Only ever changed to point at a stand-in (tests). |
 | `ALLOW_PRIVATE_BUCKETS` | — | `true` lets people's own storage be on a private network address (development and tests only: it would let anyone make the server reach your network). |
 
 ### Your own pages
@@ -99,7 +100,7 @@ Open it from the menu under your initials (platform admins only). Each section h
 
 | Section | Setting | Default |
 |---|---|---|
-| **Overview** `#/admin` | Totals (accounts, boards, tasks) and a status card for sign-up, email and storage | — |
+| **Overview** `#/admin` | Totals (accounts, boards, tasks), a status card for sign-up, email and storage, and which version this is | — |
 | **Accounts** `#/admin/accounts` | **Who can create an account:** anyone; anyone, but only with Google (needs signing in with Google, under Integrations; an invite still allows an email address and a password); or nobody without an invite (a share link, access code or email invite) | Anyone |
 | | Per account: **password reset link** (one-time, 24 hours, for you to pass on; the person is told by email), **confirm email** (you vouch for their address), **turn account off / on** (off: signed out everywhere, and its API tokens, connected apps, calendar link and the invite links of its boards and workspaces are removed) | — |
 | **Email** `#/admin/email` | **Sending:** an **SMTP server** (server, port, encryption, username, password) or a **Resend** API key, and the sender address. Secrets are write-only and encrypted. See [Email](email.md). | Not set up |
@@ -118,8 +119,10 @@ Open it from the menu under your initials (platform admins only). Each section h
 
 Things each person sets for themselves in **Account settings** (`#/account`): name, profile picture, password (or adding one, after signing up with Google), their
 notifications (the morning summary email, reminder emails, desktop notifications, their time zone), their calendar (Google Calendar, a calendar link, and which boards are in it), their own Resend
-key for invites, their own storage bucket (at a public `https://` address), and their API tokens. Board owners add
-webhooks in Board settings. See [API, webhooks and AI](api.md).
+key for invites, their own storage bucket (at a public `https://` address), their own fields for their Personal
+boards, their API tokens and connected apps, what a board's Telegram bot tells them, and the "Add from anywhere"
+button for their browser. Board owners add webhooks and a Telegram bot, and make the board's rules and templates, in
+Board settings. See [API, webhooks and AI](api.md).
 
 ## 3. Server commands
 
@@ -134,6 +137,7 @@ Run in the Kanbanto folder as `docker compose exec app node dist/cli.js <command
 | `user password <email>` | Sets a temporary password for an account, signs it out everywhere, and prints the password. |
 | `key` | Prints the encryption key in use, so you can keep a copy. |
 | `secret` | Prints a new random key, for setting `ENCRYPTION_KEY` yourself. |
+| `version` | Prints the release, and the day this copy was built. |
 
 ## Limits and defaults worth knowing
 
@@ -144,10 +148,19 @@ Run in the Kanbanto folder as `docker compose exec app node dist/cli.js <command
 | Wrong passwords | 10 sign-in attempts a minute from one address, and 10 wrong passwords for one account in 15 minutes (then it waits). |
 | Invites | 30 invitations an hour per person; 10 invite emails an hour; brand-new accounts send 5 invite emails on their first day. Joining with a code: 20 tries a minute. |
 | Email links | Confirm email: 24 hours. Reset password: 1 hour, once. A reset link from an admin: 24 hours, once. Invites by email: until used or cancelled. Share links and access codes: until turned off or replaced. |
-| Morning summary | At most one per person per day, around 8:00 in their time zone (UTC if they haven't set one), only when there's something in it: cards due today or overdue, reminders later today, mentions and news from the cards they follow that they haven't seen. |
+| Morning summary | At most one per person per day, around 8:00 in their time zone (UTC if they haven't set one), only when there's something in it: cards due today or overdue, reminders later today, mentions, news from the cards they follow and what their boards' rules told them, that they haven't seen. |
 | Custom fields | 50 fields in a library (a workspace's, or a person's own), plus up to 100 archived; 20 on a board, 3 of them on the card front; 50 options in a choice field; text values up to 500 characters (links 2,000). |
 | Integrations | 20 API tokens per person; 10 webhooks per board; apps registering for sign-in: 20 an hour per address; a calendar link: 120 requests a minute. |
 | Sent emails | Kept for 60 days (for the limits), without their contents: those are removed once sent. |
 | Files | Deleted files stay in a trash for 30 days (restorable, if there's room in the owner's space). Files waiting in unposted comments: 10 per person, up to 3 times the largest file size, removed after a day. |
-| Profile pictures | 256 KB at most, as PNG, JPEG or WebP (the app shrinks one to 256 × 256 before sending it, about a tenth of that). Kept in the database, not with the files, so they don't count toward anyone's space. |
-| Request size | 1 MB, except board imports (20 MB), changes to a board (10 MB), file uploads (the largest file size) and profile pictures (256 KB). |
+| Profile pictures | 256 KB and 1,024 pixels a side at most, as PNG, JPEG or WebP (the app shrinks one to 256 × 256 before sending it, about a tenth of that). Kept in the database, not with the files, so they don't count toward anyone's space. |
+| Card covers | A picture's small copy, which the Board draws: 300 KB and 1,280 × 2,560 pixels at most (the app makes one 640 pixels wide). Kept in the database. |
+| Request size | 1 MB, except board imports (20 MB), changes to a board (10 MB), cards from a spreadsheet (6 MB), file uploads (the largest file size), a cover's small copy (300 KB) and profile pictures (256 KB). |
+| Descriptions | 50,000 characters. The newest 100 earlier versions of each card's description are kept. |
+| Activity | A board's activity and a card's History go back 180 days. |
+| Notifications | Read ones are removed three months after they came; unread ones stay. (The first clean-up after upgrading to a version with this removes the older read ones.) |
+| Rules and templates | 20 rules on a board (limits and rules that tell people together). 30 card templates on a board, 200 cards in one, about 500,000 characters in one; 30 board templates for a person or a workspace. |
+| Many cards at once | 2,000 in one change (a selection, an import from a spreadsheet); a Trello board up to 10,000 cards and checklist items, 500 lists and 50,000 comments. Board imports: 10 a minute from one address. |
+| Writing together | One browser writes up to 4 descriptions at once, one person 12 in all their browsers. |
+| Telegram | One bot for a board. From one chat: 20 cards a minute and 200 a day. |
+| Clean-up | Every 6 hours: expired sessions and API tokens, old sent emails and webhook deliveries, activity past 180 days, read notifications past three months, files in the trash past 30 days. |

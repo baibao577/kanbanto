@@ -27,8 +27,9 @@ const Name = z.string().max(300)
 export const templateRoutes: FastifyPluginAsync = async (app) => {
   app.get('/boards/:id/templates', async (req): Promise<{ templates: CardTemplate[] }> => {
     const { id } = parse(Params, req.params)
-    await requireAccess(app.db, req.user, id, 'viewer')
-    return { templates: await cardTemplatesOf(app.db, id) }
+    const { access } = await requireAccess(app.db, req.user, id, 'viewer')
+    // (Templates are for making cards: someone looking through the board's public link makes none, and isn't handed them.)
+    return { templates: access.via === 'public' ? [] : await cardTemplatesOf(app.db, id) }
   })
 
   /** Saves a card (with its subtasks) as a template: a new one, or over one that is there (`replace`). */

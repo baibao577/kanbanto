@@ -32,7 +32,8 @@ Click a card to open it.
 - **Set parent** (or **Change parent**). Puts the card inside another card, or takes it out again. A card with no
   parent is called a **project**.
 - **Follow.** Be told about its comments and changes. See [notifications](/people/notifications).
-- **⋯** has the rest: Focus on its subtasks, Move to another board, Complete and archive, Archive and Delete task.
+- **⋯** has the rest: Focus on its subtasks, Move to another board, Save as template, Complete and archive, Archive
+  and Delete task.
 - **Title.** Click it to rename.
 
 **The row of boxes under the title** is the same six on every card. Each says what the card has, in grey when it has
@@ -134,6 +135,11 @@ it has one, its labels, its title, and a line of small signs:
 | "1/3" | How many of its subtasks are done |
 | Initials or a picture in a circle | Who it is assigned to |
 
+::: tip Start the next one from a template
+A card you make again and again (a new client, a release, a weekly check) can be saved as a template, with its
+steps: **⋯ → Save as template…**. See [templates](/everyday/templates).
+:::
+
 ## Move a card
 
 - **Drag it** to another list, or up and down within its list.
@@ -151,6 +157,8 @@ straight onto a list of the board you have open.
 ## The rest of the card's menu
 
 - **Open.** The same as clicking the card.
+- **Select.** Ticks the card, to change several at once. See
+  [change several cards at once](/everyday/several-cards).
 - **Focus on its subtasks.** Only on a card that has subtasks: shows just those on the board. See
   [tasks inside tasks](/everyday/subtasks).
 - **Log time…** Records time you spent on it.

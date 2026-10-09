@@ -30,12 +30,13 @@ import { formatDuration, parseDuration } from '@kanbanto/model/time'
 import { ancestorsOf, descendantsOf, indexFor, isBlocked, statusCol, type TaskIndex } from '@kanbanto/model/indexer'
 import { fireTime } from '@kanbanto/model/reminders'
 import { readRef, refOf, taskByRef } from '@kanbanto/model/refs'
+import { DESCRIPTION_MAX } from '@kanbanto/model/schema'
 import { describeRule, evaluateRules, ruleProblem, whensOf } from '@kanbanto/model/rules'
 import { hasWords, wordsOf } from '@kanbanto/model/search'
 import { STARTERS, type Starter } from '@kanbanto/model/starters'
 import { byBoard, byHand } from '@kanbanto/model/view'
 import { CATEGORIES, PRIORITIES, type BoardData, type Category, type Priority, type Reminder, type Task } from '@kanbanto/model/types'
-import { and, desc, eq, gte, ilike, isNull, or, sql } from 'drizzle-orm'
+import { and, desc, eq, gte, ilike, inArray, isNull, or, sql } from 'drizzle-orm'
 import type { FastifyInstance, FastifyPluginAsync } from 'fastify'
 import { z } from 'zod'
 import type { SessionUser } from './auth/sessions'
@@ -45,7 +46,7 @@ import { createField, editBoardFields, libraryOf, listLibrary, updateField, type
 import { linksToResolve, pickCards, resolveLinks } from './boards/links'
 import { addCards, fieldsSaid, personSaid, pick, type CardSaid, type NewCardSaid } from './boards/newCards'
 import { ACTIVITY_DAYS, parseMoment, readActivity, workSigns } from './boards/activityLog'
-import { attachments, comments, notifications, reminderSends, tasks, users, workspaceMembers, workspaces } from './db/schema'
+import { attachments, boards, comments, notifications, reminderSends, tasks, users, workspaceMembers, workspaces } from './db/schema'
 import { ensureInbox } from './boards/inbox'
 import { env as settings } from './env'
 import { HttpError, siteUrl } from './http'
@@ -201,6 +202,10 @@ const fieldsOf = (data: BoardData, t: Task, linked?: Linked) =>
     ),
   }
 
+/** A task's ref from rows of the database (its number, and its board's letters), for answers that hold no board whole. */
+const REF = { number: tasks.number, code: boards.code }
+const refFrom = (row: { number: number | null; code: string | null }) => (row.code && row.number ? { task_ref: `${row.code}-${row.number}` } : {})
+
 /** A task, briefly, as the tools show it. `linked`: what its links to cards of other boards point at, when it's been looked up. */
 function brief(data: BoardData, idx: TaskIndex, t: Task, linked?: Linked) {
   const col = statusCol(idx, t.id)
@@ -226,9 +231,18 @@ function brief(data: BoardData, idx: TaskIndex, t: Task, linked?: Linked) {
   }
 }
 
+/** A task's ref, as a part of an answer (nothing when it has none: an Inbox card, or one that is gone). */
+const named = (data: BoardData, id: string, key: 'ref' | 'task_ref' = 'ref') => {
+  const t = data.tasks[id] ?? data.archived?.[id]
+  const ref = t && refOf(data.board, t)
+  return ref ? { [key]: ref } : {}
+}
+
 /** The unfinished tasks a task waits on, by title. */
 const waitingOn = (data: BoardData, idx: TaskIndex, id: string) =>
-  data.tasks[id].blockedBy.filter((b) => data.tasks[b] && idx.category.get(b) !== 'done').map((b) => ({ id: b, title: data.tasks[b].title }))
+  data.tasks[id].blockedBy
+    .filter((b) => data.tasks[b] && idx.category.get(b) !== 'done')
+    .map((b) => ({ id: b, ...named(data, b), title: data.tasks[b].title }))
 
 /** Whether task `id` waits on `on`, directly or through the tasks it waits on. */
 function waitsOn(data: BoardData, id: string, on: string): boolean {
@@ -280,25 +294,47 @@ function buildServer(app: FastifyInstance, me: SessionUser, token: TokenAccess, 
 
   /**
    * A task may be named by its ref (WEB-12, or just 12) wherever a tool takes a task's id: such names are turned into
-   * ids here, before the tool runs, on the board the call names. One that is a task's id is left alone, and so is
-   * one that names nothing (the tool then says there's no such task, as for any other id). Who may open the board is
-   * the tool's own check, as before.
+   * ids here, before the tool runs, on the board the name is of (the one the call names, with two exceptions said
+   * below). One that is a task's id is left alone, and so is one that names nothing (the tool then says there's no
+   * such task, as for any other id). Who may do what on the board is the tool's own check, as before.
    */
-  const named = async <A>(args: A): Promise<A> => {
+  const byName = async <A>(args: A): Promise<A> => {
     const a = args as Record<string, unknown> | null
-    if (!a || typeof a.board_id !== 'string') return args
-    const one = TASK_ID_ARGS.filter((k) => typeof a[k] === 'string' && readRef(a[k] as string))
-    const many = TASK_IDS_ARGS.filter((k) => Array.isArray(a[k]) && (a[k] as unknown[]).some((v) => typeof v === 'string' && readRef(v)))
+    if (!a) return args
+    const isRef = (v: unknown) => typeof v === 'string' && !!readRef(v)
+    const one = TASK_ID_ARGS.filter((k) => isRef(a[k]))
+    const many = TASK_IDS_ARGS.filter((k) => Array.isArray(a[k]) && (a[k] as unknown[]).some(isRef))
     if (!one.length && !many.length) return args
-    const data = await app.engine
-      .snapshot(a.board_id)
-      .then((s) => s.data)
-      .catch(() => null)
-    if (!data) return args
-    const id = (v: unknown) => (typeof v === 'string' && !data.tasks[v] && !data.archived?.[v] ? (taskByRef(data, v)?.id ?? v) : v)
+    // The board a name is on: the one the call names. Two names are of another board: the task a moved card goes
+    // under is on the board it moves to, and with no board named a new card's parent is in the Inbox.
+    const here = typeof a.board_id === 'string' ? a.board_id : null
+    const boardOf = async (k: string): Promise<string | null> => {
+      if (k === 'parent_id' && typeof a.to_board_id === 'string') return a.to_board_id
+      if (k === 'parent_id' && !here && Array.isArray(a.tasks)) return ensureInbox(app.db, me.id)
+      return here
+    }
+    // (Only on a board this person can open: a name says nothing about a board that isn't theirs to see.)
+    const read = new Map<string, BoardData | null>()
+    const dataOf = async (boardId: string | null) => {
+      if (!boardId) return null
+      if (!read.has(boardId))
+        read.set(
+          boardId,
+          await requireAccess(app.db, me, boardId, 'viewer')
+            .then(() => app.engine.snapshot(boardId))
+            .then((s) => s.data)
+            .catch(() => null),
+        )
+      return read.get(boardId)!
+    }
+    const id = (data: BoardData | null, v: unknown) =>
+      data && typeof v === 'string' && !data.tasks[v] && !data.archived?.[v] ? (taskByRef(data, v)?.id ?? v) : v
     const out: Record<string, unknown> = { ...a }
-    for (const k of one) out[k] = id(a[k])
-    for (const k of many) out[k] = (a[k] as unknown[]).map(id)
+    for (const k of one) out[k] = id(await dataOf(await boardOf(k)), a[k])
+    for (const k of many) {
+      const data = await dataOf(here)
+      out[k] = (a[k] as unknown[]).map((v) => id(data, v))
+    }
     return out as A
   }
 
@@ -307,7 +343,7 @@ function buildServer(app: FastifyInstance, me: SessionUser, token: TokenAccess, 
     <A>(fn: (args: A) => Promise<unknown>) =>
     async (args: A) => {
       try {
-        const answer = await fn(await named(args))
+        const answer = await fn(await byName(args))
         return answer instanceof WithPicture ? { content: answer.content } : text(answer)
       } catch (e) {
         const message = e instanceof HttpError ? e.message : 'Something went wrong on the server.'
@@ -322,6 +358,18 @@ function buildServer(app: FastifyInstance, me: SessionUser, token: TokenAccess, 
     return { board, access, data, idx: indexFor(data) }
   }
   const env = { db: app.db, engine: app.engine }
+  /** The refs of some tasks (`board/task` → WEB-12), looked up in one go: for answers made from what was logged. */
+  const refsOf = async (pairs: readonly { boardId: string; taskId: string }[]): Promise<Map<string, string>> => {
+    const out = new Map<string, string>()
+    if (!pairs.length) return out
+    const rows = await app.db
+      .select({ boardId: tasks.boardId, id: tasks.id, ...REF })
+      .from(tasks)
+      .innerJoin(boards, eq(boards.id, tasks.boardId))
+      .where(and(inArray(tasks.boardId, [...new Set(pairs.map((x) => x.boardId))]), inArray(tasks.id, [...new Set(pairs.map((x) => x.taskId))])))
+    for (const r of rows) if (r.code && r.number) out.set(`${r.boardId}/${r.id}`, `${r.code}-${r.number}`)
+    return out
+  }
   /** What the links of a board's cards point at, for this person: looked up once per board a tool shows tasks of. */
   const linkedOn = async (board: BoardRow, access: Access, data: BoardData): Promise<Linked | undefined> => {
     const refs = linksToResolve(data)
@@ -1030,6 +1078,9 @@ function buildServer(app: FastifyInstance, me: SessionUser, token: TokenAccess, 
       }
 
       const { entries, more } = await readActivity(app.db, { boardIds: [...byId.keys()], from, until, actors, limit: a.limit ?? PAGE })
+      const about = (e: (typeof entries)[number]) =>
+        e.kind === 'change' ? [...new Set(e.items.flatMap((i) => (i.taskId ? [i.taskId] : [])))] : e.taskId ? [e.taskId] : []
+      const refs = await refsOf(entries.flatMap((e) => about(e).map((taskId) => ({ boardId: e.boardId, taskId }))))
       return {
         since: from.toISOString(),
         ...(until && { until: until.toISOString() }),
@@ -1043,11 +1094,14 @@ function buildServer(app: FastifyInstance, me: SessionUser, token: TokenAccess, 
             ? {
                 ...(e.via && { via: e.via }),
                 what: e.items.map((i) => i.text).join('; '),
-                // The tasks it was about, to look at or act on (one may have been deleted since).
-                task_ids: [...new Set(e.items.flatMap((i) => (i.taskId ? [i.taskId] : [])))],
+                // The tasks it was about, to look at or act on (one may have been deleted since), and their refs in
+                // the same order (null: it has none, or is gone).
+                task_ids: about(e),
+                task_refs: about(e).map((id) => refs.get(`${e.boardId}/${id}`) ?? null),
               }
             : {
                 task_id: e.taskId,
+                ...(refs.has(`${e.boardId}/${e.taskId}`) && { task_ref: refs.get(`${e.boardId}/${e.taskId}`) }),
                 what: `commented on “${e.task ?? 'a deleted task'}”: ${e.body.length > 200 ? `${e.body.slice(0, 200)}…` : e.body}`,
                 ...(e.mentions.includes(me.id) && { mentions_you: true }),
               }),
@@ -1076,19 +1130,34 @@ function buildServer(app: FastifyInstance, me: SessionUser, token: TokenAccess, 
             if ((t.assigneeId ?? r.by) !== me.id) continue
             const at = fireTime(r, t)
             if (at && at.getTime() > Date.now() && at.getTime() <= until)
-              upcomingList.push({ at: at.toISOString(), board_id: b.id, board: b.name, task_id: t.id, title: t.title, ...(t.due && { due: t.due }) })
+              upcomingList.push({
+                at: at.toISOString(),
+                board_id: b.id,
+                board: b.name,
+                task_id: t.id,
+                ...named(data, t.id, 'task_ref'),
+                title: t.title,
+                ...(t.due && { due: t.due }),
+              })
           }
       }
       const fired = await app.db
-        .select({ at: reminderSends.fireAt, boardId: reminderSends.boardId, taskId: reminderSends.taskId, title: tasks.title })
+        .select({ at: reminderSends.fireAt, boardId: reminderSends.boardId, taskId: reminderSends.taskId, title: tasks.title, ...REF })
         .from(reminderSends)
         .leftJoin(tasks, and(eq(tasks.boardId, reminderSends.boardId), eq(tasks.id, reminderSends.taskId)))
+        .leftJoin(boards, eq(boards.id, reminderSends.boardId))
         .where(and(eq(reminderSends.userId, me.id), gte(reminderSends.sentAt, new Date(Date.now() - 86_400_000))))
         .orderBy(desc(reminderSends.sentAt))
         .limit(50)
       return {
         upcoming: upcomingList.sort((x, y) => x.at.localeCompare(y.at)),
-        went_off_last_24h: fired.map((f) => ({ at: f.at.toISOString(), board_id: f.boardId, task_id: f.taskId, title: f.title ?? 'a deleted task' })),
+        went_off_last_24h: fired.map((f) => ({
+          at: f.at.toISOString(),
+          board_id: f.boardId,
+          task_id: f.taskId,
+          ...refFrom(f),
+          title: f.title ?? 'a deleted task',
+        })),
       }
     }),
   )
@@ -1123,7 +1192,7 @@ function buildServer(app: FastifyInstance, me: SessionUser, token: TokenAccess, 
             if ((t.assigneeId ?? r.by) !== me.id) continue
             const at = fireTime(r, t)
             if (at && at.getTime() > Date.now() && dayIn(at, zone) === day)
-              soon.push({ at: at.toISOString(), board_id: b.id, board: b.name, task_id: t.id, title: t.title })
+              soon.push({ at: at.toISOString(), board_id: b.id, board: b.name, task_id: t.id, ...named(data, t.id, 'task_ref'), title: t.title })
           }
           if (t.assigneeId !== me.id || idx.category.get(id) === 'done') continue
           const row = { board_id: b.id, board: data.board.name, ...brief(data, idx, t) }
@@ -1135,18 +1204,20 @@ function buildServer(app: FastifyInstance, me: SessionUser, token: TokenAccess, 
       }
       overdue.sort((x, y) => sortTime(x.due!) - sortTime(y.due!))
       const fired = await app.db
-        .select({ at: reminderSends.fireAt, boardId: reminderSends.boardId, taskId: reminderSends.taskId, title: tasks.title })
+        .select({ at: reminderSends.fireAt, boardId: reminderSends.boardId, taskId: reminderSends.taskId, title: tasks.title, ...REF })
         .from(reminderSends)
         .leftJoin(tasks, and(eq(tasks.boardId, reminderSends.boardId), eq(tasks.id, reminderSends.taskId)))
+        .leftJoin(boards, eq(boards.id, reminderSends.boardId))
         .where(and(eq(reminderSends.userId, me.id), gte(reminderSends.sentAt, new Date(Date.now() - 86_400_000))))
         .orderBy(desc(reminderSends.sentAt))
         .limit(20)
       // Mentions they haven't opened under the bell, on boards they can still open. (Reading them here doesn't mark them seen.)
       const unseen = await app.db
-        .select({ n: notifications, actor: users.name, title: tasks.title, body: comments.body })
+        .select({ n: notifications, actor: users.name, title: tasks.title, body: comments.body, ...REF })
         .from(notifications)
         .leftJoin(users, eq(users.id, notifications.actorId))
         .leftJoin(tasks, and(eq(tasks.boardId, notifications.boardId), eq(tasks.id, notifications.taskId)))
+        .leftJoin(boards, eq(boards.id, notifications.boardId))
         .leftJoin(comments, eq(comments.id, notifications.commentId))
         .where(and(eq(notifications.userId, me.id), eq(notifications.kind, 'mention'), isNull(notifications.readAt)))
         .orderBy(desc(notifications.createdAt))
@@ -1162,7 +1233,7 @@ function buildServer(app: FastifyInstance, me: SessionUser, token: TokenAccess, 
         reminders_today: soon.sort((x, y) => x.at.localeCompare(y.at)),
         reminders_went_off_last_24h: fired
           .filter((f) => names.has(f.boardId))
-          .map((f) => ({ at: f.at.toISOString(), board_id: f.boardId, task_id: f.taskId, title: f.title ?? 'a deleted task' })),
+          .map((f) => ({ at: f.at.toISOString(), board_id: f.boardId, task_id: f.taskId, ...refFrom(f), title: f.title ?? 'a deleted task' })),
         unseen_mentions: unseen
           .filter((r) => r.n.boardId && r.n.taskId && names.has(r.n.boardId))
           .map((r) => ({
@@ -1171,6 +1242,7 @@ function buildServer(app: FastifyInstance, me: SessionUser, token: TokenAccess, 
             board_id: r.n.boardId,
             board: names.get(r.n.boardId!),
             task_id: r.n.taskId,
+            ...refFrom(r),
             task: r.title ?? 'a deleted task',
             text: (r.body ?? '').length > 200 ? `${r.body!.slice(0, 200)}…` : (r.body ?? ''),
           })),
@@ -1254,7 +1326,7 @@ function buildServer(app: FastifyInstance, me: SessionUser, token: TokenAccess, 
         ...brief(data, idx, t, linked),
         path: ancestorsOf(data.tasks, task_id).map((id) => data.tasks[id].title),
         ...(t.description && { description: t.description }),
-        ...(t.blockedBy.length && { waiting_on: t.blockedBy.map((id) => ({ id, title: data.tasks[id]?.title })) }),
+        ...(t.blockedBy.length && { waiting_on: t.blockedBy.map((id) => ({ id, ...named(data, id), title: data.tasks[id]?.title })) }),
         subtasks: (idx.childrenOf.get(task_id) ?? []).map((id) => brief(data, idx, data.tasks[id], linked)),
         ...(t.reminders?.length && { reminders: t.reminders.map((r) => reminderView(r, t)) }),
         ...(access.via !== 'public' && { you_follow_it: await isFollowing(app.db, board_id, t, me.id) }),
@@ -1346,6 +1418,12 @@ function buildServer(app: FastifyInstance, me: SessionUser, token: TokenAccess, 
       const w = await weekOf(app, me, from, zone)
       const days = Array.from({ length: 7 }, (_, i) => fromDay(toDay(from) + i))
       const card = new Map(w.cards.map((c) => [`${c.boardId}:${c.taskId}`, c]))
+      const refs = await refsOf(w.cards)
+      const ref = (k: string) => {
+        const c = card.get(k)!
+        const its = refs.get(`${c.boardId}/${c.taskId}`)
+        return its ? { task_ref: its } : {}
+      }
       const name = (k: string) => {
         const c = card.get(k)!
         return `${c.parent ? `${c.parent} › ` : ''}${c.title}`
@@ -1372,6 +1450,7 @@ function buildServer(app: FastifyInstance, me: SessionUser, token: TokenAccess, 
         tasks: [...perCard].map(([k, m]) => ({
           board_id: card.get(k)!.boardId,
           task_id: card.get(k)!.taskId,
+          ...ref(k),
           board: card.get(k)!.boardName,
           task: name(k),
           days: Object.fromEntries(Object.entries(m).map(([d, n]) => [d, formatDuration(n)])),
@@ -1382,7 +1461,13 @@ function buildServer(app: FastifyInstance, me: SessionUser, token: TokenAccess, 
             day: d,
             tasks: Object.entries(w.touched)
               .filter(([k, ds]) => ds.includes(d) && card.has(k) && !perCard.get(k)?.[d])
-              .map(([k]) => ({ board: card.get(k)!.boardName, task: name(k), board_id: card.get(k)!.boardId, task_id: card.get(k)!.taskId })),
+              .map(([k]) => ({
+                board: card.get(k)!.boardName,
+                task: name(k),
+                board_id: card.get(k)!.boardId,
+                task_id: card.get(k)!.taskId,
+                ...ref(k),
+              })),
           }))
           .filter((x) => x.tasks.length),
       }
@@ -1515,7 +1600,7 @@ function buildServer(app: FastifyInstance, me: SessionUser, token: TokenAccess, 
     const Fields = {
       description: z
         .string()
-        .max(20_000)
+        .max(DESCRIPTION_MAX)
         .optional()
         .describe('Markdown. @Name mentions someone on the board: they’re told, the first time their name is there.'),
       start: z.string().nullable().optional().describe(WHEN),
@@ -1602,9 +1687,10 @@ function buildServer(app: FastifyInstance, me: SessionUser, token: TokenAccess, 
             const cards = a.template_title ? [{ ...found.cards[0], title: a.template_title }, ...found.cards.slice(1)] : found.cards
             const made = fromTemplate(data, { name: found.name, cards }, { status, parentId: a.parent_id ?? null }, newId)
             await app.engine.mutate(a.board_id, newId(), made.command, me.id, token.app)
+            const now = (await app.engine.snapshot(a.board_id)).data
             return {
               board: { id: board.id, name: board.name },
-              created: [{ id: made.id, title: cards[0].title, subtasks: stepsOf(found) }],
+              created: [{ id: made.id, ...named(now, made.id), title: cards[0].title, subtasks: stepsOf(found) }],
               from_template: found.name,
             }
           }
@@ -1799,7 +1885,13 @@ function buildServer(app: FastifyInstance, me: SessionUser, token: TokenAccess, 
             ...(ids.length > shown.length && { unchanged: ids.length - shown.length }),
             tasks: shown.slice(0, 50).map((id) => {
               const t = after.data.tasks[id]
-              return { id, title: t.title, list: statusCol(after.idx, id).name, ...(t.parentId && { parent_id: t.parentId }) }
+              return {
+                id,
+                ...named(after.data, id),
+                title: t.title,
+                list: statusCol(after.idx, id).name,
+                ...(t.parentId && { parent_id: t.parentId }),
+              }
             }),
             ...(shown.length > 50 && { more: shown.length - 50 }),
           }
@@ -1891,7 +1983,12 @@ function buildServer(app: FastifyInstance, me: SessionUser, token: TokenAccess, 
         }
         await run(a.board_id, { type: 'task.update', id: t.id, fields: { reminders } })
         const after = (await open(a.board_id, 'viewer')).data.tasks[t.id]
-        return { task_id: t.id, title: t.title, reminders: (after.reminders ?? []).map((r) => reminderView(r, after)) }
+        return {
+          task_id: t.id,
+          ...refFrom({ number: after.number ?? null, code: data.board.code ?? null }),
+          title: t.title,
+          reminders: (after.reminders ?? []).map((r) => reminderView(r, after)),
+        }
       }),
     )
 
@@ -1908,11 +2005,18 @@ function buildServer(app: FastifyInstance, me: SessionUser, token: TokenAccess, 
         const { data } = await open(a.board_id, 'editor')
         const t = data.tasks[a.task_id] ?? data.archived?.[a.task_id]
         if (!t) throw new HttpError(404, 'There’s no such task on this board.')
-        if (!!t.archivedAt === !a.restore) return { task_id: t.id, title: t.title, archived: !!t.archivedAt, note: 'Nothing to do.' }
+        if (!!t.archivedAt === !a.restore)
+          return { task_id: t.id, ...named(data, t.id, 'task_ref'), title: t.title, archived: !!t.archivedAt, note: 'Nothing to do.' }
         await run(a.board_id, a.restore ? { type: 'task.restore', id: t.id } : { type: 'task.archive', id: t.id, complete: !!a.completed })
         const after = (await open(a.board_id, 'viewer')).data
         const now = after.archived?.[t.id]
-        return { task_id: t.id, title: t.title, archived: !a.restore, ...(now && { completed: !!now.archivedDone, archived_from: now.archivedList }) }
+        return {
+          task_id: t.id,
+          ...named(data, t.id, 'task_ref'),
+          title: t.title,
+          archived: !a.restore,
+          ...(now && { completed: !!now.archivedDone, archived_from: now.archivedList }),
+        }
       }),
     )
 
@@ -1937,7 +2041,9 @@ function buildServer(app: FastifyInstance, me: SessionUser, token: TokenAccess, 
         const before = Date.now() - a.older_than_days * 86_400_000
         const going = lists.flatMap((c) => doneBefore(idx, c.id, before))
         const withSubtasks = going.reduce((n, id) => n + 1 + idx.subTotal.get(id)!, 0)
-        const sample = going.slice(0, 20).map((id) => ({ id, title: data.tasks[id].title, done_at: new Date(idx.doneAt.get(id)!).toISOString() }))
+        const sample = going
+          .slice(0, 20)
+          .map((id) => ({ id, ...named(data, id), title: data.tasks[id].title, done_at: new Date(idx.doneAt.get(id)!).toISOString() }))
         if (!a.dry_run)
           for (const c of lists) await run(a.board_id, { type: 'tasks.archiveDone', status: c.id, before: new Date(before).toISOString() })
         return {
@@ -1974,9 +2080,12 @@ function buildServer(app: FastifyInstance, me: SessionUser, token: TokenAccess, 
         const list = a.list ? pick(dest.idx.columns, a.list, 'list').id : undefined
         const moved = await app.engine.transfer(a.board_id, a.to_board_id, a.task_id, { status: list, parentId: a.parent_id }, me.id, token.app)
         const { summary: s } = moved
+        // (It is a new card there, with that board's letters and a number of its own: said, since its old ref is gone.)
+        const there = (await app.engine.snapshot(a.to_board_id)).data
         return {
           board: moved.board,
           task_id: moved.id,
+          ...named(there, moved.id, 'task_ref'),
           moved: { title: s.title, subtasks: s.subtasks },
           ...(s.unassigned.length && { unassigned_because_not_on_that_board: s.unassigned }),
           ...(s.newLabels.length && { labels_added_there: s.newLabels }),
@@ -2160,7 +2269,7 @@ function buildServer(app: FastifyInstance, me: SessionUser, token: TokenAccess, 
               if (inIt)
                 throw new HttpError(
                   400,
-                  `“${col.name}” still has ${inIt} task${inIt === 1 ? '' : 's'}. Move them to another list first (update_task with list), or leave it.`,
+                  `“${col.name}” still has ${inIt} task${inIt === 1 ? '' : 's'}. Move them to another list first (update_tasks with list), or leave it.`,
                 )
               const other = idx.columns.find((c) => c.id !== col.id)
               if (!other) throw new HttpError(400, 'A board needs at least one list.')
@@ -2321,6 +2430,13 @@ function buildServer(app: FastifyInstance, me: SessionUser, token: TokenAccess, 
           const needsOwner = a.action === 'put_on_board' || a.action === 'take_off_board'
           board = (await requireAccess(app.db, me, a.board_id, needsOwner ? 'owner' : 'viewer')).board
           lib = libraryOf(board, me.id)
+          // A workspace's library is its members' to see (as on the website): someone who is only on one of its
+          // boards, or looking through a public link, has that board's own fields, which get_board gives.
+          if ('workspaceId' in lib && !(await workspaceRole(app.db, lib.workspaceId, me.id)))
+            throw new HttpError(
+              403,
+              'This board’s fields come from its workspace’s library, which only the workspace’s people can see. get_board gives the fields this board uses.',
+            )
         } else {
           const w = a.workspace?.trim()
           if (w && w.toLowerCase() !== 'personal') {
@@ -2600,7 +2716,8 @@ function buildServer(app: FastifyInstance, me: SessionUser, token: TokenAccess, 
         // them (the same words may be there twice).
         let passage: Passage | undefined
         if (a.about && !a.reply_to) {
-          const words = squeeze(plainWords(data.tasks[a.task_id]?.description ?? ''))
+          if (!data.tasks[a.task_id]) throw new HttpError(404, 'There’s no such task on this board.')
+          const words = squeeze(plainWords(data.tasks[a.task_id].description ?? ''))
           const at = locate(words, { quote: a.about, before: '', after: '' })
           if (!at)
             throw new HttpError(
@@ -2634,7 +2751,7 @@ export const mcpRoutes: FastifyPluginAsync = async (app) => {
   // (Bigger than other requests: a file an assistant writes arrives inside one.)
   app.post('/mcp', { bodyLimit: 2 * 1024 * 1024 }, async (req, reply) => {
     // (The 401's WWW-Authenticate header, pointing apps to sign-in, is added in app.ts.)
-    if (!req.apiToken || !req.user) throw new HttpError(401, 'Connect with an API token (Account settings → API tokens), or sign in from the app.')
+    if (!req.apiToken || !req.user) throw new HttpError(401, 'Connect with an API token (Account settings → API & apps), or sign in from the app.')
     if (req.user.mustVerify) throw new HttpError(403, 'Confirm your email address first: check your inbox for the link.')
     const server = buildServer(app, req.user, req.apiToken, siteUrl(req))
     const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true })

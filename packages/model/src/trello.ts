@@ -96,6 +96,8 @@ export interface TrelloFile {
 
 /** Cards and checklist items one imported board can hold. */
 export const TRELLO_MAX_TASKS = 10_000
+/** Lists, labels and fields one Trello board may bring, and comments (as many as a board's own file may hold). */
+export const TRELLO_MAX = { lists: 500, labels: 1000, fields: 200, comments: 50_000 }
 
 type Raw = Record<string, unknown>
 const obj = (v: unknown): Raw => (v && typeof v === 'object' && !Array.isArray(v) ? (v as Raw) : {})
@@ -116,6 +118,8 @@ export function isTrelloExport(raw: unknown): boolean {
 export function slimTrello(raw: unknown): TrelloFile {
   const f = obj(raw)
   const members = arr(f.members).map((m) => ({ id: str(obj(m).id), name: str(obj(m).fullName ?? obj(m).name) || str(obj(m).username) }))
+  // (By id, the first of each: looked up for every comment.)
+  const nameOf = new Map([...members].reverse().map((m) => [m.id, m.name]))
   return {
     slim: 'trello',
     name: str(f.name),
@@ -183,7 +187,7 @@ export function slimTrello(raw: unknown): TrelloFile {
               idCard: str(obj(data.card).id) || str(data.idCard),
               text: str(data.text),
               date: str(action.date),
-              by: str(who.fullName) || str(who.username) || members.find((m) => m.id === str(action.idMemberCreator))?.name || '',
+              by: str(who.fullName) || str(who.username) || nameOf.get(str(action.idMemberCreator)) || '',
             },
           ]
         }),
@@ -293,6 +297,17 @@ export function fromTrello(file: TrelloFile, opts: TrelloOptions): TrelloImport 
     return `${text.slice(0, max - 1)}…`
   }
 
+  // (A board has tens of lists, labels and fields. One made with hundreds of thousands is refused before anything
+  // is worked out for each card from them.)
+  const tooMany = (what: string, n: number, max: number) => {
+    if (n > max) throw new Error(`That board has too many ${what} to import: ${n.toLocaleString('en')} (${max.toLocaleString('en')} at most).`)
+  }
+  tooMany('lists', file.lists.length, TRELLO_MAX.lists)
+  tooMany('labels', file.labels.length, TRELLO_MAX.labels)
+  tooMany('custom fields', file.customFields.length, TRELLO_MAX.fields)
+  const listById = new Map(file.lists.map((l) => [l.id, l]))
+  const customFieldById = new Map(file.customFields.map((c) => [c.id, c]))
+
   // Lists.
   const open = file.lists.filter((l) => l.id && !l.closed).sort((a, b) => a.pos - b.pos)
   const closed = file.lists.filter((l) => l.id && l.closed)
@@ -393,6 +408,13 @@ export function fromTrello(file: TrelloFile, opts: TrelloOptions): TrelloImport 
   }
 
   const memberName = new Map(file.members.filter((m) => m.id && m.name).map((m) => [m.id, m.name]))
+  // (The options of a field that is written out as text, by id: looked up for every card that has one.)
+  const looseOptions = new Map<string, Map<string, string>>()
+  const looseOption = (cf: TrelloCustomField, id: string) => {
+    let names = looseOptions.get(cf.id)
+    if (!names) looseOptions.set(cf.id, (names = new Map(cf.options.map((o) => [o.id, o.name]))))
+    return names.get(id)
+  }
   const checklistsOf = new Map<string, TrelloChecklist[]>()
   for (const c of file.checklists) {
     if (!c.items.length) continue
@@ -420,7 +442,7 @@ export function fromTrello(file: TrelloFile, opts: TrelloOptions): TrelloImport 
     const away = card.closed || closedList.has(card.idList)
     const column = columnOf.get(card.idList)
     const list = column ?? firstOpen
-    const fromList = file.lists.find((l) => l.id === card.idList)!
+    const fromList = listById.get(card.idList)!
     const created = madeAt(card.id, now)
     const touched = moment(card.dateLastActivity, created)
     const id = newId()
@@ -446,11 +468,11 @@ export function fromTrello(file: TrelloFile, opts: TrelloOptions): TrelloImport 
       const field = fieldOf.get(item.idCustomField)
       const loose = asText.get(item.idCustomField)
       if (field) {
-        const cf = file.customFields.find((c) => c.id === item.idCustomField)!
+        const cf = customFieldById.get(item.idCustomField)!
         const checked = checkValue(field.def, valueOf(cf.type, item, field.options))
         if ('value' in checked && checked.value !== undefined) custom[field.def.id] = checked.value
       } else if (loose) {
-        const v = loose.type === 'list' ? loose.options.find((o) => o.id === item.idValue)?.name : valueOf(loose.type, item)
+        const v = loose.type === 'list' ? looseOption(loose, item.idValue) : valueOf(loose.type, item)
         if (v !== undefined && v !== '') said.push(`${loose.name.trim() || 'Field'}: ${v === true ? 'Yes' : String(v)}`)
       }
     }
@@ -540,16 +562,18 @@ export function fromTrello(file: TrelloFile, opts: TrelloOptions): TrelloImport 
   })
 
   // Comments, oldest first, under the name of whoever wrote them in Trello (here they are the importer's).
+  // (No more of them than a board's own file may hold: the ones over that are counted with those the file lacks.)
   const found = new Map<string, number>()
-  const comments = file.comments
-    .flatMap((c) => {
-      const taskId = taskOf.get(c.idCard)
-      if (!taskId || !c.text.trim()) return []
-      found.set(c.idCard, (found.get(c.idCard) ?? 0) + 1)
-      const head = c.by ? `**${c.by.replace(/([\\*_[\]])/g, '\\$1')}** wrote in Trello:\n\n` : 'Written in Trello:\n\n'
-      return [{ taskId, body: head + fit(c.text.trim(), COMMENT_MAX - head.length), at: moment(c.date, now) }]
-    })
-    .sort((a, b) => Date.parse(a.at) - Date.parse(b.at))
+  const comments: { taskId: string; body: string; at: string }[] = []
+  for (const c of file.comments) {
+    if (comments.length >= TRELLO_MAX.comments) break
+    const taskId = taskOf.get(c.idCard)
+    if (!taskId || !c.text.trim()) continue
+    found.set(c.idCard, (found.get(c.idCard) ?? 0) + 1)
+    const head = c.by ? `**${c.by.replace(/([\\*_[\]])/g, '\\$1')}** wrote in Trello:\n\n` : 'Written in Trello:\n\n'
+    comments.push({ taskId, body: head + fit(c.text.trim(), COMMENT_MAX - head.length), at: moment(c.date, now) })
+  }
+  comments.sort((a, b) => Date.parse(a.at) - Date.parse(b.at))
   const missingComments = cards.reduce((n, c) => n + Math.max(0, c.comments - (found.get(c.id) ?? 0)), 0)
 
   const background = COLOR[file.background]

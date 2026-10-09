@@ -33,8 +33,10 @@ Fixes go into the latest version. If you run Kanbanto yourself, keep it up to da
   account only if its address is confirmed.
 - **Signing in with Google** (off until a platform admin turns it on) asks Google only who the person is, and keeps
   only Google's ID for them. It reaches an existing account by address only when Google has checked the address and
-  runs its mailbox (Gmail or Google Workspace). If that account never confirmed its address, its password and
-  sessions are removed as it is joined, so whoever made it can't stay in. Closed sign-up applies to it too.
+  runs its mailbox (Gmail or Google Workspace). If that account never confirmed its address, its password, its
+  sessions and whatever else acts as it (API tokens, connected apps, its calendar link) are removed in the same
+  step that joins it, so whoever made it can't stay in, and can't slip a new password in as it changes hands. A
+  reset link that confirms such an address does the same. Closed sign-up applies to it too.
 - **A confirmation link works with the account's password**, or in the browser already signed in to it: reading the
   inbox isn't enough, so nobody can make an account for your address and have you confirm it for them. If someone
   did, "Forgot password" makes the account yours: your password, everyone else signed out.
@@ -47,6 +49,14 @@ Fixes go into the latest version. If you run Kanbanto yourself, keep it up to da
 - **Cross-site requests** are refused: changes must come from a page on the same site.
 - **Browsers are told what the app may do**: it loads scripts only from its own site, can't be put in a frame by
   another site, and over HTTPS browsers are told to keep using HTTPS.
+- **What people write can't act on whoever reads it.** Descriptions and comments are shown as text and the few
+  things Markdown stands for, never as HTML; links go only to web and mail addresses; and a picture in a text is
+  one of the card's own files, never one from another site, which would tell that site who is reading. A
+  **diagram** (a code block that says `mermaid`) is drawn in a page of its own that the browser lets load nothing
+  but Kanbanto's scripts, and is shown as a picture: whatever its text names (a picture, a style, a label made of
+  HTML), nothing is asked of any other site and nothing runs. Code is coloured from the words themselves.
+- **Earlier versions of a description** (the newest 100 for each card) are for the board's people, not for
+  visitors with its public link. Text taken out of a description can still be read there by them.
 - **Who's on a board** (names, never email addresses) is visible to its people, and to visitors when an owner turns
   on "Anyone with the link can view": that's the owner's choice. Only owners see email addresses. Visitors with the
   link never see logged time.
@@ -58,8 +68,8 @@ Fixes go into the latest version. If you run Kanbanto yourself, keep it up to da
 
 **Keys and secrets**
 
-- **Email keys, mail server passwords, storage keys, the Google app's secret and people's calendar connections**
-  saved in the website are encrypted (AES-256-GCM) with a key
+- **Email keys, mail server passwords, storage keys, the Google app's secret, people's calendar connections and
+  boards' Telegram bot keys** saved in the website are encrypted (AES-256-GCM) with a key
   that's never in the database: `ENCRYPTION_KEY`, or one Kanbanto makes on first start and keeps in its own volume.
   The browser only ever sees a short hint of a key, and never a password. Kanbanto won't start in production with the
   public development key.
@@ -76,12 +86,20 @@ Fixes go into the latest version. If you run Kanbanto yourself, keep it up to da
 
 - **Uploaded files** are always served as downloads (pictures inline), never as web pages, and common program and
   script types are refused. Files in a bucket are reached through 5-minute signed links.
+- **Imports are read once over, whatever is in them.** A spreadsheet, a Trello board or a board's own file is
+  limited in size, in rows, columns, lists and comments, and is checked like any other change; nothing in it is
+  fetched by the server (a Trello card's attachments become links). The same goes for what people write: a
+  description made to be slow to read costs no more than another of its length.
 - Uploads are checked (who, and the declared size) before the file is read. Files for a comment not yet posted are
   visible only to their uploader.
 - **Profile pictures** are small (256 KB at most) and only PNG, JPEG or WebP, decided by the file's first bytes and
   not by what the request calls it. They are served as pictures, never as web pages. A picture's link is long and
   random, changes whenever the picture does, and works without signing in: people looking at a board through its
   public link see who its cards are assigned to. Anyone given that link can load that one picture, and nothing else.
+  One that says it is more than 1,024 pixels a side is refused, since everyone's browser draws it.
+- **A card's cover** is drawn from a small copy of the picture, made by the browser of whoever set it and checked
+  the same way (PNG, JPEG or WebP by its first bytes, 300 KB and 1,280 by 2,560 pixels at most). The server never
+  opens a picture. The small copy is read by whoever can read the file itself.
 
 **API tokens, webhooks and AI assistants**
 
@@ -90,11 +108,23 @@ Fixes go into the latest version. If you run Kanbanto yourself, keep it up to da
   change anything. Deleting a token, or turning tokens off, stops it at once. Tokens can't open a board's live
   connection.
 - **A webhook's address has to agree**: before one is saved it's sent a one-time code and must answer with it, so a
-  webhook can't be pointed at somebody else's server.
+  webhook can't be pointed at somebody else's server. A chat channel (Slack, Google Chat, Microsoft Teams,
+  Discord) can't answer, so it is sent a first message instead and the webhook is saved only if the chat app takes
+  it; on a site limited to public addresses, the address must be that chat app's own.
 - **Webhooks** are off until a platform admin allows them. By default they may only go to public `https://` addresses,
   checked after every name lookup, with redirects not followed, so board owners can't make the server reach its
   private network. Admins can allow any address for internal tools; only do so if you trust every board owner.
-  Deliveries are signed with a per-webhook secret, stored encrypted.
+  Deliveries to another app are signed with a per-webhook secret, stored encrypted; a chat channel's are not
+  signed (nobody at that end checks). A chat channel's address is itself the key to posting there: it is kept as
+  it was given, and a board's owners can read it back, so treat a copy of the database, and an owner's API token,
+  as holding it.
+- **A board's Telegram bot** is off until a platform admin allows bots. A board's owner gives it a bot of their
+  own (its key is stored encrypted and never shown again), and connects one chat with a one-time code: only that
+  chat is listened to, and anyone else who finds the bot gets no answer. The server asks Telegram for the bot's
+  messages; nothing reaches the server from Telegram. The board's news (card titles, who did what, the start of
+  comments) is sent to that chat and stays in its history, and what is written there becomes cards and comments
+  as the person who connected it (in a group, as whoever wrote it, when the bot knows them). A chat adds at most
+  20 cards a minute and 200 a day.
 - **Apps that connect by signing in** (OAuth, for MCP) are off until a platform admin allows them, by default only
   known AI apps. Each person approves each app on a page that shows where it sends them back to; codes are one-time,
   PKCE is required, access tokens last an hour and refresh tokens are replaced on every use (only hashes are stored).

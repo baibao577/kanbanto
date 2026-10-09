@@ -5,6 +5,8 @@ import { accountPictures, users } from './db/schema'
 
 /** How big a profile picture can be. The app shrinks one to 256 × 256 before sending it, which is a tenth of this. */
 export const PICTURE_MAX = 256 * 1024
+/** …and in pixels a side: four times what the app sends. */
+export const PICTURE_SIDE_MAX = 1024
 /** The kinds a profile picture can be (what a browser's canvas writes). */
 export const PICTURE_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp'])
 

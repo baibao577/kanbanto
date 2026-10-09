@@ -227,7 +227,8 @@ describe('MCP', () => {
     // Boards say their letters, and cards their names.
     expect((await tool('list_boards', {})).boards[0]).toMatchObject({ id, code: 'MY' })
     // Which of a card's files is its cover (the picture across its top on the Board) is said too.
-    const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52])
+    // (The start of a PNG, as far as where it says its size: 256 by 256.)
+    const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52, 0, 0, 1, 0, 0, 0, 1, 0])
     const file = async (name: string) =>
       (
         await ann.request('POST', `/api/boards/${id}/tasks/A3/attachments`, png, {
@@ -306,6 +307,44 @@ describe('MCP', () => {
     expect(party).toMatchObject({ title: 'Autumn party', list: 'Doing' })
     expect(party.subtasks.map((x: { title: string }) => x.title)).toEqual(['Send invites', 'Book a photographer'])
     expect(party.assignee).toBeUndefined()
+    // Every answer that names a task gives its ref with it, also the ones fromDeploy from what was logged.
+    const lowered = await tool('update_tasks', { board_id: id, task_ids: ['MY-6', 'A4'], priority: 'low' })
+    expect(lowered.tasks.map((x: { id: string; ref: string }) => [x.id, x.ref]).sort()).toEqual([
+      ['A3', 'MY-6'],
+      ['A4', 'MY-7'],
+    ])
+    expect(await tool('set_reminder', { board_id: id, task_id: 'MY-6', at: new Date(Date.now() + 3_600_000).toISOString() })).toMatchObject({
+      task_id: 'A3',
+      task_ref: 'MY-6',
+    })
+    expect((await tool('reminders', {})).upcoming).toMatchObject([{ task_id: 'A3', task_ref: 'MY-6' }])
+    const logged = (await tool('recent_activity', { board_id: id })).activity as { task_ids?: string[]; task_refs?: (string | null)[] }[]
+    const both = logged.find((e) => e.task_ids?.includes('A3') && e.task_ids.includes('A4'))!
+    expect(both.task_refs).toEqual(both.task_ids!.map((x) => ({ A3: 'MY-6', A4: 'MY-7' })[x]))
+    await tool('update_task', { board_id: id, task_id: 'A4', waiting_on: ['MY-6'] })
+    expect((await tool('get_task', { board_id: id, task_id: 'A4' })).waiting_on).toEqual([{ id: 'A3', ref: 'MY-6', title: 'Deploy' }])
+    expect(await tool('archive_task', { board_id: id, task_id: 'MY-7' })).toMatchObject({ task_id: 'A4', task_ref: 'MY-7', archived: true })
+    // A card from a template says its ref too.
+    await ann.ok('POST', `/api/boards/${id}/templates`, { taskId: 'A3', name: 'A deploy' })
+    const fromDeploy = await tool('create_tasks', { board_id: id, from_template: 'A deploy' })
+    expect(fromDeploy.created[0].ref).toMatch(/^MY-\d+$/)
+    // A name is read on the board it is of. A card moved to another board goes under a task of that board, named
+    // by its ref there; and it comes back with its new ref, since its old one is gone.
+    const shop = await tool('create_board', { name: 'Shop' })
+    const opening = (await tool('create_tasks', { board_id: shop.board.id, tasks: [{ title: 'Opening' }] })).created[0]
+    expect(opening.ref).toBe('SHOP-1')
+    const went = await tool('move_to_board', { board_id: id, task_id: 'MY-6', to_board_id: shop.board.id, parent_id: 'shop-1' })
+    expect(went).toMatchObject({ task_ref: 'SHOP-2', moved: { title: 'Deploy' } })
+    expect((await tool('get_task', { board_id: shop.board.id, task_id: 'SHOP-2' })).path).toEqual(['Opening'])
+    // With no board named, a new card goes to the Inbox, below a card of the Inbox by its number there.
+    const thought = (await tool('create_tasks', { tasks: [{ title: 'A thought' }] })).created[0]
+    const below = await tool('create_tasks', { tasks: [{ title: 'More of it' }], parent_id: thought.id })
+    expect(below.isError).toBe(false)
+    // (A ref of another board says nothing both a board this person can't open: it is left as it was written.)
+    const outsider = await Person.signUp(t.app, 'Bob')
+    const theirs = withToken(await makeToken(outsider, 'write'))
+    const asOutsider = async (name: string, args: object) => toolResult(await rpc(theirs, 'tools/call', { name, arguments: args }))
+    expect((await asOutsider('get_task', { board_id: id, task_id: 'MY-1' })).isError).toBe(true)
   })
 
   it('an assistant changes several tasks in one go: one change, one line of activity, nothing on a wrong name', async () => {
@@ -843,6 +882,15 @@ describe('MCP', () => {
     expect((await his({ action: 'archive', board_id: id, field: 'Stage' })).error).toBe('Only the admins of Acme can change its fields.')
     expect((await his({ action: 'put_on_board', board_id: id, field: 'Stage' })).isError).toBe(true)
     expect((await his({ action: 'list', workspace: 'Elsewhere' })).error).toMatch(/You’re not in a workspace called “Elsewhere”/)
+    // Someone who is on one of the workspace's boards and not in the workspace (or only has the board's public
+    // link) isn't shown the workspace's library through that board: its name, its fields, the ones put away.
+    const cy = await Person.signUp(t.app, 'Cy')
+    await ann.ok('POST', `/api/boards/${id}/invitations`, { email: 'cy@example.com', role: 'viewer' })
+    const outside = await as(cy)
+    const shown = await outside({ action: 'list', board_id: id })
+    expect(shown.isError).toBe(true)
+    expect(shown.error).toMatch(/only the workspace’s people can see/)
+    expect(JSON.stringify(shown)).not.toMatch(/Acme|Stage|Deal value/)
     expect((await ann.ok('GET', `/api/workspaces/${ws}/fields`)).fields.map((f: { name: string }) => f.name)).toEqual([
       'Stage',
       'Deal value',
@@ -1031,7 +1079,9 @@ describe('MCP', () => {
 
     // What a task waits on: set here, shown in the overview; two tasks can't wait on each other.
     await call('update_task', { board_id: id, task_id: site_.id, waiting_on: [pricing.id] })
-    expect((await call('get_task', { board_id: id, task_id: site_.id })).waiting_on).toEqual([{ id: pricing.id, title: 'Pricing' }])
+    expect((await call('get_task', { board_id: id, task_id: site_.id })).waiting_on).toMatchObject([
+      { id: pricing.id, ref: pricing.ref, title: 'Pricing' },
+    ])
     expect((await call('team_overview', { board_id: id })).boards[0].blocked.tasks[0]).toMatchObject({
       title: 'Website',
       waiting_on: [{ id: pricing.id, title: 'Pricing' }],
@@ -1049,7 +1099,7 @@ describe('MCP', () => {
     expect(mine.overdue.tasks.map((x: { title: string }) => x.title)).toEqual(['Pricing'])
     expect(mine.due_today.tasks).toEqual([expect.objectContaining({ title: 'Website', board_id: id, board: 'Launch' })])
     expect(mine.in_progress.tasks.filter((x: { board_id: string }) => x.board_id === id).map((x: { title: string }) => x.title)).toEqual(['Website'])
-    expect(mine.blocked.tasks[0].waiting_on).toEqual([{ id: pricing.id, title: 'Pricing' }])
+    expect(mine.blocked.tasks[0].waiting_on).toEqual([{ id: pricing.id, ref: pricing.ref, title: 'Pricing' }])
     expect(mine.unseen_mentions).toEqual([expect.objectContaining({ who: 'Bob', board_id: id, task_id: site_.id, text: '@Ann which photos?' })])
 
     // What's new says which board and task each line is about.

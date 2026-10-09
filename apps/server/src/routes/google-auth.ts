@@ -2,8 +2,7 @@ import { randomBytes } from 'node:crypto'
 import { eq } from 'drizzle-orm'
 import type { FastifyPluginAsync, FastifyRequest } from 'fastify'
 import { z } from 'zod'
-import { endEmailTokens } from '../auth/email-tokens'
-import { createSession, endAllSessions } from '../auth/sessions'
+import { createSession, endWhatActsAs } from '../auth/sessions'
 import { badApp, type GoogleIdentity } from '../calendar/google'
 import { googleSignInApp } from '../calendar/sync'
 import { users } from '../db/schema'
@@ -19,8 +18,10 @@ import { insertAccount, inviteForSignUp, LIMIT, setSessionCookie, setUpAccount }
  * 1. the one already tied to this Google account (its `sub`), whatever its email address is now;
  * 2. the one with the same email address, when Google has checked the address and runs its mailbox: it is tied to
  *    this Google account from then on, and its password keeps working. One that never confirmed its email is
- *    confirmed by this, and loses its password and its sessions: someone else may have made it with this address
- *    and their own password (the same takeover "Forgot password" is, see routes/auth.ts);
+ *    confirmed by this, and loses its password, its sessions and whatever else acts as it (API tokens, connected
+ *    apps, its calendar link): someone else may have made it with this address and their own password (the same
+ *    takeover "Forgot password" is, see routes/auth.ts). All of that is one step with the joining: were the
+ *    sessions ended a moment after the password is gone, one of them could set a new password in between;
  * 3. a new one, already confirmed and without a password, under the rules of the sign-up form (closed sign-up
  *    needs an invite).
  *
@@ -89,7 +90,8 @@ export const googleAuthRoutes: FastifyPluginAsync = async (app) => {
       if (known) return known.disabledAt ? { problem: 'disabled' as const } : { userId: known.id }
       if (!who.emailVerified) return { problem: 'unverified' as const }
       const email = who.email.trim().toLowerCase()
-      const [same] = await tx.select().from(users).where(eq(users.email, email))
+      // (Held while this decides, so a change of password asked for at the same moment waits for the answer.)
+      const [same] = await tx.select().from(users).where(eq(users.email, email)).for('update')
       if (same) {
         // Tied to another Google account, or an address Google only knew the owner of once: their password it is.
         if (same.googleSub || !who.hosted) return { problem: 'password' as const }
@@ -99,6 +101,8 @@ export const googleAuthRoutes: FastifyPluginAsync = async (app) => {
           .update(users)
           .set({ googleSub: who.sub, ...(takenOver && { emailVerifiedAt: new Date(), passwordHash: null }), updatedAt: new Date() })
           .where(eq(users.id, same.id))
+        // Whoever made the account (and whatever acted as it) is out; see the top of this file.
+        if (takenOver) await endWhatActsAs(tx, same.id)
         return { userId: same.id, takenOver }
       }
       await inviteForSignUp(tx, invite, email, 'google')
@@ -143,13 +147,8 @@ export const googleAuthRoutes: FastifyPluginAsync = async (app) => {
     }
     if ('problem' in found) return back(found.problem)
 
-    if (found.takenOver) {
-      // Whoever made the account (and whatever acted as it) is out; see the top of this file.
-      await endAllSessions(app.db, found.userId)
-      await app.push.forget(found.userId, {})
-      await endEmailTokens(app.db, found.userId)
-      app.hub.signOut(found.userId)
-    }
+    // (Their sessions ended with the joining itself: the pages they had open are told.)
+    if (found.takenOver) app.hub.signOut(found.userId)
     let land = waiting.next ?? ''
     if (found.created) {
       const { joined } = found.created

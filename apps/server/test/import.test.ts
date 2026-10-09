@@ -298,6 +298,15 @@ describe('cards from a spreadsheet', () => {
     expect(done.report.problems).toMatchObject([{ column: 'Assignee', kind: 'person', rows: [6], samples: ['Zed'] }])
     expect(await bell(bob)).toMatchObject([{ kind: 'change', actor: 'Ann', changes: ['assigned “First” and 2 more cards to you'] }])
     expect(await bell(ann)).toEqual([])
+    // Addresses are the owners' to see: someone who can only edit names the others by name, and can't find out who
+    // has which address by trying a column of them. Their own address is theirs to use.
+    const tried = await bring(bob, id, {
+      dryRun: true,
+      text: sheet(['Title', 'Assignee'], ['One', 'ann@example.com'], ['Two', 'bob@example.com'], ['Three', 'nobody@example.com'], ['Four', 'Ann']),
+    })
+    expect(tried.report.problems).toMatchObject([
+      { column: 'Assignee', kind: 'person', rows: [2, 4], samples: ['ann@example.com', 'nobody@example.com'] },
+    ])
     const { data } = await load(ann, id)
     const follows = async (p: Person, title: string) =>
       (await p.ok('GET', `/api/boards/${id}/tasks/${titled(data.tasks, title).id}/follow`)).following

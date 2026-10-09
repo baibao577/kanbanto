@@ -400,6 +400,9 @@ export const commentRoutes: FastifyPluginAsync = async (app) => {
     const { id, commentId } = parse(CommentParams, req.params)
     const me = requireUser(req.user)
     const { access } = await requireAccess(app.db, me, id, 'viewer', { write: true })
+    // (Someone who is no longer on the board, looking through its public link, changes nothing on it: not even a
+    // comment they wrote while they were, which now takes its answers and maybe the card's cover with it.)
+    if (access.via === 'public') throw new HttpError(403, 'Join this board to delete comments on it.')
     const [c] = await app.db
       .select()
       .from(comments)

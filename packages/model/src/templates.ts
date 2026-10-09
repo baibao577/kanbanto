@@ -21,6 +21,13 @@ import { PRIORITIES, type BoardData, type LabelDef, type Priority, type StatusCo
 export const TEMPLATES_MAX = 30
 export const TEMPLATE_CARDS_MAX = 200
 export const TEMPLATE_NAME_MAX = 100
+/**
+ * How much one card template may hold, and one board template with the card templates in it, in letters as they
+ * are kept: a template is a card's shape, a few pages at most, not a store for 200 full descriptions. (Without a
+ * most, thirty of them could weigh hundreds of megabytes, read whole whenever templates are listed.)
+ */
+export const TEMPLATE_TEXT_MAX = 500_000
+export const BOARD_TEMPLATE_TEXT_MAX = 4_000_000
 
 /** One card of a template: `key` names it within the template, `parent` the card it sits under (null: the top one). */
 export interface TemplateCard {

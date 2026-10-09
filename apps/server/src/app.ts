@@ -385,6 +385,8 @@ export async function buildApp(
       // The app's page says what it may load: its own files and nothing else.
       setHeaders: (res, file) => {
         if (policy && path.basename(file) === 'index.html') res.header('content-security-policy', policy)
+        // The page diagrams are drawn in runs this site's scripts and loads nothing else at all (see DIAGRAM_PAGE_POLICY).
+        if (path.basename(file) === 'diagram.html') res.header('content-security-policy', DIAGRAM_PAGE_POLICY)
       },
     })
     // Where a phone sends what was shared to Kanbanto (the manifest's share_target): the app, which shows its add page.
@@ -399,6 +401,22 @@ export async function buildApp(
   if (pagesDir) servePages(app, pagesDir)
   return app
 }
+
+/**
+ * The content-security policy for the page the web app draws diagrams in (its diagram.html, loaded out of sight in a
+ * frame): this site's scripts, the styles a drawing carries in itself, and nothing else. No picture, style sheet,
+ * font or connection, from this site or any other. A diagram is text written by anyone who can edit or comment, and
+ * it can name things to load; drawn there, none of it is ever asked for, so no other site learns who reads a card.
+ */
+export const DIAGRAM_PAGE_POLICY = [
+  "default-src 'none'",
+  "script-src 'self'",
+  "style-src 'unsafe-inline'",
+  'img-src data:',
+  "base-uri 'none'",
+  "form-action 'none'",
+  "frame-ancestors 'self'",
+].join('; ')
 
 /**
  * The content-security policy for the web app's page: scripts from this site only (plus the one small script written

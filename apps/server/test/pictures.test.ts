@@ -9,8 +9,13 @@ beforeAll(async () => (t = await setup()))
 beforeEach(async () => reset(t.db))
 afterAll(async () => t.close())
 
-const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52])
-const JPEG = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0, 16, 0x4a, 0x46, 0x49, 0x46])
+/** (The start of a PNG, as far as where it says its size: 256 by 256.) */
+const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52, 0, 0, 1, 0, 0, 0, 1, 0])
+/** (A JPEG's first part, then the part that starts the picture and says its size: 256 by 256.) */
+const JPEG = Buffer.from([
+  0xff, 0xd8, 0xff, 0xe0, 0, 16, 0x4a, 0x46, 0x49, 0x46, 0, 1, 1, 0, 0, 1, 0, 1, 0, 0, 0xff, 0xc0, 0, 17, 8, 1, 0, 1, 0, 3, 1, 0x22, 0, 2, 0x11, 1, 3,
+  0x11, 1,
+])
 
 const put = (p: Person, bytes: Buffer, type = 'image/png', more: Record<string, string> = {}) =>
   p.request('PUT', '/api/account/picture', bytes, { 'content-type': type, ...more })
@@ -71,6 +76,16 @@ describe('profile pictures', () => {
     expect((await put(ann, Buffer.from('GIF89a........'))).status).toBe(415)
     expect((await put(ann, Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"/>'), 'image/svg+xml')).status).toBe(415)
     expect((await put(ann, PNG, 'application/octet-stream')).status).toBe(415)
+    // One that doesn't say how big it is, and one of a few bytes that says it is thirty thousand pixels a side
+    // (everyone's browser would have to lay those out): neither is kept.
+    expect((await put(ann, PNG.subarray(0, 16))).status).toBe(415)
+    const huge = Buffer.from(PNG)
+    huge.writeUInt32BE(30_000, 16)
+    huge.writeUInt32BE(30_000, 20)
+    expect((await put(ann, huge)).status).toBe(413)
+    const wide = Buffer.from(JPEG)
+    wide.writeUInt16BE(5000, wide.indexOf(Buffer.from([0xff, 0xc0])) + 7)
+    expect((await put(ann, wide, 'image/jpeg')).status).toBe(413)
     expect((await ann.request('PUT', '/api/account/picture', { picture: 'x' })).status).toBe(400)
 
     // Too big: refused by the size it gives, and by its real size when that was a lie.

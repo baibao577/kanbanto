@@ -54,6 +54,49 @@ interface Session {
  */
 const MAX_BYTES = 8 * 1024 * 1024
 
+// What one browser, and one person, may take of the server by writing. Far more than writing takes (a key is tens
+// of bytes, a pasted page a few hundred thousand), so nobody at work meets these; they are for a browser that isn't
+// one, sending whatever it likes for as long as it likes.
+/** Descriptions one browser may be writing at once, one person in all their browsers, and everyone together. */
+const MAX_SESSIONS = { socket: 4, person: 12, all: 500 }
+/** What one browser may send in a minute: bytes of writing, messages of any kind, and times it joins. */
+const PER_MINUTE = { bytes: 2 * 1024 * 1024, messages: 6000, joins: 30 }
+/** One cursor message, as it is sent (a place in the text, a name and a colour), and the cursors one browser has in a session. */
+const MAX_CURSOR = 16 * 1024
+const MAX_CURSORS = 8
+
+/**
+ * The Yjs ids a cursor message is about. (Its form, from y-protocols: how many, then for each its id, a count and
+ * its state as text.) Null when it isn't one, or is about more cursors than a browser has.
+ */
+function cursorsIn(update: Uint8Array): number[] | null {
+  let at = 0
+  const number = () => {
+    let n = 0
+    for (let scale = 1; ; scale *= 128) {
+      if (at >= update.length || scale > 2 ** 49) throw new Error('not a number')
+      const byte = update[at++]
+      n += (byte & 0x7f) * scale
+      if (byte < 0x80) return n
+    }
+  }
+  try {
+    const count = number()
+    if (count > MAX_CURSORS) return null
+    const ids: number[] = []
+    for (let i = 0; i < count; i++) {
+      ids.push(number())
+      number()
+      const length = number()
+      at += length
+      if (at > update.length) return null
+    }
+    return at === update.length ? ids : null
+  } catch {
+    return null
+  }
+}
+
 const b64 = (bytes: Uint8Array) => Buffer.from(bytes).toString('base64')
 const bytesOf = (text: string) => new Uint8Array(Buffer.from(text, 'base64'))
 const keyOf = (boardId: string, taskId: string) => `${boardId}\u0000${taskId}`
@@ -62,12 +105,17 @@ const seeded = (doc: Y.Doc) => doc.getMap('meta').get('seeded') === true
 /** Something reached the document that builds on a part it doesn't have. */
 const waiting = (doc: Y.Doc) => !!doc.store.pendingStructs
 
+/** Said to a browser that asks for more than a browser at work does. */
+const TOO_MUCH = 'Too many descriptions are being written from here at once. Close one, wait a minute and try again.'
+
 export class LiveDocs {
   private sessions = new Map<string, Session>()
   private send: (socket: Socket, message: LiveMessage) => void
   private announce: (boardId: string, message: LiveMessage) => void
   private grace: number
   private quiet: number
+  /** What each browser has sent in the minute that is running (see PER_MINUTE). */
+  private sent = new WeakMap<Socket, { since: number; bytes: number; messages: number; joins: number }>()
 
   /**
    * `send`: one message to one browser. `announce`: one to everyone with the board open (who is writing which card).
@@ -87,20 +135,36 @@ export class LiveDocs {
 
   /** What a browser sent about a description it has open. Anything out of place is answered, never thrown. */
   handle(boardId: string, socket: Socket, who: Writer, m: DocRequest) {
-    if (m.op === 'join') return this.join(boardId, socket, who, m)
+    if (m.op === 'join') {
+      if (!this.within(socket, 'joins', 1)) return this.send(socket, { type: 'doc', op: 'refused', taskId: m.taskId, error: TOO_MUCH })
+      return this.join(boardId, socket, who, m)
+    }
     const s = this.sessions.get(keyOf(boardId, m.taskId))
     const member = s?.members.get(socket)
     if (m.op === 'leave') return void (s && member && this.remove(s, socket))
     // Not in this card's session (it ended, or the server started again): told to join again, with nothing taken in.
     if (!s || !member) return this.reset(socket, m.taskId)
+    // (More in a minute than writing sends: not taken in, and nothing is said. A browser at work never gets here.)
+    if (!this.within(socket, 'messages', 1)) return
     if (m.op === 'awareness') {
+      // A cursor is its own browser's to move: a message about one that another browser brought, or about more of
+      // them than a browser has, isn't taken in. (So nobody shows a cursor under someone else's, or takes theirs
+      // away, and the cursors a session remembers stay as few as the browsers in it.)
+      if (m.data.length > MAX_CURSOR) return
+      const data = bytesOf(m.data)
+      const ids = cursorsIn(data)
+      if (!ids) return
+      for (const [other, theirs] of s.members) if (other !== socket && ids.some((id) => theirs.clients.has(id))) return
+      if (new Set([...member.clients, ...ids]).size > MAX_CURSORS) return
       try {
-        applyAwarenessUpdate(s.awareness, bytesOf(m.data), socket)
+        applyAwarenessUpdate(s.awareness, data, socket)
       } catch {
         // (Not an awareness update: nothing to pass on.)
       }
       return
     }
+    // (More writing in a minute than any writer's: this browser starts again from what the session has.)
+    if (!this.within(socket, 'bytes', m.data.length)) return this.reset(socket, m.taskId)
     if (m.session !== s.id) return this.reset(socket, m.taskId)
     // Until the saved text is in, only the browser asked to load it writes. Anyone else's keys would end up under
     // it, and what they write next would build on keys the server never took: they start again from what is here.
@@ -129,6 +193,16 @@ export class LiveDocs {
     this.send(socket, { type: 'doc', op: 'reset', taskId })
   }
 
+  /** Counts something a browser sent toward what it may send in a minute. False: it is over (and isn't counted). */
+  private within(socket: Socket, what: keyof typeof PER_MINUTE, amount: number): boolean {
+    const now = Date.now()
+    let sent = this.sent.get(socket)
+    if (!sent || now - sent.since >= 60_000) this.sent.set(socket, (sent = { since: now, bytes: 0, messages: 0, joins: 0 }))
+    if (sent[what] + amount > PER_MINUTE[what]) return false
+    sent[what] += amount
+    return true
+  }
+
   private join(boardId: string, socket: Socket, who: Writer, m: Extract<DocRequest, { op: 'join' }>) {
     const { taskId } = m
     if (!who.canWrite) return this.send(socket, { type: 'doc', op: 'refused', taskId, error: 'You can read this card, and can’t change it.' })
@@ -142,7 +216,20 @@ export class LiveDocs {
         error: 'Kanbanto has been updated since this page was opened. Load the page again to write here.',
         reload: true,
       })
-    const s = this.sessions.get(keyOf(boardId, taskId)) ?? this.open(boardId, taskId)
+    const at = this.sessions.get(keyOf(boardId, taskId))
+    if (!at?.members.has(socket)) {
+      // (One more description for this browser, and maybe one more for the server to hold.)
+      let mine = 0
+      let theirs = 0
+      for (const other of this.sessions.values()) {
+        if (other.members.has(socket)) mine++
+        if ([...other.members.values()].some((member) => member.userId === who.userId)) theirs++
+      }
+      const full =
+        mine >= MAX_SESSIONS.socket || (theirs >= MAX_SESSIONS.person && !at?.members.size) || (!at && this.sessions.size >= MAX_SESSIONS.all)
+      if (full) return this.send(socket, { type: 'doc', op: 'refused', taskId, error: TOO_MUCH })
+    }
+    const s = at ?? this.open(boardId, taskId)
     if (s.ending) clearTimeout(s.ending)
     s.ending = null
     const known = s.members.get(socket)
@@ -201,7 +288,7 @@ export class LiveDocs {
     })
     awareness.on('update', ({ added, updated, removed }: { added: number[]; updated: number[]; removed: number[] }, origin: unknown) => {
       const from = s.members.get(origin as Socket)
-      if (from) for (const id of added) from.clients.add(id)
+      if (from) for (const id of [...added, ...updated]) from.clients.add(id)
       const data = b64(encodeAwarenessUpdate(awareness, [...added, ...updated, ...removed]))
       for (const other of s.members.keys()) if (other !== origin) this.send(other, { type: 'doc', op: 'awareness', taskId, data })
     })
@@ -213,8 +300,9 @@ export class LiveDocs {
     const member = s.members.get(socket)
     if (!member) return
     s.members.delete(socket)
-    // Their cursor goes with them.
+    // Their cursor goes with them (and what was remembered of it: a session keeps nothing of a browser that left).
     removeAwarenessStates(s.awareness, [...member.clients], 'left')
+    for (const id of member.clients) s.awareness.meta.delete(id)
     if (s.seeder === socket) {
       s.seeder = null
       // They left before the saved text was in: the next one is asked.

@@ -104,23 +104,52 @@ export function quoteLine(quote: string, max = 80): string {
 }
 
 /**
+ * Links and pictures as their words, not their addresses: `[words](address)` and `![words](address)`. Read in one
+ * pass over the text, so a text made to be slow to read (a long run of "[") costs no more than any other of its
+ * length: the same answer as `/!?\[([^\]]*)\]\([^)]*\)/g` gives, without going over the same letters again.
+ */
+function linkWords(md: string): string {
+  let out = ''
+  let from = 0
+  // The next "]" and the next ")", each from where it was last looked for (-1: there is none any more).
+  let close = -2
+  let end = -2
+  for (let open = md.indexOf('['); open >= 0; open = md.indexOf('[', open + 1)) {
+    if (open < from) continue
+    if (close !== -1 && close < open) close = md.indexOf(']', open)
+    if (close === -1) break
+    if (md[close + 1] !== '(') continue
+    if (end !== -1 && end < close + 2) end = md.indexOf(')', close + 2)
+    if (end === -1) break
+    const mark = open > from && md[open - 1] === '!' ? open - 1 : open
+    out += md.slice(from, mark) + md.slice(open + 1, close)
+    from = end + 1
+  }
+  return out + md.slice(from)
+}
+
+/**
  * Markdown as plain words, near enough to how it reads: what marks it up is taken out. For looking a passage up
  * where the text isn't on the screen (the card's comments, an assistant): `locate` in this.
+ *
+ * A description is written by anyone who can edit a board, and this runs on the server for assistants: every step
+ * reads the text once, whatever is in it. So a pattern that starts at a line's start looks at that line only (a
+ * space or a tab, never "any white space", which takes the lines after it too), and none has two parts that could
+ * both take the same letters.
  */
 export function plainWords(markdown: string): string {
   return (
-    markdown
-      // Links and pictures: their words, not their addresses.
-      .replace(/!?\[([^\]]*)\]\([^)]*\)/g, '$1')
-      // A table's rule line, a heading's marks, a quote's, a list's, a checklist's box.
-      .replace(/^\s*\|?[\s:|-]*-[\s:|-]*\|?\s*$/gm, '')
-      .replace(/^\s{0,3}#{1,6}\s+/gm, '')
-      .replace(/^\s{0,3}(>\s?)+/gm, '')
+    linkWords(markdown)
+      // A table's rule line (and a line drawn across): nothing but bars, colons, dashes and spaces, with a dash.
+      .replace(/^[ \t\r:|-]+$/gm, (line) => (line.includes('-') ? '' : line))
+      // A heading's marks, a quote's, a list's, a checklist's box.
+      .replace(/^[ \t]{0,3}#{1,6}(?:[ \t]+|$)/gm, '')
+      .replace(/^[ \t]{0,3}(?:>[ \t]?)+/gm, '')
       // A callout's mark (a quote's first line: "[!NOTE]"), and a line break written as a tag.
       .replace(/^\\?\[!(?:note|tip|important|warning|caution)\\?\][ \t]*$/gim, '')
       .replace(/<br\s*\/?>/gi, ' ')
-      .replace(/^\s*(?:[-*+]|\d+[.)])\s+(?:\[[ xX]\]\s+)?/gm, '')
-      .replace(/^\s*(`{3,}|~{3,}).*$/gm, '')
+      .replace(/^[ \t]*(?:[-*+]|\d{1,9}[.)])(?:[ \t]+(?:\[[ xX]\][ \t]+)?|$)/gm, '')
+      .replace(/^[ \t]*(?:`{3,}|~{3,}).*$/gm, '')
       // Emphasis, code, a table's bars, escapes.
       .replace(/(\*\*|__|~~|`)/g, '')
       .replace(/(?<![\p{L}\p{N}])[*_]|[*_](?![\p{L}\p{N}])/gu, '')

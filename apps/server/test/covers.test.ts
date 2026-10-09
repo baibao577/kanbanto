@@ -17,8 +17,15 @@ beforeAll(async () => (t = await setup()))
 beforeEach(async () => reset(t.db))
 afterAll(async () => t.close())
 
-const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52])
-const WEBP = Buffer.concat([Buffer.from('RIFF'), Buffer.from([20, 0, 0, 0]), Buffer.from('WEBPVP8 '), Buffer.alloc(12)])
+/** (The start of a PNG, as far as where it says its size: 256 by 256.) */
+const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52, 0, 0, 1, 0, 0, 0, 1, 0])
+/** (A WebP as far as where it says its size: 640 by 480.) */
+const WEBP = Buffer.concat([
+  Buffer.from('RIFF'),
+  Buffer.from([22, 0, 0, 0]),
+  Buffer.from('WEBPVP8 '),
+  Buffer.from([10, 0, 0, 0, 0, 0, 0, 0x9d, 0x01, 0x2a, 0x80, 0x02, 0xe0, 0x01]),
+])
 
 type Snapshot = { data: BoardData; seq: number }
 const load = (p: Person, id: string) => p.ok<Snapshot>('GET', `/api/boards/${id}`)
@@ -115,6 +122,11 @@ describe('a picture’s small copy', () => {
     // Not a picture, whatever it says it is; and not one of the kinds a browser writes.
     expect((await small(ann, id, file.id, Buffer.from('<svg onload=alert(1)>'), 'image/png')).status).toBe(415)
     expect((await small(ann, id, file.id, Buffer.from('GIF89a........'), 'image/png')).status).toBe(415)
+    // A small copy that says it is far more pixels than the app makes one, or doesn't say: not kept.
+    const huge = Buffer.from(PNG)
+    huge.writeUInt32BE(20_000, 16)
+    expect((await small(ann, id, file.id, huge, 'image/png')).status).toBe(413)
+    expect((await small(ann, id, file.id, PNG.subarray(0, 16), 'image/png')).status).toBe(415)
     expect((await small(ann, id, file.id, Buffer.from('{}'), 'application/json')).status).toBeGreaterThanOrEqual(400)
     // Too big: said by its declared size, before it's read.
     expect((await small(ann, id, file.id, Buffer.concat([PNG, Buffer.alloc(THUMB_MAX)]), 'image/png')).status).toBe(413)

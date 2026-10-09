@@ -12,6 +12,8 @@ export interface Sheet {
 /** Rows and columns one sheet can have (the first row may be the columns' names). */
 export const SHEET_MAX_ROWS = 2001
 export const SHEET_MAX_COLUMNS = 40
+/** Cells one row may have as it is read, empty ones at its end included (those are dropped afterwards): far more than any sheet's. */
+const ROW_MAX_CELLS = 2000
 
 /** What separates the cells: a tab if the first line has one, else whichever of comma and semicolon it has more of. */
 function delimiterOf(text: string): Sheet['delimiter'] {
@@ -41,10 +43,15 @@ export function parseSheet(input: string): Sheet {
   let quoted = false
   // (Whether the cell being read began with a quote: only then does a quote mean anything.)
   let wasQuoted = false
+  // (Whether the cell so far is nothing but spaces. Kept as it is read: asking the cell itself at every quote would
+  // read a long cell again for each of them, and a text made of one long cell and a million quotes never ends.)
+  let blank = true
   const endCell = () => {
+    if (row.length >= ROW_MAX_CELLS) throw new Error(`That’s too many columns: ${SHEET_MAX_COLUMNS} at most.`)
     row.push(wasQuoted ? cell : cell.trim())
     cell = ''
     wasQuoted = false
+    blank = true
   }
   const endRow = () => {
     endCell()
@@ -60,7 +67,7 @@ export function parseSheet(input: string): Sheet {
         cell += '"'
         i++
       } else quoted = false
-    } else if (ch === '"' && cell.trim() === '' && !wasQuoted) {
+    } else if (ch === '"' && blank && !wasQuoted) {
       quoted = true
       wasQuoted = true
       cell = ''
@@ -69,15 +76,23 @@ export function parseSheet(input: string): Sheet {
     else if (ch === '\r') {
       if (text[i + 1] === '\n') i++
       endRow()
-    } else if (!wasQuoted || ch.trim()) cell += ch
+    } else if (!wasQuoted || ch.trim()) {
+      cell += ch
+      if (blank && ch.trim()) blank = false
+    }
   }
   if (cell || row.length || wasQuoted) endRow()
   while (rows.length && rows[rows.length - 1].every((c) => !c)) rows.pop()
   if (!rows.length) throw new Error('There’s nothing to import: paste rows from a spreadsheet, or choose a .csv file.')
   if (rows.length > SHEET_MAX_ROWS) throw new Error(`That’s too many rows: ${(SHEET_MAX_ROWS - 1).toLocaleString('en')} at most.`)
   // (Columns that are empty all the way down at the end are dropped: sheets often have them.)
-  let width = Math.max(...rows.map((r) => r.length))
-  while (width > 1 && rows.every((r) => !r[width - 1])) width--
+  // (Each row is read back from its end to its last cell with something in it: once over the cells, however wide.)
+  let width = 1
+  for (const r of rows) {
+    let last = r.length
+    while (last > width && !r[last - 1]) last--
+    if (last > width) width = last
+  }
   if (width > SHEET_MAX_COLUMNS) throw new Error(`That’s too many columns: ${SHEET_MAX_COLUMNS} at most.`)
   return { rows: rows.map((r) => Array.from({ length: width }, (_, i) => plainText(r[i] ?? ''))), delimiter }
 }

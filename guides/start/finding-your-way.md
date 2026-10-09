@@ -10,19 +10,21 @@ Everything on a board is reached from the two bars at the top.
 | **2** | Board, Timeline, Outline | Three views of the same cards. |
 | **3** | Search (the magnifier) | Click it, or press <kbd>/</kbd>, and it opens into a box: it finds cards on this board as you type. |
 | **4** | Share (the people) | Who can open this board, and inviting people. Point at it to see how many people are on the board. |
-| **5** | More (**⋯**) | Board settings, background, stats, archived cards, export. |
+| **5** | More (**⋯**) | Board settings, background, stats, moving the board, archived cards, importing cards, export, saving the board as a template. |
 | **6** | New task | Adds a card and opens it. The same as pressing <kbd>N</kbd>. |
 | **7** | The tray | [Your Inbox](/everyday/inbox): notes and cards that have no board yet, beside any board. The number says how many wait there. |
 | **8** | Filter | Show only some cards: by person, list, priority, label, or how recently they changed. |
 | **9** | Display | How cards look and how they are grouped. |
 
-The small icons say what they are when you point at them. Also on the bars: **Presets** (saved combinations of Filter and Display), **Log time**, the **bell** (things that
+The small icons say what they are when you point at them. Also on the bars: **Presets** (saved combinations of Filter and Display), **Rules** (the board's limits and who it
+tells), **Log time**, the **bell** (things that
 need you: mentions and reminders) and **your initials** (account settings and signing out).
 
 ## Inside a list
 
 Each list has its name, a count of its cards, a button with two arrows to fold it into a narrow strip, and its own
-**⋯** menu: rename, color, the order of its cards, move it left or right, what its cards count as, hide or delete it.
+**⋯** menu: rename, color, what its cards count as, move it left or right, a limit and who is told when a card
+arrives (for the board's owners), moving all its cards to another list, the order of its cards, hide or delete it.
 
 A list of finished work may also show a line such as "5 older · Show · Archive…". That is explained in
 [done cards and the archive](/everyday/done-and-archive).

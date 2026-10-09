@@ -22,7 +22,7 @@ The lists are an article's life. Rename the three a new board has, and add two:
 | **Published** | **In progress** | It is what we do. |
 | **Outdated** | Done | It was true once. |
 
-Set what each list counts as from its menu: **⋯ → Cards in this list are…**. See
+Set what each list counts as from its menu: **⋯ → Cards in this list are**. See
 [lists on the Board](/views/board#lists).
 
 ::: tip Published counts as In progress, not Done
@@ -57,7 +57,8 @@ them from any card's **Labels**.
 ## 5. Save an article to start from
 
 Write one card with the headings you want every article to have, then **⋯ → Save as template…** and call it
-"Article". From then on, the small arrow beside **Add a card** starts a new article with those headings. See
+"Article". From then on, click **Add a card**, then the small arrow beside **Add card**, to start a new article with those
+headings. See
 [templates](/everyday/templates), and the outlines in [samples to copy](/knowledge/samples).
 
 ## 6. Save two ways of looking

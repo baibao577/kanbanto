@@ -9,7 +9,7 @@ import { HttpError, parse } from '../http'
 import { PICTURE_TYPES } from '../pictures'
 import { storeOf } from '../storage/service'
 import { requireUser } from './auth'
-import { IMAGE_TYPES, pictureType } from './files'
+import { IMAGE_TYPES, pictureSize, pictureType } from './files'
 
 // A card's cover: one of its pictures, shown across the top of the card on the Board.
 //
@@ -21,6 +21,9 @@ import { IMAGE_TYPES, pictureType } from './files'
 
 /** How big a small copy can be. The app makes one 640 pixels wide, which is a fifth of this for most pictures. */
 export const THUMB_MAX = 300 * 1024
+/** …and in pixels: twice what the app makes one, each way. */
+const THUMB_WIDE_MAX = 1280
+const THUMB_TALL_MAX = 2560
 /** The biggest original the server passes on to be shrunk (a browser has to hold all of it, unpacked). */
 const ORIGINAL_MAX = 40 * 1024 * 1024
 
@@ -86,6 +89,10 @@ export const coverRoutes: FastifyPluginAsync = async (app) => {
       if (!Buffer.isBuffer(bytes) || !bytes.length) throw new HttpError(400, 'Send the small picture itself: a PNG, JPEG or WebP.')
       const mime = pictureType(bytes)
       if (!mime || !PICTURE_TYPES.has(mime)) throw new HttpError(415, 'That isn’t a picture that can be used here. Use a PNG, JPEG or WebP.')
+      // (The app makes it 640 by 1,280 at the most. One that says it is far bigger would be drawn by every browser with the board open.)
+      const size = pictureSize(bytes, mime)
+      if (!size) throw new HttpError(415, 'That picture can’t be read: it doesn’t say how big it is.')
+      if (size.width > THUMB_WIDE_MAX || size.height > THUMB_TALL_MAX) throw new HttpError(413, 'That small picture has too many pixels to be one.')
       const a = await pictureOf(app.db, id, attId)
       await app.db.insert(attachmentThumbs).values({ attachmentId: a.id, mime, bytes }).onConflictDoNothing()
       return { thumb: thumbUrl(a.id) }

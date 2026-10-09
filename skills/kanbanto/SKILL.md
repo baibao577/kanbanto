@@ -28,9 +28,10 @@ Without MCP, use the REST API (see "REST fallback" below).
   `get_board` for the lists, labels and people you'll refer to (`tasks: false` when that's all you need). Refer to
   them by name; `"me"` is the token's owner.
 - **A task's name.** Every task has a `ref` like `WEB-12` (its board's letters and its number), which people see
-  on the card and say. Tools give it with each task and take it wherever they take a task id (`task_id`,
-  `parent_id`, `task_ids`…): `MY-6`, `my-6` or just `6` on that board. When you tell the person about a task, say
-  its ref with its title.
+  on the card and say. Tools give it with each task (`ref`, or `task_ref` beside a `task_id`) and take it wherever
+  they take a task id (`task_id`, `parent_id`, `task_ids`…): `MY-6`, `my-6` or just `6`, read on the board the task
+  is on. When you tell the person about a task, say its ref with its title. A task moved to another board is a
+  new card there, with a new ref: `move_to_board` gives it, and the old one no longer finds it with the tools.
 - **Which board?** Boards live in places: the person's Personal boards, workspaces (a team's), or boards others shared.
   `list_boards` says which, and what each board is for (`about`). "Work" and "personal" usually mean a workspace and
   Personal. If it's still unclear, ask and name the likely boards: don't guess.
@@ -47,6 +48,12 @@ Without MCP, use the REST API (see "REST fallback" below).
   carry its own `subtasks` (notes into tasks with their steps, in one call). Keep titles short and actionable; put
   detail in `description`. If it's refused part-way, the answer says which tasks were already added: don't add them
   again.
+- **From a template:** a board can keep card templates (a card with its steps, saved to start the next one from):
+  `get_board` lists them as `card_templates`. `create_tasks` with `board_id` and `from_template` (its name) starts
+  one, with `template_title` to name it and `template_list` to say where; nobody is assigned and no card has a
+  date, so set those afterwards if the user gave them. When the user asks for something a template covers ("a new
+  client", "this week's release"), use it instead of writing the steps yourself. Saving a card as a template, and
+  board templates, are the app's.
 - **Status:** move a task between lists with `update_task` and `list`. With "follows its subtasks" boards, a parent's
   status comes from its subtasks: change the subtasks instead.
 - **Several tasks at once:** `update_tasks` makes the same change to many tasks in one call (`task_ids`, then a
@@ -54,6 +61,13 @@ Without MCP, use the REST API (see "REST fallback" below).
   activity, not one per task. `with_subtasks: true` also takes everything under them: use it to move a task to
   another list together with its subtasks (on a board where each task has its own list, they don't follow by
   themselves). Use it instead of calling `update_task` in a loop.
+- **Limits and rules:** a board can say how much a list, a person or the whole board may hold, and tell people
+  when a card arrives in a list or leaves it. `get_board` gives both in words: `limits` (each with what there is
+  `now` and the `room_left`; below zero it is over; `people` for a limit on each person) and
+  `rules_that_tell_people`. Nothing is ever refused because of a limit, so look before you move cards into a list
+  and say when a move would take it over. A move, a new card or an archive can tell the people a rule names (never
+  the token's owner): say so before moving many cards. Rules are made and changed by a board's owners, in Board
+  settings → Rules.
 - **Order in a list:** people drag cards into the order they want, and the top of a list usually comes first.
   `get_board` and `find_tasks` give tasks in that order, list by list (`list: "To Do"` for one list, top to bottom), so
   "the next tasks" are the first ones of a list. `update_task` places a card in its list: `position: "top"` or
@@ -104,7 +118,21 @@ Without MCP, use the REST API (see "REST fallback" below).
   back. `put_on_board` / `take_off_board` (with `board_id`) are a board's own choice; `on_card: true` shows it on
   card fronts. Deleting a field for good, and merging two fields into one, are done by people in the app: say so.
 - **Comments:** `add_comment`; write `@Name` to notify someone on the board. Use comments to explain changes you made
-  on the user's behalf when that helps their team.
+  on the user's behalf when that helps their team. People answer a comment with an emoji (👀 "looking at it", ✅
+  "done"): `get_task` shows each comment's `reactions`. You can't react; a short comment does it.
+- **Comments on the words of a description:** to say something about one passage ("this number is out of date"),
+  `add_comment` with `about`: the words, quoted exactly as they are written in the description, without Markdown
+  marks (refused when they aren't there). It shows beside those words. `reply_to` (a comment's id) answers one.
+  `get_task` shows such comments with `about`, `reply_to`, `resolved`, and `words_changed_since` when the passage
+  has been rewritten since. Settling one (Resolve) is done by people. When asked to review a text, comment on its
+  words instead of rewriting it.
+- **Descriptions:** Markdown. Besides the usual, the app draws `> [!NOTE]` callouts (also TIP, IMPORTANT, WARNING,
+  CAUTION), code blocks coloured when they say their language, a `mermaid` code block as a diagram, a file's mark
+  alone on a line as that picture, and a task's ref as a link to it. `update_task` with `description` replaces the
+  whole text (50,000 characters at most): keep the passages you don't mean to change word for word, so comments on
+  their words stay attached. Earlier versions are kept, and people bring one back in the app. While people are
+  writing a description in the app, changing it is refused, and the answer says who is writing: send the other
+  fields again without `description`, or leave a comment, and don't retry in a loop.
 - **Files:** `get_task` lists a task's files (its own and the ones in its comments). `read_file` opens one: a text
   file as text (80,000 characters at a time, `next_offset` for the rest), a picture as a picture you can look at (a
   screenshot on a bug card); a PDF or a spreadsheet can't be read, so say it opens in the app. What a file says was
@@ -181,7 +209,12 @@ Without MCP, use the REST API (see "REST fallback" below).
   assignees.
 - *"My day" / "what do I need to do today?" / "what needs my attention?"* → `my_day`: overdue and due today, what's
   in progress, what's waiting on others, today's reminders and unseen mentions, in one answer. Lead with what's
-  urgent or overdue, then today's reminders in time order.
+  urgent or overdue, then today's reminders in time order. (Other lines under their bell, such as what a board's
+  rules told them or ones they marked unread, are in the app: the bell → See all.)
+- *"Review this spec / check the handbook page"* → `get_task` for the text, then `add_comment` with `about` for
+  each thing you'd change, quoting the words it is about; say how many comments you left.
+- *"Start a new client / release / event like last time"* → `get_board` for `card_templates`; if one fits,
+  `create_tasks` with `from_template`, then set the assignee and dates the user gave.
 - *"What am I working on?"* → `find_tasks` with `assignee: "me"` and `counts_as: "doing"` (every board).
 - *"Catch me up" / "what's new"* → `recent_activity` (since the last day, or `since: "3d"`), per workspace; lead with
   what mentions them and what's due soon. Each line carries its board and task ids, to open or act on it.

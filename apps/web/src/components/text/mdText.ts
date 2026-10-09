@@ -140,10 +140,10 @@ export function foldedParts(tokens: Token[], folded: ReadonlySet<number>): { und
 export function looksLikeMarkdown(text: string): boolean {
   return (
     /^ {0,3}#{1,6} +\S/m.test(text) ||
-    /^\s*(?:[-*+]|\d+[.)]) +\S/m.test(text) ||
+    /^[ \t]*(?:[-*+]|\d{1,9}[.)]) +\S/m.test(text) ||
     /^ {0,3}> ?\S/m.test(text) ||
     /^ {0,3}(```|~~~)/m.test(text) ||
-    /^ {0,3}\|.+\|\s*\n {0,3}\|?[\s:|-]*-{3,}[\s:|-]*$/m.test(text) ||
+    /^ {0,3}\|.+\|[ \t]*\r?\n {0,3}(?=[ \t:|-]*-{3})[ \t:|-]+$/m.test(text) ||
     /^ {0,3}(?:-{3,}|\*{3,}|_{3,})\s*$/m.test(text) ||
     /\*\*[^*\n]+\*\*|__[^_\n]+__/.test(text) ||
     /\[[^\]\n]+\]\((?:https?:|mailto:|\/)[^)\s]*\)/.test(text)
@@ -155,10 +155,12 @@ export function looksLikeMarkdown(text: string): boolean {
  * where they end). Markdown's own marks, and a link's address, aren't words.
  */
 export function countWords(md: string): number {
+  // (Each pattern looks at one line, or at so many letters and no more: a text written to be slow to read, such as
+  // thousands of empty lines, would otherwise hold the page of everyone who opens it. See the model's plainWords.)
   const text = md
-    .replace(/\]\([^)\s]*\)/g, ']')
-    .replace(/^\s*(?:[-*+]|\d+[.)])\s+\[[ xX]\]/gm, '')
-    .replace(/^\s*\|?[\s:|-]*-{3,}[\s:|-]*$/gm, '')
+    .replace(/\]\([^)\s]{0,2000}\)/g, ']')
+    .replace(/^[ \t]*(?:[-*+]|\d{1,9}[.)])[ \t]+\[[ xX]\]/gm, '')
+    .replace(/^[ \t\r:|-]+$/gm, (line) => (line.includes('---') ? '' : line))
   if (typeof Intl.Segmenter !== 'function') return text.split(/\s+/).filter((w) => /[\p{L}\p{N}]/u.test(w)).length
   let n = 0
   for (const s of new Intl.Segmenter(undefined, { granularity: 'word' }).segment(text)) if (s.isWordLike) n++

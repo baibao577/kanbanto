@@ -43,7 +43,7 @@ A bar appears at the bottom of the view. It says how many cards are ticked, and 
 and tick more. Press <kbd>Esc</kbd>, or the **✕** at the end of the bar, to let go of them all.
 
 Ticking a card that has subtasks ticks **that card only**. To take everything under the ticked cards as well,
-click **Add their subtasks** in the bar.
+click **Add their 5 subtasks** in the bar (it says how many there are).
 
 ## Change them
 

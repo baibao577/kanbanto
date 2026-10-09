@@ -44,6 +44,16 @@ describe('live', () => {
     bobLive.ws.terminate()
   })
 
+  it('an id that marks a change as made from a board’s Telegram chat is the server’s to give', async () => {
+    const ann = await Person.signUp(t.app, 'Ann')
+    const [{ id }] = (await ann.ok('GET', '/api/boards')).boards
+    const command = { type: 'task.update', id: 'A3', fields: { title: 'Deploy quietly' } }
+    // (With it, the chat wouldn't be told of the change: nobody gets to say that of their own.)
+    const marked = await ann.request('POST', `/api/boards/${id}/mutations`, { mutationId: 'tg:00000000-0000-4000-8000-000000000000:x', command })
+    expect(marked.status).toBe(400)
+    expect((await ann.request('POST', `/api/boards/${id}/mutations`, { mutationId: mid(), command })).status).toBe(200)
+  })
+
   it('people without access can’t listen, and are cut off when they lose it', async () => {
     const ann = await Person.signUp(t.app, 'Ann')
     const [{ id }] = (await ann.ok('GET', '/api/boards')).boards

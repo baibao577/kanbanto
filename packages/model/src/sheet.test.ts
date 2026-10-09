@@ -55,6 +55,34 @@ describe('reading rows', () => {
   })
 })
 
+describe('a sheet written to be slow to read', () => {
+  it('is read once over, or refused, however it is made', () => {
+    const started = performance.now()
+    // Millions of empty cells in a first row, over 2,000 rows: refused as too wide while it is read.
+    expect(() => parseSheet(`${','.repeat(4_000_000)}\n${'x\n'.repeat(2000)}`)).toThrow('too many columns')
+    // Rows that are wide with nothing in them: their empty ends are dropped without going over them row by row.
+    const wide = parseSheet(`${`a${','.repeat(1900)}\n`.repeat(2000)}`)
+    expect([wide.rows.length, wide.rows[0].length]).toEqual([2000, 1])
+    // One long cell and then a great many quotes: each is a letter of the cell, read once.
+    const quotes = parseSheet(`${'a'.repeat(1_000_000)}${'"'.repeat(1_000_000)}`)
+    expect(quotes.rows[0][0].length).toBe(2_000_000)
+    // (Seconds to hours before; the margin is for a busy machine.)
+    expect(performance.now() - started).toBeLessThan(4000)
+  })
+
+  it('still drops empty columns at the end, keeps the ones between, and starts a quoted cell after spaces only', () => {
+    expect(parseSheet('a,,c,,\n1,,,,\n').rows).toEqual([
+      ['a', '', 'c'],
+      ['1', '', ''],
+    ])
+    expect(parseSheet(',,\n,,\nx').rows).toEqual([[''], [''], ['x']])
+    expect(parseSheet('  "a,b" ,c\nd"e,"f"').rows).toEqual([
+      ['a,b', 'c'],
+      ['d"e', 'f'],
+    ])
+  })
+})
+
 describe('reading dates', () => {
   const day = (text: string, order?: 'dmy' | 'mdy') => {
     const r = readDate(text, order, 2026)

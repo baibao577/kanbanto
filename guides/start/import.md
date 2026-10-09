@@ -85,7 +85,7 @@ go.
 | **List** | The name of a list. One the board doesn't have is made |
 | **Due date**, **Start date** | A date, with a time if you like: see [Dates](#dates) |
 | **Labels** | Label names, with commas between them. New ones are made |
-| **Assignee** | The name or the email address of someone on the board |
+| **Assignee** | The name of someone on the board. A board's owners can also give an email address (only owners see addresses); anyone can give their own |
 | **Priority** | Urgent, High, Medium or Low |
 | **Parent card** | The title of another row, or of a card already on the board: the row becomes its subtask |
 | **One of the board's [fields](/everyday/fields)** | Text; a number ("1,200", "฿40"); a date; yes or no for a checkbox; an option's name for a choice; a person; for a card link, the title of the card |

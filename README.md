@@ -24,8 +24,10 @@
 ## What you can do
 
 - **Tasks inside tasks, as deep as you like.** A project, its phases, their tasks and subtasks — all on one board.
-- **Three views of the same work:** a **Board** with lists you name yourself, a **Timeline** you drag to reschedule,
-  and an **Outline** — a table you can sort, filter and rearrange.
+- **Three views of the same work:** a **Board** with lists you name yourself, a **Timeline** you drag to reschedule
+  (as bars, or as a month's calendar), and an **Outline** — a table you can sort, filter, group and rearrange.
+- **Every card has a name,** like `WEB-12`: say it, search for it, or write it in a text, where it becomes a link.
+  A card can show one of its pictures across its top.
 - **Work together:** make a workspace for your team, so everyone in it can open its boards, or share a board with a
   link, an access code or an email invite, as an owner, editor or viewer.
   Changes appear for everyone instantly.
@@ -37,23 +39,35 @@
 - **Log time:** type a card's name and the time it took ("1:30 review"); the cards you worked on that day come first.
   My week shows your time on every board, a card per row and a day per column. On a board linked to a plan, logged
   time shows next to each person's planned man-days.
-- **Write things down properly:** a card's description is formatted text (headings, checklists, tables, code) with
-  a "/" menu, a full-page view for long ones, and a draft kept in your browser until it's saved.
-- **Comments and files:** discuss each card, @mention people (in comments and descriptions), attach files and
-  screenshots, and point to a file with `#`.
-- **Follow cards:** hear about comments and changes on the cards you're part of, and stop whenever you like.
+- **Write things down properly:** a card's description is formatted text (headings you can fold, checklists,
+  tables, callouts, pictures, code with colours, diagrams written as text) with a "/" menu and a full page for long
+  ones. It is saved as you write, several people can write it at once, and earlier versions are kept. A board of
+  such cards is a handbook or a knowledge base.
+- **Comments and files:** discuss each card, @mention people (in comments and descriptions), answer with an emoji,
+  comment on the very words of a description, attach files and screenshots, and point to a file with `#`.
+- **Follow cards:** hear about comments and changes on the cards you're part of, and stop whenever you like. A
+  page of all your notifications keeps what you want to come back to.
+- **Rules for a board:** limits ("at most 3 cards in Doing", "40 hours a person"), shown where they stand, and
+  rules that tell people when a card arrives in a list or leaves it.
+- **Capture first, file later:** an Inbox of your own beside every board, and a button for your browser that adds
+  the page you're on as a card.
+- **Start from what you have:** bring a board from Trello or cards from a spreadsheet, save a card or a whole board
+  as a template for the next one, and take a board out as a spreadsheet or a file.
 - **Your own fields:** add a client, an amount, a stage or a link to cards. Fields are defined once for a workspace
   (or for your own boards), and each board picks the ones it uses.
 - **Dates and reminders:** type "fri 2pm" for a due date, set reminders at a time or before it's due, and get them
   in the app, by email and as desktop notifications, with a morning summary of what's due.
 - **Find and tidy:** search and filters on every view, presets a board's people share, a search across all your
-  boards, and an archive for finished cards (one at a time, or a done list's older cards in one go).
+  boards, several cards changed at once, each card's history, and an archive for finished cards (one at a time, or
+  a done list's older cards in one go).
 - **In your calendar:** due dates and reminders show up in Google Calendar (connected once, updated within seconds),
   or in Apple Calendar, Outlook and others through a private calendar link.
 - **Work with your AI assistant:** connect Claude, ChatGPT or your own agent by signing in once (or with a token),
   choose whether it may only read or also make changes, and ask it what needs your attention, to turn notes into
   tasks, or to work through a list while you approve what's finished. It acts as you, on the boards you can open.
-- **Connect other things:** an API with personal tokens and webhooks for each board.
+- **Connect other things:** an API with personal tokens; webhooks for each board, also straight into a Slack,
+  Google Chat, Microsoft Teams or Discord channel; and a Telegram bot for a board, which posts its news in a chat
+  and turns what is written there into cards.
 - **Your own server, your own data.** Files stay on your server, or in your own Cloudflare R2 / Amazon S3 bucket.
 
 | Timeline | Outline | A card |
@@ -163,8 +177,8 @@ Kanbanto works without them. Set them up any time in **Platform console**:
   [How to set up storage](docs/self-hosting.md#file-storage)
 - **Calendars** — let people see their cards' due dates and reminders in Google Calendar or any calendar app.
   [How to set up calendars](docs/calendar.md)
-- **AI assistants and other apps** — connecting an assistant, API tokens and webhooks are off until you turn them
-  on, under Integrations. [How they work](docs/api.md)
+- **AI assistants and other apps** — connecting an assistant, API tokens, webhooks and Telegram bots are off until
+  you turn them on, under Integrations, and so is signing in with Google. [How they work](docs/api.md)
 
 Something not working? See [Troubleshooting](docs/troubleshooting.md).
 

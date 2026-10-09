@@ -83,4 +83,78 @@ describe('the words a comment is about', () => {
     expect(long.length).toBeLessThanOrEqual(60)
     expect([long.startsWith('Renew the session'), long.endsWith('password again'), long.includes(' … ')]).toEqual([true, true, true])
   })
+
+  it('read a text once, whatever it is made of: a description written to be slow to read costs no more than another', () => {
+    // (Each of these took seconds to days with patterns that could take the same letters two ways.)
+    const slow = [
+      `${'\n'.repeat(50_000)}x`,
+      `${' \n'.repeat(25_000)}x`,
+      '['.repeat(50_000),
+      '[x]('.repeat(12_500),
+      `${'- '.repeat(25_000)}x`,
+      `${'|:-'.repeat(16_000)}x`,
+      `${'1'.repeat(50_000)}`,
+      `${'> '.repeat(25_000)}`,
+      `${'<br '.repeat(12_500)}`,
+    ]
+    const p = { quote: 'x', before: '', after: '' }
+    const started = performance.now()
+    for (const text of slow) {
+      plainWords(text)
+      stillThere(text, p)
+    }
+    // (Milliseconds each; the margin is for a busy machine.)
+    expect(performance.now() - started).toBeLessThan(2000)
+  })
+
+  it('take the same marks out as before the patterns were made to read once', () => {
+    // What the function was until then, kept here to compare with: letters only, as a passage is looked for.
+    const was = (markdown: string) =>
+      markdown
+        .replace(/!?\[([^\]]*)\]\([^)]*\)/g, '$1')
+        .replace(/^\s*\|?[\s:|-]*-[\s:|-]*\|?\s*$/gm, '')
+        .replace(/^\s{0,3}#{1,6}\s+/gm, '')
+        .replace(/^\s{0,3}(>\s?)+/gm, '')
+        .replace(/^\\?\[!(?:note|tip|important|warning|caution)\\?\][ \t]*$/gim, '')
+        .replace(/<br\s*\/?>/gi, ' ')
+        .replace(/^\s*(?:[-*+]|\d+[.)])\s+(?:\[[ xX]\]\s+)?/gm, '')
+        .replace(/^\s*(`{3,}|~{3,}).*$/gm, '')
+        .replace(/(\*\*|__|~~|`)/g, '')
+        .replace(/(?<![\p{L}\p{N}])[*_]|[*_](?![\p{L}\p{N}])/gu, '')
+        .replace(/\|/g, ' ')
+        .replace(/\\([\\`*_{}[\]()#+\-.!|>~])/g, '$1')
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&amp;/g, '&')
+    const pieces = ['[', ']', '(', ')', '!', 'a', 'b ', '\n', '\n\n', '- ', '-', '|', ':', '# ', '#', '> ', '>', '1. ', '1.', '* ', '[ ] ', '[x] ']
+    pieces.push(
+      '```',
+      '~~~',
+      ' ',
+      '\t',
+      '**',
+      '_',
+      '<br>',
+      '[!NOTE]',
+      '---',
+      '| a | b |',
+      '|---|---|',
+      'word',
+      '(u)',
+      '[w](u)',
+      '![p](u)',
+      '2) ',
+      '\\[',
+      '&lt;',
+    )
+    let seed = 20261009
+    const pick = (n: number) => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff), seed % n)
+    expect(squeeze(plainWords(TEXT))).toBe(squeeze(was(TEXT)))
+    for (let i = 0; i < 20_000; i++) {
+      let text = ''
+      for (let k = pick(30) + 1; k > 0; k--) text += pieces[pick(pieces.length)]
+      if (squeeze(plainWords(text)) !== squeeze(was(text)))
+        expect({ text, now: squeeze(plainWords(text)) }).toEqual({ text, now: squeeze(was(text)) })
+    }
+  })
 })

@@ -71,7 +71,7 @@ function rolesSaid(data: BoardData, said: string[]): ColumnRole[] {
 
 export async function importCards(
   app: FastifyInstance,
-  who: { me: { id: string; timeZone?: string | null }; via?: string },
+  who: { me: { id: string; timeZone?: string | null }; via?: string; owner?: boolean },
   board: BoardRow,
   body: z.infer<typeof ImportCardsBody>,
 ): Promise<ImportCardsResult> {
@@ -90,17 +90,11 @@ export async function importCards(
   // What the board itself doesn't say: its people's addresses, the cards its link fields can point at, and which
   // choice fields this person may add options to.
   const used = columns.flatMap((c) => (isFieldKey(c) ? (data.fields.find((f) => f.id === fieldIdOf(c)) ?? []) : []))
-  const emails = data.members.length
-    ? await app.db
-        .select({ id: users.id, email: users.email })
-        .from(users)
-        .where(
-          inArray(
-            users.id,
-            data.members.map((m) => m.id),
-          ),
-        )
-    : []
+  // (Addresses are the board's owners' to see: a sheet that names people by address is matched against them for an
+  // owner. For anyone else only their own address is known, or a column of guessed addresses and a look at which
+  // rows were taken would tell them who on the board has which.)
+  const known = who.owner ? data.members.map((m) => m.id) : data.members.some((m) => m.id === me.id) ? [me.id] : []
+  const emails = known.length ? await app.db.select({ id: users.id, email: users.email }).from(users).where(inArray(users.id, known)) : []
   const people = data.members.map((m) => ({ id: m.id, name: m.name, email: emails.find((e) => e.id === m.id)?.email }))
   const linked = new Map<string, Map<string, string[]>>()
   for (const f of used) if (f.type === 'link') linked.set(f.id, await cardTitles({ db: app.db, engine: app.engine }, me.id, board, f))

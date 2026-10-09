@@ -96,7 +96,7 @@ const schemas = {
   ),
   List: obj({ id: str, name: str, category: { enum: ['backlog', 'todo', 'doing', 'done'] }, position: str, color: str }, ['id', 'name', 'category']),
   Label: obj({ id: str, name: str, color: str }),
-  Person: obj({ id: str, name: str }),
+  Person: obj({ id: str, name: str, picture: { ...nullable(str), description: 'Where their profile picture is (null: none).' } }, ['id', 'name']),
   BoardData: obj({
     board: obj(
       {
@@ -113,6 +113,11 @@ const schemas = {
     labels: { type: 'array', items: ref('Label') },
     fields: { type: 'array', items: ref('Field'), description: 'The fields this board uses, in its order.' },
     members: { type: 'array', items: ref('Person'), description: 'The people who can be assigned.' },
+    rules: {
+      type: 'array',
+      items: { type: 'object' },
+      description: 'The board’s rules: its limits and the rules that tell people (see `POST /api/boards/{id}/rules` for a rule’s shape).',
+    },
     tasks: { type: 'object', additionalProperties: ref('Task'), description: 'By id.' },
   }),
   BoardSummary: obj({
@@ -137,45 +142,53 @@ const schemas = {
     before: { description: 'The record before (null: it was created).' },
     after: { description: 'The record after (null: it was deleted).' },
   }),
-  Comment: obj({
-    id: str,
-    taskId: str,
-    author: nullable(obj({ id: str, name: str })),
-    body: str,
-    mentions: { type: 'array', items: str },
-    attachments: { type: 'array', items: { $ref: '#/components/schemas/Attachment' }, description: 'The files posted with it.' },
-    reactions: {
-      type: 'array',
-      description: 'The emoji people answered it with, each with who added it (in the order they did).',
-      items: obj({ emoji: str, by: { type: 'array', items: obj({ id: str, name: str }) } }),
+  Comment: obj(
+    {
+      id: str,
+      taskId: str,
+      author: nullable(obj({ id: str, name: str })),
+      body: str,
+      mentions: { type: 'array', items: str },
+      attachments: { type: 'array', items: { $ref: '#/components/schemas/Attachment' }, description: 'The files posted with it.' },
+      reactions: {
+        type: 'array',
+        description: 'The emoji people answered it with, each with who added it (in the order they did).',
+        items: obj({ emoji: str, by: { type: 'array', items: obj({ id: str, name: str }) } }),
+      },
+      createdAt: str,
+      editedAt: { ...nullable(str), description: 'When its author last changed it (null: never).' },
+      passage: {
+        ...nullable(obj({ quote: str, before: str, after: str })),
+        description:
+          'For a comment about some words of the task’s description: the words (`quote`), and a little of the text before and after them, by which they are found again when the text changes. Such a comment starts a thread.',
+      },
+      parentId: { ...str, description: 'For an answer to such a comment: that comment’s id.' },
+      resolved: {
+        ...nullable(obj({ at: { ...str, format: 'date-time' }, by: nullable(obj({ id: str, name: str })) })),
+        description: 'For a comment about a passage: when it was resolved and by whom. Null: it is open.',
+      },
     },
-    createdAt: str,
-    passage: {
-      ...nullable(obj({ quote: str, before: str, after: str })),
-      description:
-        'For a comment about some words of the task’s description: the words (`quote`), and a little of the text before and after them, by which they are found again when the text changes. Such a comment starts a thread.',
+    ['id', 'taskId', 'author', 'body', 'mentions', 'attachments', 'reactions', 'createdAt'],
+  ),
+  Attachment: obj(
+    {
+      id: str,
+      taskId: str,
+      name: {
+        ...str,
+        description: 'Its name on the card, which no other file of the card has. `📎<name>` in a description or a comment points at it.',
+      },
+      size: { type: 'integer', description: 'In bytes.' },
+      mime: str,
+      uploader: nullable(str),
+      createdAt: str,
+      url: { ...str, description: 'Where it opens or downloads: `/api/attachments/<id>`.' },
+      image: { type: 'boolean', description: 'Shown as a picture (the rest download).' },
+      thumb: { type: 'boolean', description: 'It has a small copy (`GET /api/attachments/{attId}/thumb`), so it can be a card’s cover.' },
+      commentId: nullable({ ...str, description: 'The comment it was posted with; null: attached to the card itself.' }),
     },
-    parentId: { ...str, description: 'For an answer to such a comment: that comment’s id.' },
-    resolved: {
-      ...nullable(obj({ at: { ...str, format: 'date-time' }, by: nullable(obj({ id: str, name: str })) })),
-      description: 'For a comment about a passage: when it was resolved and by whom. Null: it is open.',
-    },
-  }),
-  Attachment: obj({
-    id: str,
-    taskId: str,
-    name: {
-      ...str,
-      description: 'Its name on the card, which no other file of the card has. `📎<name>` in a description or a comment points at it.',
-    },
-    size: { type: 'integer', description: 'In bytes.' },
-    mime: str,
-    uploader: nullable(str),
-    createdAt: str,
-    url: { ...str, description: 'Where it opens or downloads: `/api/attachments/<id>`.' },
-    image: { type: 'boolean', description: 'Shown as a picture (the rest download).' },
-    commentId: nullable({ ...str, description: 'The comment it was posted with; null: attached to the card itself.' }),
-  }),
+    ['id', 'taskId', 'name', 'size', 'mime', 'uploader', 'createdAt', 'url', 'image', 'commentId'],
+  ),
   TimeEntry: obj({
     id: str,
     boardId: str,
@@ -235,6 +248,7 @@ const schemas = {
     card: obj(
       {
         id: str,
+        ref: { ...str, description: 'Its name on its board (WEB-12). A card in the Inbox has none.' },
         title: str,
         url: { ...nullable(str), description: 'The card’s address in the app.' },
         subtasks: { type: 'array', items: obj({ id: str, title: str }) },
@@ -242,7 +256,17 @@ const schemas = {
       ['id', 'title', 'url'],
     ),
   }),
-  Error: obj({ error: str }),
+  Error: obj(
+    {
+      error: str,
+      code: {
+        ...str,
+        description:
+          'With some refusals, what kind it is, for a program to act on: `being-written` (the description is being written by people right now), `moved` (the task is on another board now), `needs-thumb` (the picture has no small copy yet), `inbox`, `verify-email`.',
+      },
+    },
+    ['error'],
+  ),
 }
 
 const webhookHeaders = `Each delivery is a POST with a JSON body and these headers:
@@ -277,14 +301,14 @@ function spec(server: string) {
       version: '1',
       description: `Read and change boards from scripts, integrations and AI assistants.
 
-**Signing in:** make an API token in Account settings → API tokens (a platform admin has to turn tokens on first), and
+**Signing in:** make an API token in Account settings → API & apps (a platform admin has to turn tokens on first), and
 send it with every request: \`Authorization: Bearer kbt_…\`. It acts as you, with your access to boards. Read-only
 tokens can only use GET.
 
 **Changing boards:** every change is a *command* sent to \`POST /api/boards/{id}/mutations\`, the same way the app does it.
 The answer lists the records that changed.
 
-**AI assistants:** connect them to \`${server}/api/mcp\` (MCP) with a token instead: see Account settings → API tokens.`,
+**AI assistants:** connect them to \`${server}/api/mcp\` (MCP) with a token instead: see Account settings → API & apps.`,
     },
     servers: [{ url: server }],
     security: [{ token: [] }],
@@ -401,6 +425,12 @@ The answer lists the records that changed.
                         'sales, support, store, bookings: a starter board, with its lists, fields, saved filters and a few example cards. Its fields come from the library of where it’s made: the ones it lacks are added (in a workspace, only by its admins: otherwise the answer is a 403 that names them), and the answer lists what was `added` and what was `leftOut` (fields that library has archived). Its cards have a Client field, a link to a card of a board of clients: `clients` in the answer is that board’s `id`, and `made` says whether it was made now (the first starter in a space) or was there already.',
                     },
                     workspaceId: { ...nullable(str), description: 'Put it in a workspace you’re in.' },
+                    templateId: {
+                      ...str,
+                      description:
+                        'Start it from a saved board template (`GET /api/board-templates`): its lists, labels, fields, rules and card templates, never cards or people. Instead of `template`. The answer then also says `added` (fields added to the library it is made in) and `leftOut` (what couldn’t be brought).',
+                    },
+                    background: { description: 'Its background, as `PATCH /api/boards/{id}` takes it.' },
                   },
                   ['name'],
                 ),
@@ -1227,14 +1257,14 @@ The answer lists the records that changed.
             'Editors and owners. `attachmentId`: one of this card’s files, a picture, that has its small copy (else 409 with the code `needs-thumb`: send it first). Answers like a command, with the change to the card. Not a command: it is not undone with the board’s undo, and the card does not count as edited.',
           parameters: [id('id'), id('taskId')],
           requestBody: { content: { 'application/json': { schema: obj({ attachmentId: str }, ['attachmentId']) } } },
-          responses: ok,
+          responses: { 200: json(obj({ seq: { type: 'integer' }, changes: { type: 'array', items: ref('Change') } })) },
         },
         delete: {
           tags: ['Files'],
           summary: 'Take a card’s cover away',
           description: 'Editors and owners. The picture stays among the card’s files.',
           parameters: [id('id'), id('taskId')],
-          responses: ok,
+          responses: { 200: json(obj({ seq: { type: 'integer' }, changes: { type: 'array', items: ref('Change') } })) },
         },
       },
       '/api/boards/{id}/attachments/{attId}/restore': {
@@ -1756,14 +1786,17 @@ The answer lists the records that changed.
       'comment.added': event('comment.added', {
         actor: obj({ id: str, name: str }),
         task: obj({ id: str, title: str }),
-        comment: obj({
-          id: str,
-          body: str,
-          mentions: { type: 'array', items: str },
-          files: { type: 'array', items: obj({ id: str, name: str, size: { type: 'integer' } }), description: 'The files posted with it.' },
-          about: { ...str, description: 'The words of the task’s description it is about, or the comment it answers is.' },
-          replyTo: { ...str, description: 'The comment it answers (one about a passage).' },
-        }),
+        comment: obj(
+          {
+            id: str,
+            body: str,
+            mentions: { type: 'array', items: str },
+            files: { type: 'array', items: obj({ id: str, name: str, size: { type: 'integer' } }), description: 'The files posted with it.' },
+            about: { ...str, description: 'The words of the task’s description it is about, or the comment it answers is. Only on such a comment.' },
+            replyTo: { ...str, description: 'The comment it answers (one about a passage). Only on an answer.' },
+          },
+          ['id', 'body', 'mentions', 'files'],
+        ),
       }),
       ping: event('ping', {}),
     },

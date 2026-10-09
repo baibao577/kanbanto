@@ -107,6 +107,18 @@ What to know:
 - **It cannot remove files.** That stays with you.
 - Programs and scripts can't be attached, as in the app.
 
+## Many cards at once
+
+::: info Try
+- "Move everything in Review that is assigned to me to Done."
+- "Give the five cards about the newsletter the label marketing, and make them due on Friday."
+- "Move the launch card to Doing with everything under it."
+:::
+
+The assistant makes such a change in one go, so the board's activity has one line for it, not one for each card,
+and people who follow those cards are told once. A careful assistant says which cards it means before it changes
+more than a few.
+
 ## Tidy up
 
 ::: info Try

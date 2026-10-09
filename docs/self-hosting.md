@@ -9,7 +9,11 @@ storage, backups and upgrades. Just want to try it on your own computer? Follow 
 [Install](#install) ·
 [HTTPS](#https) ·
 [First admin](#first-admin-and-who-can-sign-up) ·
+[Signing in with Google](#signing-in-with-google) ·
 [Email](#email) ·
+[Calendars](#calendars) ·
+[Telegram and other apps](#telegram-and-other-apps) ·
+[Your own pages](#your-own-pages) ·
 [File storage](#file-storage) ·
 [Backups](#backups) ·
 [Upgrades](#upgrades) ·
@@ -166,6 +170,7 @@ Other server commands (all run as `docker compose exec app node dist/cli.js …`
 | `user password <email>` | Set a temporary password for an account — e.g. you're the only admin and forgot your password |
 | `key` | Show the encryption key in use, to keep a copy |
 | `secret` | Print a new random key, if you'd rather set `ENCRYPTION_KEY` yourself |
+| `version` | Which release this is, and the day this copy was built |
 
 The platform admin manages accounts (turn them off, give password reset links), email and storage, but **can't open
 people's boards** unless someone shares a board with them.
@@ -221,6 +226,15 @@ Optional: people can see their cards' due dates and reminders in **Google Calend
 seconds), or in any calendar app through a private **calendar link**. Both are off until you turn them on in
 **Platform console → Integrations**; Google Calendar needs a Google app that you make once. See
 **[Calendar](calendar.md)**.
+
+## Telegram and other apps
+
+Optional, each off until you turn it on in **Platform console → Integrations**: API tokens, assistants that connect
+by signing in, webhooks, and a Telegram bot for a board. They make the server call out: a webhook goes to the
+address its board's owner gave (a public `https` address, unless you allow any), and a board's Telegram bot asks
+`api.telegram.org` for its messages every few seconds and sends the board's news there. Nothing has to reach your
+server from outside for any of them. If your server may only reach some addresses, allow those. What goes where is
+in [SECURITY.md](../SECURITY.md).
 
 ## Your own pages
 
@@ -302,7 +316,7 @@ and **your `.env` file**. Run these in the Kanbanto folder:
 ```bash
 mkdir -p backups
 
-# 1. The database (boards, accounts and their profile pictures, comments, settings)
+# 1. The database (boards, accounts and their profile pictures, comments, a description's earlier versions, card covers, settings)
 docker compose exec -T db pg_dump -U kankan -d kankan -Fc > backups/kanbanto-$(date +%F).dump
 
 # 2. Attachments kept on the server's disk
@@ -412,4 +426,5 @@ Run it under a process manager (systemd, pm2) and put a reverse proxy with HTTPS
   copies behind a load balancer (see [Architecture](architecture.md#scaling)).
 - **Email:** Resend, or an SMTP server with a username and password or none. Signing in to SMTP with OAuth
   (Microsoft 365, Google) isn't supported yet: use a connector or relay instead (see [Email](email.md)).
-- **Sign-in:** email and password (no single sign-on yet).
+- **Sign-in:** email and password, or Google when you turn it on (see
+  [Signing in with Google](#signing-in-with-google)). No other single sign-on (SAML, Microsoft) yet.

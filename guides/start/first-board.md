@@ -32,7 +32,7 @@ Type a name, such as "My first board". The rest can stay as it is:
   is hidden: a line at the right of the board says so, and shows it when you want it). **The example board** is a
   small website-launch plan to explore. **A sales pipeline**, **A support desk**, **Store orders** and **Bookings** are
   [starters](/everyday/fields#start-from-a-ready-made-board): boards for one kind of work, with their own lists and
-  fields.
+  fields. A board you or your workspace saved as a [template](/everyday/templates) is offered here too.
 - **Background:** any color or design you like.
 
 Then click **Create board**. You can change all of this later.

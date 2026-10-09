@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto'
 import { eq } from 'drizzle-orm'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { redactUrl } from '../src/app'
@@ -197,6 +198,47 @@ describe('someone who already has an account', () => {
     expect((await signIn('bob@gmail.com', 'correct horse')).status).toBe(401)
     expect(await t.db.select().from(sessions).where(eq(sessions.userId, squatter.user.id))).toHaveLength(1)
   })
+
+  it('that never confirmed its address: what acted as it stops with it, and nothing of whoever made it gets a word in as it changes hands', async () => {
+    const ann = await site()
+    await ann.ok('PATCH', '/api/admin/settings', { apiTokens: true })
+    const squatter = await Person.signUp(t.app, 'Bob', { email: 'bob@gmail.com' })
+    // Whoever made it left a token that acts as the account, and is signed in in a great many places: ending them
+    // one after the other would take a while, with the account already without a password.
+    const { token } = await squatter.ok('POST', '/api/account/tokens', { name: 'left behind', scope: 'write', expiresInDays: null })
+    const withToken = () => new Person(t.app).request('GET', '/api/boards', undefined, { authorization: `Bearer ${token}` })
+    expect((await withToken()).status).toBe(200)
+    const later = new Date(Date.now() + 86_400_000)
+    for (let n = 0; n < 4; n++)
+      await t.db
+        .insert(sessions)
+        .values(Array.from({ length: 1000 }, () => ({ id: randomBytes(32).toString('hex'), userId: squatter.user.id, expiresAt: later })))
+    // The place they signed in last keeps asking for a new password, with no current one to give: refused while
+    // there is one, and it must stay refused in the moment there is none.
+    const last = new Person(t.app)
+    const came = await last.request('POST', '/api/auth/signin', { email: 'bob@gmail.com', password: 'correct horse' })
+    last.cookie = [came.headers['set-cookie']]
+      .flat()
+      .find((c) => c?.startsWith('kankan_session='))!
+      .split(';')[0]
+    let over = false
+    const asked: number[] = []
+    const asking = (async () => {
+      while (!over) asked.push((await last.request('POST', '/api/auth/password', { next: 'another horse' })).status)
+    })()
+    atGoogle({ sub: 'g-bob', email: 'bob@gmail.com' })
+    const { me } = await viaGoogle()
+    // (A few more, for the ones that were on their way.)
+    for (let n = 0; n < 5; n++) asked.push((await last.request('POST', '/api/auth/password', { next: 'another horse' })).status)
+    over = true
+    await asking
+    expect(me).toMatchObject({ id: squatter.user.id, emailVerified: true, hasPassword: false })
+    expect(asked.filter((status) => status === 200)).toEqual([])
+    expect((await row('bob@gmail.com')).passwordHash).toBeNull()
+    expect((await signIn('bob@gmail.com', 'another horse')).status).toBe(401)
+    expect(await t.db.select().from(sessions).where(eq(sessions.userId, squatter.user.id))).toHaveLength(1)
+    expect((await withToken()).status).toBe(401)
+  }, 30_000)
 
   it('with an address Google doesn’t run the mailbox of: their password it is', async () => {
     const ann = await site()

@@ -10,6 +10,9 @@ import { CALENDAR_RANGES } from './prefs'
 import { BUILT_IN_SORT_KEYS, OUTLINE_COLUMNS, OUTLINE_EXTRA, type OutlineConfig, type TableFilter } from './table'
 import { CATEGORIES, LAYOUTS, LIST_ORDERS, PRIORITIES } from './types'
 
+/** How long a card's description can be, in letters: a long article, with room. */
+export const DESCRIPTION_MAX = 50_000
+
 /**
  * Runtime checks for data coming from outside the code: imported files, and records a client asks to put back
  * (undo). Anything that doesn't match is rejected instead of crashing somewhere deep inside — the limits are the
@@ -102,7 +105,7 @@ export const TaskSchema = z.object({
   due: date.optional(),
   labels: z.array(recordId).max(200),
   blockedBy: z.array(recordId).max(200),
-  description: plain(50_000).optional(),
+  description: plain(DESCRIPTION_MAX).optional(),
   priority: priority.optional(),
   archivedAt: z.string().max(40).optional(),
   archivedList: plain(200).optional(),
@@ -200,7 +203,7 @@ const category = z.enum(CATEGORIES)
 const taskFields = z
   .object({
     title: text(500),
-    description: text(50_000),
+    description: text(DESCRIPTION_MAX),
     status: id,
     start: z.union([date, z.literal('')]),
     due: z.union([date, z.literal('')]),

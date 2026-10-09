@@ -106,8 +106,8 @@ Everyone on the board, including people who can only view it. If a board has bee
 
 ![A card with two files attached](/images/files.webp)
 
-Click a file to open it. Point at a file and two buttons appear: one to download it and, if you can edit the board,
-one to remove it.
+Click a file to open it. Point at a file and its buttons appear: one to download it and, if you can edit the board,
+one to remove it. A picture also has **Use as cover**: see below.
 
 ### Use a picture as the card's cover
 

@@ -50,7 +50,7 @@ through titles, descriptions and comments.
 
 ![Search cards finding a word inside the handbook's articles](/images/km-5-search.webp)
 
-1. Click your picture at the top right, then **Search cards**.
+1. Click your picture at the top right, then **Search all cards**.
 2. Choose the handbook where it says **All boards**, so only its articles are searched.
 3. Type the words. A result found through a comment shows the line they were in.
 

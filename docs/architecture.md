@@ -17,7 +17,8 @@ public development key onto the real one. Background jobs run inside the same pr
 - reminders whose moment has come, every minute; the morning summary email, checked every 10 minutes;
 - the email outbox, webhook deliveries and Google Calendar sync, every 5 seconds;
 - boards' Telegram bots: one open request to Telegram for each bot that takes cards (see Integrations);
-- clean-up (expired sessions, old trash, unused uploads), every 6 hours.
+- clean-up (expired sessions and tokens, old trash, unused uploads, activity past 180 days, read notifications
+  past three months), every 6 hours.
 
 ## Code layout
 
@@ -42,8 +43,10 @@ apps/server/      Fastify + Drizzle + PostgreSQL
   src/boards/       engine.ts (runs commands), store.ts (rows ⇄ records, a board's people), access.ts (who can do
                     what), invites.ts, workspaces.ts (joining, leaving, moving boards)
   src/planning/     engine.ts (runs plan commands, one workspace at a time), store.ts (rows ⇄ records, seeding)
-  src/routes/       auth, boards, sharing, workspaces, comments (and the bell), time (logged time, My week), files,
-                    email, admin, integrations (API tokens, a board's webhooks), calendar (your link, Google
+  src/routes/       auth, google-auth (signing in with Google), boards, sharing, workspaces, comments (and the
+                    bell), time (logged time, My week), files, uploads, covers, pictures (profile pictures),
+                    versions, rules, templates, fields, links, presets, inbox, planning, push, email, admin,
+                    integrations (API tokens, a board's webhooks and Telegram bot), calendar (your link, Google
                     Calendar, the .ics feed)
   src/auth/apiTokens.ts   Bearer tokens: who they act as, and which routes they may use (TOKEN_ROUTES)
   src/webhooks.ts   Queues, signs and delivers webhooks (with retries), like the email outbox
@@ -66,7 +69,7 @@ apps/server/      Fastify + Drizzle + PostgreSQL
   src/boards/liveDocs.ts   Descriptions being written by several people at once: the shared document of each, while
                     someone has it open (see "A description written together")
   src/boards/versions.ts   Earlier versions of a description, kept at each change
-  src/cli.ts        Server commands (admin grant/revoke/list, user password, key, secret)
+  src/cli.ts        Server commands (admin grant/revoke/list, user password, key, secret, version)
 
 apps/web/         React + Vite + Tailwind + shadcn/ui, Phosphor icons
   src/data/sync.ts  BoardSync: keeps an open board in step with the server
@@ -168,11 +171,20 @@ UI ─run(command)─▶ BoardSync: execute() here ─▶ shown at once (optimis
   confuses where the browser has the cursor. Read, the language's name is shown by the stylesheet and Copy is an
   icon: the page holds the code's own letters only.
 - **A diagram written as text** is a code block that says `mermaid`, drawn (`diagram.ts`). Mermaid is large and is
-  fetched the first time a text with a diagram is shown. The drawing is shown as a picture (an image whose address
-  holds the SVG), not put into the page as SVG: a picture can't run or fetch anything whatever the diagram's text
-  says (descriptions never load pictures from elsewhere), and it has no words for the page, so the text shown
-  keeps the letters of the text saved (the diagram's code stays on the page, out of sight). Mermaid is also set to
-  its strict level with labels as plain text. While written, the drawing is under the block and is drawn again a
+  fetched the first time a text with a diagram is shown. It draws on the page it runs in, to measure, and a
+  diagram's text can name things to load (a picture for a node's shape, a style with a background from elsewhere,
+  a label made of HTML, each in more than one spelling): drawn on the app's page, the reader's browser would ask
+  those other sites for them, and descriptions never load anything from elsewhere (it tells that site who reads).
+  So it is drawn on **a page of its own**, `diagram.html` (`diagramFrame.ts`; a second entry of the web app's
+  build), which the app loads once, out of sight, in a frame, and hands each diagram's text; the page answers with
+  the drawing as text. That page's content policy (`DIAGRAM_PAGE_POLICY` in the server's `app.ts`, and the same in
+  the page itself) lets it run this site's scripts and load nothing else at all, so whatever a diagram names is
+  never asked for, without the app having to know every way Mermaid can be made to ask. The drawing is then shown
+  as a picture (an image whose address holds the SVG), not put into the page as SVG: a picture can't run or fetch
+  anything either, and it has no words for the page, so the text shown keeps the letters of the text saved (the
+  diagram's code stays on the page, out of sight). Mermaid is also set to its strict level with labels as plain
+  text, a diagram's own text can't change that or its styles (`secure`), and one too big to lay out in a moment
+  isn't drawn. While written, the drawing is under the block and is drawn again a
   moment after the typing stops; what can't be read leaves the last drawing and says why (by the stylesheet).
 - **Sections fold while a text is read**, and nothing is saved for it (`components/text/folds.ts`): each heading
   has an arrow in the margin, and what is under a folded one (`foldedParts`: down to the next heading of its size)
@@ -254,7 +266,8 @@ The app uses hash routing, so any static host or proxy works without rewrite rul
 | `#/time?week=<monday>` | My week: your logged time on every board |
 | `#/signin`, `#/signup`, `#/forgot` | Signing in |
 | `#/verify/<token>`, `#/reset/<token>` | Links in emails |
-| `#/account/<section>` | Account settings: profile, password, notifications, calendar, email, storage, api, add |
+| `#/account/<section>` | Account settings: profile, password, notifications, calendar, email, storage, fields, api, add |
+| `#/notifications?show=unread&board=<id>` | All your notifications: `show` is `unread` or `mentions`, `board` narrows them to one board |
 | `#/add?title=…&url=…&text=…&w=1` | The little "add a card" page, with what a page handed over (the bookmark button, a phone's Share). `w`: a window of its own, which closes when the card is added. `/share?…` (where a phone sends what was shared) becomes this. |
 | `#/admin/<section>` | Platform console: overview, accounts, email, storage, integrations |
 
@@ -266,6 +279,14 @@ The app uses hash routing, so any static host or proxy works without rewrite rul
   only that ID is kept). Sessions are random tokens in an httpOnly, SameSite=Lax cookie
   (Secure over HTTPS); only their SHA-256 is stored. Changing a password signs out other devices and closes their live
   connections. Sign-in is limited per IP address and per account (10 wrong passwords in 15 minutes).
+- **An account that changes hands does so in one step.** An account whose address nobody confirmed may have been
+  made by someone else with their own password. When the address's owner takes it (signing in with Google, or an
+  emailed reset link), the same transaction that changes the account ends everything that acted as it
+  (`endWhatActsAs` in `auth/sessions.ts`: sessions, emailed links, desktop notifications, API tokens, connected
+  apps, the calendar link; turning an account off uses it too). Were the sessions ended a moment after the account
+  has no password, one of them could set a new password in between; so `endAllSessions` is one statement, and
+  changing a password holds the account's row and checks that the session asking still stands
+  (`POST /api/auth/password`).
 - **Behind proxies:** `X-Forwarded-*` headers count only from the proxies named in `TRUST_PROXY`; links in emails are
   built from `APP_URL`, never from request headers.
 - **Boards live in their owner's Personal space or in a workspace.** A workspace is a group of people (admins and
@@ -421,6 +442,13 @@ The app uses hash routing, so any static host or proxy works without rewrite rul
   person to the same card within ten minutes share one line while it's unread, and nobody is told about what they did
   themselves. This runs after every board command (`afterBoardChange` in `boards/follows.ts`), whichever way the
   command arrived (the app, an API token, an assistant).
+- **Text written by people is read once over, on the server too.** `plainWords` (the model's `passages.ts`) runs
+  on the server for assistants, on text anyone who can edit a board wrote: each of its patterns looks at one line
+  (a space or a tab after a line's start, never "any white space", which takes the following lines too) and none
+  has two parts that can take the same letters, and links are read by one pass (`linkWords`). The same goes for the
+  browser's word count (`countWords`), the spreadsheet reader (`sheet.ts`: a row's width is refused as it is read)
+  and the Trello reader (`trello.ts`: lists, fields and members by a table, and a most for each). Tests give each
+  a text made to be slow and a time to be done in.
 - **Comments on words of a description** (`model/passages.ts`). A comment can be about a passage: it keeps the
   words (`comments.passage`: the quote, and up to 80 characters of the text on each side), and nothing is written
   into the description, which stays Markdown that anyone and anything may rewrite. So a viewer can comment on a
@@ -456,7 +484,7 @@ The app uses hash routing, so any static host or proxy works without rewrite rul
   the top, unread); who reacted is read from the reactions when the bell is opened, and the row goes when every
   reaction is taken back. Reactions are deliberately quiet: no email, no push, not in the card's history or webhooks.
 - By email, people get one morning summary a day (about 8:00 their time): what's due, today's reminders, and the
-  mentions and followed-card news they haven't seen.
+  mentions, followed-card news and what their boards' rules told them, that they haven't seen.
 - `#` in a comment or description links to one of the card's files.
 
 ## Custom fields
@@ -566,6 +594,14 @@ The app uses hash routing, so any static host or proxy works without rewrite rul
     `session`), and any browser saves a text that has stood unsaved a while (its writer's browser went first). One
     save can so hold several people's words: the server notes who wrote in the document since the last one
     (`took`), and the activity line, once in ten minutes each, is every writer's.
+  - *One browser takes so much of the server and no more.* A session's document starts again past 8 MB; besides
+    that, a browser writes at most four descriptions at once and a person twelve, a browser sends so many bytes,
+    messages and joins a minute (`PER_MINUTE`: far more than writing does; over it, that browser starts again and
+    the session goes on for the others), and a cursor is its own browser's: a message about one that another
+    browser brought, or about more of them than a browser has, isn't taken in, so nobody shows a cursor under
+    someone else's name and a session remembers as few cursors as it has browsers. Who wrote a saved text is taken
+    from who typed in the session, which the server can't check against the text sent: someone in the session can
+    have a text of their own saved in a co-writer's name. Both are people who may edit the card.
   - *Nothing else changes it meanwhile.* A command that would change a description people are writing is refused
     (422 `being-written`, in the engine, whatever the command: an update, a bulk update, an undo), and so is a
     save from a session that is over. When nobody has typed for two minutes the change goes through, and the

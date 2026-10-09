@@ -45,7 +45,7 @@ function Snippet({ label, text }: { label: string; text: string }) {
 }
 
 /**
- * Account settings → API tokens: for scripts, integrations (n8n, Zapier) and AI assistants (MCP). A token acts as you;
+ * Account settings → API & apps: for scripts, integrations (n8n, Zapier) and AI assistants (MCP). A token acts as you;
  * it's shown once, when it's made. A platform admin has to turn tokens on first.
  */
 export function ApiTokensSection() {

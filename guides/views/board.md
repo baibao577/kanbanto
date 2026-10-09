@@ -62,7 +62,8 @@ Click **Display**. These choices are yours alone; they do not change the board f
 ![The Display menu](/images/display.webp){.medium}
 
 - **Rows** splits the board into horizontal bands: **A row for each project** (top-level card), **for each parent
-  task**, or **for each person**. Useful when several projects share one board.
+  task**, or **for each person**. Useful when several projects share one board. **Expand all rows** and **Collapse
+  all rows** open or fold every band at once.
 - **Show** chooses which cards appear:
 
   | Choice | Shows |

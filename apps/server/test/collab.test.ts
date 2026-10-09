@@ -95,6 +95,14 @@ describe('comments', () => {
     expect((await bob.request('DELETE', `/api/boards/${id}/comments/${comment.id}`)).status).toBe(403)
     await ann.ok('DELETE', `/api/boards/${id}/comments/${comment.id}`)
     expect((await ann.ok('GET', `/api/boards/${id}/tasks/A3/comments`)).comments).toEqual([])
+    // Someone taken off the board who still reaches it through its public link changes nothing on it: not even a
+    // comment of their own from when they were on it.
+    const { comment: old } = await vic.ok('POST', `/api/boards/${id}/tasks/A3/comments`, { body: 'While I was here' })
+    await ann.ok('PATCH', `/api/boards/${id}/sharing`, { publicLink: true })
+    await ann.ok('DELETE', `/api/boards/${id}/members/${vic.user.id}`)
+    expect((await vic.ok('GET', `/api/boards/${id}/tasks/A3/comments`)).comments).toHaveLength(1)
+    expect((await vic.request('DELETE', `/api/boards/${id}/comments/${old.id}`)).status).toBe(403)
+    expect((await ann.ok('GET', `/api/boards/${id}/tasks/A3/comments`)).comments).toHaveLength(1)
   })
 
   it('@mentions tell the people mentioned (members only, not yourself)', async () => {

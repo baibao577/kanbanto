@@ -6,7 +6,9 @@ import {
   boardTemplateOf,
   readTemplateCards,
   templateOf,
+  BOARD_TEMPLATE_TEXT_MAX,
   TEMPLATE_NAME_MAX,
+  TEMPLATE_TEXT_MAX,
   TEMPLATES_MAX,
   type BoardTemplate,
   type BoardTemplateContent,
@@ -14,7 +16,7 @@ import {
   type TemplateCard,
 } from '@kanbanto/model/templates'
 import type { BoardData, Meta } from '@kanbanto/model/types'
-import { and, asc, count, eq, isNull } from 'drizzle-orm'
+import { and, asc, count, eq, isNull, sql } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import type { Db, Tx } from '../db'
 import { boardActivity, boardTemplates, cardTemplates, users, workspaces } from '../db/schema'
@@ -73,6 +75,11 @@ export async function saveCardTemplate(
   const { data } = await app.engine.snapshot(boardId)
   const cards = templateOf(data, input.taskId)
   if ('error' in cards) throw new HttpError(data.tasks[input.taskId] ? 422 : 404, cards.error)
+  if (JSON.stringify(cards).length > TEMPLATE_TEXT_MAX)
+    throw new HttpError(
+      422,
+      'This card and what is under it hold too much text to keep as a template. Shorten the descriptions, or save a smaller part of it.',
+    )
   const id = await app.db.transaction(async (tx) => {
     if (input.replace) {
       const [was] = await tx
@@ -131,31 +138,45 @@ const whereOf = (lib: Library) =>
     : and(eq(boardTemplates.ownerId, lib.ownerId), isNull(boardTemplates.workspaceId))
 
 /** May this person rename, replace and remove a board template? Their own; a workspace's for its admins and whoever saved it. */
-const canChange = (row: TemplateRow, userId: string, admin: boolean) => (row.workspaceId ? admin || row.updatedBy === userId : row.ownerId === userId)
+const canChange = (row: Pick<TemplateRow, 'workspaceId' | 'ownerId' | 'updatedBy'>, userId: string, admin: boolean) =>
+  row.workspaceId ? admin || row.updatedBy === userId : row.ownerId === userId
 
 /** The board templates of a place: a workspace's (for its members), or a person's own. */
 export async function boardTemplatesOf(db: Db | Tx, lib: Library, me: { id: string }): Promise<BoardTemplate[]> {
   const admin = 'workspaceId' in lib ? (await workspaceRole(db, lib.workspaceId, me.id)) === 'admin' : false
+  // (How many of each a template holds is counted by the database: a list of templates doesn't read their contents.)
+  const many = (part: 'columns' | 'fields' | 'cardTemplates') => {
+    const it = sql`${boardTemplates.content}->${sql.raw(`'${part}'`)}`
+    return sql<number>`case when jsonb_typeof(${it}) = 'array' then jsonb_array_length(${it}) else 0 end`.mapWith(Number)
+  }
   const rows = await db
-    .select({ t: boardTemplates, by: users.name })
+    .select({
+      id: boardTemplates.id,
+      name: boardTemplates.name,
+      workspaceId: boardTemplates.workspaceId,
+      ownerId: boardTemplates.ownerId,
+      updatedBy: boardTemplates.updatedBy,
+      updatedAt: boardTemplates.updatedAt,
+      lists: many('columns'),
+      fields: many('fields'),
+      cardTemplates: many('cardTemplates'),
+      by: users.name,
+    })
     .from(boardTemplates)
     .leftJoin(users, eq(users.id, boardTemplates.updatedBy))
     .where(whereOf(lib))
     .orderBy(asc(boardTemplates.name), asc(boardTemplates.createdAt))
-  return rows.map(({ t, by }) => {
-    const c = contentOf(t)
-    return {
-      id: t.id,
-      name: t.name,
-      workspaceId: t.workspaceId,
-      lists: c.columns?.length ?? 0,
-      fields: c.fields?.length ?? 0,
-      cardTemplates: c.cardTemplates?.length ?? 0,
-      by,
-      updatedAt: t.updatedAt.toISOString(),
-      canChange: canChange(t, me.id, admin),
-    }
-  })
+  return rows.map((t) => ({
+    id: t.id,
+    name: t.name,
+    workspaceId: t.workspaceId,
+    lists: t.lists,
+    fields: t.fields,
+    cardTemplates: t.cardTemplates,
+    by: t.by,
+    updatedAt: t.updatedAt.toISOString(),
+    canChange: canChange(t, me.id, admin),
+  }))
 }
 
 /** A board template the person may use: one of their own, or one of a workspace they are in. */
@@ -177,8 +198,14 @@ export async function saveBoardTemplate(
   input: { name?: string; replace?: string },
   via?: string | null,
 ): Promise<BoardTemplate> {
+  // A workspace's templates are its people's: an owner of one of its boards who isn't in the workspace doesn't add
+  // to them (they could fill the workspace's thirty, and not take one away again).
+  if (board.workspaceId && !(await workspaceRole(app.db, board.workspaceId, me.id)))
+    throw new HttpError(403, 'Only people in this board’s workspace can save it as one of the workspace’s templates.')
   const { data } = await app.engine.snapshot(board.id)
   const content = boardTemplateOf(data, await cardTemplatesOf(app.db, board.id))
+  if (JSON.stringify(content).length > BOARD_TEMPLATE_TEXT_MAX)
+    throw new HttpError(422, 'This board’s card templates hold too much text to keep with a board template. Remove or shorten some of them first.')
   const lib: Library = board.workspaceId ? { workspaceId: board.workspaceId } : { ownerId: me.id }
   const id = await app.db.transaction(async (tx) => {
     if (input.replace) {

@@ -51,10 +51,12 @@ export async function userForApiToken(db: Db, token: string): Promise<{ user: Se
 }
 
 /**
- * What API tokens can reach: boards (and their comments, files and time), your Inbox, your week's time, workspaces, your own
- * fields, notifications, joining, the MCP endpoint, and who you are. Never your account, its tokens, or the Platform console.
+ * What API tokens can reach: boards (and their comments, files and time), the boards saved as templates, your Inbox, your
+ * week's time, workspaces, your own fields, notifications, joining, the MCP endpoint, and who you are. Never your account, its
+ * tokens, or the Platform console.
  */
-export const TOKEN_ROUTES = /^\/api\/(boards|cards|inbox|workspaces|fields|notifications|attachments|join|mcp|time)(\/|\?|$)|^\/api\/auth\/me(\?|$)/
+export const TOKEN_ROUTES =
+  /^\/api\/(boards|board-templates|cards|inbox|workspaces|fields|notifications|attachments|join|mcp|time)(\/|\?|$)|^\/api\/auth\/me(\?|$)/
 
 export async function deleteExpiredTokens(db: Db) {
   await db.delete(apiTokens).where(lt(apiTokens.expiresAt, new Date()))

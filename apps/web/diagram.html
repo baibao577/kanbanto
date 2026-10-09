@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <!--
+      A page of its own where diagrams are drawn (see src/components/text/diagram.ts). Nobody looks at it: the app
+      loads it out of sight and hands it a diagram's text. It may run this site's scripts and nothing else: no
+      picture, style sheet, font or connection, from anywhere. So whatever a diagram's text names, the browser asks
+      nobody for it. (The server sends the same rule as a header; this line is for where the page is served by
+      something else.)
+    -->
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src data:" />
+    <meta name="robots" content="noindex" />
+    <title>Kanbanto: where diagrams are drawn</title>
+  </head>
+  <body>
+    <script type="module" src="/src/components/text/diagramFrame.ts"></script>
+  </body>
+</html>

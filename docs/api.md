@@ -63,7 +63,8 @@ curl -X POST https://kanbanto.example.com/api/boards/<board id>/mutations \
   shows; lists that hold several are joined), boards and saved filters that used the field use `into`, and the
   field is gone. It can't be undone. `GET` the same address with `?into=` says first what it would do, in numbers
   (`cards`, `boards`, `both`, the `options` a choice would gain, and a `problem` when it can't be done).
-- **Starter boards.** `POST /api/boards` with `template: "sales"` or `"support"` makes a board for that kind of work:
+- **Starter boards.** `POST /api/boards` with `template: "sales"`, `"support"`, `"store"` or `"bookings"` makes a board for that kind
+  of work:
   its lists, saved filters, a few example cards, and its fields, which come from the library of where it's made.
   Fields that library has (same name and kind) are used as they are; the rest are added, which in a workspace only
   its admins may do (otherwise a 403 that names them, and nothing is made). The answer lists what was `added` and
@@ -95,65 +96,77 @@ curl -X POST https://kanbanto.example.com/api/boards/<board id>/mutations \
   - **In a comment:** upload with one more header, `X-Attach-To: comment` (anyone who can comment may; the file is
     yours alone until it's posted), then post the comment with its id:
     `POST …/tasks/<task id>/comments` with `{"body": "The screenshot", "attachments": ["<file id>"]}`.
-  - **Templates.** `GET /api/boards/<id>/templates` lists a board's card templates (a card with its subtasks,
-    saved to start the next one from: `cards`, the first being the top card). Save one with
-    `POST /api/boards/<id>/templates` and `{"taskId": "<a task>", "name": "New client"}` (`"replace": "<template
-    id>"` saves over one), rename with `PATCH …/templates/<id>`, remove with `DELETE`. To start a card from one,
-    send a `tasks.import` command with `"template": "<its name>"` and the cards under new ids; nobody is assigned
-    and no card has a date. A board's shape is saved with `POST /api/boards/<id>/template` (owners; it goes to the
-    board's workspace, or to you), listed with `GET /api/board-templates` (`?workspace=<id>` for a workspace's),
-    and used with `POST /api/boards` and `"templateId"`.
-  - **Reactions:** a comment has `reactions`, a list of `{"emoji", "by": [{"id", "name"}]}`. Add yours with
-    `PUT /api/boards/<id>/comments/<comment id>/reactions` and `{"emoji": "👍", "on": true}`, take it back with
-    `"on": false`. The emoji is one of 👍 ❤️ 🎉 😄 👀 ✅; anyone who can comment may react. The comment's author gets
-    one notification for the comment (`kind: "reaction"`), and no email.
-  - **A comment about words of the description:** post a comment with `"passage": {"quote": "the words"}` (and,
-    to tell the place apart when the words are there twice, up to 80 characters of the text on each side as
-    `"before"` and `"after"`). It shows beside those words on the description's full page, and in the card's
-    comments with the words quoted. Nothing is written into the description: the words are looked for each time
-    the text is shown, so the comment follows them when the text moves, and says so when they have been
-    rewritten. Answer it with `"parentId": "<its id>"` on a new comment; settle it with
-    `PUT /api/boards/<id>/comments/<comment id>/resolved` and `{"resolved": true}` (`false` opens it again, and so
-    does a new answer). A comment's `passage`, `parentId` and `resolved` say which it is. Deleting such a comment
-    deletes the answers to it.
   - **In a description or a comment's words:** write `📎` and the file's name (`See 📎report.pdf`). It shows as a
     link to that file of the card.
   - `GET /api/boards/<id>/tasks/<task id>/attachments` lists a card's files, its comments' among them (`commentId`).
     `GET /api/attachments/<file id>` opens one (`curl -L`: a file kept in a bucket answers with a redirect to a
     five-minute link). `DELETE /api/boards/<id>/attachments/<file id>` puts one in a trash for 30 days, and
     `POST …/attachments/<file id>/restore` brings it back.
-  - **Rules** (limits, and rules that tell people). `GET /api/boards/<id>` has the board's `rules`. A limit looks like
-    `{"id", "kind": "limit", "cards": {"statuses": ["doing"]}, "counts": "leaves", "measure": {"by": "cards"},
-    "max": 3, "then": [{"do": "show"}]}`: `cards` says which cards the way a saved filter does (lists, people,
-    labels, priorities, the board's fields; not "me" or dates), `counts` which of them count where cards have
-    subtasks (`leaves`, `topLevel` or `all`), `measure` is the cards or a number field
-    (`{"by": "field", "field": "<id>"}`), `"per": "person"` holds each person by what is assigned to them, and
-    `name` is a few words of its owner's for it.
-    Nothing a rule works out is stored or sent: count the board's cards the same way to know where one stands.
-    A board's owners make one with `POST /api/boards/<id>/rules` and `{"rule": {…}}` (no `id`), change one with
-    `PATCH …/rules/<rule id>` (the whole rule) and remove one with `DELETE`. A rule that names something the
-    board doesn't have is refused (`422`, with the reason). Nothing is ever refused because of a limit.
-    A rule that tells people looks like `{"id", "kind": "when", "on": "enters", "cards": {"statuses": ["quoted"]},
-    "counts": "leaves", "then": [{"do": "tell", "who": ["<a person's id>", "@assignee"]}]}`: `on` is `enters` or
-    `leaves`, `cards` and `counts` are a limit's, and `who` holds ids of people on the board and `"@assignee"` for
-    whoever the card is assigned to (as it arrives; as it was when it left). A card enters when it starts to meet
-    `cards`, however that happens (moved, made, restored, changed so that it fits, arriving from another board),
-    and leaves when it stops (also archived, deleted, or moved to another board). The people named get a
-    notification of `kind: "rule"` (`GET /api/notifications`: `rule`, `moment` such as "arrived in Quoted",
-    `cards` and `more`), never the person who made the change. Anyone on the board can stop a rule telling them
-    with `PUT /api/boards/<id>/rules/<rule id>/mute` and `{"muted": true}`; `GET /api/boards/<id>/rules/mutes`
-    lists the ones you switched off (`mine`), and for owners who switched off which (`all`). A board has up to 20
-    rules, of both kinds together.
   - **A card's cover** is one of its pictures, drawn across the top of the card on the Board: the task's `cover`,
     a file's id. The Board draws the picture's small copy, `GET /api/attachments/<file id>/thumb` (for whoever
     can open the file; it never changes, so keep it). The server does not make small copies, since it never opens
     a picture: whoever sets a cover sends one first, `PUT /api/boards/<id>/attachments/<file id>/thumb` with the
-    small picture as the body (PNG, JPEG or WebP, up to 300 KB; the app's are 640 pixels wide). Then
+    small picture as the body (PNG, JPEG or WebP, up to 300 KB and 1,280 by 2,560 pixels; the app's are 640 pixels
+    wide). Then
     `PUT /api/boards/<id>/tasks/<task id>/cover` with `{"attachmentId": "<file id>"}` makes it the cover (`409`
     with the code `needs-thumb` when the small copy is missing), and `DELETE` on the same address takes it away.
     No command sets `cover`, and deleting the file removes the cover with it.
   - Pictures open in the page and everything else downloads. Programs and scripts (`.exe`, `.sh`, `.js`…) are
     refused. The largest file and the space a person or a workspace has are set by the site (`413` when over).
+- **Reactions.** A comment has `reactions`, a list of `{"emoji", "by": [{"id", "name"}]}`. Add yours with
+  `PUT /api/boards/<id>/comments/<comment id>/reactions` and `{"emoji": "👍", "on": true}`, take it back with
+  `"on": false`. The emoji is one of 👍 ❤️ 🎉 😄 👀 ✅; anyone who can comment may react. The comment's author gets
+  one notification for the comment (`kind: "reaction"`), and no email.
+- **A comment about words of the description.** Post a comment with `"passage": {"quote": "the words"}` (and,
+  to tell the place apart when the words are there twice, up to 80 characters of the text on each side as
+  `"before"` and `"after"`). It shows beside those words on the description's full page, and in the card's
+  comments with the words quoted. Nothing is written into the description: the words are looked for each time
+  the text is shown, so the comment follows them when the text moves, and says so when they have been
+  rewritten. Answer it with `"parentId": "<its id>"` on a new comment; settle it with
+  `PUT /api/boards/<id>/comments/<comment id>/resolved` and `{"resolved": true}` (`false` opens it again, and so
+  does a new answer). A comment's `passage`, `parentId` and `resolved` say which it is. Deleting such a comment
+  deletes the answers to it.
+- **Templates.** `GET /api/boards/<id>/templates` lists a board's card templates (a card with its subtasks,
+  saved to start the next one from: `cards`, the first being the top card). Save one with
+  `POST /api/boards/<id>/templates` and `{"taskId": "<a task>", "name": "New client"}` (`"replace": "<template
+  id>"` saves over one), rename with `PATCH …/templates/<id>`, remove with `DELETE`. To start a card from one,
+  send a `tasks.import` command with `"template": "<its name>"` and the cards under new ids; nobody is assigned
+  and no card has a date. A board's shape is saved with `POST /api/boards/<id>/template` (owners; it goes to the
+  board's workspace, or to you: a workspace's templates are saved by its own people), listed with
+  `GET /api/board-templates` (`?workspace=<id>` for a workspace's), renamed with `PATCH /api/board-templates/<id>`
+  and `{"name"}`, removed with `DELETE`, and used with `POST /api/boards` and `"templateId"`. A template holds a
+  card's shape, not a store of text: one over about 500,000 characters in all isn't kept (`422`). A visitor with a
+  board's public link is given no templates.
+- **Rules** (limits, and rules that tell people). `GET /api/boards/<id>` has the board's `rules`. A limit looks like
+  `{"id", "kind": "limit", "cards": {"statuses": ["doing"]}, "counts": "leaves", "measure": {"by": "cards"},
+  "max": 3, "then": [{"do": "show"}]}`: `cards` says which cards the way a saved filter does (lists, people,
+  labels, priorities, the board's fields; not "me" or dates), `counts` which of them count where cards have
+  subtasks (`leaves`, `topLevel` or `all`), `measure` is the cards or a number field
+  (`{"by": "field", "field": "<id>"}`), `"per": "person"` holds each person by what is assigned to them, and
+  `name` is a few words of its owner's for it.
+  Nothing a rule works out is stored or sent: count the board's cards the same way to know where one stands.
+  A board's owners make one with `POST /api/boards/<id>/rules` and `{"rule": {…}}` (no `id`), change one with
+  `PATCH …/rules/<rule id>` (the whole rule) and remove one with `DELETE`. A rule that names something the
+  board doesn't have is refused (`422`, with the reason). Nothing is ever refused because of a limit.
+  A rule that tells people looks like `{"id", "kind": "when", "on": "enters", "cards": {"statuses": ["quoted"]},
+  "counts": "leaves", "then": [{"do": "tell", "who": ["<a person's id>", "@assignee"]}]}`: `on` is `enters` or
+  `leaves`, `cards` and `counts` are a limit's, and `who` holds ids of people on the board and `"@assignee"` for
+  whoever the card is assigned to (as it arrives; as it was when it left). A card enters when it starts to meet
+  `cards`, however that happens (moved, made, restored, changed so that it fits, arriving from another board),
+  and leaves when it stops (also archived, deleted, or moved to another board). The people named get a
+  notification of `kind: "rule"` (`GET /api/notifications`: `rule`, `moment` such as "arrived in Quoted",
+  `cards` and `more`), never the person who made the change. Anyone on the board can stop a rule telling them
+  with `PUT /api/boards/<id>/rules/<rule id>/mute` and `{"muted": true}`; `GET /api/boards/<id>/rules/mutes`
+  lists the ones you switched off (`mine`), and for owners who switched off which (`all`). A board has up to 20
+  rules, of both kinds together.
+- **Notifications.** `GET /api/notifications` gives your newest 30, newest first: mentions, news of the cards you
+  follow (`kind: "change"`), what a board's rules told you (`"rule"`), reactions to your comments, and a comment of
+  yours about words being resolved (`"resolved"`). `limit` asks for up to 100; `before` takes the `next` of the
+  answer before, for the ones that came earlier (no `next`: that was the last); `unread=1`, `mentions=1` and
+  `board=<id>` narrow them. Each says `read`, and `kept`: turned back to unread by you, to come back to.
+  `POST /api/notifications/read` marks them read: the ones in `ids`, or without `ids` all that are new (the ones
+  you kept stay). `PUT /api/notifications/<id>/read` with `{"read": false}` turns one of yours back to unread, and
+  `true` marks it read. Read ones are removed three months after they came; unread ones stay.
 - **Archiving** (`task.archive`) puts a task and its subtasks away: they're out of the board and its counts, kept (with
   comments and files), and come back with `task.restore`. `task.delete` on an archived task deletes it for good.
   `tasks.archiveDone` tidies a done list in one go: `{"type":"tasks.archiveDone","status":"<list id>","before":"2026-09-01T00:00:00Z"}`
@@ -328,7 +341,8 @@ without that value; a row with no title, or whose title is already a card on the
 | `mutationId` | Yours to choose: with `addAnyway`, the same one sent again adds nothing twice. |
 
 Dates are read in the forms people type (`2026-10-15`, `15/10/2026`, `15 Oct 2026`, `15 ต.ค. 2569`), numbers with
-their separators and signs (`฿1,200`), an assignee by name or email address, a `parent` by the title of another
+their separators and signs (`฿1,200`), an assignee by name (or by email address, for the board's owners, who are the ones who see addresses, and for
+the caller's own), a `parent` by the title of another
 row or of a card on the board, a card link by the linked card's title. A new option is added to a choice field only
 when the caller manages that field.
 
@@ -523,20 +537,24 @@ built to be worth little: one file, on one card, under a name fixed in advance, 
 only that the file was saved; what the person who asked may do is checked again when it's used; and it is never
 written to the server's log. Assistants can't delete files.
 
+Every task has a name of its own, its `ref` (`WEB-12`: the board's letters and the task's number), which is what
+people see on a card and say. The tools give it with each task (`ref`, or `task_ref` beside a `task_id`) and take
+it wherever they take a task's id, on the board the task is on: `WEB-12`, `web-12`, or just `12`.
+
 | Tool | What it does |
 |---|---|
 | `list_boards` | Who you act as (name, time zone, today's date there) and the boards you can open: where each lives (a workspace, "Personal" or "Shared with you"), what it's for, and which is your Inbox (a private board of your own, for cards that have no board yet) |
-| `get_board` | A board's lists, labels, people and its open tasks: the top levels (subtasks under their task), the part under one task, or one list's cards (`tasks: false` for just the lists, labels and people), and its own fields with their types and options. Top-level tasks come list by list, each list in the order made by hand (`order: outline` for the outline's order) |
+| `get_board` | A board's lists, labels, people and its open tasks: the top levels (subtasks under their task), the part under one task, or one list's cards (`tasks: false` for just the lists, labels and people), and its own fields with their types and options. Top-level tasks come list by list, each list in the order made by hand (`order: outline` for the outline's order). With them: its letters (`code`), its `limits` (each in words, with what there is now and the room left: below zero is over), its `rules_that_tell_people` (in words), and its `card_templates` by name |
 | `find_tasks` | Search one board, one workspace or everything: text, list, kind of list (`counts_as: doing`: in progress on every board, whatever the list is called), label, assignee (`me`, `nobody`), priority, blocked, the board's own fields by name (`fields: {"Stage": "Won", "Client": null}`, or a test: `{"Deal value": {"min": 10000}, "Close date": {"range": "this-month"}, "Company": {"contains": "cafe"}, "Stage": {"none_of": ["Lost"]}}`; boards without the field are skipped, and a test a field's kind doesn't have is refused), due, created, last worked on, done or archived between two times; sorted and paged. Without a `sort`, results come list by list, each list in the order its cards were put in by hand, so one list reads top to bottom as on the board. Asking by when tasks got done also finds the ones archived since. `worked_after` / `worked_before`: what was worked on in a stretch of time (made or changed then), each result saying what happened |
 | `team_overview` | How a board or workspace is doing: tasks per list, each person's open, overdue and blocked work, what needs attention, and the time each person logged on it this week |
 | `reminders` | Your reminders coming up in the next days, and the ones that went off in the last 24 hours |
 | `my_day` | What needs your attention across your boards, in one answer: your overdue tasks and the ones due today, what you have in progress, your tasks waiting on others, today's reminders, and comments that mention you and you haven't seen |
 | `recent_activity` | What happened in a stretch of time (default: the last day), optionally by one person: changes, who made them and through which app, and comments, each with the board and task ids it's about |
-| `get_task` | A task with its parents, subtasks, what it waits on, latest comments, its files, and the time logged on it |
+| `get_task` | A task with its parents, subtasks, what it waits on, latest comments, its files, and the time logged on it. Its comments come with their reactions, and one about words of the description with those words (`about`), the comment it answers (`reply_to`), whether it is settled (`resolved`) and whether the words have changed since; a file that is the card's cover is marked |
 | `read_file` | Open one of a task's files: a text file as text (80,000 characters at a time), a picture as a picture (up to 2 MB); other kinds are only described |
 | `my_week` | Your logged time for a week across your boards: each day against your hours a day (empty days stand out), each task's time per day, and tasks you worked on without logging time |
 | `plan_overview` | A workspace's resource plan, read only: each project's planned, scheduled and logged man-days, who's booked at what share; each person's load, when they go over 100% and when they're free |
-| `create_tasks` | Add tasks, each with its own `subtasks` if you like, or break one down into subtasks (`parent_id`); without a board they go to your Inbox, which everyone has. A wrong list, label or person adds nothing. Each can come with `fields` (the board's own, by name) |
+| `create_tasks` | Add tasks, each with its own `subtasks` if you like, or break one down into subtasks (`parent_id`); without a board they go to your Inbox, which everyone has. A wrong list, label or person adds nothing. Each can come with `fields` (the board's own, by name). `from_template` starts one from a card template of the board instead (`template_title` names it, `template_list` puts it in a list): nobody is assigned and no card has a date |
 | `update_task` | Title, description, dates, assignee, priority, labels, what it waits on (`waiting_on`), list, and its place in the list (`position: top` / `bottom`, `before_task_id` / `after_task_id`). Put in another list, it goes to the end unless placed. `fields: {"Stage": "Won", "Value": 12000}` sets the board's own fields by name (`null` clears one; a card link takes a card's title, a person field a person's name or `me`) |
 | `update_tasks` | The same change to several tasks at once (`task_ids`), as one change with one line of activity: their list, assignee, priority, dates, the board's own fields, labels (`labels` replaces them, `add_labels` and `remove_labels` keep the others). `with_subtasks` also takes every task under them, which is how a task moves to another list with its subtasks. A wrong id or name changes nothing; asked twice, it changes nothing the second time |
 | `move_task` | Change a task's parent or its place among siblings in the outline |

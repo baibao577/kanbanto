@@ -186,6 +186,16 @@ describe('a board as a spreadsheet', () => {
     const line = cardsCsv(data, ['A3'], { zone: ZONE }).split('\r\n')[1]
     expect(line).toContain(",'+1 on this,")
     expect(line).toContain(",'=cmd,-4,")
+    // A column's name is typed too (a field's): the first row is guarded whatever the column holds.
+    const named = toCsv(
+      [
+        ['Title', '=HYPERLINK("http://x","Due")'],
+        ['a', '5'],
+      ],
+      (column) => column === 'Title',
+    )
+    expect(named.slice(1).split('\r\n')[0]).toBe('Title,"\'=HYPERLINK(""http://x"",""Due"")"')
+    expect(parseSheet(named).rows[0]).toEqual(['Title', '=HYPERLINK("http://x","Due")'])
   })
 
   it('comes back through the import as the same cards', () => {

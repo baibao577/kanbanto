@@ -80,7 +80,8 @@ stays first.
 - The order is remembered on each device, and a [preset](/everyday/search-and-filters#presets-save-a-combination)
   saves it with its filters: "The day in order" can put the time first and the price beside it.
 - A column you hide keeps its place for when you show it again. A field added to the board later goes to the end.
-- **Display → Reset** puts the columns back in their usual order.
+- **Display → Reset** puts everything in Display back as it started: the columns in their usual order and all
+  shown, the extra columns off, and the other switches as they were.
 
 ## Choose what to show
 
@@ -90,11 +91,12 @@ Click **Display**:
 - pick the **columns** you want, the board's own fields among them (**Number**, **Created** and **Updated** are off
   until you switch them on; Number is each card's [name](/everyday/cards#a-card-s-name), like WEB-12),
 - switch between **compact** and **comfortable** rows,
-- turn on **Hide done** to leave finished tasks out.
+- turn on **Hide done tasks** to leave finished tasks out.
 
 ## Add tasks
 
-Use **New task** or <kbd>N</kbd>. To add a subtask, open its parent.
+Use **New task** or <kbd>N</kbd>, or **Add a project** under the table. To add a subtask, point at its parent's row
+and click the **+**.
 
 ## On a phone
 

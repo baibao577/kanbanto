@@ -2,6 +2,7 @@ import { fromTemplate, TEMPLATES_MAX, type BoardTemplate, type CardTemplate } fr
 import type { BoardData } from '@kanbanto/model/types'
 import type { WebSocket } from 'ws'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
+import { setPlatformAdmin } from '../src/admins'
 import { boardActivity } from '../src/db/schema'
 import type { LiveMessage } from '../src/live'
 import { mid, Person, reset, setup } from './helpers'
@@ -207,6 +208,32 @@ describe('board templates', () => {
     expect((await load(ann, made.id)).data.columns).toHaveLength(4)
   })
 
+  it('are reached with an API token as the API reference says: listed, used, renamed and removed; one that only reads only lists', async () => {
+    const { ann, id } = await team()
+    await setPlatformAdmin(t.db, 'ann@example.com', true)
+    await ann.ok('PATCH', '/api/admin/settings', { apiTokens: true })
+    const token = async (scope: 'read' | 'write') =>
+      (await ann.ok('POST', '/api/account/tokens', { name: scope, scope, expiresInDays: null })).token as string
+    const as = (tok: string) => (method: 'GET' | 'POST' | 'PATCH' | 'DELETE', url: string, body?: unknown) =>
+      new Person(t.app).request(method, url, body, { authorization: `Bearer ${tok}` })
+    const [write, read] = [as(await token('write')), as(await token('read'))]
+    const saved = await write('POST', `/api/boards/${id}/template`, { name: 'A launch board' })
+    expect(saved.status).toBe(200)
+    const tid = (saved.body as { template: BoardTemplate }).template.id
+    for (const call of [write, read]) {
+      const list = await call('GET', '/api/board-templates')
+      expect(list.status).toBe(200)
+      expect((list.body as { templates: BoardTemplate[] }).templates.map((b) => b.id)).toEqual([tid])
+    }
+    const made = await write('POST', '/api/boards', { name: 'Autumn launch', templateId: tid })
+    expect(made.status).toBe(200)
+    expect((await write('PATCH', `/api/board-templates/${tid}`, { name: 'Launches' })).status).toBe(200)
+    expect((await read('PATCH', `/api/board-templates/${tid}`, { name: 'x' })).status).toBe(403)
+    expect((await read('DELETE', `/api/board-templates/${tid}`)).status).toBe(403)
+    expect((await write('DELETE', `/api/board-templates/${tid}`)).status).toBe(200)
+    expect(await boardTemplates(ann)).toEqual([])
+  })
+
   it('of a workspace’s board are the workspace’s: its members start boards from them, its admins look after them', async () => {
     const ann = await Person.signUp(t.app, 'Ann')
     const bob = await Person.signUp(t.app, 'Bob')
@@ -239,5 +266,28 @@ describe('board templates', () => {
     ])
     await ann.ok('DELETE', `/api/board-templates/${bobs.id}`)
     expect((await boardTemplates(bob, ws)).map((x) => x.name)).toEqual(['A client'])
+    // An owner of one of the workspace's boards who isn't in the workspace doesn't add to its templates.
+    await ann.ok('POST', `/api/boards/${id}/invitations`, { email: 'sam@example.com', role: 'owner' })
+    expect((await saveBoard(sam, id, { name: 'Sam’s' })).status).toBe(403)
+    expect((await boardTemplates(ann, ws)).map((x) => x.name)).toEqual(['A client'])
+  })
+
+  it('hold a card’s shape, not a store of text: one that is too big isn’t kept, and a visitor through the public link is handed none', async () => {
+    const { ann, id } = await team()
+    // A card with a dozen steps, each with a description as long as one can be.
+    const long = 'x'.repeat(50_000)
+    for (let i = 0; i < 12; i++)
+      expect(
+        (await run(ann, id, { type: 'task.create', parentId: 'B', fields: { title: `Step ${i}`, status: 'todo', description: long } })).status,
+      ).toBe(200)
+    const big = await save(ann, id, { taskId: 'B' })
+    expect(big.status).toBe(422)
+    expect(big.body.error).toMatch(/too much text/)
+    expect((await save(ann, id, { taskId: 'A2' })).status).toBe(200)
+    // The board's templates are for the people who make cards on it.
+    await ann.ok('PATCH', `/api/boards/${id}/sharing`, { publicLink: true })
+    const visitor = new Person(t.app)
+    expect((await visitor.ok<{ templates: CardTemplate[] }>('GET', `/api/boards/${id}/templates`)).templates).toEqual([])
+    expect(await templatesOf(ann, id)).toHaveLength(1)
   })
 })

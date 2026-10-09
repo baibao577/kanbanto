@@ -37,11 +37,15 @@ owners make, change and remove them here; anyone a rule tells can switch it off 
 
 ![Board settings, Rules: the board's limits, then its rules that tell people](/images/rules-settings.webp)
 
+**Templates.** The board's card templates, to rename and remove, and for the board's owners **Save board as
+template…**. See [templates](/everyday/templates).
+
 **Background.** One of 12 colors, 12 designs, or your own: pick any hue and a light, medium or deep shade.
 
 **People & apps.** Who can work on this board (a shortcut to Share), and webhooks, which tell other apps when
 something changes here. Webhooks are for whoever sets up integrations: see
-[Webhooks: tell another app when a board changes](/more/webhooks).
+[Webhooks: tell another app when a board changes](/more/webhooks). A board can also have a Telegram bot of its own:
+see [a Telegram bot for a board](/more/telegram).
 
 **Just for you.** Light, dark, or the same as your computer: only what you see changes.
 

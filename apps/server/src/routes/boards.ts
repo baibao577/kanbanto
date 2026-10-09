@@ -26,6 +26,7 @@ import { boardFavorites, boards, comments, timeEntries, users, workspaces, taskM
 import { addCardSaid, NewCardBody } from '../boards/newCards'
 import { importCards, ImportCardsBody } from '../boards/importCards'
 import { pictureUrl } from '../pictures'
+import { env } from '../env'
 import { HttpError, parse, siteUrl } from '../http'
 import { requireUser } from './auth'
 import { commentCounts, lastComments } from './comments'
@@ -79,7 +80,16 @@ const ArchivedQuery = z.object({
   offset: z.coerce.number().int().min(0).optional(),
   limit: z.coerce.number().int().min(1).max(1000).optional(),
 })
-const Mutation = z.object({ mutationId: z.string().min(1).max(100), command: CommandSchema })
+// (An id that starts "tg:" is the server's own, for a change made from a board's Telegram chat, which that chat is
+// then not told about: see telegram/cards.ts. A browser or a script can't give its changes one.)
+const Mutation = z.object({
+  mutationId: z
+    .string()
+    .min(1)
+    .max(100)
+    .refine((id) => !id.startsWith('tg:'), 'That id can’t be used.'),
+  command: CommandSchema,
+})
 const MB = 1024 * 1024
 
 /**
@@ -186,62 +196,66 @@ export const boardRoutes: FastifyPluginAsync = async (app) => {
    * lists count as, by their Trello ids, where the guess from their names isn't wanted). A Trello board answers with
    * `trello` too: what came over and what stayed behind.
    */
-  app.post('/boards/import', { bodyLimit: 20 * MB }, async (req): Promise<{ id: string; lost: string[]; trello?: TrelloSummary }> => {
-    const user = requireUser(req.user)
-    const { file, lists } = parse(z.object({ file: z.unknown(), lists: z.record(z.string().max(100), z.enum(CATEGORIES)).optional() }), req.body)
-    if (isTrelloExport(file)) {
-      let made
-      try {
-        made = fromTrello(slimTrello(file), {
-          boardId: newId(),
-          now: new Date().toISOString(),
-          newId,
-          categories: lists,
-          zone: isTimeZone(user.timeZone) ? user.timeZone : 'UTC',
-        })
-      } catch (e) {
-        throw new HttpError(400, e instanceof Error ? e.message : 'That Trello export couldn’t be read.')
-      }
-      // (What's stored passes the same checks as any board file: sizes, dates, ids.)
-      const checked = BoardDataSchema.safeParse(made.data)
-      if (!checked.success) throw new HttpError(400, 'That Trello export couldn’t be read: some of it is in a shape Kanbanto doesn’t know.')
-      const done = await importBoard(app, user.id, made.data, { comments: made.comments, fieldText: true })
-      return { ...done, trello: made.summary }
-    }
-    let data
-    try {
-      data = readBoardFile(file, newId())
-    } catch (e) {
-      throw new HttpError(400, e instanceof Error ? e.message : 'That file isn’t a board export.')
-    }
-    // What was said and logged on its cards, when the file has them. Its people aren't accounts here: a comment
-    // comes in the importer's name and says who wrote it, as a Trello board's do; logged time is the importer's
-    // own where it was theirs (the same account, on the site the file came from) and nobody's otherwise, with who
-    // logged it in the note.
-    const extras = readExtras(file)
-    const name = (by: { name: string } | null) => by?.name.trim().replace(/([\\*_[\]])/g, '\\$1') || ''
-    return importBoard(app, user.id, data, {
-      comments: extras.comments.map((c) => ({
-        taskId: c.taskId,
-        at: c.at,
-        body: c.by?.id === user.id ? c.body : `${name(c.by) ? `**${name(c.by)}** wrote:` : 'Someone wrote:'}\n\n${c.body}`.slice(0, 10_000),
-        ...(c.id && { key: c.id }),
-        ...(c.passage && { passage: tidyPassage(c.passage), resolved: !!c.resolved }),
-        ...(c.replyTo && { replyTo: c.replyTo }),
-      })),
-      time: extras.time.map((e) => {
-        const mine = e.by?.id === user.id
-        return {
-          taskId: e.taskId,
-          userId: mine ? user.id : null,
-          day: e.day,
-          minutes: e.minutes,
-          at: e.at,
-          note: (mine ? e.note : [e.by?.name.trim() || 'Someone', e.note].filter(Boolean).join(': ')).slice(0, 500),
+  app.post(
+    '/boards/import',
+    { bodyLimit: 20 * MB, config: { rateLimit: { max: env.test ? 1000 : 10, timeWindow: '1 minute' } } },
+    async (req): Promise<{ id: string; lost: string[]; trello?: TrelloSummary }> => {
+      const user = requireUser(req.user)
+      const { file, lists } = parse(z.object({ file: z.unknown(), lists: z.record(z.string().max(100), z.enum(CATEGORIES)).optional() }), req.body)
+      if (isTrelloExport(file)) {
+        let made
+        try {
+          made = fromTrello(slimTrello(file), {
+            boardId: newId(),
+            now: new Date().toISOString(),
+            newId,
+            categories: lists,
+            zone: isTimeZone(user.timeZone) ? user.timeZone : 'UTC',
+          })
+        } catch (e) {
+          throw new HttpError(400, e instanceof Error ? e.message : 'That Trello export couldn’t be read.')
         }
-      }),
-    })
-  })
+        // (What's stored passes the same checks as any board file: sizes, dates, ids.)
+        const checked = BoardDataSchema.safeParse(made.data)
+        if (!checked.success) throw new HttpError(400, 'That Trello export couldn’t be read: some of it is in a shape Kanbanto doesn’t know.')
+        const done = await importBoard(app, user.id, made.data, { comments: made.comments, fieldText: true })
+        return { ...done, trello: made.summary }
+      }
+      let data
+      try {
+        data = readBoardFile(file, newId())
+      } catch (e) {
+        throw new HttpError(400, e instanceof Error ? e.message : 'That file isn’t a board export.')
+      }
+      // What was said and logged on its cards, when the file has them. Its people aren't accounts here: a comment
+      // comes in the importer's name and says who wrote it, as a Trello board's do; logged time is the importer's
+      // own where it was theirs (the same account, on the site the file came from) and nobody's otherwise, with who
+      // logged it in the note.
+      const extras = readExtras(file)
+      const name = (by: { name: string } | null) => by?.name.trim().replace(/([\\*_[\]])/g, '\\$1') || ''
+      return importBoard(app, user.id, data, {
+        comments: extras.comments.map((c) => ({
+          taskId: c.taskId,
+          at: c.at,
+          body: c.by?.id === user.id ? c.body : `${name(c.by) ? `**${name(c.by)}** wrote:` : 'Someone wrote:'}\n\n${c.body}`.slice(0, 10_000),
+          ...(c.id && { key: c.id }),
+          ...(c.passage && { passage: tidyPassage(c.passage), resolved: !!c.resolved }),
+          ...(c.replyTo && { replyTo: c.replyTo }),
+        })),
+        time: extras.time.map((e) => {
+          const mine = e.by?.id === user.id
+          return {
+            taskId: e.taskId,
+            userId: mine ? user.id : null,
+            day: e.day,
+            minutes: e.minutes,
+            at: e.at,
+            note: (mine ? e.note : [e.by?.name.trim() || 'Someone', e.note].filter(Boolean).join(': ')).slice(0, 500),
+          }
+        }),
+      })
+    },
+  )
 
   /**
    * What was said and logged on a board's cards, archived ones too: its comments and its logged time, for the
@@ -501,12 +515,17 @@ export const boardRoutes: FastifyPluginAsync = async (app) => {
    * would be made, which rows are left out and which cells couldn't be read. Without it the cards are added as one
    * change: one line in the activity, one message to the board's webhooks, and each assignee told once.
    */
-  app.post('/boards/:id/tasks/import', { bodyLimit: 6 * MB }, async (req) => {
-    const { id } = parse(Params, req.params)
-    const me = requireUser(req.user)
-    const { board } = await requireAccess(app.db, me, id, 'editor')
-    return importCards(app, { me, via: req.apiToken?.app }, board, parse(ImportCardsBody, req.body))
-  })
+  // (Each look at a sheet is one of these, so a person trying columns sends a few; a file is big to read, so not hundreds.)
+  app.post(
+    '/boards/:id/tasks/import',
+    { bodyLimit: 6 * MB, config: { rateLimit: { max: env.test ? 1000 : 60, timeWindow: '1 minute' } } },
+    async (req) => {
+      const { id } = parse(Params, req.params)
+      const me = requireUser(req.user)
+      const { board, access } = await requireAccess(app.db, me, id, 'editor')
+      return importCards(app, { me, via: req.apiToken?.app, owner: access.role === 'owner' }, board, parse(ImportCardsBody, req.body))
+    },
+  )
 
   /**
    * Moves a task, with its subtasks, comments and files, to another board you can edit. Lists and labels are matched by

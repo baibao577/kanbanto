@@ -4,7 +4,7 @@ import { indexFor } from './indexer'
 import { guessCategory } from './listNames'
 import { repairData } from './migrate'
 import { BoardDataSchema } from './schema'
-import { COMPLETE_IN_TRELLO, TRELLO_MAX_TASKS, fromTrello, isTrelloExport, slimTrello } from './trello'
+import { COMPLETE_IN_TRELLO, TRELLO_MAX, TRELLO_MAX_TASKS, fromTrello, isTrelloExport, slimTrello } from './trello'
 import type { Task } from './types'
 
 const NOW = '2026-10-06T10:00:00.000Z'
@@ -441,6 +441,31 @@ describe('a Trello board as a board here', () => {
     const raw = sample()
     raw.cards = Array.from({ length: TRELLO_MAX_TASKS + 1 }, (_, i) => card(`c${i}`, `Card ${i}`, 'l-todo', i)) as never
     expect(() => convert(raw)).toThrow(/too big/)
+  })
+
+  it('a board made to be slow to read is refused, or read once over: lists, labels and comments have their most', () => {
+    const many = sample()
+    many.lists = Array.from({ length: TRELLO_MAX.lists + 1 }, (_, i) => list(`l${i}`, `List ${i}`, i)) as never
+    expect(() => convert(many)).toThrow(/too many lists/)
+    // Thousands of cards, each looked up among hundreds of lists, and a comment from each of thousands of members.
+    const raw = sample()
+    raw.lists = Array.from({ length: TRELLO_MAX.lists }, (_, i) => list(`l${i}`, `List ${i}`, i)) as never
+    raw.cards = Array.from({ length: 5000 }, (_, i) => card(`c${i}`, `Card ${i}`, `l${i % TRELLO_MAX.lists}`, i)) as never
+    raw.checklists = []
+    ;(raw as { members: unknown }).members = Array.from({ length: 20_000 }, (_, i) => ({ id: `m${i}`, fullName: `Member ${i}` }))
+    raw.actions = Array.from({ length: TRELLO_MAX.comments + 500 }, (_, i) => ({
+      type: 'commentCard',
+      date: '2026-09-01T09:30:00.000Z',
+      idMemberCreator: `m${i % 20_000}`,
+      data: { text: `Said ${i}`, card: { id: `c${i % 5000}` } },
+    })) as never
+    const started = performance.now()
+    const { data, comments, summary } = convert(raw)
+    expect(performance.now() - started).toBeLessThan(5000)
+    expect(Object.keys(data.tasks)).toHaveLength(5000)
+    expect(comments).toHaveLength(TRELLO_MAX.comments)
+    expect(comments[0].body).toContain('**Member ')
+    expect(summary.left.missingComments).toBe(0)
   })
 
   it('a board whose lists are all archived still has a list', () => {

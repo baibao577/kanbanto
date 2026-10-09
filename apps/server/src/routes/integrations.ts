@@ -18,6 +18,7 @@ import { MAX_TOKENS, newApiToken } from '../auth/apiTokens'
 import { requireAccess } from '../boards/access'
 import { checkChatAddress } from '../chat/hosts'
 import { decrypt, encrypt } from '../crypto'
+import { env } from '../env'
 import { apiTokens, telegramBots, webhookDeliveries, webhooks } from '../db/schema'
 import { dbErrorCode } from '../errors'
 import { HttpError, parse } from '../http'
@@ -50,6 +51,13 @@ const tokenView = (t: typeof apiTokens.$inferSelect): ApiTokenView => ({
 /** Which events a webhook gets: at least one. All of them is stored as null (and then includes events added later). */
 const Events = z.array(z.enum(WEBHOOK_EVENTS)).min(1, 'Pick at least one kind of event to send.')
 const eventsToStore = (events?: WebhookEventName[]) => (!events || WEBHOOK_EVENTS.every((e) => events.includes(e)) ? null : [...new Set(events)])
+
+/**
+ * Calls that make the server ask another service something (a chat app, Telegram): so many a minute from one address.
+ * Setting an integration up takes a handful; a script trying keys or addresses by the hundred would have the other
+ * service slow this whole site down for it.
+ */
+const OUT_LIMIT = { config: { rateLimit: { max: env.test ? 1000 : 20, timeWindow: '1 minute' } } }
 
 export const integrationRoutes: FastifyPluginAsync = async (app) => {
   // ── Your API tokens (Account settings; never reachable with a token) ─────────
@@ -210,7 +218,7 @@ export const integrationRoutes: FastifyPluginAsync = async (app) => {
    * Adds a webhook. With Kanbanto's own data as the format, its signing secret is in the answer (and can be shown
    * again later by the board's owners). One that sends to a chat app has none.
    */
-  app.post('/boards/:id/webhooks', async (req) => {
+  app.post('/boards/:id/webhooks', OUT_LIMIT, async (req) => {
     const { id } = parse(BoardParams, req.params)
     const me = requireUser(req.user)
     const { board } = await requireAccess(app.db, me, id, 'owner')
@@ -315,7 +323,7 @@ export const integrationRoutes: FastifyPluginAsync = async (app) => {
   }
 
   /** A new code to connect a chat with: the first chat that sends it to the bot becomes the board's (in place of the one before). */
-  app.post('/boards/:id/webhooks/:hookId/telegram/code', async (req) => {
+  app.post('/boards/:id/webhooks/:hookId/telegram/code', OUT_LIMIT, async (req) => {
     const { hook, bot } = await ownBot(req)
     await telegramOn()
     return { connect: app.telegram.newCode(hook.id, bot.botName) }
@@ -325,7 +333,7 @@ export const integrationRoutes: FastifyPluginAsync = async (app) => {
    * Whether messages in the chat become cards, and in which list; or a new token for the same bot (after `/revoke`
    * at @BotFather): the chat stays connected.
    */
-  app.patch('/boards/:id/webhooks/:hookId/telegram', async (req) => {
+  app.patch('/boards/:id/webhooks/:hookId/telegram', OUT_LIMIT, async (req) => {
     const { board, hook, bot } = await ownBot(req)
     const body = parse(
       z
@@ -389,7 +397,7 @@ export const integrationRoutes: FastifyPluginAsync = async (app) => {
   })
 
   /** Sends a delivery again, now (as a new delivery). */
-  app.post('/boards/:id/webhooks/:hookId/deliveries/:deliveryId/resend', async (req) => {
+  app.post('/boards/:id/webhooks/:hookId/deliveries/:deliveryId/resend', OUT_LIMIT, async (req) => {
     const { hook } = await ownHook(req)
     const { deliveryId } = parse(z.object({ deliveryId: z.uuid() }), req.params)
     const [d] = await app.db
@@ -413,7 +421,7 @@ export const integrationRoutes: FastifyPluginAsync = async (app) => {
   })
 
   /** Sends a test delivery now, and says how it went. */
-  app.post('/boards/:id/webhooks/:hookId/test', async (req) => {
+  app.post('/boards/:id/webhooks/:hookId/test', OUT_LIMIT, async (req) => {
     const { board, hook } = await ownHook(req)
     if (hook.format !== 'telegram') await modeFor()
     return app.webhooks.ping(hook, { id: board.id, name: board.name })
