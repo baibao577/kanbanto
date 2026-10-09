@@ -107,6 +107,15 @@ curl -X POST https://kanbanto.example.com/api/boards/<board id>/mutations \
     `PUT /api/boards/<id>/comments/<comment id>/reactions` and `{"emoji": "👍", "on": true}`, take it back with
     `"on": false`. The emoji is one of 👍 ❤️ 🎉 😄 👀 ✅; anyone who can comment may react. The comment's author gets
     one notification for the comment (`kind: "reaction"`), and no email.
+  - **A comment about words of the description:** post a comment with `"passage": {"quote": "the words"}` (and,
+    to tell the place apart when the words are there twice, up to 80 characters of the text on each side as
+    `"before"` and `"after"`). It shows beside those words on the description's full page, and in the card's
+    comments with the words quoted. Nothing is written into the description: the words are looked for each time
+    the text is shown, so the comment follows them when the text moves, and says so when they have been
+    rewritten. Answer it with `"parentId": "<its id>"` on a new comment; settle it with
+    `PUT /api/boards/<id>/comments/<comment id>/resolved` and `{"resolved": true}` (`false` opens it again, and so
+    does a new answer). A comment's `passage`, `parentId` and `resolved` say which it is. Deleting such a comment
+    deletes the answers to it.
   - **In a description or a comment's words:** write `📎` and the file's name (`See 📎report.pdf`). It shows as a
     link to that file of the card.
   - `GET /api/boards/<id>/tasks/<task id>/attachments` lists a card's files, its comments' among them (`commentId`).
@@ -163,7 +172,8 @@ curl -X POST https://kanbanto.example.com/api/boards/<board id>/mutations \
     naming who it was by. An export file is `{"app": "kanbanto", "format": 3, "exportedAt", "data"}` with, when
     wanted, those `comments` and `time` beside `data`; `POST /api/boards/import` with `{"file": <that>}` makes a
     new board from it (comments in your name, saying who wrote them; logged time yours where it was yours, and
-    nobody's otherwise).
+    nobody's otherwise). Comments about a passage come back as that, with their answers and whether they were
+    resolved.
   - `GET /api/cards?state=archived&board=<id>&q=<words>` searches them, across your boards, newest first, in pages.
 - **Searching every board**: `GET /api/cards?state=all` (or `active`, for cards still on their boards) takes the same
   filters as the Search cards page: `q` (words in the title, description or a comment), `assignee=me`, `completed`,
@@ -376,7 +386,8 @@ comment (`comment.added`) is POSTed to the address as JSON:
 
 (`before` and `after` are whole records; shortened here. A change with more than 200 records is cut there, with
 `"truncated": true`.) The other events: `comment.added` has `board`, `actor`, `task` (`id`, `title`) and `comment`
-(`id`, `body`, `mentions`, and `files`: the `id`, `name` and `size` of each file posted with it); `reminder.due` has `board`, `task` (`id`, `title`, `due`, `list`), `reminder` (`id`, `at`)
+(`id`, `body`, `mentions`, `files`: the `id`, `name` and `size` of each file posted with it, and for a comment about
+words of the description `about`, those words, with `replyTo` on an answer to one); `reminder.due` has `board`, `task` (`id`, `title`, `due`, `list`), `reminder` (`id`, `at`)
 and `for` (who it's for); `ping` has `board` only.
 
 **Say you want them.** When a webhook is added (or its address changed), Kanbanto first sends the address
@@ -539,7 +550,7 @@ written to the server's log. Assistants can't delete files.
 | `manage_labels` | Add, rename, recolor, or remove (unused) labels |
 | `manage_fields` | A library's fields (a workspace's, for its admins, or your own): list them, add one, change its name or settings, give a choice its options by name (one left out is archived, never deleted), rename an option, archive and restore. And a board's own choice (its owners): put a field on it, or take it off |
 | `log_time` | Log time you spent on a task ("1:30", "2h", "45m"), today, yesterday or another day, with a short note |
-| `add_comment` | Comment as you; `@Name` notifies people, and so are the task's followers; `📎name` points at one of the task's files |
+| `add_comment` | Comment as you; `@Name` notifies people, and so are the task's followers; `📎name` points at one of the task's files. `about`: words of the description the comment is about (it then shows beside them, to be answered and resolved); `reply_to`: the id of such a comment, to answer it |
 | `attach_file` | Put a file on a task: one the assistant writes (`text`, up to 500 kB) or one fetched from a public https address (`url`); with `comment`, posted in a comment that says those words. The answer gives the mark (`📎name`) to point at it in a description or a comment |
 | `upload_link` | For an assistant that works on a computer: a web address that takes one local file for a task, once, within 10 minutes, and the `curl` command that sends it |
 | `follow_task` | Follow a task (you're told about its comments and changes), or stop with `follow: false` |

@@ -2708,6 +2708,84 @@ await shot('km-7-versions', async () => {
 })
 await alone()
 
+// ── Comments on the words of a description ──────────────────────────────────────────────────────────────
+
+/** Selects words in the text shown full page (the first place they are), the way a person drags over them. */
+const selectWords = async (words) => {
+  const box = await page.evaluate((words) => {
+    const walker = document.createTreeWalker(document.querySelector('.md-reader'), NodeFilter.SHOW_TEXT)
+    for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+      const i = n.data.indexOf(words)
+      if (i < 0) continue
+      const r = document.createRange()
+      r.setStart(n, i)
+      r.setEnd(n, i + words.length)
+      const rects = r.getClientRects()
+      const [a, b] = [rects[0], rects[rects.length - 1]]
+      return { x1: a.left + 1, y1: a.top + a.height / 2, x2: b.right - 1, y2: b.top + b.height / 2 }
+    }
+    return null
+  }, words)
+  if (!box) throw new Error(`“${words}” isn’t in the text`)
+  await page.mouse.move(box.x1, box.y1)
+  await page.mouse.down()
+  await page.mouse.move(box.x2, box.y2, { steps: 6 })
+  await page.mouse.up()
+}
+const launchPage = async () => {
+  const { id } = await theHandbook()
+  await page.goto(`${SITE}/#/b/${id}/outline?task=launch&full=1`)
+  await page.reload()
+  await page.getByRole('navigation', { name: 'Contents' }).waitFor()
+  await page.locator('.md-reader img').first().waitFor()
+  await page.waitForTimeout(600)
+  return id
+}
+const ASKED = 'never on a Friday'
+await shot('km-8-select', async () => {
+  await launchPage()
+  await selectWords(ASKED)
+  await page.getByRole('button', { name: 'Comment', exact: true }).waitFor()
+  await page.waitForTimeout(300)
+  await ring(page.getByRole('button', { name: 'Comment', exact: true }))
+  return { clip: { x: 240, y: 280, width: 900, height: 330 } }
+})
+/** Ann's comment on those words, and Ben's answer (made once). */
+let asked = null
+const theQuestion = async (id) => {
+  if (asked) return asked
+  const said = (who, body) => api(who, 'POST', `/boards/${id}/tasks/launch/comments`, body)
+  asked = (await said(ann, { body: 'Even for a one-line fix?', passage: { quote: ASKED, before: 'before noon,', after: '.' } })).comment.id
+  await said(benCtx, { body: 'Yes. Fridays are for watching, not for launching.', parentId: asked })
+  return asked
+}
+await shot('km-9-thread', async () => {
+  const id = await launchPage()
+  await page.evaluate(() => window.getSelection()?.removeAllRanges())
+  await theQuestion(id)
+  const beside = page.getByRole('complementary', { name: 'Comments on the text' })
+  await beside.getByText('Fridays are for watching').waitFor()
+  // (A click on the marked words: their comment is the one looked at.)
+  const words = await page.evaluate(() => {
+    const r = [...CSS.highlights.get('passage')][0].getBoundingClientRect()
+    return { x: r.left + r.width / 2, y: r.top + r.height / 2 }
+  })
+  await page.mouse.click(words.x, words.y)
+  await page.waitForTimeout(600)
+  return { clip: { x: 240, y: 0, width: 1120, height: 700 } }
+})
+await shot('km-10-in-comments', async () => {
+  const { id } = await theHandbook()
+  await theQuestion(id)
+  await page.goto(`${SITE}/#/b/${id}/outline?task=launch`)
+  await page.reload()
+  const card = page.getByRole('dialog').first()
+  const thread = card.locator('[data-thread]').first()
+  await thread.getByText('Fridays are for watching').waitFor()
+  await page.waitForTimeout(600)
+  return around([card.getByRole('tablist', { name: 'Comments and history' }), thread], 20)
+})
+
 await browser.close()
 console.log(`made ${made.length}: ${made.join(', ')}`)
 if (failed.length) console.log(`\nnot made (${failed.length}):\n  ${failed.join('\n  ')}`)

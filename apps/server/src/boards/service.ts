@@ -4,6 +4,7 @@ import { emptyBoard, exampleData } from '@kanbanto/model/sample'
 import { isTimeZone } from '@kanbanto/model/dates'
 import { carryCustom, FIELD_LIMITS, linkRef, nameKey, valueText, type CustomValues } from '@kanbanto/model/fields'
 import { indexFor } from '@kanbanto/model/indexer'
+import type { Passage } from '@kanbanto/model/passages'
 import { remapPreset } from '@kanbanto/model/prefs'
 import { INBOX_CODE, isCode, numbersFor, suggestCode } from '@kanbanto/model/refs'
 import { CLIENT_FIELD, CLIENT_NAME, clientsBoard, EXAMPLE_CLIENTS, starterBoard, type Starter } from '@kanbanto/model/starters'
@@ -232,7 +233,11 @@ export async function importBoard(
   ownerId: string,
   data: BoardData,
   from: {
-    comments?: { taskId: string; body: string; at: string }[]
+    /**
+     * `passage`: about those words of its card's description, and `resolved`: settled. `replyTo`: it answers the
+     * comment whose `key` that is.
+     */
+    comments?: { taskId: string; body: string; at: string; key?: string; passage?: Passage; resolved?: boolean; replyTo?: string }[]
     time?: { taskId: string; userId: string | null; day: string; minutes: number; note: string; at: string }[]
     fieldText?: boolean
   } = {},
@@ -279,15 +284,29 @@ export async function importBoard(
     const people = new Set(data.fields.filter((f) => f.type === 'person').map((f) => f.id))
     await adoptRules(tx, id, data.rules, ownerId, plan.map, (f) => people.has(f))
     // (Many rows to a statement: a board can arrive with thousands of comments.)
-    const said = (from.comments ?? []).filter((c) => tasks[c.taskId] || archived?.[c.taskId])
+    const here = (from.comments ?? []).filter((c) => tasks[c.taskId] || archived?.[c.taskId]).map((c) => ({ ...c, id: newId() }))
+    // Comments about a passage keep their answers: each answer is put under the comment it answered, where that
+    // one came too and is about a passage (the ones answered go in first; an answer to nothing comes as a comment).
+    const threads = new Map(here.flatMap((c) => (c.key && c.passage ? [[c.key, c] as const] : [])))
+    const under = (c: (typeof here)[number]) => (c.replyTo ? threads.get(c.replyTo) : undefined)
+    const said = [...here.filter((c) => !under(c)), ...here.filter((c) => under(c))]
     for (let i = 0; i < said.length; i += 500)
-      await tx
-        .insert(comments)
-        .values(
-          said
-            .slice(i, i + 500)
-            .map((c) => ({ id: newId(), boardId: id, taskId: c.taskId, authorId: ownerId, body: c.body, createdAt: new Date(c.at) })),
-        )
+      await tx.insert(comments).values(
+        said.slice(i, i + 500).map((c) => {
+          const answered = under(c)?.taskId === c.taskId ? under(c) : undefined
+          return {
+            id: c.id,
+            boardId: id,
+            taskId: c.taskId,
+            authorId: ownerId,
+            body: c.body,
+            createdAt: new Date(c.at),
+            passage: answered ? null : (c.passage ?? null),
+            parentId: answered?.id ?? null,
+            resolvedAt: !answered && c.passage && c.resolved ? new Date(c.at) : null,
+          }
+        }),
+      )
     const logged = (from.time ?? []).filter((e) => tasks[e.taskId] || archived?.[e.taskId])
     for (let i = 0; i < logged.length; i += 500)
       await tx.insert(timeEntries).values(

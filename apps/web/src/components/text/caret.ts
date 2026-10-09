@@ -34,8 +34,8 @@ export function counted(text: string): number {
 
 const BLOCKS = 'p, li, h1, h2, h3, h4, h5, h6, td, th, pre, blockquote'
 
-/** The place under a point of the screen, in `root`'s text; null when there's no text there. */
-export function placeAtPoint(root: HTMLElement, x: number, y: number): Place | null {
+/** Where in `root` a point of the screen is: the node there and how far into it. Null: outside `root`. */
+export function nodeAtPoint(root: HTMLElement, x: number, y: number): { node: Node; offset: number } | null {
   const doc = root.ownerDocument as Document & {
     caretPositionFromPoint?: (x: number, y: number) => { offsetNode: Node; offset: number } | null
     caretRangeFromPoint?: (x: number, y: number) => Range | null
@@ -53,7 +53,15 @@ export function placeAtPoint(root: HTMLElement, x: number, y: number): Place | n
       offset = range.startOffset
     }
   }
-  if (!node || !root.contains(node)) return null
+  return node && root.contains(node) ? { node, offset } : null
+}
+
+/** The place under a point of the screen, in `root`'s text; null when there's no text there. */
+export function placeAtPoint(root: HTMLElement, x: number, y: number): Place | null {
+  const doc = root.ownerDocument
+  const under = nodeAtPoint(root, x, y)
+  if (!under) return null
+  const { node, offset } = under
   const before = doc.createRange()
   before.setStart(root, 0)
   before.setEnd(node, offset)

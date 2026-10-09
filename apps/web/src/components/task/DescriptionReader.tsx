@@ -1,10 +1,12 @@
-import { ArrowCounterClockwise, Check, ClockCounterClockwise, LinkSimple, PencilSimple } from '@phosphor-icons/react'
-import { lazy, Suspense, useMemo, useRef, useState, type ReactNode } from 'react'
+import { ArrowCounterClockwise, ChatCircleText, Check, ClockCounterClockwise, LinkSimple, PencilSimple } from '@phosphor-icons/react'
+import { lazy, Suspense, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { DescriptionVersion } from '@kanbanto/model/api'
 import { api } from '@/api/client'
 import { formatMoment } from '@/lib/format'
 import type { CardRefs, CardSource } from '@/app/card-refs'
+import type { CardComments } from '@/data/cardComments'
 import type { CardFiles } from '@/data/cardFiles'
+import { useMediaQuery } from '@/lib/useMediaQuery'
 import { placeAtPoint, type Place } from '@/components/text/caret'
 import type { EditorHandle, Shared } from '@/components/text/Editor'
 import { Markdown } from '@/components/text/Markdown'
@@ -13,6 +15,8 @@ import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
 import { copyText } from '@/lib/copy'
 import { cn } from '@/lib/utils'
+import { PassagePanel, SelectionButton } from './PassageNotes'
+import { usePassages, type Pending } from './usePassages'
 
 const Editor = lazy(() => import('@/components/text/Editor'))
 
@@ -20,6 +24,9 @@ const Editor = lazy(() => import('@/components/text/Editor'))
  * A description full page, to read or to write: a comfortable width and size, and (for long ones) its headings on the
  * side to jump to, which follow what's being typed. Writing here looks like the page it will be: no box around the
  * text, the toolbar staying in view. Esc (or Done) finishes writing; closing the page saves too.
+ *
+ * Comments on the text (`notes`): the words each is about are marked, the comments sit beside the text, and
+ * selecting words while reading offers to comment on them (see PassageNotes.tsx).
  *
  * `Description` holds what's being written (so going full page from the card carries on with the same text and
  * cursor): this shows it.
@@ -48,6 +55,7 @@ export function DescriptionReader({
   link,
   note,
   versions,
+  notes,
 }: {
   title: string
   /** The saved text (what's read). */
@@ -90,9 +98,16 @@ export function DescriptionReader({
    * other. Left out: no Versions here (a visitor with the public link). `busy`: why none can be brought back just now.
    */
   versions?: { boardId: string; taskId: string; onRestore?: (text: string, said: string) => void; busy?: string }
+  /**
+   * The card's comments, of which the ones about words of this text are shown with it. `canComment`: this person
+   * may add one. `focus`: the comment to open at (its words clicked in the card's Comments). Left out: none here.
+   */
+  notes?: { comments: CardComments; taskId: string; canComment: boolean; focus?: string | null }
 }) {
   const scroller = useRef<HTMLDivElement>(null)
   const column = useRef<HTMLDivElement>(null)
+  /** What holds the text itself, read or written. */
+  const words = useRef<HTMLDivElement>(null)
   const editor = useRef<EditorHandle>(null)
   // Looking at earlier versions: the list (asked for when it opens), the one picked, and its text once it has come.
   const [looking, setPast] = useState<{ list: DescriptionVersion[] | null; picked?: DescriptionVersion; text?: string } | null>(null)
@@ -117,7 +132,42 @@ export function DescriptionReader({
   const old = past?.picked && past.text !== undefined ? past.text : null
   const shown = writing ? typing : (old ?? value)
   const headings = useMemo(() => headingsOf(shown), [shown])
-  const words = useMemo(() => countWords(shown), [shown])
+  const wordCount = useMemo(() => countWords(shown), [shown])
+
+  // Comments on the text: which one is looked at, the words a new one is being written about, and whether they are
+  // beside the text (by themselves when there are open ones and room for them, until the person says otherwise).
+  const roomy = useMediaQuery('(min-width: 1280px)')
+  const [beside, setBeside] = useState<boolean | null>(notes?.focus ? true : null)
+  const [active, setActive] = useState<string | null>(notes?.focus ?? null)
+  const [pending, setPending] = useState<Pending | null>(null)
+  const openNotes = notes?.comments.threads.filter((t) => !t.root.resolved).length ?? 0
+  const panel = !!notes && (beside ?? (roomy && openNotes > 0))
+  const textRoot = () => words.current?.querySelector<HTMLElement>('.md-reader') ?? null
+  const marks = usePassages({
+    root: textRoot,
+    threads: notes?.comments.threads ?? [],
+    text: shown,
+    active,
+    // (Words selected to comment on are let go when the writing starts.)
+    pending: writing ? null : pending,
+    on: !!notes && !past?.picked,
+  })
+  /** Brings a comment's words into view in the text. */
+  const showWords = (id: string) => {
+    const range = marks.rangeOf(id)
+    const view = scroller.current
+    if (!range || !view) return
+    const top = range.getBoundingClientRect().top - view.getBoundingClientRect().top
+    view.scrollBy({ top: top - Math.min(160, view.clientHeight / 3), behavior: 'smooth' })
+  }
+  // Opened at a comment (its words were clicked in the card's Comments): its words come into view once they are found.
+  const led = useRef(false)
+  useEffect(() => {
+    if (led.current || !notes?.focus || !marks.places) return
+    led.current = true
+    showWords(notes.focus)
+    // oxlint-disable-next-line react-hooks/exhaustive-deps -- once, when the places are first known
+  }, [marks.places])
 
   /** Writing starts where you were reading: at the top of what's in view (a short text: at its end). */
   const edit = () => {
@@ -152,10 +202,23 @@ export function DescriptionReader({
           {writing && (
             <div className="flex shrink-0 items-center gap-3 text-xs text-muted-foreground">
               <span className="tabular-nums max-sm:hidden">
-                {words.toLocaleString()} {words === 1 ? 'word' : 'words'}
+                {wordCount.toLocaleString()} {wordCount === 1 ? 'word' : 'words'}
               </span>
               {status}
             </div>
+          )}
+          {notes && (
+            <Button
+              size="sm"
+              variant={panel ? 'secondary' : 'ghost'}
+              className={cn('gap-1.5', !panel && 'text-muted-foreground')}
+              aria-pressed={panel}
+              title="Comments on the text"
+              onClick={() => setBeside(!panel)}
+            >
+              <ChatCircleText /> <span className="max-sm:sr-only">Comments</span>
+              {openNotes > 0 && <span className="tabular-nums">{openNotes}</span>}
+            </Button>
           )}
           {versions && !writing && (
             <Button
@@ -191,7 +254,7 @@ export function DescriptionReader({
               </Button>
             ))}
         </header>
-        <div className="flex min-h-0 flex-1">
+        <div className="relative flex min-h-0 flex-1">
           {past && (
             <nav aria-label="Versions" className="hidden w-60 shrink-0 overflow-y-auto border-r bg-muted/30 px-3 py-6 lg:block">
               <p className="mb-2 px-2 text-xs font-medium text-muted-foreground">Versions</p>
@@ -223,7 +286,18 @@ export function DescriptionReader({
             </nav>
           )}
           <div ref={scroller} className="min-h-0 flex-1 overflow-y-auto">
-            <div ref={column} className="mx-auto max-w-[72ch] px-5 py-8 sm:px-8 sm:py-10">
+            <div
+              ref={column}
+              className="mx-auto max-w-[72ch] px-5 py-8 sm:px-8 sm:py-10"
+              // A click on marked words, while reading, opens the comment they are about.
+              onClick={(e) => {
+                if (!notes || writing || window.getSelection()?.toString() || (e.target as HTMLElement).closest('a, input, button')) return
+                const id = marks.at(e.clientX, e.clientY)
+                if (!id) return
+                setActive(id)
+                setBeside(true)
+              }}
+            >
               {/* (A narrow screen has no side for the list: it is above the text.) */}
               {past && (
                 <div className="mb-6 rounded-lg border bg-muted/30 p-2 lg:hidden">
@@ -254,49 +328,81 @@ export function DescriptionReader({
                 </div>
               )}
               {note && !writing && !past && <p className="mb-4 text-xs text-muted-foreground">{note}</p>}
-              {writing && opening ? null : writing ? (
-                <Suspense fallback={null}>
-                  <Editor
-                    key={editorKey}
-                    look="page"
-                    handle={editor}
-                    value={start.text}
-                    shared={shared}
-                    caret={start.caret}
-                    onChange={onTyped}
-                    onEscape={onFinish}
-                    onSubmit={onFinish}
-                    onSave={onSave}
-                    members={people}
+              <div ref={words}>
+                {writing && opening ? null : writing ? (
+                  <Suspense fallback={null}>
+                    <Editor
+                      key={editorKey}
+                      look="page"
+                      handle={editor}
+                      value={start.text}
+                      shared={shared}
+                      caret={start.caret}
+                      onChange={onTyped}
+                      onEscape={onFinish}
+                      onSubmit={onFinish}
+                      onSave={onSave}
+                      members={people}
+                      files={cardFiles.files}
+                      onFiles={(fs) => cardFiles.add(fs)}
+                      inserts
+                      cards={cardSource}
+                      pictures
+                      autoFocus
+                      aria-label="Description"
+                      placeholder="Write here… Type / for headings, lists, tables and cards, @ to mention someone, # to point to a file."
+                      className="md-reader min-h-[50vh]"
+                    />
+                  </Suspense>
+                ) : past?.picked && old === null ? (
+                  <p className="text-muted-foreground">Fetching that version…</p>
+                ) : shown ? (
+                  <Markdown
+                    text={shown}
                     files={cardFiles.files}
-                    onFiles={(fs) => cardFiles.add(fs)}
-                    inserts
-                    cards={cardSource}
+                    mentions={people}
+                    cards={cardRefs}
+                    headingIds
+                    onToggleTask={old === null ? onTick : undefined}
                     pictures
-                    autoFocus
-                    aria-label="Description"
-                    placeholder="Write here… Type / for headings, lists, tables and cards, @ to mention someone, # to point to a file."
-                    className="md-reader min-h-[50vh]"
+                    className="md-reader"
                   />
-                </Suspense>
-              ) : past?.picked && old === null ? (
-                <p className="text-muted-foreground">Fetching that version…</p>
-              ) : shown ? (
-                <Markdown
-                  text={shown}
-                  files={cardFiles.files}
-                  mentions={people}
-                  cards={cardRefs}
-                  headingIds
-                  onToggleTask={old === null ? onTick : undefined}
-                  pictures
-                  className="md-reader"
-                />
-              ) : (
-                <p className="text-muted-foreground">{old !== null ? 'The description was empty then.' : 'No description yet.'}</p>
-              )}
+                ) : (
+                  <p className="text-muted-foreground">{old !== null ? 'The description was empty then.' : 'No description yet.'}</p>
+                )}
+              </div>
             </div>
           </div>
+          {panel && notes && (
+            <PassagePanel
+              // (Beside the text where there is room; over it on a narrow screen.)
+              className="w-full shrink-0 border-l max-lg:absolute max-lg:inset-0 max-lg:z-10 max-lg:bg-background lg:w-[22rem]"
+              comments={notes.comments}
+              taskId={notes.taskId}
+              cardFiles={cardFiles}
+              places={marks.places}
+              active={active}
+              onActive={(id) => {
+                setActive(id)
+                showWords(id)
+              }}
+              pending={writing ? null : pending}
+              onPending={setPending}
+              onClose={() => setBeside(false)}
+            />
+          )}
+          {notes?.canComment && !writing && !past?.picked && (
+            <SelectionButton
+              within={words}
+              onPick={(range, said) => {
+                const picked = marks.selected(range, said)
+                if (!picked) return
+                setPending(picked)
+                setActive(null)
+                setBeside(true)
+              }}
+            />
+          )}
         </div>
       </DialogContent>
     </Dialog>

@@ -362,6 +362,7 @@ function Workspace({ store }: { store: Store }) {
       focus: focusId,
       task: openId ?? (looking || finding ? r.task : undefined),
       full: r.full,
+      note: r.note,
       // (A number stays in the address only while its card is being found: then the address names the card.)
       n: finding && !r.task ? r.n : undefined,
       inbox: r.inbox,

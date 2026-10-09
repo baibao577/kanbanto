@@ -150,6 +150,16 @@ const schemas = {
       items: obj({ emoji: str, by: { type: 'array', items: obj({ id: str, name: str }) } }),
     },
     createdAt: str,
+    passage: {
+      ...nullable(obj({ quote: str, before: str, after: str })),
+      description:
+        'For a comment about some words of the task’s description: the words (`quote`), and a little of the text before and after them, by which they are found again when the text changes. Such a comment starts a thread.',
+    },
+    parentId: { ...str, description: 'For an answer to such a comment: that comment’s id.' },
+    resolved: {
+      ...nullable(obj({ at: { ...str, format: 'date-time' }, by: nullable(obj({ id: str, name: str })) })),
+      description: 'For a comment about a passage: when it was resolved and by whom. Null: it is open.',
+    },
   }),
   Attachment: obj({
     id: str,
@@ -1047,11 +1057,33 @@ The answer lists the records that changed.
                       items: str,
                       description: 'Ids of files you uploaded for this comment (with `X-Attach-To: comment`) to post with it.',
                     },
+                    passage: {
+                      ...obj({ quote: str, before: str, after: str }, ['quote']),
+                      description:
+                        'Makes it a comment about some words of the task’s description: `quote` is the words as they read (up to 1,000 characters), `before` and `after` up to 80 characters of the text on each side (to tell the place apart when the words are there twice). People see it beside those words, answer it and resolve it.',
+                    },
+                    parentId: {
+                      ...str,
+                      description: 'Makes it an answer to a comment about a passage (its id). Answering a resolved one opens it again.',
+                    },
                   },
                   ['body'],
                 ),
               },
             },
+          },
+          responses: { 200: json(obj({ comment: ref('Comment') })) },
+        },
+      },
+      '/api/boards/{id}/comments/{commentId}/resolved': {
+        put: {
+          tags: ['Comments'],
+          summary: 'Resolve a comment about a passage, or open it again',
+          description:
+            'Everyone who can comment can, viewers too; visitors with the public link can’t (403). Only a comment that is about words of the description (it has a `passage`) is resolved (400 otherwise). Its author gets one notification when someone else resolves it (`kind: "resolved"`), and no email. Answers with the comment as it is now.',
+          parameters: [id('id'), id('commentId')],
+          requestBody: {
+            content: { 'application/json': { schema: obj({ resolved: { type: 'boolean' } }, ['resolved']), example: { resolved: true } } },
           },
           responses: { 200: json(obj({ comment: ref('Comment') })) },
         },
@@ -1697,6 +1729,8 @@ The answer lists the records that changed.
           body: str,
           mentions: { type: 'array', items: str },
           files: { type: 'array', items: obj({ id: str, name: str, size: { type: 'integer' } }), description: 'The files posted with it.' },
+          about: { ...str, description: 'The words of the task’s description it is about, or the comment it answers is.' },
+          replyTo: { ...str, description: 'The comment it answers (one about a passage).' },
         }),
       }),
       ping: event('ping', {}),

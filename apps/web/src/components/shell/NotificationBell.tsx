@@ -28,6 +28,12 @@ const fetchNotifications = () => api<{ notifications: NotificationView[]; unread
  * someone added you to, newest first. Checked every minute and when you come back
  * to the tab.
  */
+/** The words of a description a comment is about, quoted over what the comment says. */
+function About({ words }: { words?: string }) {
+  if (!words) return null
+  return <p className="mt-0.5 line-clamp-1 border-l-2 border-amber-400/70 pl-1.5 text-xs text-muted-foreground italic">{words}</p>
+}
+
 export function NotificationBell() {
   const { user } = useAuth()
   const [items, setItems] = useState<NotificationView[]>([])
@@ -59,7 +65,11 @@ export function NotificationBell() {
     if (n.kind === 'added') {
       if (n.board) navigate({ page: 'board', id: n.board.id })
       else if (n.workspace) navigate({ page: 'workspace', id: n.workspace.id })
-    } else if (n.board.id) navigate({ page: 'board', id: n.board.id, ...(n.task.id && { task: n.task.id }) })
+    } else if (n.board.id) {
+      // (A comment about words of a description opens at those words, on its full page.)
+      const thread = 'thread' in n && n.task.id ? n.thread : undefined
+      navigate({ page: 'board', id: n.board.id, ...(n.task.id && { task: n.task.id }), ...(thread && { full: true, note: thread }) })
+    }
   }
 
   /** Stops following the card a line is about (and that line is done with). */
@@ -123,6 +133,7 @@ export function NotificationBell() {
                         <span className="font-medium">“{n.task.title}”</span>
                         <span className="text-muted-foreground"> · {n.board.name}</span>
                       </p>
+                      <About words={n.about} />
                       {n.excerpt && <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">{n.excerpt}</p>}
                     </>
                   ) : n.kind === 'comment' ? (
@@ -131,6 +142,17 @@ export function NotificationBell() {
                         <span className="font-semibold">{n.actor}</span> commented on <span className="font-medium">“{n.task.title}”</span>
                         <span className="text-muted-foreground"> · {n.board.name}</span>
                       </p>
+                      <About words={n.about} />
+                      {n.excerpt && <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">{n.excerpt}</p>}
+                    </>
+                  ) : n.kind === 'resolved' ? (
+                    <>
+                      <p className="text-xs">
+                        <span className="font-semibold">{n.actor}</span> resolved your comment on{' '}
+                        <span className="font-medium">“{n.task.title}”</span>
+                        <span className="text-muted-foreground"> · {n.board.name}</span>
+                      </p>
+                      <About words={n.about} />
                       {n.excerpt && <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">{n.excerpt}</p>}
                     </>
                   ) : n.kind === 'change' ? (

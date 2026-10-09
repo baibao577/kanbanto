@@ -74,6 +74,18 @@ The assistant searches before it adds, so it does not create a card you already 
 - "Comment on the announcement that the quotes are in, and mention Ann."
 :::
 
+## Review a text
+
+::: info Try
+- "Read 'How we launch a website' and comment on the parts that are out of date."
+- "Check the prices in the quoting article against the price list, and comment on each one that differs."
+- "Answer Ben's comments on the refunds article."
+:::
+
+The assistant comments **on the words** it means: it quotes them, and its comment shows beside those words on the
+article's full page, like a person's. You answer or **Resolve** each one. It can answer comments, and it leaves
+resolving to you. See [comment on the text](/knowledge/comment).
+
 ## Files
 
 ::: info Try

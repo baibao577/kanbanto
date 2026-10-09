@@ -65,11 +65,17 @@ export function changeMessage(
   }
 }
 
-export function commentMessage(c: { actor: string; board: string; title: string; body: string }, url: string | null): ChatMessage {
+/** `about`: the words of the card's description the comment is about (or the comment it answers is). */
+export function commentMessage(c: { actor: string; board: string; title: string; body: string; about?: string }, url: string | null): ChatMessage {
   const words = short(c.body.replace(/\s+/g, ' ').trim(), EXCERPT)
+  const about = c.about ? `, about ${q(short(c.about.replace(/\s+/g, ' ').trim(), 60))}` : ''
   return {
     lines: [
-      [{ text: `${c.actor} commented on ` }, { text: q(c.title), ...(url && { url }) }, { text: ` on ${c.board}${words ? `: ${words}` : ''}` }],
+      [
+        { text: `${c.actor} commented on ` },
+        { text: q(c.title), ...(url && { url }) },
+        { text: ` on ${c.board}${about}${words ? `: ${words}` : ''}` },
+      ],
     ],
   }
 }

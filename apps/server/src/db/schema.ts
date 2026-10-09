@@ -1,4 +1,5 @@
 import { FIELD_TYPES, type CustomValues, type FieldSettings } from '@kanbanto/model/fields'
+import type { Passage } from '@kanbanto/model/passages'
 import { PRIORITIES, type Reminder } from '@kanbanto/model/types'
 import { SETTING_DEFAULTS } from './defaults'
 import { sql } from 'drizzle-orm'
@@ -725,8 +726,18 @@ export const comments = pgTable(
     mentions: uuid('mentions').array().notNull().default([]),
     createdAt: at('created_at').notNull().defaultNow(),
     editedAt: at('edited_at'),
+    /**
+     * A comment about some words of the card's description (see the model's passages.ts): the words, and a little
+     * of the text around them. Nothing in the description says so: the words are looked for each time it is shown.
+     */
+    passage: jsonb('passage').$type<Passage>(),
+    /** An answer to such a comment: the comment it answers (the first of its thread). It goes when that one does. */
+    parentId: uuid('parent_id').references((): AnyPgColumn => comments.id, { onDelete: 'cascade' }),
+    /** A comment about a passage that is settled: when, and who said so. */
+    resolvedAt: at('resolved_at'),
+    resolvedBy: uuid('resolved_by').references(() => users.id, { onDelete: 'set null' }),
   },
-  (t) => [index('comments_task_idx').on(t.boardId, t.taskId, t.createdAt)],
+  (t) => [index('comments_task_idx').on(t.boardId, t.taskId, t.createdAt), index('comments_parent_idx').on(t.parentId)],
 )
 
 /**
@@ -842,9 +853,10 @@ export const notifications = pgTable(
      * mention: in a comment (board, task, comment) or a description (no comment) · added: to a board or a workspace
      * (one of the two) · comment, change: on a card they follow · rule: one of the board's rules told them (`ruleId`,
      * `said`; `taskId` is the first of its cards) · reaction: people answered a comment of theirs with an emoji
-     * (`commentId`; one row for a comment while it is unseen, and who reacted is read from the reactions).
+     * (`commentId`; one row for a comment while it is unseen, and who reacted is read from the reactions) · resolved:
+     * someone resolved a comment of theirs about a passage (`commentId`).
      */
-    kind: text('kind', { enum: ['mention', 'added', 'reminder', 'comment', 'change', 'rule', 'reaction'] }).notNull(),
+    kind: text('kind', { enum: ['mention', 'added', 'reminder', 'comment', 'change', 'rule', 'reaction', 'resolved'] }).notNull(),
     boardId: text('board_id').references(() => boards.id, { onDelete: 'cascade' }),
     workspaceId: uuid('workspace_id').references(() => workspaces.id, { onDelete: 'cascade' }),
     taskId: text('task_id'),

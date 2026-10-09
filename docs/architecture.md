@@ -361,6 +361,27 @@ The app uses hash routing, so any static host or proxy works without rewrite rul
   person to the same card within ten minutes share one line while it's unread, and nobody is told about what they did
   themselves. This runs after every board command (`afterBoardChange` in `boards/follows.ts`), whichever way the
   command arrived (the app, an API token, an assistant).
+- **Comments on words of a description** (`model/passages.ts`). A comment can be about a passage: it keeps the
+  words (`comments.passage`: the quote, and up to 80 characters of the text on each side), and nothing is written
+  into the description, which stays Markdown that anyone and anything may rewrite. So a viewer can comment on a
+  passage without being able to edit the card, and no comment is lost to an edit. Each time the text is shown the
+  words are looked for again (`locate`), by their letters alone (`squeeze`: no spaces, no file marks, which is
+  what the text read, the text written and the Markdown saved have in common; the editor's cursor is placed the
+  same way, see `text/caret.ts`). Where the same words are there twice, the place whose surroundings fit best.
+  Found, they are marked on the description's full page and the comment sits beside the text
+  (`components/task/PassageNotes.tsx`, `usePassages.ts`); not found, the comment says its words have changed and
+  stays with the card's comments. The marks are the browser's own highlights (`CSS.highlights`, coloured in
+  `index.css` with `::highlight()`), set from ranges worked out over the shown text (`components/text/passages.ts`:
+  `lettersOf`, `rangeOf`), so what React or the editor has put on the page is never touched; a browser without
+  them shows no marks and everything else still works. Such a comment starts a thread: an answer is a comment with
+  `parent_id` (always the thread's first comment; answers go when it does), and `resolved_at` / `resolved_by` say
+  it is settled (`PUT …/comments/:commentId/resolved`; a new answer opens it again). It is told like any comment
+  (followers, the people mentioned), with the quoted words on the bell's line, which opens the full page at them
+  (`BoardRoute.note`); its author has one quiet line of kind `resolved` when someone else resolves it. A card's
+  comments are held once for the card (`data/cardComments.ts`) and shown in two places: its Comments, where a
+  thread has its words quoted (`stillThere` says whether they are still in the text, told from the Markdown
+  alone), and the full page. Assistants read them (`get_task`: `about`, `reply_to`, `resolved`) and write them
+  (`add_comment` with `about` or `reply_to`); a board's file carries them with their answers.
 - **Reactions** (`comment_reactions`; the set and its words are in `model/reactions.ts`): a comment can be answered
   with an emoji. What is kept is the emoji itself, one row per person, comment and emoji, so the set people choose
   from (six today) can grow without anything stored changing. Everyone who can comment can react

@@ -64,6 +64,7 @@ export default defineConfig({
           { text: 'Set up the board', link: '/knowledge/set-up' },
           { text: 'Write an article', link: '/knowledge/write' },
           { text: 'Write together', link: '/knowledge/together' },
+          { text: 'Comment on the text', link: '/knowledge/comment' },
           { text: 'Pages inside pages, and finding things', link: '/knowledge/organise' },
           { text: 'Review and keep it current', link: '/knowledge/review' },
           { text: 'Samples to copy', link: '/knowledge/samples' },

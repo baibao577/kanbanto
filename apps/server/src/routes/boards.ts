@@ -1,4 +1,5 @@
 import type { ArchivedPage, BoardAccess, BoardSummary, CardHistory, Role, WhereIs } from '@kanbanto/model/api'
+import { tidyPassage } from '@kanbanto/model/passages'
 import { MAX_NUMBER, refOf } from '@kanbanto/model/refs'
 import { ARCHIVED_DATES, archivedFamily, archivedIn } from '@kanbanto/model/archived'
 import { isBackground, type BoardBackground } from '@kanbanto/model/colors'
@@ -223,6 +224,9 @@ export const boardRoutes: FastifyPluginAsync = async (app) => {
         taskId: c.taskId,
         at: c.at,
         body: c.by?.id === user.id ? c.body : `${name(c.by) ? `**${name(c.by)}** wrote:` : 'Someone wrote:'}\n\n${c.body}`.slice(0, 10_000),
+        ...(c.id && { key: c.id }),
+        ...(c.passage && { passage: tidyPassage(c.passage), resolved: !!c.resolved }),
+        ...(c.replyTo && { replyTo: c.replyTo }),
       })),
       time: extras.time.map((e) => {
         const mine = e.by?.id === user.id
@@ -265,7 +269,16 @@ export const boardRoutes: FastifyPluginAsync = async (app) => {
       .orderBy(timeEntries.createdAt)
       .limit(EXTRAS_MAX.time)
     return {
-      comments: said.map(({ c, name }) => ({ taskId: c.taskId, by: by(c.authorId, name), body: c.body, at: c.createdAt.toISOString() })),
+      comments: said.map(({ c, name }) => ({
+        taskId: c.taskId,
+        by: by(c.authorId, name),
+        body: c.body,
+        at: c.createdAt.toISOString(),
+        // (A comment about words of the description, with the answers to it: see the model's passages.ts.)
+        ...((c.passage || c.parentId) && { id: c.id }),
+        ...(c.passage && { passage: c.passage, ...(c.resolvedAt && { resolved: true }) }),
+        ...(c.parentId && { replyTo: c.parentId }),
+      })),
       time: logged.map(({ e, name }) => ({
         taskId: e.taskId,
         by: by(e.userId, name),

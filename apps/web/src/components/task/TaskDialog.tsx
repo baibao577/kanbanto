@@ -2,10 +2,10 @@ import { CheckCircle, Circle, ListChecks, Prohibit, X } from '@phosphor-icons/re
 import { formatMoment } from '@/lib/format'
 import { changedAt } from '@kanbanto/model/table'
 import { useMediaQuery } from '@/lib/useMediaQuery'
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { BoardContext, useBoard } from '@/app/board-context'
 import { useAuth } from '@/app/use-auth'
-import { hrefFor, setFullPage, wantsFullPage } from '@/app/router'
+import { hrefFor, setFullPage, wantsFullPage, wantsNote } from '@/app/router'
 import { ProgressBar, StatusDot, StatusPill } from '@/components/common/bits'
 import { QuickAdd } from '@/components/board/QuickAdd'
 import { Dialog, DialogContent } from '@/components/ui/dialog'
@@ -19,7 +19,8 @@ import { TimeSection } from './CardTime'
 import { CardActivity } from './CardActivity'
 import { CustomFields } from './CustomFields'
 import { LinkedFromSection } from './LinkedFrom'
-import { Description } from './Description'
+import { Description, type DescriptionHandle } from './Description'
+import { useCardComments } from '@/data/cardComments'
 import { useCardFiles } from '@/data/cardFiles'
 import { Section } from './Section'
 import { FieldButton, TaskPicker } from './pickers'
@@ -101,7 +102,7 @@ function ArchivedCard({ id, onClose }: { id: string; onClose: () => void }) {
  * screens, its comments. Narrower, the comments come last in the one column.
  */
 function TaskDetail({ id, onClose }: { id: string; onClose: () => void }) {
-  const { data, idx, run, openTask, createTask, readOnly, onActivity, logTime, access, writing } = useBoard()
+  const { data, idx, run, openTask, createTask, readOnly, onActivity, logTime, access, writing, canComment } = useBoard()
   const { user } = useAuth()
   // Wide enough for the comments to have their own column.
   const wide = useMediaQuery('(min-width: 1280px)')
@@ -109,6 +110,10 @@ function TaskDetail({ id, onClose }: { id: string; onClose: () => void }) {
   const [scrolled, setScrolled] = useState(false)
   // The card's files, shared by the Files section, comments and the description (# references).
   const cardFiles = useCardFiles(data.board.id, id, onActivity)
+  // Its comments, shared by the Comments beside the card and the description's full page (the ones about its words).
+  const comments = useCardComments(data.board.id, id, onActivity, cardFiles.upsert)
+  const description = useRef<DescriptionHandle>(null)
+  const openPassage = (commentId: string) => description.current?.openAt(commentId)
   const t = data.tasks[id]
   const kids = idx.childrenOf.get(id) ?? []
   const patch = (fields: TaskFields) => run({ type: 'task.update', id, fields })
@@ -159,8 +164,11 @@ function TaskDetail({ id, onClose }: { id: string; onClose: () => void }) {
                 : undefined
             }
             writers={writing?.writers[id]}
+            notes={{ comments, taskId: id, canComment }}
+            handle={description}
             full={{
               start: wantsFullPage(id),
+              note: wantsNote(id),
               set: (open) => setFullPage(id, open),
               link: `${location.origin}${location.pathname}${hrefFor({ page: 'board', id: data.board.id, task: id, full: true })}`,
             }}
@@ -279,7 +287,7 @@ function TaskDetail({ id, onClose }: { id: string; onClose: () => void }) {
 
           {!wide && (
             <div id="card-comments" className="scroll-mt-4">
-              <CardActivity taskId={id} cardFiles={cardFiles} />
+              <CardActivity taskId={id} cardFiles={cardFiles} comments={comments} onOpenPassage={openPassage} />
             </div>
           )}
         </div>
@@ -287,7 +295,7 @@ function TaskDetail({ id, onClose }: { id: string; onClose: () => void }) {
         {/* Wide screens: the conversation as its own column, the box to write in always in view. */}
         {wide && (
           <div className="flex min-h-0 flex-col border-l px-5 pt-1 pb-4">
-            <CardActivity taskId={id} cardFiles={cardFiles} column />
+            <CardActivity taskId={id} cardFiles={cardFiles} comments={comments} onOpenPassage={openPassage} column />
           </div>
         )}
       </div>

@@ -320,6 +320,27 @@ html.dragging * {
     @apply text-muted-foreground line-through decoration-muted-foreground/50;
   }
 
+  /* Words of a description that a comment is about (see components/text/passages.ts): marked by the browser, without
+     touching the text. The one being looked at, and words a comment is being written about, are stronger. */
+  ::highlight(passage) {
+    background-color: oklch(0.86 0.13 90 / 0.5);
+  }
+  ::highlight(passage-active) {
+    background-color: oklch(0.8 0.16 80 / 0.85);
+  }
+  ::highlight(passage-new) {
+    background-color: oklch(0.8 0.1 250 / 0.55);
+  }
+  .dark ::highlight(passage) {
+    background-color: oklch(0.6 0.12 85 / 0.45);
+  }
+  .dark ::highlight(passage-active) {
+    background-color: oklch(0.68 0.15 80 / 0.75);
+  }
+  .dark ::highlight(passage-new) {
+    background-color: oklch(0.6 0.12 250 / 0.6);
+  }
+
   /* A text written by several people at once (see data/liveDoc.ts): where each of the others is, as a thin bar in
    their colour with their name above it, and what they have selected. */
   .md .collaboration-carets__caret {

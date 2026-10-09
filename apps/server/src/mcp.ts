@@ -53,6 +53,7 @@ import { followedBy, isFollowing, setFollowing } from './boards/follows'
 import { createBoard, createStarter } from './boards/service'
 import { boardsFor, withPlaces } from './routes/boards'
 import { lastComments, mentionsIn, postComment, reactionsOf } from './routes/comments'
+import { AROUND_MAX, locate, plainWords, QUOTE_MAX, squeeze, stillThere, tidyPassage, type Passage } from '@kanbanto/model/passages'
 import { cardTemplatesOf } from './boards/templates'
 import { fromTemplate, stepsOf } from '@kanbanto/model/templates'
 import { blockedName, cardFiles, mayUpload, pictureType, views as fileViews } from './routes/files'
@@ -1183,7 +1184,7 @@ function buildServer(app: FastifyInstance, me: SessionUser, token: TokenAccess, 
     {
       title: 'Get a task',
       description:
-        'One task in full: where it sits (its parents), description, dates, subtasks, what it waits on, whether you follow it, its latest comments (with the emoji people answered each with), its files (read_file opens one), and the time logged on it (total, by person, latest entries). 📎name in a description or a comment points at the file of that name.',
+        'One task in full: where it sits (its parents), description, dates, subtasks, what it waits on, whether you follow it, its latest comments (with the emoji people answered each with; one about some words of the description says which words in `about`, the answers to it name it in `reply_to`, and `resolved` says it is settled), its files (read_file opens one), and the time logged on it (total, by person, latest entries). 📎name in a description or a comment points at the file of that name.',
       inputSchema: { board_id: z.string(), task_id: z.string() },
       annotations: readOnly,
     },
@@ -1230,7 +1231,15 @@ function buildServer(app: FastifyInstance, me: SessionUser, token: TokenAccess, 
       // Its own files and the ones in its comments.
       const files = await cardFiles(app, board_id, task_id)
       const recent = await app.db
-        .select({ id: comments.id, author: users.name, body: comments.body, at: comments.createdAt })
+        .select({
+          id: comments.id,
+          author: users.name,
+          body: comments.body,
+          at: comments.createdAt,
+          passage: comments.passage,
+          parentId: comments.parentId,
+          resolvedAt: comments.resolvedAt,
+        })
         .from(comments)
         .leftJoin(users, eq(users.id, comments.authorId))
         .where(and(eq(comments.boardId, board_id), eq(comments.taskId, task_id)))
@@ -1257,6 +1266,14 @@ function buildServer(app: FastifyInstance, me: SessionUser, token: TokenAccess, 
             author: c.author ?? 'Someone',
             text: c.body,
             at: c.at.toISOString(),
+            // A comment about some words of the description (a thread: others answer it, and it is resolved when
+            // settled), with whether those words are still in the text; or an answer to one.
+            ...(c.passage && {
+              about: c.passage.quote,
+              ...(!stillThere(t.description ?? '', c.passage) && { words_changed_since: true }),
+              ...(c.resolvedAt && { resolved: true }),
+            }),
+            ...(c.parentId && { reply_to: c.parentId }),
             ...(its.length && { files: its }),
             ...(answered.length && { reactions: answered }),
           }
@@ -2554,16 +2571,49 @@ function buildServer(app: FastifyInstance, me: SessionUser, token: TokenAccess, 
       {
         title: 'Comment on a task',
         description:
-          'Adds a comment to a task, as you. Write @Name to mention someone on the board (they’re told). The task’s followers are told too, and you follow it from then on. 📎name points at a file the task has (get_task lists them); to post a new file with a comment, use attach_file.',
-        inputSchema: { board_id: z.string(), task_id: z.string(), text: z.string().min(1).max(10_000) },
+          'Adds a comment to a task, as you. Write @Name to mention someone on the board (they’re told). The task’s followers are told too, and you follow it from then on. 📎name points at a file the task has (get_task lists them); to post a new file with a comment, use attach_file. To comment on one part of the description (a review: “this number is out of date”), quote the words in `about`. To answer such a comment, pass its id as `reply_to`. Resolving one is done by people, in the app.',
+        inputSchema: {
+          board_id: z.string(),
+          task_id: z.string(),
+          text: z.string().min(1).max(10_000),
+          about: z
+            .string()
+            .min(1)
+            .max(QUOTE_MAX)
+            .optional()
+            .describe(
+              'Some words of the task’s description this comment is about, quoted exactly as they are written there (a phrase or a sentence, without Markdown marks). People see the comment beside those words, answer it and resolve it.',
+            ),
+          reply_to: z
+            .string()
+            .optional()
+            .describe('The id of a comment that is about words of the description (get_task shows them with `about`): this answers it.'),
+        },
         annotations: { destructiveHint: false, openWorldHint: false },
       },
-      tool(async (a: { board_id: string; task_id: string; text: string }) => {
+      tool(async (a: { board_id: string; task_id: string; text: string; about?: string; reply_to?: string }) => {
         // (A comment is a change: not on an archived board, as on the website.)
         const { board, access, data } = await open(a.board_id, 'viewer', { write: true })
         if (access.via === 'public') throw new HttpError(403, 'Join this board to comment on it.')
         const mentions = mentionsIn(data.members, a.text)
-        const comment = await postComment(app, board, me, a.task_id, { body: a.text, mentions })
+        // The words it is about are looked for in the description as it reads, with a little of what stands around
+        // them (the same words may be there twice).
+        let passage: Passage | undefined
+        if (a.about && !a.reply_to) {
+          const words = squeeze(plainWords(data.tasks[a.task_id]?.description ?? ''))
+          const at = locate(words, { quote: a.about, before: '', after: '' })
+          if (!at)
+            throw new HttpError(
+              422,
+              'Those words aren’t in the task’s description. Quote them exactly as they are written there, without Markdown marks.',
+            )
+          passage = tidyPassage({
+            quote: a.about,
+            before: words.slice(Math.max(0, at.start - AROUND_MAX), at.start),
+            after: words.slice(at.end, at.end + AROUND_MAX),
+          })
+        }
+        const comment = await postComment(app, board, me, a.task_id, { body: a.text, mentions, passage, parentId: a.reply_to })
         // Which of the task's files its 📎marks found (so a mark that names no file is noticed).
         const pointed = a.text.includes(markOf(''))
           ? (await cardFiles(app, a.board_id, a.task_id)).filter((f) => a.text.includes(markOf(f.name)))

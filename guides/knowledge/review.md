@@ -9,7 +9,7 @@ looks at it again before it goes stale. The board's lists do both.
 |---|---|---|
 | You start writing | Put the card in **Drafting**, assigned to you. | Everyone sees it is being written, and by whom. |
 | It is ready for a second pair of eyes | Drag it to **In review**. | With a [rule](/views/telling-rules) on that list, the reviewers get a line under their bell. |
-| A reviewer has something to say | They comment on the card. | You are told, as its assignee. Viewers can comment too. |
+| A reviewer has something to say | They select the words and comment on them. | You are told, as its assignee, and the comment sits beside the text. Viewers can comment too. |
 | It is agreed | Drag it to **Published**. Set its **Owner** and a **Review by** date, and take the assignee off. | It is part of the handbook, and nobody's task. |
 
 Small boards can skip **In review**: drag straight to Published and @mention someone in a comment to ask for a
@@ -17,10 +17,16 @@ look.
 
 ## Review, as a reader
 
-Open the card and click **Expand** to read the article full page. Write what you think in the card's comments:
+Open the card and click **Expand** to read the article full page. Then say what you think, next to the words you
+mean:
 
-- Quote the words you mean. Select them in the text, copy, and paste them into your comment after a `>` so they
-  show as a quote.
+1. Select the words.
+2. Click **Comment**, and write.
+
+The writer sees your comment beside the text, answers under it, and resolves it when it is dealt with. See
+[comment on the text](/knowledge/comment).
+
+- For something about the whole article, write an ordinary comment on the card.
 - @mention the writer if they aren't the card's assignee.
 - React with 👍 or ✅ when a comment needs no words back.
 

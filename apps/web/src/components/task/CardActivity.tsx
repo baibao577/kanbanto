@@ -6,6 +6,7 @@ import { OWN_DATE } from '@kanbanto/model/activity'
 import { api } from '@/api/client'
 import { useBoard } from '@/app/board-context'
 import { Avatar } from '@/components/common/bits'
+import type { CardComments } from '@/data/cardComments'
 import type { CardFiles } from '@/data/cardFiles'
 import { formatDay, formatMoment } from '@/lib/format'
 import { cn } from '@/lib/utils'
@@ -19,10 +20,24 @@ type Tab = 'comments' | 'history'
  * happened to it, as two tabs. Comments stay as they were while History is looked at, with whatever is being written.
  * Visitors with the board's public link get the comments alone: a board's log is for its people.
  */
-export function CardActivity({ taskId, cardFiles, column }: { taskId: string; cardFiles: CardFiles; column?: boolean }) {
+export function CardActivity({
+  taskId,
+  cardFiles,
+  comments,
+  onOpenPassage,
+  column,
+}: {
+  taskId: string
+  cardFiles: CardFiles
+  /** The card's comments, and how the words one is about are shown in the description (see CommentsSection). */
+  comments: CardComments
+  onOpenPassage?: (commentId: string) => void
+  column?: boolean
+}) {
   const { access, counts } = useBoard()
   const [tab, setTab] = useState<Tab>('comments')
-  if (access.via === 'public') return <CommentsSection taskId={taskId} cardFiles={cardFiles} column={column} />
+  const said = <CommentsSection taskId={taskId} cardFiles={cardFiles} comments={comments} onOpenPassage={onOpenPassage} column={column} />
+  if (access.via === 'public') return said
   const n = counts.comments[taskId] ?? 0
   const button = (id: Tab, label: string, icon: ReactNode, count?: number) => (
     <button
@@ -53,7 +68,7 @@ export function CardActivity({ taskId, cardFiles, column }: { taskId: string; ca
         aria-labelledby="card-tab-comments"
         className={cn(column && 'flex min-h-0 flex-1 flex-col', tab !== 'comments' && 'hidden')}
       >
-        <CommentsSection taskId={taskId} cardFiles={cardFiles} column={column} bare />
+        <CommentsSection taskId={taskId} cardFiles={cardFiles} comments={comments} onOpenPassage={onOpenPassage} column={column} bare />
       </div>
       {tab === 'history' && (
         <div role="tabpanel" id="card-panel-history" aria-labelledby="card-tab-history" className={cn(column && 'flex min-h-0 flex-1 flex-col')}>

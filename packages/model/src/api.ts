@@ -1,4 +1,5 @@
 import type { BoardField, FieldDef } from './fields'
+import type { Passage } from './passages'
 import type { PresetSettings } from './prefs'
 import type { ReactionView } from './reactions'
 import type { Change } from './records'
@@ -234,6 +235,15 @@ export interface CommentView {
   reactions: ReactionView[]
   createdAt: string
   editedAt: string | null
+  /**
+   * It is about some words of the card's description (see passages.ts): the words, and a little of the text around
+   * them. It starts a thread: others answer it (`parentId`), and it is resolved when the matter is settled.
+   */
+  passage?: Passage | null
+  /** It answers a comment about a passage: that comment's id. */
+  parentId?: string | null
+  /** A comment about a passage: when it was resolved, and by whom (null: their account is gone). Null: it is open. */
+  resolved?: { at: string; by: { id: string; name: string } | null } | null
 }
 
 /** Time someone logged on a card. */
@@ -295,6 +305,12 @@ export type NotificationView =
       where: 'comment' | 'description'
       /** The start of the comment, or the line of the description. */
       excerpt: string
+      /**
+       * The words of the description the comment is about, or the thread it answers is (see passages.ts), and
+       * that thread's first comment: where to open the description's full page.
+       */
+      about?: string
+      thread?: string
       createdAt: string
       read: boolean
     }
@@ -306,6 +322,26 @@ export type NotificationView =
       board: { id: string; name: string }
       task: { id: string; title: string }
       /** The start of the comment. */
+      excerpt: string
+      /**
+       * The words of the description the comment is about, or the thread it answers is (see passages.ts), and
+       * that thread's first comment: where to open the description's full page.
+       */
+      about?: string
+      thread?: string
+      createdAt: string
+      read: boolean
+    }
+  | {
+      id: string
+      /** Someone resolved a comment of yours about a passage of a description. */
+      kind: 'resolved'
+      actor: string
+      board: { id: string; name: string }
+      task: { id: string; title: string }
+      /** The words it was about, the comment itself (to open the full page at), and the start of what it said. */
+      about: string
+      thread: string
       excerpt: string
       createdAt: string
       read: boolean
@@ -924,7 +960,7 @@ export type LiveMessage =
   | { type: 'signed-out' }
   | { type: 'deleted' }
   // (reacted: someone added or took back an emoji; the comment comes whole, as for an edit.)
-  | { type: 'comment'; taskId: string; action: 'added' | 'edited' | 'deleted' | 'reacted'; commentId: string; comment?: CommentView }
+  | { type: 'comment'; taskId: string; action: 'added' | 'edited' | 'deleted' | 'reacted' | 'resolved'; commentId: string; comment?: CommentView }
   | { type: 'attachment'; taskId: string; action: 'added' | 'deleted'; attachmentId: string; attachment?: AttachmentView }
   /** Time was logged, changed or removed on a card: its new total (minutes). */
   | { type: 'time'; taskId: string; total: number }

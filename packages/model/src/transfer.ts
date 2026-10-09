@@ -1,6 +1,7 @@
 import { linkRef, mapLinks, parseRef } from './fields'
 import { newId } from './ids'
 import { repairData, upgradeSave } from './migrate'
+import { PassageSchema, type Passage } from './passages'
 import { z } from 'zod'
 import { BoardDataSchema } from './schema'
 import type { BoardData } from './types'
@@ -24,7 +25,20 @@ export const withoutCovers = (data: BoardData): BoardData =>
  * which only means something on the site the file came from.
  */
 export interface BoardExtras {
-  comments: { taskId: string; by: { id: string; name: string } | null; body: string; at: string }[]
+  /**
+   * `passage`: it is about those words of its card's description (see passages.ts); `resolved`: and settled.
+   * `replyTo`: it answers the comment with that `id` (ids only mean something inside the file).
+   */
+  comments: {
+    taskId: string
+    by: { id: string; name: string } | null
+    body: string
+    at: string
+    id?: string
+    passage?: Passage
+    replyTo?: string
+    resolved?: boolean
+  }[]
   time: { taskId: string; by: { id: string; name: string } | null; day: string; minutes: number; note: string; at: string }[]
 }
 
@@ -51,7 +65,17 @@ const moment = z
   .string()
   .max(40)
   .refine((s) => !Number.isNaN(Date.parse(s)))
-const saidItem = z.object({ taskId: z.string().min(1).max(100), by: who, body: z.string().min(1).max(10_000), at: moment })
+const saidItem = z.object({
+  taskId: z.string().min(1).max(100),
+  by: who,
+  body: z.string().min(1).max(10_000),
+  at: moment,
+  // (What a comment about a passage adds. Out of shape, it comes as a plain comment.)
+  id: z.string().max(100).optional().catch(undefined),
+  passage: PassageSchema.optional().catch(undefined),
+  replyTo: z.string().max(100).optional().catch(undefined),
+  resolved: z.boolean().optional().catch(undefined),
+})
 const timeItem = z.object({
   taskId: z.string().min(1).max(100),
   by: who,

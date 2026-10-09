@@ -88,4 +88,4 @@ Every description keeps its earlier versions, however it was changed: by you, by
 
 ## Next
 
-- [Pages inside pages, and finding things](/knowledge/organise)
+- [Comment on the text](/knowledge/comment)

@@ -75,6 +75,14 @@ A few things to know:
   public link see reactions and can't add any.
 - Reacting to a comment does not make you follow its card.
 
+### Comment on words of the description
+
+A comment can be about a few words of the card's description, with the words marked in the text and the comment
+beside them. Open the description full page (**Expand**), select the words, and click **Comment**.
+
+Such a comment is also here, in the card's comments, with the words quoted above it. Others **Reply** under it,
+and **Resolve** folds it away when it is settled. See [comment on the text](/knowledge/comment).
+
 ### Change or remove a comment
 
 You can **Edit** your own comments; an edited one says "(edited)". You can delete your own, and a board's owner can

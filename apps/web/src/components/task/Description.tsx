@@ -1,7 +1,8 @@
 import { ArrowsOut, PencilSimple, TextAlignLeft } from '@phosphor-icons/react'
 import { formatDistanceToNow } from 'date-fns'
-import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react'
+import { lazy, Suspense, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState, useSyncExternalStore, type Ref } from 'react'
 import { useCardRefs, useCardSource } from '@/app/card-refs'
+import type { CardComments } from '@/data/cardComments'
 import type { CardFiles } from '@/data/cardFiles'
 import { clearDraft, pruneDrafts, readDraft, writeDraft, type Draft } from '@/data/drafts'
 import type { DocLink, LiveDoc } from '@/data/liveDoc'
@@ -59,6 +60,12 @@ export interface LiveText {
   save: (text: string, session: string) => boolean
 }
 
+/** What the card can ask of its description. */
+export interface DescriptionHandle {
+  /** Opens it full page at a comment about some of its words (see DescriptionReader's `notes`). */
+  openAt: (commentId: string) => void
+}
+
 /**
  * The card's description: Markdown, shown formatted (long ones folded, with "Show more"). Clicked, it's written in
  * place, the cursor where you clicked; Expand reads or writes it full page, carrying on from where you were.
@@ -88,6 +95,8 @@ export function Description({
   versions,
   live,
   writers,
+  notes,
+  handle,
 }: {
   title: string
   value: string
@@ -100,16 +109,19 @@ export function Description({
   onSave: (text: string) => void
   /**
    * The full page and the address (see the router's `full`): whether to start there, how the address is told when
-   * the page opens and closes, and the link to copy from the page. Left out: the page has no address (a card opened
-   * from Search cards).
+   * the page opens and closes, and the link to copy from the page (`note`: the comment about some of its words it
+   * starts at). Left out: the page has no address (a card opened from Search cards).
    */
-  full?: { start: boolean; set: (open: boolean) => void; link: string }
+  full?: { start: boolean; set: (open: boolean) => void; link: string; note?: string | null }
   /** The text's earlier versions, read on the full page (see DescriptionReader). Left out: none shown. */
   versions?: { boardId: string; taskId: string; onRestore?: (text: string, said: string) => void }
   /** Written with other people at once, for someone who can edit. Left out: by one person at a time. */
   live?: LiveText
   /** Who is writing it at this moment (this person too, if they are). */
   writers?: Writer[]
+  /** The card's comments: the ones about words of this text are shown with it, full page (see DescriptionReader). */
+  notes?: { comments: CardComments; taskId: string; canComment: boolean }
+  handle?: Ref<DescriptionHandle>
 }) {
   // The cards its text names (WEB-12), shown as links, and the ones "/" → Card offers.
   const cardRefs = useCardRefs()
@@ -117,11 +129,21 @@ export function Description({
   /** Where it's being written: in the card, full page, or not at all. */
   const [writing, setWriting] = useState<'card' | 'page' | null>(null)
   // (A link to the full page opens it at once, to read: there has to be something to read.)
-  const [page, setPage] = useState(() => !!full?.start && !!value)
+  const [page, setPage] = useState(() => !!full?.start && (!!value || !!full.note))
   const showPage = (open: boolean) => {
     setPage(open)
     full?.set(open)
+    if (!open) setAtNote(null)
   }
+  /** The comment the full page opens at. */
+  const [atNote, setAtNote] = useState<string | null>(full?.note ?? null)
+  useImperativeHandle(handle, () => ({
+    openAt: (commentId) => {
+      setAtNote(commentId)
+      setPage(true)
+      full?.set(true)
+    },
+  }))
   /** What the editor opens with: the text, and where the cursor goes. */
   const [start, setStart] = useState<{ text: string; caret?: Place }>({ text: value })
   const [dirty, setDirty] = useState(false)
@@ -619,6 +641,7 @@ export function Description({
                 ? `${namesOf(others)} ${are} writing this now${readOnly ? '.' : ': Edit to write with them.'}`
                 : undefined
             }
+            notes={notes && { ...notes, focus: atNote }}
             versions={
               versions && {
                 ...versions,

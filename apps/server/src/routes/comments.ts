@@ -1,7 +1,9 @@
 import type { CommentView, NotificationView } from '@kanbanto/model/api'
 import { newId } from '@kanbanto/model/ids'
+import { PassageSchema, quoteLine, tidyPassage, type Passage } from '@kanbanto/model/passages'
 import { isReaction, REACTIONS, type ReactionView } from '@kanbanto/model/reactions'
 import { and, desc, eq, ilike, inArray, isNull, or, sql } from 'drizzle-orm'
+import { alias } from 'drizzle-orm/pg-core'
 import type { FastifyInstance, FastifyPluginAsync } from 'fastify'
 import { z } from 'zod'
 import { commentMessage } from '../chat/format'
@@ -31,6 +33,8 @@ const Body = z.object({
   /** Files uploaded for this comment (drafts) to attach. */
   attachments: z.array(z.uuid()).max(20).default([]),
 })
+/** A new comment may be about some words of the description (`passage`), or answer a comment that is (`parentId`). */
+const NewBody = Body.extend({ passage: PassageSchema.optional(), parentId: z.uuid().optional() })
 
 /** The people of a board whose name a text @mentions (for comments written where there's no picker: an assistant, an upload link). */
 export const mentionsIn = (members: { id: string; name: string }[], text: string) => {
@@ -69,11 +73,14 @@ export async function reactionsOf(db: Db | Tx, commentIds: string[]): Promise<Ma
   return out
 }
 
+const resolvers = alias(users, 'resolvers')
+
 async function commentViews(db: Db | Tx, where: ReturnType<typeof and>): Promise<CommentView[]> {
   const rows = await db
-    .select({ c: comments, authorName: users.name, authorPicture: users.picture })
+    .select({ c: comments, authorName: users.name, authorPicture: users.picture, resolver: resolvers.name })
     .from(comments)
     .leftJoin(users, eq(users.id, comments.authorId))
+    .leftJoin(resolvers, eq(resolvers.id, comments.resolvedBy))
     .where(where)
     .orderBy(comments.createdAt)
   const files = rows.length
@@ -92,7 +99,7 @@ async function commentViews(db: Db | Tx, where: ReturnType<typeof and>): Promise
     db,
     rows.map((r) => r.c.id),
   )
-  return rows.map(({ c, authorName, authorPicture }) => ({
+  return rows.map(({ c, authorName, authorPicture, resolver }) => ({
     id: c.id,
     taskId: c.taskId,
     author: c.authorId ? { id: c.authorId, name: authorName ?? 'Someone', picture: pictureUrl(authorPicture) } : null,
@@ -102,7 +109,30 @@ async function commentViews(db: Db | Tx, where: ReturnType<typeof and>): Promise
     reactions: reactions.get(c.id) ?? [],
     createdAt: c.createdAt.toISOString(),
     editedAt: c.editedAt?.toISOString() ?? null,
+    // (Only a comment about a passage, and the answers to one, say more.)
+    ...(c.passage && {
+      passage: c.passage,
+      resolved: c.resolvedAt ? { at: c.resolvedAt.toISOString(), by: c.resolvedBy ? { id: c.resolvedBy, name: resolver ?? 'Someone' } : null } : null,
+    }),
+    ...(c.parentId && { parentId: c.parentId }),
   }))
+}
+
+/**
+ * The words a comment is about, for each of these comments: its own passage, or (an answer) the passage of the
+ * comment it answers. Comments that aren't about a passage are left out.
+ */
+export async function passagesOf(db: Db | Tx, rows: { id: string; passage: Passage | null; parentId: string | null }[]) {
+  const out = new Map<string, string>()
+  const parents = [...new Set(rows.flatMap((r) => (!r.passage && r.parentId ? [r.parentId] : [])))]
+  const theirs = parents.length
+    ? await db.select({ id: comments.id, passage: comments.passage }).from(comments).where(inArray(comments.id, parents))
+    : []
+  for (const r of rows) {
+    const passage = r.passage ?? theirs.find((p) => p.id === r.parentId)?.passage
+    if (passage) out.set(r.id, passage.quote)
+  }
+  return out
 }
 
 /** Comment counts per task, for the badges on cards. */
@@ -191,17 +221,39 @@ export async function postComment(
   board: BoardRow,
   me: { id: string; name: string },
   taskId: string,
-  /** `notToHook`: a webhook that isn't sent it (a Telegram bot whose own chat the comment came from: it was answered there). */
-  body: { body: string; mentions: string[]; attachments?: string[]; notToHook?: string },
+  /**
+   * `notToHook`: a webhook that isn't sent it (a Telegram bot whose own chat the comment came from: it was answered
+   * there). `passage`: the words of the description it is about (it starts a thread). `parentId`: the comment about
+   * a passage it answers (an answer to an answer joins the same thread); answering a resolved thread opens it again.
+   */
+  body: { body: string; mentions: string[]; attachments?: string[]; notToHook?: string; passage?: Passage; parentId?: string },
 ) {
   const id = board.id
   const { data } = await app.engine.snapshot(id)
   if (!data.tasks[taskId]) throw new HttpError(404, 'That task no longer exists.')
+  // What it answers: the first comment of the thread, which is about a passage.
+  let thread: typeof comments.$inferSelect | undefined
+  if (body.parentId) {
+    const on = (commentId: string) => and(eq(comments.id, commentId), eq(comments.boardId, id), eq(comments.taskId, taskId))
+    const [answered] = await app.db.select().from(comments).where(on(body.parentId))
+    thread = answered?.parentId ? (await app.db.select().from(comments).where(on(answered.parentId)))[0] : answered
+    if (!thread) throw new HttpError(404, 'The comment this answers no longer exists.')
+    if (!thread.passage) throw new HttpError(400, 'Only a comment about words of the description can be answered.')
+  }
+  const passage = !thread && body.passage ? tidyPassage(body.passage) : null
+  const about = (thread?.passage ?? passage)?.quote
   const mentions = await validMentions(app.db, board, body.mentions, me.id)
   const commentId = newId()
   const followers: string[] = []
   await app.db.transaction(async (tx) => {
-    await tx.insert(comments).values({ id: commentId, boardId: id, taskId, authorId: me.id, body: body.body, mentions })
+    await tx
+      .insert(comments)
+      .values({ id: commentId, boardId: id, taskId, authorId: me.id, body: body.body, mentions, passage, parentId: thread?.id ?? null })
+    // (An answer to something that was settled: it isn't settled any more.)
+    if (thread?.resolvedAt) {
+      await tx.update(comments).set({ resolvedAt: null, resolvedBy: null }).where(eq(comments.id, thread.id))
+      await tx.delete(notifications).where(and(eq(notifications.kind, 'resolved'), eq(notifications.commentId, thread.id)))
+    }
     await attachDrafts(tx, { boardId: id, taskId, uploaderId: me.id, commentId }, body.attachments ?? [])
     await notify(tx, { boardId: id, taskId, commentId, actorId: me.id }, mentions)
     // The card's other followers, the ones still on the board (someone mentioned has that instead).
@@ -220,6 +272,12 @@ export async function postComment(
   })
   const [comment] = await commentViews(app.db, and(eq(comments.id, commentId)))
   app.hub.broadcast(id, { type: 'comment', taskId, action: 'added', commentId, comment })
+  if (thread?.resolvedAt) {
+    const [opened] = await commentViews(app.db, and(eq(comments.id, thread.id)))
+    app.hub.broadcast(id, { type: 'comment', taskId, action: 'resolved', commentId: thread.id, comment: opened })
+  }
+  // (The words it is about go before what it says, wherever it is told in one line.)
+  const said = (n: number) => (about ? `On “${quoteLine(about, 50)}”: ${excerpt(body.body, n)}` : excerpt(body.body, n))
   // As it happens, for the people mentioned and the card's followers who want that: on their desktop, and through
   // a Telegram bot of their own. Then the board's webhooks, leaving out the bots that have just told their chat.
   const tell = (userId: string, kind: 'mentions' | 'follows') =>
@@ -229,7 +287,7 @@ export async function postComment(
       kind,
       {
         title: kind === 'mentions' ? `${me.name} mentioned you` : `${me.name} commented on “${data.tasks[taskId].title}”`,
-        body: kind === 'mentions' ? `“${data.tasks[taskId].title}”: ${excerpt(body.body, 120)}` : excerpt(body.body, 120),
+        body: kind === 'mentions' ? `“${data.tasks[taskId].title}”: ${said(120)}` : said(120),
         url: `/#/b/${encodeURIComponent(id)}?task=${encodeURIComponent(taskId)}`,
         tag: `mention:${commentId}`,
       },
@@ -255,10 +313,16 @@ export async function postComment(
               mentions,
               // (The files posted with it: fetched with a token from /api/attachments/<id>.)
               files: comment.attachments.map((f) => ({ id: f.id, name: f.name, size: f.size })),
+              // (About some words of the description, or an answer to a comment that is.)
+              ...(about && { about }),
+              ...(thread && { replyTo: thread.id }),
             },
           },
           () =>
-            commentMessage({ actor: me.name, board: board.name, title: data.tasks[taskId].title, body: body.body }, app.webhooks.cardUrl(id, taskId)),
+            commentMessage(
+              { actor: me.name, board: board.name, title: data.tasks[taskId].title, body: body.body, about },
+              app.webhooks.cardUrl(id, taskId),
+            ),
           [body.notToHook, ...told].filter((hook): hook is string => !!hook),
         ),
       )
@@ -284,7 +348,7 @@ export const commentRoutes: FastifyPluginAsync = async (app) => {
     const me = requireUser(req.user)
     const { board, access } = await requireAccess(app.db, me, id, 'viewer', { write: true })
     if (access.via === 'public') throw new HttpError(403, 'Join this board to comment on it.')
-    const body = parse(Body, req.body)
+    const body = parse(NewBody, req.body)
     return { comment: await postComment(app, board, me, taskId, body) }
   })
 
@@ -332,12 +396,52 @@ export const commentRoutes: FastifyPluginAsync = async (app) => {
       .where(and(eq(comments.id, commentId), eq(comments.boardId, id)))
     if (!c) throw new HttpError(404, 'That comment no longer exists.')
     if (c.authorId !== me.id && access.role !== 'owner') throw new HttpError(403, 'Only its author or a board owner can delete a comment.')
-    const files = await trashCommentFiles(app.db, commentId)
+    // (The answers to a comment about a passage go with it, and their files with them.)
+    const answers = c.passage
+      ? (await app.db.select({ id: comments.id }).from(comments).where(eq(comments.parentId, commentId))).map((r) => r.id)
+      : []
+    const files = (await Promise.all([commentId, ...answers].map((one) => trashCommentFiles(app.db, one)))).flat()
     await app.db.delete(comments).where(eq(comments.id, commentId))
     // (A picture posted in the comment may have been made the card's cover: it goes with the comment.)
     await uncover(app, id, c.taskId, files, { userId: me.id, via: req.apiToken?.app }).catch(() => false)
-    app.hub.broadcast(id, { type: 'comment', taskId: c.taskId, action: 'deleted', commentId })
+    for (const gone of [...answers, commentId]) app.hub.broadcast(id, { type: 'comment', taskId: c.taskId, action: 'deleted', commentId: gone })
     return { ok: true }
+  })
+
+  /**
+   * Resolves a comment about a passage (the matter is settled: it folds away, and its words are no longer marked in
+   * the text), or opens it again. Everyone who can comment can, as with the comment itself. Its author has a line
+   * under their bell when someone else resolves it (which goes if it is opened again). Answers with the comment as
+   * it is now, which everyone with the card open is sent too.
+   */
+  app.put('/boards/:id/comments/:commentId/resolved', async (req) => {
+    const { id, commentId } = parse(CommentParams, req.params)
+    const me = requireUser(req.user)
+    const { board, access } = await requireAccess(app.db, me, id, 'viewer', { write: true })
+    if (access.via === 'public') throw new HttpError(403, 'Join this board to resolve its comments.')
+    const { resolved } = parse(z.object({ resolved: z.boolean() }), req.body)
+    const [c] = await app.db
+      .select()
+      .from(comments)
+      .where(and(eq(comments.id, commentId), eq(comments.boardId, id)))
+    if (!c) throw new HttpError(404, 'That comment no longer exists.')
+    if (!c.passage) throw new HttpError(400, 'Only a comment about words of the description can be resolved.')
+    if (!!c.resolvedAt !== resolved)
+      await app.db.transaction(async (tx) => {
+        await tx
+          .update(comments)
+          .set(resolved ? { resolvedAt: new Date(), resolvedBy: me.id } : { resolvedAt: null, resolvedBy: null })
+          .where(eq(comments.id, commentId))
+        await tx.delete(notifications).where(and(eq(notifications.kind, 'resolved'), eq(notifications.commentId, commentId)))
+        if (!resolved || !c.authorId || c.authorId === me.id) return
+        if (!(await boardPeople(tx, board)).some((p) => p.userId === c.authorId)) return
+        await tx
+          .insert(notifications)
+          .values({ id: newId(), userId: c.authorId, kind: 'resolved', boardId: id, taskId: c.taskId, commentId, actorId: me.id })
+      })
+    const [comment] = await commentViews(app.db, and(eq(comments.id, commentId)))
+    app.hub.broadcast(id, { type: 'comment', taskId: c.taskId, action: 'resolved', commentId, comment })
+    return { comment }
   })
 
   /**
@@ -413,6 +517,8 @@ export const commentRoutes: FastifyPluginAsync = async (app) => {
         taskTitle: tasks.title,
         description: tasks.description,
         body: comments.body,
+        passage: comments.passage,
+        parentId: comments.parentId,
         ruleName: sql<string | null>`${boardRules.rule}->>'name'`,
       })
       .from(notifications)
@@ -439,6 +545,16 @@ export const commentRoutes: FastifyPluginAsync = async (app) => {
       app.db,
       rows.flatMap((r) => (r.n.kind === 'reaction' && r.n.commentId ? [r.n.commentId] : [])),
     )
+    // The words a comment is about (its own, or those of the comment it answers), by comment.
+    const quoted = await passagesOf(
+      app.db,
+      rows.flatMap((r) => (r.n.commentId ? [{ id: r.n.commentId, passage: r.passage, parentId: r.parentId }] : [])),
+    )
+    // (And the comment that started its thread: where the full page opens for it.)
+    const about = (commentId: string | null, parentId: string | null) => {
+      const quote = commentId ? quoted.get(commentId) : undefined
+      return quote && commentId ? { about: quoteLine(quote, 70), thread: parentId ?? commentId } : {}
+    }
     const lines = rows.map((r): NotificationView | null => {
       const common = { id: r.n.id, actor: r.actor ?? 'Someone', createdAt: r.n.createdAt.toISOString(), read: !!r.n.readAt }
       const can = !!r.n.boardId && open.has(r.n.boardId)
@@ -447,6 +563,8 @@ export const commentRoutes: FastifyPluginAsync = async (app) => {
         if (r.n.kind === 'reminder') return { ...common, kind: 'reminder', actor: r.actor, board: CLOSED, task: { id: '', title: 'A task' } }
         if (r.n.kind === 'change') return { ...common, kind: 'change', board: CLOSED, task: { id: '', title: 'A task' }, changes: [] }
         if (r.n.kind === 'comment') return { ...common, kind: 'comment', board: CLOSED, task: { id: '', title: 'A task' }, excerpt: '' }
+        if (r.n.kind === 'resolved')
+          return { ...common, kind: 'resolved', board: CLOSED, task: { id: '', title: 'A task' }, about: '', thread: '', excerpt: '' }
         if (r.n.kind === 'reaction')
           return { ...common, kind: 'reaction', board: CLOSED, task: { id: '', title: 'A task' }, people: [], emoji: [], excerpt: '' }
         if (r.n.kind === 'rule')
@@ -480,7 +598,12 @@ export const commentRoutes: FastifyPluginAsync = async (app) => {
         task: { id: r.n.taskId ?? '', title: r.taskTitle ?? 'A deleted task' },
       }
       if (r.n.kind === 'change') return { ...common, kind: 'change', ...on, changes: r.n.changes ?? [] }
-      if (r.n.kind === 'comment') return { ...common, kind: 'comment', ...on, excerpt: excerpt(r.body ?? '') }
+      if (r.n.kind === 'comment') return { ...common, kind: 'comment', ...on, excerpt: excerpt(r.body ?? ''), ...about(r.n.commentId, r.parentId) }
+      // (The comment is gone since, or opened again: the line has nothing left to say.)
+      if (r.n.kind === 'resolved')
+        return r.passage && r.n.commentId
+          ? { ...common, kind: 'resolved', ...on, about: quoteLine(r.passage.quote, 70), thread: r.n.commentId, excerpt: excerpt(r.body ?? '') }
+          : null
       if (r.n.kind === 'reaction') {
         const theirs = (reacted.get(r.n.commentId ?? '') ?? [])
           .map((x) => ({ emoji: x.emoji, by: x.by.filter((p) => p.id !== me.id) }))
@@ -508,7 +631,7 @@ export const commentRoutes: FastifyPluginAsync = async (app) => {
       }
       // (A mention with no comment is in the card's description: the line it's on, as it reads now.)
       return r.n.commentId
-        ? { ...common, kind: 'mention', where: 'comment', ...on, excerpt: excerpt(r.body ?? '') }
+        ? { ...common, kind: 'mention', where: 'comment', ...on, excerpt: excerpt(r.body ?? ''), ...about(r.n.commentId, r.parentId) }
         : { ...common, kind: 'mention', where: 'description', ...on, excerpt: excerpt(mentionLine(r.description, me.name)) }
     })
     const items = lines.filter((n): n is NotificationView => !!n)

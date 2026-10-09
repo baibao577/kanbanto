@@ -5,6 +5,28 @@ then `git pull` (or download the new release) and `docker compose up -d --build`
 
 ## Unreleased
 
+- **Comment on the words of a description.** Open a description full page (**Expand**), select some words, and
+  click **Comment**. The words are marked in the text and the comment sits beside it. Others **Reply** under it,
+  and **Resolve** folds it away when it is settled (**Reopen**, or a new answer, brings it back). Everyone who can
+  comment can do all of it, viewers too: nobody has to be able to edit the card.
+
+  The same comment is in the card's Comments, with the words quoted above it: one conversation, shown in two
+  places. Nothing is written into the description to hold a comment in place. The comment keeps its words and
+  finds them again each time the text is shown, so it follows them when the text moves, and says "The text this
+  was about has changed" when they have been rewritten. An assistant can rewrite a description, or several people
+  can write in it at once, and no comment is lost.
+
+  The people told are the ones told of any comment (the card's followers, anyone @mentioned); the line under the
+  bell quotes the words and opens the description at them. Whoever wrote a comment gets one line when someone
+  else resolves it.
+
+  For apps: a comment may carry `passage` (the words) or `parentId` (the comment it answers), and has `resolved`;
+  `PUT /api/boards/:id/comments/:commentId/resolved` settles one; `comment.added` says `about` and `replyTo`. For
+  assistants: `get_task` shows which words a comment is about, and `add_comment` takes `about` and `reply_to`. A
+  board's export file carries these comments with their answers. Upgrading adds four columns to one table.
+
+  The guides: a new page, **Comment on the text**, in the knowledge base group.
+
 - **Write a description together.** Several people can write the same description at the same moment. Open the
   card and click **Edit**: if someone is already writing, you are in the same text, with their cursor and name
   where they are and their words as they type them. The card says who is writing to everyone who has it open. It
