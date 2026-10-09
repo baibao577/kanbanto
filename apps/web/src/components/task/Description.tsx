@@ -149,6 +149,8 @@ export function Description({
   const [dirty, setDirty] = useState(false)
   /** What's being typed, a moment behind the keys (the page's Contents and word count). */
   const [settled, setSettled] = useState(value)
+  /** This page was opened before the app was updated: it has to be loaded again to write (see EDITOR_VERSION). */
+  const [stale, setStale] = useState(false)
   /** Writing left unsaved earlier (a reload, a closed tab, a connection that went), to offer back. */
   const [left, setLeft] = useState<Draft | null>(() => {
     const d = readOnly ? null : readDraft(draftId)
@@ -208,7 +210,7 @@ export function Description({
   }
 
   const begin = (at: 'card' | 'page', from: { caret?: Place } = {}) => {
-    if (readOnly) return
+    if (readOnly || stale) return
     where.current = at
     caretAt.current = from.caret
     // With whoever else is writing it (or by oneself, where the others can join).
@@ -266,6 +268,8 @@ export function Description({
     // The card is gone, or this person may no longer write: what wasn't saved is kept as a draft.
     if (s.status === 'ended' || s.status === 'refused') {
       if (typedHere.current && text.current !== saved.current) keep()
+      // (Or this page was opened before the app was updated: it says so, and how to go on.)
+      if (s.reload) setStale(true)
       where.current = null
       leave()
       return setWriting(null)
@@ -525,6 +529,11 @@ export function Description({
 
   return (
     <Section icon={<TextAlignLeft />} title="Description" aside={aside}>
+      {stale && (
+        <div className="mb-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs">
+          <Stale />
+        </div>
+      )}
       {offered && (
         <div className="mb-2 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs">
           {/* Carried on with while the text is as it was; once others have written in it, it is there to copy from. */}
@@ -637,9 +646,11 @@ export function Description({
             onClose={closePage}
             link={full?.link}
             note={
-              others.length && writing !== 'page'
-                ? `${namesOf(others)} ${are} writing this now${readOnly ? '.' : ': Edit to write with them.'}`
-                : undefined
+              stale ? (
+                <Stale />
+              ) : others.length && writing !== 'page' ? (
+                `${namesOf(others)} ${are} writing this now${readOnly ? '.' : ': Edit to write with them.'}`
+              ) : undefined
             }
             notes={notes && { ...notes, focus: atNote }}
             versions={
@@ -666,6 +677,18 @@ const fitsNow = (d: Draft, value: string) => d.base === undefined || d.base === 
  * The people writing with you, as dots in the colours their cursors have (`among`: the board's people, which decide
  * the colours), and their names (`bare`: the dots only, where the names are said beside them).
  */
+/** Said where a description can't be written because the page is older than the app (see EDITOR_VERSION). */
+function Stale() {
+  return (
+    <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
+      <span className="min-w-0 flex-1">Kanbanto has been updated since this page was opened. Load the page again to write here.</span>
+      <button type="button" className="font-medium text-primary hover:underline" onClick={() => window.location.reload()}>
+        Load the page again
+      </button>
+    </span>
+  )
+}
+
 function Together({ people, among, bare }: { people: Writer[]; among: { id: string }[]; bare?: boolean }) {
   if (!people.length) return null
   return (

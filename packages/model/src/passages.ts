@@ -116,6 +116,9 @@ export function plainWords(markdown: string): string {
       .replace(/^\s*\|?[\s:|-]*-[\s:|-]*\|?\s*$/gm, '')
       .replace(/^\s{0,3}#{1,6}\s+/gm, '')
       .replace(/^\s{0,3}(>\s?)+/gm, '')
+      // A callout's mark (a quote's first line: "[!NOTE]"), and a line break written as a tag.
+      .replace(/^\\?\[!(?:note|tip|important|warning|caution)\\?\][ \t]*$/gim, '')
+      .replace(/<br\s*\/?>/gi, ' ')
       .replace(/^\s*(?:[-*+]|\d+[.)])\s+(?:\[[ xX]\]\s+)?/gm, '')
       .replace(/^\s*(`{3,}|~{3,}).*$/gm, '')
       // Emphasis, code, a table's bars, escapes.

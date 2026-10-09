@@ -287,6 +287,66 @@ html.dragging * {
   .md hr {
     @apply my-3 border-border;
   }
+
+  /* A callout (see components/text/callouts.tsx): a box of a kind, in that kind's colour, with its icon and its name.
+     The name is put there by the stylesheet, so the page holds only the letters of the text itself. */
+  [data-callout='note'] {
+    --callout: oklch(0.55 0.15 255);
+  }
+  [data-callout='tip'] {
+    --callout: oklch(0.52 0.13 152);
+  }
+  [data-callout='important'] {
+    --callout: oklch(0.5 0.17 300);
+  }
+  [data-callout='warning'] {
+    --callout: oklch(0.6 0.14 75);
+  }
+  [data-callout='caution'] {
+    --callout: oklch(0.55 0.19 27);
+  }
+  .dark [data-callout='note'] {
+    --callout: oklch(0.72 0.13 255);
+  }
+  .dark [data-callout='tip'] {
+    --callout: oklch(0.74 0.13 152);
+  }
+  .dark [data-callout='important'] {
+    --callout: oklch(0.74 0.14 300);
+  }
+  .dark [data-callout='warning'] {
+    --callout: oklch(0.8 0.13 80);
+  }
+  .dark [data-callout='caution'] {
+    --callout: oklch(0.72 0.16 27);
+  }
+  .md .md-callout {
+    @apply flex items-start gap-2 rounded-lg border px-3 py-2;
+    border-color: color-mix(in oklch, var(--callout) 35%, transparent);
+    background-color: color-mix(in oklch, var(--callout) 8%, transparent);
+  }
+  .md .md-callout-icon {
+    @apply mt-[0.15em] grid size-[1.25em] shrink-0 place-items-center rounded;
+    color: var(--callout);
+  }
+  .md .md-callout-icon > svg {
+    @apply size-[1.1em];
+  }
+  .md button.md-callout-icon:not(:disabled) {
+    @apply hover:bg-foreground/10;
+  }
+  .md .md-callout-body {
+    @apply min-w-0 flex-1;
+  }
+  .md .md-callout-body::before {
+    @apply block text-[0.8em] leading-[1.6] font-semibold;
+    content: attr(data-label);
+    color: var(--callout);
+  }
+  .md .md-callout-body > * + *,
+  .md .md-callout-body > [data-node-view-content-react] > * + * {
+    @apply mt-2;
+  }
   .md .md-table,
   .md .tableWrapper {
     @apply overflow-x-auto;
@@ -299,6 +359,15 @@ html.dragging * {
   }
   .md th {
     @apply bg-muted/60 font-medium;
+  }
+  /* Full page: a table too wide for the column of text may take the width of the page (the page says how wide that
+     is: `page-width`), staying centred on the column. Narrower than the column, it is as wide as the column. */
+  .md.md-reader :is(.md-table, .tableWrapper) {
+    width: max-content;
+    min-width: 100%;
+    max-width: calc(100cqw - 2.5rem);
+    margin-left: 50%;
+    transform: translateX(-50%);
   }
   /* Checklists: the box, then the text, with no bullet. */
   .md :is(ul[data-tasks], ul[data-type='taskList']) {

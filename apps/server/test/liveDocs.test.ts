@@ -1,4 +1,4 @@
-import type { DocMessage, LiveMessage } from '@kanbanto/model/api'
+import { EDITOR_VERSION, type DocMessage, type LiveMessage } from '@kanbanto/model/api'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Awareness, encodeAwarenessUpdate } from 'y-protocols/awareness'
 import * as Y from 'yjs'
@@ -21,6 +21,10 @@ class Browser {
   /** It loaded the saved text into the document it has now. */
   seeder = false
   refused: string | null = null
+  /** Refused because its page has to be loaded again first. */
+  reload = false
+  /** Which elements its editor knows (see EDITOR_VERSION); undefined: a page from before there was such a thing. */
+  editor: number | undefined = EDITOR_VERSION
   ended = false
   resets = 0
   /** Its connection is down: nothing it writes is sent. */
@@ -46,7 +50,15 @@ class Browser {
     this.take()
   }
   join() {
-    this.say({ type: 'doc', op: 'join', taskId: this.task, session: this.session, client: this.doc.clientID, seeder: this.seeder })
+    this.say({
+      type: 'doc',
+      op: 'join',
+      taskId: this.task,
+      session: this.session,
+      client: this.doc.clientID,
+      seeder: this.seeder,
+      editor: this.editor,
+    })
     return this
   }
   /** Takes in what the server sent since last time. */
@@ -80,7 +92,10 @@ class Browser {
         this.resets++
         this.join()
       } else if (m.op === 'ended') this.ended = true
-      else if (m.op === 'refused') this.refused = m.error
+      else if (m.op === 'refused') {
+        this.refused = m.error
+        this.reload = !!m.reload
+      }
     }
   }
   /** Loads the saved text, with the mark that says it is in: one change, as the editor makes it. */
@@ -180,6 +195,39 @@ describe('people writing one description at once', () => {
     const cy = new Browser(docs, 'Cy').join()
     expect([cy.seedAsked, cy.text]).toEqual([false, 'Saved.'])
     expect(writers()).toEqual(['Ben', 'Cy'])
+  })
+
+  it('a page opened before the app was updated can’t join: its editor would drop what it doesn’t know from everyone’s text', () => {
+    const ann = new Browser(docs, 'Ann').join()
+    ann.seed('A note in a box.')
+    // A tab from before editors said which elements they know, and one from an older version.
+    const old = new Browser(docs, 'Old')
+    old.editor = undefined
+    old.join()
+    const older = new Browser(docs, 'Older')
+    older.editor = EDITOR_VERSION - 1
+    older.join()
+    for (const b of [old, older]) {
+      expect(b.refused).toMatch(/Load the page again/)
+      expect([b.reload, b.session, b.text]).toEqual([true, undefined, ''])
+    }
+    // Neither is in the session: a change sent anyway is taken from neither (told to join again, they are refused
+    // again), and nobody is told they are writing.
+    const stray = new Y.Doc()
+    stray.getText('t').insert(0, 'typed in an old tab')
+    old.say({ type: 'doc', op: 'update', taskId: 'T1', session: ann.session!, data: b64(Y.encodeStateAsUpdate(stray)) })
+    all(ann, old)
+    expect([ann.text, old.resets, old.reload]).toEqual(['A note in a box.', 1, true])
+    expect(writers()).toEqual(['Ann'])
+    // Nor is a page newer than the server (it reloads, and gets the server's own).
+    const ahead = new Browser(docs, 'Ahead')
+    ahead.editor = EDITOR_VERSION + 1
+    expect(ahead.join().reload).toBe(true)
+    // Loaded again, the page has the server's editor and is in.
+    old.editor = EDITOR_VERSION
+    old.refused = null
+    expect([old.join().refused, old.text]).toEqual([null, 'A note in a box.'])
+    expect(writers()).toEqual(['Ann', 'Old'])
   })
 
   it('someone who may only read can’t join, and who loses the right to write is put out', async () => {

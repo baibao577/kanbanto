@@ -4,7 +4,8 @@ import type { AttachmentView } from '@kanbanto/model/api'
 import type { CardRefs } from '@/app/card-refs'
 import { RichText } from '@/components/task/RichText'
 import { cn } from '@/lib/utils'
-import { lex, picturesNamed } from './mdText'
+import { CALLOUTS, calloutOf } from './callouts'
+import { isBreak, lex, picturesNamed } from './mdText'
 
 export interface MarkdownProps {
   text: string
@@ -34,7 +35,8 @@ const safeHref = (href: string) => (/^(https?:|mailto:|\/|#)/i.test(href.trim())
 
 /**
  * Markdown, shown safely: built as React elements from marked's tokens, so HTML in the text is shown as text, never
- * run. "📎name" file references and @mentions work anywhere in the text.
+ * run (but for a line break written as "<br>", which is shown as one). "📎name" file references and @mentions work
+ * anywhere in the text.
  */
 export function Markdown({ text, files, mentions, cards, onToggleTask, headingIds, pictures, className }: MarkdownProps) {
   const tokens = useMemo(() => lex(text), [text])
@@ -87,8 +89,11 @@ export function Markdown({ text, files, mentions, cards, onToggleTask, headingId
         case 'checkbox':
           // A checklist item's box (shown by the list, not here).
           return null
+        case 'html':
+          // A line break (how a table's cell has two lines); any other HTML: as the text it is.
+          return isBreak(t.raw) ? <br key={k} /> : <Fragment key={k}>{t.raw}</Fragment>
         default:
-          // HTML and anything unknown: as the text it is.
+          // Anything unknown: as the text it is.
           return <Fragment key={k}>{'raw' in t ? t.raw : ''}</Fragment>
       }
     })
@@ -132,8 +137,23 @@ export function Markdown({ text, files, mentions, cards, onToggleTask, headingId
               <code>{t.text}</code>
             </pre>
           )
-        case 'blockquote':
-          return <blockquote key={k}>{block(t.tokens ?? [], k)}</blockquote>
+        case 'blockquote': {
+          // A quote that starts with a callout's mark ("[!NOTE]") is a callout: a box of that kind.
+          const box = calloutOf(t)
+          if (!box) return <blockquote key={k}>{block(t.tokens ?? [], k)}</blockquote>
+          const { icon: Mark, label } = CALLOUTS[box.kind]
+          return (
+            <div key={k} className="md-callout" data-callout={box.kind}>
+              <span className="md-callout-icon" aria-hidden>
+                <Mark weight="fill" />
+              </span>
+              {/* (The kind's name is shown by the stylesheet: the page holds the text's own letters only.) */}
+              <div className="md-callout-body" data-label={label}>
+                {block(box.tokens, k)}
+              </div>
+            </div>
+          )
+        }
         case 'hr':
           return <hr key={k} />
         case 'list': {
@@ -195,7 +215,7 @@ export function Markdown({ text, files, mentions, cards, onToggleTask, headingId
             </div>
           )
         case 'html':
-          return <p key={k}>{t.raw}</p>
+          return isBreak(t.raw) ? <br key={k} /> : <p key={k}>{t.raw}</p>
         default:
           return null
       }

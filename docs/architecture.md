@@ -144,6 +144,31 @@ UI ─run(command)─▶ BoardSync: execute() here ─▶ shown at once (optimis
   editor, "/" opens the one menu of things to put in (`INSERTS` in `components/text/Editor.tsx`): each is a line
   with what it does, or a `step` when it has to be chosen first, as a card is (this board's cards from memory,
   other boards' from `GET /api/cards?in=titles`); a new kind of mention is a new line there.
+- **What a text can hold** is one list (`textElements` in `components/text/elements.ts`), and each element is
+  written to the Markdown in a way other readers of Markdown know, or it isn't added. A **callout** (a box that
+  says Note, Tip, Important, Warning or Caution) is a quote whose first line is its mark, as GitHub writes its
+  alerts (`> [!WARNING]`): the reader and the editor both ask `calloutOf` (`callouts.tsx`) whether a quote is one,
+  so they agree; a mark that an editor from before callouts saved with backslashes still counts, and is written
+  back clean. The kind's name is shown by the stylesheet, so what is shown, what is written and what is saved
+  hold the same letters (the rule comments on words and the cursor go by: `plainWords` drops the mark too). A
+  **table** has a bar while the cursor is in it (`TableBar.tsx`): rows and columns, and which way a column lines
+  up, set on every cell of the column (`alignColumns`), which is what Markdown's rule line says. Markdown has no
+  place for a column's width: columns size themselves, and on the full page a table too wide for the text takes
+  the page's width (`index.css`). A second line in a cell is `<br>`, the one piece of HTML that is shown as what
+  it means (`isBreak`); typed as words it is saved as `&lt;br&gt;`. A table pasted whole gets its first row as its
+  heading (`tidyPastedTables`), since a Markdown table always has one. Footnote marks are left as they came
+  (`tidyMarkdown`).
+- **Every browser writing a text together must know the same elements**: an editor drops what it doesn't know
+  from the shared document, for everyone. `EDITOR_VERSION` (the model's `api.ts`) is raised whenever the editor
+  learns one; a browser says its own when it joins a session, and the server takes in only those on the version
+  it was built with (`boards/liveDocs.ts`). A page opened before an update is refused with `reload`, and says
+  "Load the page again" where it would have opened the editor; it still reads. (A page from before there were
+  versions says none, and is refused the same way: its editor closes again.)
+- **One's cursor in a shared text** is put back by the shared document after someone else's change. The library
+  that joins the editor to it then second-guesses that, and gets it wrong when someone typed earlier in the same
+  line of a block that has something set on it (a callout's kind, a heading's size): `sharedCursor.ts` takes the
+  first answer back whenever the text the cursor was in is still in the document, and, when the block was
+  replaced by one that reads the same (made a heading, put in a callout), finds the line by its text.
 - **Rules** (`packages/model/src/rules.ts`) are what a board says about its cards, the same to everyone on it. The
   first kind is a limit ("at most 3 cards in Doing", "at most 40 h of Estimate in This week", "at most 2 cards for
   each person"). A rule is a record of the board (`BoardData.rules`, the table `board_rules`), loaded with it the

@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import type { DocMessage, DocRequest, LiveMessage } from '@kanbanto/model/api'
+import { EDITOR_VERSION, type DocMessage, type DocRequest, type LiveMessage } from '@kanbanto/model/api'
 import { applyAwarenessUpdate, Awareness, encodeAwarenessUpdate, removeAwarenessStates } from 'y-protocols/awareness'
 import * as Y from 'yjs'
 
@@ -132,6 +132,16 @@ export class LiveDocs {
   private join(boardId: string, socket: Socket, who: Writer, m: Extract<DocRequest, { op: 'join' }>) {
     const { taskId } = m
     if (!who.canWrite) return this.send(socket, { type: 'doc', op: 'refused', taskId, error: 'You can read this card, and can’t change it.' })
+    // A page opened before the app was updated (or after: this server is the older one) has an editor that knows
+    // other elements than the others'. It would drop theirs from the text they share: it isn't taken in.
+    if ((m.editor ?? 0) !== EDITOR_VERSION)
+      return this.send(socket, {
+        type: 'doc',
+        op: 'refused',
+        taskId,
+        error: 'Kanbanto has been updated since this page was opened. Load the page again to write here.',
+        reload: true,
+      })
     const s = this.sessions.get(keyOf(boardId, taskId)) ?? this.open(boardId, taskId)
     if (s.ending) clearTimeout(s.ending)
     s.ending = null

@@ -28,9 +28,8 @@ says <kbd>⌘</kbd>.)
 
 **Type `/`** on a new line, or after a space, for a menu of everything else. It has two parts: **Mention**, with
 **Card** (see [Mention a card](#mention-a-card)), and **Put in**: three sizes of heading, lists, a quote, a code
-block, a **table** and a **divider**. Keep typing to narrow it ("/tab"), and press <kbd>Enter</kbd> to choose.
-Inside a table, **Put in** offers its rows and columns instead: add a row, add a column, delete one, or delete the
-table.
+block, a **note** (see [Callouts](#callouts)), a **table** (see [Tables](#tables)) and a **divider**. Keep typing
+to narrow it ("/tab"), and press <kbd>Enter</kbd> to choose.
 
 ![Writing a description, with the menu that "/" opens](/images/description-writing.webp)
 
@@ -40,6 +39,45 @@ and `- [ ]` checklists, comes in formatted rather than as symbols.
 **Type `#` and the start of a file's name** to point to one of the card's files, and pick it from the list. (A `#`
 followed by a space makes a big heading instead, which is why the menu shows "#" beside "Big heading".) Drop or paste
 a file into the text and it is attached to the card and mentioned where your cursor is.
+
+## Callouts
+
+A callout is a box that says what kind of thing is in it: a **Note**, a **Tip**, something **Important**, a
+**Warning**, or a **Caution**. Use one for the line a reader must not miss.
+
+![A description with a warning, a tip and a note, each in a box of its own colour](/images/desc-6-callouts.webp)
+
+1. Type `/note` on a new line and press <kbd>Enter</kbd>. (Typing `/warning`, `/tip`, `/important` or `/caution`
+   starts with that kind.)
+2. Write in the box. Anything can go in it: several paragraphs, a list, a checklist.
+3. To change its kind, click its icon and choose. **Plain text** in the same menu takes the box away and keeps the
+   words.
+
+Press <kbd>Enter</kbd> twice at the end to carry on under the box.
+
+In the saved text a callout is a quote whose first line is its kind, like `> [!WARNING]`. That is how GitHub writes
+them too, so an AI assistant that writes one, or a text pasted from there, shows as a box here.
+
+## Tables
+
+Type `/table` for a table of three columns. <kbd>Tab</kbd> goes to the next cell, and from the last one adds a row.
+<kbd>Shift+Enter</kbd> starts a second line in a cell.
+
+While the cursor is in a table, a small bar sits on it:
+
+![A table being written, with its bar: add a row or a column, line a column up, delete](/images/desc-7-table.webp)
+
+| Button | What it does |
+|---|---|
+| The first four | Add a row above or below, or a column to the left or the right, of where the cursor is. |
+| The three in the middle | Line the column up left, centre or right. Numbers read best lined up right. |
+| The bin | Delete this row, this column, or the whole table. |
+
+- **Columns size themselves** to what is in them, and long text wraps. There is no dragging a column wider.
+- **On the full page**, a table too wide for the column of text takes the width of the page. In a card it stays in
+  the card and scrolls sideways when it must.
+- **Paste cells from a spreadsheet** and they come in as a table, with their first row as its heading.
+- A table always has a heading row. Delete it, and the next row becomes the heading.
 
 ## Pictures in the text
 
@@ -155,6 +193,9 @@ A board whose cards are mostly long descriptions can be a handbook. See
 - People who have the description open to write see your words as you type. People who are only reading see them
   each time it is saved.
 - Words typed into a card that someone archived or deleted a moment before are offered back the same way.
+- After Kanbanto is updated, a page that was already open may say **Load the page again** when you start writing.
+  It does so when the update changed what a description can hold: everyone writing a text has to be on the same
+  version. Nothing is lost; reading still works.
 - The `##` and `- [ ]` marks are called Markdown: a plain way of writing formatting that AI assistants read and
   write well. You never have to type them; the toolbar and the "/" menu do the same.
 

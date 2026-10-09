@@ -8,21 +8,29 @@ import { FILE_MARK } from '@/components/task/RichText'
  */
 
 /**
+ * Whether a piece of HTML in the text is nothing but line breaks written as tags ("<br>"): the one piece of HTML
+ * that is shown as what it means and not as text, since it is how a table's cell has two lines in Markdown.
+ */
+export const isBreak = (html: string) => /^(?:\s*<br\s*\/?>)+\s*$/i.test(html)
+
+/**
  * What the editor saves, tidied: no escapes a person didn't type (underscores inside words, like "📎plan_v2.pdf",
- * never start emphasis; a lone "&" needs no entity), and no blank lines around it.
+ * never start emphasis; a lone "&" needs no entity; a footnote's mark keeps its brackets), and no blank lines around
+ * it. "<br>" typed as words stays written as "&lt;br&gt;": written as the tag it would be a line break.
  */
 export function tidyMarkdown(md: string): string {
   return md
     .replace(/(?<=[\p{L}\p{N}])\\_(?=[\p{L}\p{N}])/gu, '_')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
+    .replace(/\\\[\^([^\]\s\\]+)\\\]/g, '[^$1]')
+    .replace(/&lt;br\s*\/?&gt;|&lt;|&gt;/gi, (m) => (m.length > 4 ? m : m === '&lt;' ? '<' : '>'))
     .replace(/&amp;(?![a-zA-Z0-9#]+;)/g, '&')
     .trim()
 }
 
 /**
  * Text for the editor: "<" outside code written as "&lt;", so something that looks like HTML ("<script>" in a note
- * about it) stays text instead of being read as HTML and dropped. (tidyMarkdown turns it back.)
+ * about it) stays text instead of being read as HTML and dropped. (tidyMarkdown turns it back.) A line break
+ * written as a tag ("<br>") is left: the editor reads it as the line break it is.
  */
 export function forEditor(md: string): string {
   let fenced = false
@@ -34,14 +42,15 @@ export function forEditor(md: string): string {
       // Leave `code spans` alone.
       return line
         .split(/(`+[^`]*`+)/)
-        .map((part, i) => (i % 2 ? part : part.replace(/</g, '&lt;')))
+        .map((part, i) => (i % 2 ? part : part.replace(/<(?!br\s*\/?>)/gi, '&lt;')))
         .join('')
     })
     .join('\n')
 }
 
 const FENCE = /^\s{0,3}(```|~~~)/
-const TASK = /^(\s*(?:[-*+]|\d+[.)])\s+\[)([ xX])(\])/
+// (A checklist can be inside a quote or a callout: the ">" before it.)
+const TASK = /^((?:\s*>)*\s*(?:[-*+]|\d+[.)])\s+\[)([ xX])(\])/
 
 /** Ticks or unticks the `n`th checklist item ("- [ ] …") in the text, counting in order and skipping code blocks. */
 export function toggleTask(text: string, n: number): string {

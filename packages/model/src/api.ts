@@ -969,6 +969,15 @@ export type LiveMessage =
   | DocMessage
 
 /**
+ * Which elements the editor of a description knows (the web's components/text/elements.ts): 1 since callouts.
+ * Raised whenever the editor learns one. Browsers writing a text together must all know the same ones: an editor
+ * drops what it doesn't know from the text they share, for everyone. So the server takes into a session only
+ * browsers on the version it was built with; one that was opened before an update is refused, and writes once its
+ * page has been loaded again.
+ */
+export const EDITOR_VERSION = 1
+
+/**
  * A description being written by several people at once: what the server sends a browser that has it open (see the
  * server's boards/liveDocs.ts). The text while it is written is a Yjs document; `state`, `vector`, `data` and
  * `awareness` are parts of it, as base64.
@@ -988,8 +997,11 @@ export type DocMessage =
    * ended: the card is gone (deleted, archived, moved to another board).
    */
   | { type: 'doc'; op: 'seed' | 'reset' | 'ended'; taskId: string }
-  /** It can't join (it may only read), with why. */
-  | { type: 'doc'; op: 'refused'; taskId: string; error: string }
+  /**
+   * It can't join, with why: it may only read, or (`reload`) its page was opened before the app was updated and
+   * has to be loaded again first (see EDITOR_VERSION).
+   */
+  | { type: 'doc'; op: 'refused'; taskId: string; error: string; reload?: boolean }
 
 /** What a browser sends over a board's live connection: only this, about a description it has open for writing. */
 export type DocRequest =
@@ -997,8 +1009,9 @@ export type DocRequest =
    * `session`: the session it was in before, when it is coming back after losing its connection. `client`: the id
    * its document writes under. `seeder`: it loaded the saved text into its document itself (if that never reached
    * the server and someone else has loaded it since, its document can't go on: the text would be there twice).
+   * `editor`: its EDITOR_VERSION (left out by browsers from before there was one).
    */
-  | { type: 'doc'; op: 'join'; taskId: string; session?: string; client?: number; seeder?: boolean }
+  | { type: 'doc'; op: 'join'; taskId: string; session?: string; client?: number; seeder?: boolean; editor?: number }
   | { type: 'doc'; op: 'update'; taskId: string; session: string; data: string }
   | { type: 'doc'; op: 'awareness'; taskId: string; data: string }
   | { type: 'doc'; op: 'leave'; taskId: string }

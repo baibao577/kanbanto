@@ -2786,6 +2786,64 @@ await shot('km-10-in-comments', async () => {
   return around([card.getByRole('tablist', { name: 'Comments and history' }), thread], 20)
 })
 
+// ── Callouts, and the bar on a table ────────────────────────────────────────────────────────────────
+
+/** A card of the handbook with these words as its description (made once). */
+const pages = new Map()
+const aPage = async (card, title, description) => {
+  const { id } = await theHandbook()
+  if (!pages.has(card)) {
+    await api(ann, 'POST', `/boards/${id}/mutations`, {
+      mutationId: `p${stamp}-${card}`,
+      command: { type: 'task.create', id: `${card}-${stamp}`, parentId: null, fields: { title, status: 'published', description } },
+    })
+    pages.set(card, `${card}-${stamp}`)
+  }
+  return { id, card: pages.get(card) }
+}
+await shot('desc-6-callouts', async () => {
+  const { id, card } = await aPage(
+    'oven',
+    'Fitting an oven',
+    [
+      'Lift the old unit out by its feet, not by the door.',
+      '> [!WARNING]\n> Switch the power off at the board first, and test the socket before you touch it.',
+      '> [!TIP]\n> Photograph the wiring before you disconnect anything.',
+      '> [!NOTE]\n> The fitting kit is in the grey crate, on the second shelf of the van.',
+    ].join('\n\n'),
+  )
+  await page.goto(`${SITE}/#/b/${id}/outline?task=${card}`)
+  await page.reload()
+  const dialog = page.getByRole('dialog').first()
+  await dialog.locator('.md .md-callout').nth(2).waitFor()
+  await page.waitForTimeout(600)
+  return around(
+    [dialog.getByText('Description', { exact: true }), dialog.getByRole('button', { name: 'Expand', exact: true }), dialog.locator('.md').first()],
+    28,
+  )
+})
+await shot('desc-7-table', async () => {
+  const { id, card } = await aPage(
+    'rates',
+    'What we charge',
+    'Our rates this year.\n\n| Work | Rate | Notes |\n| --- | ---: | --- |\n| Kitchen fit, per metre | $420 | Worktops not included. |\n| Rewire, per room | $650 | |\n| Bathroom, complete | $5,200 | Tiles charged by the box. |',
+  )
+  await page.goto(`${SITE}/#/b/${id}/outline?task=${card}&full=1`)
+  await page.reload()
+  await page.getByRole('button', { name: 'Edit', exact: true }).click()
+  const text = page.getByRole('textbox', { name: 'Description' })
+  await text.waitFor()
+  await page.waitForTimeout(900)
+  await text.getByText('$650').click()
+  const bar = page.getByRole('toolbar', { name: 'Table' })
+  await bar.waitFor()
+  await page.waitForTimeout(500)
+  await ring(bar)
+  return around([bar, text.locator('table')], 36)
+})
+// (The writing is finished, so the next picture starts from a text nobody is in.)
+await page.keyboard.press('Escape').catch(() => {})
+
 await browser.close()
 console.log(`made ${made.length}: ${made.join(', ')}`)
 if (failed.length) console.log(`\nnot made (${failed.length}):\n  ${failed.join('\n  ')}`)

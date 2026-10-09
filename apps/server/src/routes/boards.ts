@@ -43,6 +43,7 @@ const DocRequest = z.discriminatedUnion('op', [
     session: z.string().max(64).optional(),
     client: z.number().int().nonnegative().optional(),
     seeder: z.boolean().optional(),
+    editor: z.number().int().nonnegative().max(1_000_000).optional(),
   }),
   z.object({ type: z.literal('doc'), op: z.literal('update'), taskId: docCard, session: z.string().max(64), data: docPart }),
   z.object({ type: z.literal('doc'), op: z.literal('awareness'), taskId: docCard, data: docPart }),

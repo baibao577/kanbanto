@@ -1,4 +1,4 @@
-import type { DocMessage, DocRequest } from '@kanbanto/model/api'
+import { EDITOR_VERSION, type DocMessage, type DocRequest } from '@kanbanto/model/api'
 import { applyAwarenessUpdate, Awareness, encodeAwarenessUpdate, removeAwarenessStates } from 'y-protocols/awareness'
 import * as Y from 'yjs'
 
@@ -35,7 +35,8 @@ export interface DocLink {
 export interface LiveState {
   /**
    * joining: asked, not answered yet. live: in the session. away: the connection is gone (what is typed stays in
-   * this browser's document until it is back). refused: this person may only read. ended: the card is gone.
+   * this browser's document until it is back). refused: this person may only read, or (`reload`) this page was
+   * opened before the app was updated and has to be loaded again to write. ended: the card is gone.
    */
   status: 'joining' | 'live' | 'away' | 'refused' | 'ended'
   /** Which document this is, counted: it goes up each time this browser starts again from the session's document. */
@@ -48,6 +49,7 @@ export interface LiveState {
   /** Someone has written in the document since the saved text was loaded into it: it is to be saved. */
   touched: boolean
   error?: string
+  reload?: boolean
 }
 
 /** Where changes that came from the others are marked as theirs (so they aren't sent back). */
@@ -127,6 +129,7 @@ export class LiveDoc {
       type: 'doc',
       op: 'join',
       taskId: this.taskId,
+      editor: EDITOR_VERSION,
       ...(session && { session }),
       ...(doc && { client: doc.clientID, seeder: doc.getMap('meta').get('by') === doc.clientID }),
     })
@@ -174,7 +177,7 @@ export class LiveDoc {
         return this.set({ status: 'ended' })
       case 'refused':
         this.synced = false
-        return this.set({ status: 'refused', error: e.error })
+        return this.set({ status: 'refused', error: e.error, reload: !!e.reload })
     }
   }
 

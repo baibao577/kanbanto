@@ -1,4 +1,4 @@
-import type { DocMessage, DocRequest } from '@kanbanto/model/api'
+import { EDITOR_VERSION, type DocMessage, type DocRequest } from '@kanbanto/model/api'
 import { invertChanges } from '@kanbanto/model/changes'
 import type { WebSocket } from 'ws'
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -82,7 +82,14 @@ class Writing {
   /** Asks to join, and waits for the answer (joined, refused, or the card being gone). */
   async join() {
     const before = this.got.length
-    this.say({ type: 'doc', op: 'join', taskId: 'A', ...(this.session && { session: this.session }), client: this.doc.clientID })
+    this.say({
+      type: 'doc',
+      op: 'join',
+      taskId: 'A',
+      ...(this.session && { session: this.session }),
+      client: this.doc.clientID,
+      editor: EDITOR_VERSION,
+    })
     await this.until(() => this.got.slice(before).some((m) => m.type === 'doc' && ['joined', 'refused', 'ended'].includes(m.op)))
     return this
   }
@@ -131,7 +138,7 @@ describe('a description written by several people at once', () => {
     // A viewer can't join, and neither can anyone for a card that isn't there.
     await v.join()
     expect(v.refused).toMatch(/can’t change it/)
-    b.say({ type: 'doc', op: 'join', taskId: 'no-such-card' })
+    b.say({ type: 'doc', op: 'join', taskId: 'no-such-card', editor: EDITOR_VERSION })
     expect(await b.until(() => b.got.some((m) => m.type === 'doc' && m.op === 'ended' && m.taskId === 'no-such-card'))).toBe(true)
     // Leaving, and a connection that goes, both take a writer out.
     b.say({ type: 'doc', op: 'leave', taskId: 'A' })

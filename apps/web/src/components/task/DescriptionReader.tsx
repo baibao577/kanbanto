@@ -91,7 +91,7 @@ export function DescriptionReader({
   /** A link that opens the card with this page showing: there is a button to copy it. */
   link?: string
   /** Said above the text while reading (who is writing it at this moment). */
-  note?: string
+  note?: ReactNode
   /**
    * The text's earlier versions (see the server's boards/versions.ts): where they are read, and (`onRestore`, for
    * people who can edit) how one is brought back: the description becomes that text again, as a change like any
@@ -284,7 +284,8 @@ export function DescriptionReader({
               </ul>
             </nav>
           )}
-          <div ref={scroller} className="min-h-0 flex-1 overflow-y-auto">
+          {/* (`@container`: how wide the page is, for a table too wide for the column of text: see index.css.) */}
+          <div ref={scroller} className="@container min-h-0 flex-1 overflow-y-auto">
             <div
               ref={column}
               className="mx-auto max-w-[72ch] px-5 py-8 sm:px-8 sm:py-10"
@@ -326,7 +327,7 @@ export function DescriptionReader({
                   {old !== null && old !== value && versions?.busy && <span className="w-full text-xs text-muted-foreground">{versions.busy}</span>}
                 </div>
               )}
-              {note && !writing && !past && <p className="mb-4 text-xs text-muted-foreground">{note}</p>}
+              {note && !writing && !past && <div className="mb-4 text-xs text-muted-foreground">{note}</div>}
               <div ref={words}>
                 {writing && opening ? null : writing ? (
                   <Suspense fallback={null}>

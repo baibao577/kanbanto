@@ -22,14 +22,11 @@ import {
 } from '@phosphor-icons/react'
 import { Collaboration } from '@tiptap/extension-collaboration'
 import { CollaborationCaret } from '@tiptap/extension-collaboration-caret'
-import { TaskItem, TaskList } from '@tiptap/extension-list'
-import { TableKit } from '@tiptap/extension-table'
 import { Placeholder } from '@tiptap/extensions'
-import { Markdown } from '@tiptap/markdown'
 import { Plugin, PluginKey } from '@tiptap/pm/state'
+import { isInTable } from '@tiptap/pm/tables'
 import { Decoration, DecorationSet } from '@tiptap/pm/view'
 import { EditorContent, Extension, useEditor, useEditorState, type Editor as TiptapEditor } from '@tiptap/react'
-import StarterKit from '@tiptap/starter-kit'
 import { ySyncPluginKey } from '@tiptap/y-tiptap'
 import { useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type Ref } from 'react'
 import type { Awareness } from 'y-protocols/awareness'
@@ -41,8 +38,12 @@ import { Avatar } from '@/components/common/bits'
 import { FILE_MARK } from '@/components/task/RichText'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { cn } from '@/lib/utils'
+import { CALLOUT_KINDS, CALLOUTS } from './callouts'
 import { counted, posAt, type Place } from './caret'
+import { textElements, tidyPastedTables } from './elements'
 import { forEditor, looksLikeMarkdown, tidyMarkdown } from './mdText'
+import { SharedCursor } from './sharedCursor'
+import { TableBar } from './TableBar'
 
 type Member = { id: string; name: string; picture?: string | null }
 type Chain = ReturnType<TiptapEditor['chain']>
@@ -60,6 +61,8 @@ interface Insert {
   mention?: boolean
   /** Also offered where the menu is kept short (comments): no headings, tables or dividers there. */
   light?: boolean
+  /** Offered once something is typed that finds it (the other kinds of callout: the menu shows one). */
+  quiet?: boolean
   /** What it does at once. Without it, `step`. */
   run?: (c: Chain) => Chain
   /** It needs choosing first: picking it opens a second list (a card: found by its title or number). */
@@ -90,6 +93,11 @@ const INSERTS: Insert[] = [
   { id: 'checklist', label: 'Checklist', hint: '[ ]', words: 'todo tasks tick', light: true, icon: <CheckSquare />, run: (c) => c.toggleTaskList() },
   { id: 'quote', label: 'Quote', hint: '>', light: true, icon: <Quotes />, run: (c) => c.toggleBlockquote() },
   { id: 'code', label: 'Code block', hint: '```', light: true, icon: <CodeBlock />, run: (c) => c.toggleCodeBlock() },
+  // Callouts: a box that says what it is. One line in the menu; typing its name finds any of the five kinds.
+  ...CALLOUT_KINDS.map((kind): Insert => {
+    const { label, icon: Kind, words } = CALLOUTS[kind]
+    return { id: `callout-${kind}`, label, words, quiet: kind !== 'note', icon: <Kind />, run: (c) => c.wrapIn('callout', { kind }) }
+  }),
   { id: 'table', label: 'Table', words: 'grid rows columns', icon: <Table />, run: (c) => c.insertTable({ rows: 3, cols: 3, withHeaderRow: true }) },
   { id: 'divider', label: 'Divider', hint: '---', words: 'line rule', icon: <Minus />, run: (c) => c.setHorizontalRule() },
   { id: 'row', label: 'Add a row below', table: true, icon: <RowsPlusBottom />, run: (c) => c.addRowAfter() },
@@ -280,6 +288,7 @@ export default function Editor({
           (c.mention || !!c.table === !!query.table) &&
           (inserts !== 'light' || c.light) &&
           (c.step !== 'card' || !!cards) &&
+          (!c.quiet || !!q) &&
           `${c.label} ${c.words ?? ''}`.toLowerCase().includes(q),
       )
       // Once something is typed, what starts with it comes first ("/li" is List, whatever else has those letters),
@@ -363,25 +372,15 @@ export default function Editor({
 
   const editor = useEditor({
     extensions: [
-      StarterKit.configure({
-        heading: { levels: [1, 2, 3] },
-        underline: false,
-        link: { openOnClick: false, autolink: true, protocols: ['mailto'], defaultProtocol: 'https' },
-        // (A shared text has its own undo: it takes back what this person typed, not what the others did.)
-        ...(shared && { undoRedo: false }),
-      }),
+      ...textElements({ shared: !!shared }),
       ...(shared
         ? [
             Collaboration.configure({ document: shared.doc }),
             CollaborationCaret.configure({ provider: { awareness: shared.awareness }, user: shared.me }),
+            SharedCursor,
           ]
         : []),
-      TaskList,
-      TaskItem.configure({ nested: true }),
-      // Tables aren't made here, but ones already in the text (often from assistants) survive editing.
-      TableKit,
       Placeholder.configure({ placeholder: placeholder ?? '' }),
-      Markdown,
       ...(pictures ? [Pictures] : []),
     ],
     // (A shared text comes from its document.)
@@ -421,9 +420,15 @@ export default function Editor({
         }
         return false
       },
+      // A table pasted whole (from a spreadsheet, a web page) gets its first row as its heading. Cells pasted into a
+      // table go into it as they are.
+      transformPasted: (slice, view) => (isInTable(view.state) ? slice : tidyPastedTables(slice)),
       handlePaste: (_view, e) => {
         const pasted = [...(e.clipboardData?.files ?? [])]
-        if (live.current.onFiles && pasted.length) {
+        // (A spreadsheet puts a picture of the cells on the clipboard beside the cells themselves: the cells are
+        // what is meant, and they are pasted as a table.)
+        const cells = /<table[\s>]/i.test(e.clipboardData?.getData('text/html') ?? '')
+        if (live.current.onFiles && pasted.length && !cells) {
           void addFiles(pasted)
           return true
         }
@@ -649,6 +654,7 @@ export default function Editor({
       {editor && <Toolbar editor={editor} page={page} status={status} onExpand={onExpand && (() => onExpand(placeOf(editor)))} />}
       {/* (Written with others, there's room above the first line for a name over a cursor in it.) */}
       <EditorContent editor={editor} className={cn(!page && 'px-3 py-2', !page && shared && 'pt-5', scrollClassName)} />
+      {editor && <TableBar editor={editor} within={wrap} />}
       {query && suggestions.length > 0 && (
         <ul
           role="listbox"
@@ -863,6 +869,7 @@ function Toolbar({ editor, page, status, onExpand }: { editor: TiptapEditor; pag
   )
   const bar = (
     <div
+      data-toolbar
       className={cn('flex items-center bg-background px-1.5 py-1', page ? 'rounded-lg border shadow-xs' : 'sticky top-0 z-10 rounded-t-lg border-b')}
       onMouseDown={(e) => e.target !== e.currentTarget && e.preventDefault()}
     >

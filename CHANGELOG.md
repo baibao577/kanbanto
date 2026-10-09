@@ -5,6 +5,27 @@ then `git pull` (or download the new release) and `docker compose up -d --build`
 
 ## Unreleased
 
+- **Callouts, and a bar on tables.** A description can have a **callout**: a box that says Note, Tip, Important,
+  Warning or Caution, for the line a reader must not miss. Type `/note` (or `/warning`, `/tip`…), and click its
+  icon to change its kind. In the saved text it is a quote that starts with its kind, `> [!WARNING]`, the way
+  GitHub writes them: one an assistant writes shows as a box, and what you write shows as one there.
+
+  While the cursor is in a **table**, a small bar sits on it: add a row above or below, a column to the left or
+  the right, line a column up left, centre or right, delete the row, the column or the table. Columns size
+  themselves, and on a description's full page a table too wide for the text takes the width of the page.
+
+  Mended on the way: a second line in a table's cell (<kbd>Shift+Enter</kbd>) showed as the letters `<br>`; cells
+  pasted from a spreadsheet arrived under an empty heading row (and where the spreadsheet program also puts a
+  picture of the cells on the clipboard, the picture was attached in their place); editing a description broke its footnotes, and a callout an assistant had written;
+  with two people writing in the same heading, one's cursor was left behind when the other typed earlier in the
+  line.
+
+  After this update, a page that was open before it says **Load the page again** when you start writing a
+  description: everyone writing a text has to be on the same version of the editor. Nothing is lost, and reading
+  is as it was. For apps and assistants nothing changes: a description is Markdown, as before.
+
+  The guides: **Callouts** and **Tables** on the page about writing a description.
+
 - **Comment on the words of a description.** Open a description full page (**Expand**), select some words,
   while you read it or while you write it, and click **Comment**. The words are marked in the text and the
   comment sits beside it. Others **Reply** under it,
