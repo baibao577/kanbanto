@@ -65,7 +65,9 @@ Drag the card to **In review**. If the board has a rule on that list, the review
 
 ## Good to know
 
-- Your writing is saved when you finish, and kept as a draft in this browser until then.
+- Your writing is saved as you write, every few seconds. Someone else can open the same article and write with
+  you: see [write together](/knowledge/together).
+- An article keeps its earlier versions. **Expand**, then **Versions**.
 - A reader can tick a checklist item without editing the article. Use that for checklists people work through,
   and plain bullet points for ones they only read.
 - An assistant connected to Kanbanto can draft an article from your notes, and can read every article when you

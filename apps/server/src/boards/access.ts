@@ -1,7 +1,7 @@
 import { and, eq, sql } from 'drizzle-orm'
 import type { SessionUser } from '../auth/sessions'
 import type { Db, Tx } from '../db'
-import { boardMembers, boards, workspaceMembers, type Role, type WorkspaceRole } from '../db/schema'
+import { boardMembers, boards, users, workspaceMembers, type Role, type WorkspaceRole } from '../db/schema'
 import { HttpError } from '../http'
 
 export type BoardRow = typeof boards.$inferSelect
@@ -56,6 +56,19 @@ export async function workspaceRole(tx: Db | Tx, workspaceId: string | null, use
 export async function accessOf(tx: Db | Tx, board: BoardRow, userId: string | undefined): Promise<Access | null> {
   const inWorkspace = board.visibility === 'workspace' && !!(await workspaceRole(tx, board.workspaceId, userId))
   return accessFor(board, await memberRole(tx, board.id, userId), inWorkspace)
+}
+
+/**
+ * Whether a person may change this board's cards as things are now: an editor or an owner of a board that isn't
+ * archived, whose account is on. (Asked outside a request: by a live connection that has been open a while.)
+ */
+export async function mayEdit(tx: Db | Tx, boardId: string, userId: string): Promise<boolean> {
+  const [board] = await tx.select().from(boards).where(eq(boards.id, boardId))
+  if (!board || board.archivedAt) return false
+  const [u] = await tx.select({ disabledAt: users.disabledAt }).from(users).where(eq(users.id, userId))
+  if (!u || u.disabledAt) return false
+  const access = await accessOf(tx, board, userId)
+  return !!access && access.via !== 'public' && atLeast(access.role, 'editor')
 }
 
 /**

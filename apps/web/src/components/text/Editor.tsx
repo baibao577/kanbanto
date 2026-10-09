@@ -20,6 +20,8 @@ import {
   TextItalic,
   Trash,
 } from '@phosphor-icons/react'
+import { Collaboration } from '@tiptap/extension-collaboration'
+import { CollaborationCaret } from '@tiptap/extension-collaboration-caret'
 import { TaskItem, TaskList } from '@tiptap/extension-list'
 import { TableKit } from '@tiptap/extension-table'
 import { Placeholder } from '@tiptap/extensions'
@@ -28,9 +30,13 @@ import { Plugin, PluginKey } from '@tiptap/pm/state'
 import { Decoration, DecorationSet } from '@tiptap/pm/view'
 import { EditorContent, Extension, useEditor, useEditorState, type Editor as TiptapEditor } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
+import { ySyncPluginKey } from '@tiptap/y-tiptap'
 import { useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type Ref } from 'react'
+import type { Awareness } from 'y-protocols/awareness'
+import type { Doc as SharedDoc } from 'yjs'
 import type { AttachmentView } from '@kanbanto/model/api'
 import type { CardPick, CardSource } from '@/app/card-refs'
+import { isSeeded, markTouched, seedWith } from '@/data/liveDoc'
 import { Avatar } from '@/components/common/bits'
 import { FILE_MARK } from '@/components/task/RichText'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
@@ -152,10 +158,32 @@ export interface EditorHandle {
   toHeading: (n: number) => void
 }
 
+/**
+ * A text several people write at once (see data/liveDoc.ts): the document they share, where everyone's cursors are
+ * told, and how this person's own shows to the others. `seed`: this browser is the one to load the text into the
+ * document, once, for everyone (`touched`: it isn't the saved text, so it is to be saved); null: someone else does,
+ * or did.
+ */
+export interface Shared {
+  doc: SharedDoc
+  awareness: Awareness
+  me: { name: string; color: string }
+  seed: { text: string; touched?: boolean } | null
+}
+
 export interface EditorProps {
-  /** Markdown. Read once when the editor opens (it then keeps its own copy). */
+  /** Markdown. Read once when the editor opens (it then keeps its own copy). Not read with `shared`. */
   value: string
-  onChange: (markdown: string) => void
+  /**
+   * The text changed. `from`, with `shared`: local, typed here; theirs, typed by someone else (told a moment after
+   * they stop), or the text being loaded.
+   */
+  onChange: (markdown: string, from?: 'local' | 'theirs') => void
+  /**
+   * The text is a document shared with the other people writing it: what each types shows for all, where they are.
+   * Until the text is in it (a moment, for whoever opens it first), nothing can be typed.
+   */
+  shared?: Shared
   onBlur?: () => void
   /** ⌘/Ctrl+Enter. */
   onSubmit?: () => void
@@ -212,6 +240,7 @@ export interface EditorProps {
 export default function Editor({
   value,
   onChange,
+  shared,
   onBlur,
   onSubmit,
   onEscape,
@@ -273,10 +302,64 @@ export default function Editor({
   const grouped = useMemo(() => !query?.q && new Set(suggestions.map(groupOf)).size > 1, [suggestions, query?.q])
 
   // The latest props and state, for ProseMirror's handlers (set up once).
-  const live = useRef({ suggestions, active, query, onSubmit, onEscape, onSave, onFiles, onMention, onChange, onBlur, members, files, inserts })
-  useLayoutEffect(() => {
-    live.current = { suggestions, active, query, onSubmit, onEscape, onSave, onFiles, onMention, onChange, onBlur, members, files, inserts }
+  const live = useRef({
+    suggestions,
+    active,
+    query,
+    onSubmit,
+    onEscape,
+    onSave,
+    onFiles,
+    onMention,
+    onChange,
+    onBlur,
+    members,
+    files,
+    inserts,
+    shared,
   })
+  useLayoutEffect(() => {
+    live.current = { suggestions, active, query, onSubmit, onEscape, onSave, onFiles, onMention, onChange, onBlur, members, files, inserts, shared }
+  })
+  /** This editor is on the page (see `onBlur`). */
+  const onPage = useRef(true)
+  useLayoutEffect(() => {
+    onPage.current = true
+    return () => {
+      onPage.current = false
+    }
+  }, [])
+  /** A shared text can be written in once it is in the document. */
+  const [ready, setReady] = useState(() => !shared || isSeeded(shared.doc))
+  /** The text is being loaded into the shared document just now (which isn't someone typing). */
+  const seeding = useRef(false)
+  /** Reads what the others typed, a moment after they stop. */
+  const theirs = useRef<ReturnType<typeof setTimeout>>(undefined)
+  /**
+   * Says what a shared text reads like now, after a change that wasn't typed here. A moment after the changes stop:
+   * with five people typing, it would otherwise be read at every key of each.
+   */
+  const told = (ed: TiptapEditor) => {
+    clearTimeout(theirs.current)
+    theirs.current = setTimeout(() => !ed.isDestroyed && live.current.onChange(tidyMarkdown(ed.getMarkdown()), 'theirs'), 250)
+  }
+  /** Loads the text into the shared document, when this browser is the one to (see liveDoc.ts: `seedWith`). */
+  const seed = (ed: TiptapEditor) => {
+    const s = live.current.shared
+    if (!s?.seed || isSeeded(s.doc) || ed.isDestroyed) return
+    const { text, touched } = s.seed
+    seeding.current = true
+    try {
+      const done = seedWith(
+        s.doc,
+        () => text.trim() && ed.commands.setContent(forEditor(text), { contentType: 'markdown' }),
+        () => s.doc.getXmlFragment('default').length > 0 || ed.isEmpty,
+      )
+      if (done && touched) markTouched(s.doc)
+    } finally {
+      seeding.current = false
+    }
+  }
 
   const editor = useEditor({
     extensions: [
@@ -284,7 +367,15 @@ export default function Editor({
         heading: { levels: [1, 2, 3] },
         underline: false,
         link: { openOnClick: false, autolink: true, protocols: ['mailto'], defaultProtocol: 'https' },
+        // (A shared text has its own undo: it takes back what this person typed, not what the others did.)
+        ...(shared && { undoRedo: false }),
       }),
+      ...(shared
+        ? [
+            Collaboration.configure({ document: shared.doc }),
+            CollaborationCaret.configure({ provider: { awareness: shared.awareness }, user: shared.me }),
+          ]
+        : []),
       TaskList,
       TaskItem.configure({ nested: true }),
       // Tables aren't made here, but ones already in the text (often from assistants) survive editing.
@@ -293,10 +384,14 @@ export default function Editor({
       Markdown,
       ...(pictures ? [Pictures] : []),
     ],
-    content: forEditor(value),
-    contentType: 'markdown',
+    // (A shared text comes from its document.)
+    ...(shared ? {} : { content: forEditor(value), contentType: 'markdown' as const }),
+    editable: ready,
     autofocus: autoFocus && caret === undefined ? 'end' : false,
     onCreate: ({ editor }) => {
+      seed(editor)
+      // (A shared text is told as it stands when the editor opens: it didn't come from here.)
+      if (live.current.shared) told(editor)
       if (!autoFocus || caret === undefined) return
       // (Once it's on the page: the place is found in the text, then scrolled to.)
       requestAnimationFrame(() => !editor.isDestroyed && editor.commands.focus(posAt(editor.state.doc, caret) ?? 'end'))
@@ -351,12 +446,23 @@ export default function Editor({
         return true
       },
     },
-    onUpdate: ({ editor }) => {
-      live.current.onChange(tidyMarkdown(editor.getMarkdown()))
+    onUpdate: ({ editor, transaction }) => {
+      const s = live.current.shared
+      clearTimeout(theirs.current)
+      // In a shared text: typed by someone else (their keys arrive as changes of the document), or the text being
+      // loaded. Taking back one's own typing comes the same way, and is one's own.
+      const sync = s && (transaction.getMeta(ySyncPluginKey) as { isUndoRedoOperation?: boolean } | undefined)
+      if (s && (seeding.current || (sync && !sync.isUndoRedoOperation))) told(editor)
+      else {
+        if (s) markTouched(s.doc)
+        live.current.onChange(tidyMarkdown(editor.getMarkdown()), 'local')
+      }
       track(editor)
     },
     onSelectionUpdate: ({ editor }) => track(editor),
     onBlur: ({ event }) => {
+      // (An editor that has been taken off the page loses the cursor too, to the one put in its place: nobody left it.)
+      if (!onPage.current) return
       setTimeout(() => setQuery(null), 150)
       // Typing a link's address (in its little box), or finding a card to mention, isn't leaving the editor.
       const to = event.relatedTarget as HTMLElement | null
@@ -368,6 +474,30 @@ export default function Editor({
   useLayoutEffect(() => {
     editorRef.current = editor
   }, [editor])
+  // A shared text: asked to load it after the editor was made (whoever was asked first left), it is loaded now; and
+  // the moment it is in, by whoever loaded it, it can be written in.
+  const seedText = shared?.seed?.text
+  useEffect(() => {
+    if (editor?.isInitialized && seedText !== undefined) seed(editor)
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `seed` reads the latest props itself
+  }, [editor, seedText])
+  const doc = shared?.doc
+  useEffect(() => {
+    if (!doc) return
+    const meta = doc.getMap('meta')
+    const check = () => setReady(isSeeded(doc))
+    check()
+    meta.observe(check)
+    return () => meta.unobserve(check)
+  }, [doc])
+  const waited = useRef(!ready)
+  useEffect(() => {
+    if (!editor || editor.isDestroyed || editor.isEditable === ready) return
+    editor.setEditable(ready)
+    // (It was waiting for its text: the cursor goes in now.)
+    if (ready && waited.current && autoFocus) editor.commands.focus('end')
+  }, [editor, ready, autoFocus])
+  useEffect(() => () => clearTimeout(theirs.current), [])
   // The card's files changed (one was attached just now, or removed): the pictures drawn in the text are looked at
   // again. (A change of nothing: the text isn't touched.)
   useEffect(() => {
@@ -517,7 +647,8 @@ export default function Editor({
   return (
     <div ref={wrap} className={cn('relative', !page && 'rounded-lg border bg-background focus-within:ring-2 focus-within:ring-ring/30')}>
       {editor && <Toolbar editor={editor} page={page} status={status} onExpand={onExpand && (() => onExpand(placeOf(editor)))} />}
-      <EditorContent editor={editor} className={cn(!page && 'px-3 py-2', scrollClassName)} />
+      {/* (Written with others, there's room above the first line for a name over a cursor in it.) */}
+      <EditorContent editor={editor} className={cn(!page && 'px-3 py-2', !page && shared && 'pt-5', scrollClassName)} />
       {query && suggestions.length > 0 && (
         <ul
           role="listbox"

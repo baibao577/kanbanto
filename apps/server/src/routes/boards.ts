@@ -12,7 +12,7 @@ import { newId } from '@kanbanto/model/ids'
 import { and, desc, eq, inArray, sql } from 'drizzle-orm'
 import type { FastifyPluginAsync } from 'fastify'
 import { z } from 'zod'
-import { accessFor, accessOf, requireAccess, type BoardRow } from '../boards/access'
+import { accessFor, accessOf, mayEdit, requireAccess, type BoardRow } from '../boards/access'
 import { parseMoment, readActivity, readTaskActivity } from '../boards/activityLog'
 import { notOnInbox } from '../boards/inbox'
 import { setBoardCode } from '../boards/numbering'
@@ -30,6 +30,23 @@ import { requireUser } from './auth'
 import { commentCounts, lastComments } from './comments'
 import { attachmentCounts, deleteBoardFiles } from './files'
 import { timeCounts } from './time'
+
+/** What a browser sends over a board's live connection (`DocRequest` in the model's api.ts). */
+const docPart = z.string().max(1_400_000)
+const docCard = z.string().min(1).max(64)
+const DocRequest = z.discriminatedUnion('op', [
+  z.object({
+    type: z.literal('doc'),
+    op: z.literal('join'),
+    taskId: docCard,
+    session: z.string().max(64).optional(),
+    client: z.number().int().nonnegative().optional(),
+    seeder: z.boolean().optional(),
+  }),
+  z.object({ type: z.literal('doc'), op: z.literal('update'), taskId: docCard, session: z.string().max(64), data: docPart }),
+  z.object({ type: z.literal('doc'), op: z.literal('awareness'), taskId: docCard, data: docPart }),
+  z.object({ type: z.literal('doc'), op: z.literal('leave'), taskId: docCard }),
+])
 
 const background = z
   .string()
@@ -422,6 +439,8 @@ export const boardRoutes: FastifyPluginAsync = async (app) => {
       // Everyone with it open sees it change (read-only, or back to normal).
       await app.engine.touch(id)
       app.hub.broadcast(id, { type: 'reload' })
+      // (Nobody goes on writing a description on a board that is put away.)
+      if (archived) await app.docs.recheck(id, async () => false)
     }
     return { ok: true }
   })
@@ -574,13 +593,47 @@ export const boardRoutes: FastifyPluginAsync = async (app) => {
     // (It may have closed while that was being looked up: then there's nothing to join.)
     if (socket.readyState !== socket.OPEN) return
     const leave = app.hub.join(id, socket, user?.id ?? null, req.sessionToken, access.via !== 'public')
-    // Keeps the connection open through proxies that close idle ones.
-    const ping = setInterval(() => socket.ping(), 25_000)
+    // Keeps the connection open through proxies that close idle ones, and closes one whose browser has gone without
+    // saying so (a laptop put to sleep): it would go on counting as someone writing a description.
+    let alive = true
+    socket.on('pong', () => (alive = true))
+    const ping = setInterval(() => {
+      if (!alive) return socket.terminate()
+      alive = false
+      socket.ping()
+    }, 25_000)
     socket.on('close', () => {
       clearInterval(ping)
       leave()
+      app.docs.leaveAll(socket)
     })
+    // The one thing a browser says over this connection: about a description it is writing with others (see
+    // boards/liveDocs.ts). One message at a time, in the order they came: joining looks things up first, and what
+    // follows it (leaving again, say) mustn't overtake it.
+    if (user && access.via !== 'public') {
+      const who = { userId: user.id, name: user.name }
+      let turn = Promise.resolve()
+      socket.on('message', (raw) => {
+        turn = turn
+          .then(async () => {
+            const said = DocRequest.safeParse(JSON.parse(String(raw)))
+            if (!said.success) return
+            const m = said.data
+            if (m.op !== 'join') return app.docs.handle(id, socket, { ...who, canWrite: true }, m)
+            // Joining is checked each time against the board as it is now: rights change, and cards go.
+            const canWrite = await mayEdit(app.db, id, user.id)
+            const { data } = await app.engine.snapshot(id)
+            if (!data.tasks[m.taskId]) return app.hub.send(socket, { type: 'doc', op: 'ended', taskId: m.taskId })
+            if (socket.readyState === socket.OPEN) app.docs.handle(id, socket, { ...who, canWrite }, m)
+          })
+          .catch(() => {
+            // (Not something this connection understands: left unanswered.)
+          })
+      })
+    }
     const [now] = await app.db.select({ seq: boards.seq }).from(boards).where(eq(boards.id, id))
     app.hub.send(socket, { type: 'hello', seq: now?.seq ?? 0 })
+    // Who is writing which description at this moment (the board's people see it on the card).
+    if (access.via !== 'public') for (const w of app.docs.writing(id)) app.hub.send(socket, { type: 'writing', ...w })
   })
 }

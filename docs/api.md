@@ -36,6 +36,11 @@ curl -X POST https://kanbanto.example.com/api/boards/<board id>/mutations \
 - `mutationId` is any unique string you choose. Sending the same one again returns the first answer, so retrying is safe.
 - The answer lists the records that changed (`changes`: each with `before` and `after`).
 - A refused command answers 422 with the reason (for example, moving a task inside its own subtask).
+- A task's description can be open in the app with several people writing it at once. While they write, a command
+  that would change that description is refused (422, `code: "being-written"`), and the reason names who is
+  writing: their next save would write over yours unseen. Everything else about the task can be changed as ever.
+  Try again later: once nobody has typed for two minutes it goes through, and the people who still have it open
+  carry on from your text. (`task.update` has a `session` field: it is the app's own, for saving such writing.)
 - `/api/docs` lists every command and its fields: `task.create`, `task.update`, `task.move`, `tasks.moveToList`,
   `task.archive`, `tasks.archiveDone`, `task.restore`, `task.delete`, `tasks.import` (many cards in one change:
   see "Many cards at once" below), `tasks.update` (several tasks changed in one change:
@@ -340,6 +345,12 @@ days too, and its comments aren't in it. Files attached, removed and restored ar
 and removed. Page with `until` and `nextUntil` as above. A line logged before 0.2 names the task, as the board's
 activity does.
 
+`GET /api/boards/<id>/tasks/<taskId>/versions` lists the earlier versions of a task's description, newest first:
+`versions`, each with `id`, `at`, `by`, `via` and `length`. `…/versions/<version id>` gives one with its `text`.
+A version is kept each time the description changes, whoever or whatever changed it; one person's saves within ten
+minutes are one version, and a task keeps its newest 100. To bring one back, send its text as the description
+with `task.update`. Not for visitors with the public link.
+
 **Dates.** A task's `start` and `due` are a whole day, `2026-10-15`, or with a time an exact moment in UTC,
 `2026-10-15T07:30:00Z`, which the app shows in each person's own time zone. Send a time with its time zone
 (`2026-10-15T14:30:00+07:00` or `…Z`); it's stored in UTC, to the minute. A time without a time zone is refused, since it
@@ -401,6 +412,10 @@ Where webhooks may point is the platform admins' choice: public `https://` addre
 sign up to), or also `http://` and private addresses (for tools inside your network, like a self-hosted n8n). Redirects
 are never followed.
 
+
+A description being written in the app is saved every few seconds while the writing goes on. A webhook gets that
+as one `board.changed`, a minute after the writing pauses (at the latest every five minutes while it goes on): the
+task before the first of those saves and after the last, with the last one's `seq`.
 
 Each webhook can be set to send only some events (`events`: `board.changed`, `comment.added`, `reminder.due`; all by
 default). Its log (`GET /api/boards/<id>/webhooks/<webhook id>/deliveries`, `?failed=1` for problems only) shows each

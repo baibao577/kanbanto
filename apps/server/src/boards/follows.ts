@@ -144,7 +144,7 @@ interface News {
  * What a change did to cards, as their followers hear it: moved to another list, assigned, due date, description,
  * archived or deleted. The rest (order, labels, priority, reminders, a new name) isn't news.
  */
-function newsIn(data: BoardData, changes: Change[], mentioned: Map<string, string[]>): News[] {
+function newsIn(data: BoardData, changes: Change[], mentioned: Map<string, string[]>, again = false): News[] {
   const list = (id: string) => data.columns.find((c) => c.id === id)?.name ?? 'another list'
   const person = (id: string) => data.members.find((m) => m.id === id)?.name ?? 'someone'
   const out: News[] = []
@@ -176,7 +176,8 @@ function newsIn(data: BoardData, changes: Change[], mentioned: Map<string, strin
         say: (t) => (!due ? `cleared the due date of ${t}` : due.length === 10 ? `set ${t} due ${dayWords(due)}` : `changed when ${t} is due`),
       })
     }
-    if ((a.description ?? '') !== (b.description ?? ''))
+    // (`again`: a description being written together, saved once more: its followers heard of it at the first save.)
+    if ((a.description ?? '') !== (b.description ?? '') && !again)
       out.push({ ...about, say: (t) => `edited the description of ${t}`, except: mentioned.get(b.id) })
   }
   return out
@@ -262,7 +263,7 @@ async function afterImport(app: FastifyInstance, boardId: string, e: { userId: s
 export async function afterBoardChange(
   app: FastifyInstance,
   boardId: string,
-  e: { userId: string; command: string; changes: Change[]; data: BoardData },
+  e: { userId: string; command: string; changes: Change[]; data: BoardData; again?: boolean },
   told?: Map<string, Set<string>>,
 ) {
   const { data, changes, userId: actorId } = e
@@ -285,7 +286,7 @@ export async function afterBoardChange(
     const fresh = mentionedIn(b.description, data.members).filter((id) => id !== actorId && !before.has(id))
     if (fresh.length) mentioned.set(b.id, fresh)
   }
-  const news = newsIn(data, changes, mentioned)
+  const news = newsIn(data, changes, mentioned, e.again)
   // A card that was just made has no one to tell yet, except whoever it was given to.
   for (const c of changes)
     if (c.entity === 'task' && !c.before && c.after?.assigneeId && !undo)

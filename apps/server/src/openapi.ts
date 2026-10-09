@@ -970,6 +970,60 @@ The answer lists the records that changed.
           },
         },
       },
+      '/api/boards/{id}/tasks/{taskId}/versions': {
+        get: {
+          tags: ['Boards'],
+          summary: 'Earlier versions of a task’s description',
+          description:
+            'Newest first: each time the description was changed, the text it became, with when and by whom. A person’s saves within ten minutes are one version (the last of them), and a task keeps its newest 100. The text itself comes from `…/versions/{versionId}`. To bring one back, set the description to that text with `task.update`.',
+          parameters: [id('id'), id('taskId')],
+          responses: {
+            200: json(
+              obj({
+                versions: {
+                  type: 'array',
+                  items: obj(
+                    {
+                      id: str,
+                      at: { ...str, format: 'date-time' },
+                      by: {
+                        ...nullable(obj({ id: str, name: str, picture: nullable(str) })),
+                        description: 'Who saved it. Null: their account is gone, or it is the text there was before versions were kept.',
+                      },
+                      via: { ...nullable(str), description: 'The app it was saved through ("Claude", "API"); null: the website.' },
+                      length: { type: 'integer', description: 'How long the text is, in characters.' },
+                    },
+                    ['id', 'at', 'by', 'via', 'length'],
+                  ),
+                },
+              }),
+            ),
+            403: json(ref('Error'), 'Visitors with the public link don’t see earlier versions'),
+          },
+        },
+      },
+      '/api/boards/{id}/tasks/{taskId}/versions/{versionId}': {
+        get: {
+          tags: ['Boards'],
+          summary: 'One earlier version, with its text',
+          parameters: [id('id'), id('taskId'), id('versionId')],
+          responses: {
+            200: json(
+              obj({
+                version: obj({
+                  id: str,
+                  at: { ...str, format: 'date-time' },
+                  by: nullable(obj({ id: str, name: str, picture: nullable(str) })),
+                  via: nullable(str),
+                  length: { type: 'integer' },
+                  text: { ...str, description: 'The description as it was, in Markdown.' },
+                }),
+              }),
+            ),
+            404: json(ref('Error'), 'That version is no longer kept'),
+          },
+        },
+      },
       '/api/boards/{id}/tasks/{taskId}/comments': {
         get: {
           tags: ['Comments'],

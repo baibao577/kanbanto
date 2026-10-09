@@ -63,10 +63,15 @@ apps/server/      Fastify + Drizzle + PostgreSQL
   src/pages.ts      The site's own pages (PAGES_DIR: a privacy policy, terms…) and the links under the sign-in form
   src/crypto.ts     AES-256-GCM for stored secrets; the master key (ENCRYPTION_KEY or the key file)
   src/live.ts       WebSocket fan-out per board
+  src/boards/liveDocs.ts   Descriptions being written by several people at once: the shared document of each, while
+                    someone has it open (see "A description written together")
+  src/boards/versions.ts   Earlier versions of a description, kept at each change
   src/cli.ts        Server commands (admin grant/revoke/list, user password, key, secret)
 
 apps/web/         React + Vite + Tailwind + shadcn/ui, Phosphor icons
   src/data/sync.ts  BoardSync: keeps an open board in step with the server
+  src/data/liveDoc.ts   One browser's part in a description written together (a Yjs document over the board's
+                    live connection)
   src/data/planSync.ts   PlanSync: the same for a workspace's plan (checked for changes now and then; no socket)
   src/components/planning/   The Planning tab: planLayout.ts (rows, time axis), PlanSheet.tsx (the timeline and its
                     gestures), dialogs, pickers
@@ -94,7 +99,9 @@ UI ─run(command)─▶ BoardSync: execute() here ─▶ shown at once (optimis
   the app says why.
 - **`seq`** numbers every change to a board. A client that sees a gap (or reconnects behind) fetches the board again.
 - **Undo/redo** is an ordinary command (`records.restore`) that says what each record should go back to *and* what
-  it should be now. If someone else changed it since, the undo is refused rather than overwriting their edit.
+  it should be now. If someone else changed it since, the undo is refused rather than overwriting their edit. A
+  card's description is put back only by undoing a change that changed it (`invertChanges`): undoing an older
+  change to its list or its date leaves the text as it is now.
 - **Retries are safe:** the same `mutationId` gets the first answer back instead of running twice.
 - **The activity log** (`board_activity`): with each change the server writes what it did, in words
   (`describeAllChanges` in the model: "moved “Deploy” to Done"), with who made it and through which app, kept 180
@@ -454,6 +461,42 @@ The app uses hash routing, so any static host or proxy works without rewrite rul
   put there in place when the page opens and taken out when it closes, so a link leads to a card as a page to
   read. A knowledge base is a board used that way, with no kind of its own: the guides' "A knowledge base" group
   says how.
+- **A description written together.** The description stays what it is: Markdown on the card, changed by
+  `task.update`. While it is open for writing, its text lives in a shared document (Yjs, bound to the editor with
+  TipTap's collaboration extensions: `Editor`'s `shared`) that every browser writing it holds a copy of. Keys travel
+  over the board's live connection, which a browser now also speaks on (`DocRequest`, `DocMessage` in the model's
+  `api.ts`: JSON, with the document's parts as base64), through the server (`boards/liveDocs.ts`), which keeps the
+  document while someone has it open so that a later joiner gets it whole. Nothing of a session is stored: when
+  the last browser has been gone two minutes it is over. What the server sees to:
+  - *The saved text goes in once.* The first browser in is asked to load it (`seed`; `seedWith` writes the text
+    and the mark that says it is in as one change); nobody can type until it is there. Loaded twice, every line
+    would be there twice.
+  - *Two documents with different pasts are never put together.* A browser coming back says which session it was
+    in; if that one is over (everyone left, or the server started again), it gets the document of the session
+    there is now and drops its own (`same`). What it had typed and not saved is carried into the new one when it
+    is the one to load the text and nobody saved meanwhile; otherwise it is kept as a draft to copy from
+    (`Description.tsx`: `brought`).
+  - *Saving.* The browser of whoever typed saves the Markdown a few seconds after they stop (`task.update` with
+    `session`), and any browser saves a text that has stood unsaved a while (its writer's browser went first). One
+    save can so hold several people's words: the server notes who wrote in the document since the last one
+    (`took`), and the activity line, once in ten minutes each, is every writer's.
+  - *Nothing else changes it meanwhile.* A command that would change a description people are writing is refused
+    (422 `being-written`, in the engine, whatever the command: an update, a bulk update, an undo), and so is a
+    save from a session that is over. When nobody has typed for two minutes the change goes through, and the
+    browsers still in the text start again from it (`restart`).
+  - *Who may write.* Joining is checked against the board as it is at that moment; a change to its people puts out
+    whoever may no longer edit (`recheck`). A card that is archived, deleted or moved ends its session.
+  Saves this frequent are kept quiet: followers are told once a sitting, webhooks get them as one change after
+  the writing pauses (`boards/heldSaves.ts`), and they aren't steps in the board's Undo (the editor has its own,
+  which takes back only one's own typing). A connection the browser says is offline is let go at once
+  (`BoardSync.watchNetwork`), since typing into one that is open in name only would go nowhere unnoticed. With no
+  connection when it is opened, a description is written by one person and saved when they finish, as before.
+- **Earlier versions of a description** (`description_versions`, `boards/versions.ts`). Each time a command changes
+  a description, the new text is kept as a version by whoever made the change, through whatever app; the first
+  time, the text there was is kept too. A person's saves within ten minutes of the first of them are one version
+  (the last), so writing saved every few seconds doesn't fill the list, and a card keeps its newest 100. They move
+  with a card to another board. `GET /api/boards/:id/tasks/:taskId/versions` lists them for the board's people;
+  the full page shows them (**Versions**) and brings one back with an ordinary `task.update`.
 - **Several cards changed at once** (`model/bulk.ts`, `components/select/`). A view keeps which cards are ticked
   (`useSelection`: the person's own, forgotten with the view; a card that leaves the board leaves it for good, so
   an undo doesn't bring it back ticked) and shows `SelectionBar`, which floats at the foot of the view. Every
@@ -596,8 +639,8 @@ The app uses hash routing, so any static host or proxy works without rewrite rul
 
 ## Scaling
 
-Kanbanto runs as **one server instance**. Live updates, the board cache and the sign-in failure counts live in that
-process's memory, so two instances would not see each other's changes live. For personal and team use, one instance
+Kanbanto runs as **one server instance**. Live updates, descriptions being written together, the board cache and
+the sign-in failure counts live in that process's memory, so two instances would not see each other's changes live. For personal and team use, one instance
 (about 1 GB of memory) with PostgreSQL next to it is the intended setup. The board cache is bounded (200 boards, and
 200,000 records in all), so large boards don't grow memory without limit. Long lists aren't virtualized: each list
 shows 100 cards at a time, with "show more".

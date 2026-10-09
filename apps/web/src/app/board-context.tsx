@@ -5,6 +5,7 @@ import type { Change } from '@kanbanto/model/records'
 import type { PrefsAction, ViewPrefs } from '@kanbanto/model/prefs'
 import type { BoardAccess, TaskCounts } from '@kanbanto/model/api'
 import type { CardTemplate } from '@kanbanto/model/templates'
+import type { DocLink } from '@/data/liveDoc'
 import type { LinkStore } from '@/data/links'
 import type { TaskActivity } from '@/data/sync'
 import type { BoardData } from '@kanbanto/model/types'
@@ -40,6 +41,17 @@ export interface BoardContextValue {
   canComment: boolean
   /** Listen for comments and files changing (live). Returns a function that stops listening. */
   onActivity: (listener: (m: TaskActivity) => void) => () => void
+  /**
+   * Writing a description with other people at once (see data/liveDoc.ts). Missing where a card isn't shown from a
+   * board that is open live: a description is then written by one person at a time, as it always was.
+   */
+  writing?: {
+    link: DocLink
+    /** Who is writing which card's description at this moment. */
+    writers: Record<string, { id: string; name: string }[]>
+    /** Saves a description as its writing goes, for the session it is written in. No step in Undo, nothing said. */
+    save: (taskId: string, description: string, session: string) => boolean
+  }
   /** Open the task detail dialog. */
   openTask: (id: string) => void
   /** Asks where to move a task (with its subtasks) on another board. */

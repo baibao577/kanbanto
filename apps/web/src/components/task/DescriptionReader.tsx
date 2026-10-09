@@ -1,16 +1,18 @@
-import { Check, LinkSimple, PencilSimple } from '@phosphor-icons/react'
-import { lazy, Suspense, useMemo, useRef } from 'react'
+import { ArrowCounterClockwise, Check, ClockCounterClockwise, LinkSimple, PencilSimple } from '@phosphor-icons/react'
+import { lazy, Suspense, useMemo, useRef, useState, type ReactNode } from 'react'
+import type { DescriptionVersion } from '@kanbanto/model/api'
+import { api } from '@/api/client'
+import { formatMoment } from '@/lib/format'
 import type { CardRefs, CardSource } from '@/app/card-refs'
 import type { CardFiles } from '@/data/cardFiles'
 import { placeAtPoint, type Place } from '@/components/text/caret'
-import type { EditorHandle } from '@/components/text/Editor'
+import type { EditorHandle, Shared } from '@/components/text/Editor'
 import { Markdown } from '@/components/text/Markdown'
 import { countWords, headingsOf } from '@/components/text/mdText'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
 import { copyText } from '@/lib/copy'
 import { cn } from '@/lib/utils'
-import { SaveSign } from './SaveSign'
 
 const Editor = lazy(() => import('@/components/text/Editor'))
 
@@ -32,8 +34,11 @@ export function DescriptionReader({
   people,
   writing,
   start,
+  shared,
+  opening,
+  editorKey,
   typing,
-  dirty,
+  status,
   onTyped,
   onSave,
   onFinish,
@@ -41,6 +46,8 @@ export function DescriptionReader({
   onTick,
   onClose,
   link,
+  note,
+  versions,
 }: {
   title: string
   /** The saved text (what's read). */
@@ -54,10 +61,19 @@ export function DescriptionReader({
   writing: boolean
   /** What the editor opens with: the text, and where the cursor goes. */
   start: { text: string; caret?: Place }
+  /**
+   * The text is written with other people at once (see Description, and the editor's `shared`). `opening`: joining
+   * them hasn't been answered yet (a moment). `editorKey`: which shared document it is (the editor starts again with
+   * another).
+   */
+  shared?: Shared
+  opening?: boolean
+  editorKey?: string | number
   /** What's being typed, a moment behind the keys (for the Contents and the word count). */
   typing: string
-  dirty: boolean
-  onTyped: (markdown: string) => void
+  /** Shown while writing, beside the word count: whether it's saved, and who else is writing. */
+  status: ReactNode
+  onTyped: (markdown: string, from?: 'local' | 'theirs') => void
   onSave: () => void
   onFinish: () => void
   /** Start writing, the cursor at this place in the text (see caret.ts); left out: at the end. */
@@ -66,16 +82,46 @@ export function DescriptionReader({
   onClose: () => void
   /** A link that opens the card with this page showing: there is a button to copy it. */
   link?: string
+  /** Said above the text while reading (who is writing it at this moment). */
+  note?: string
+  /**
+   * The text's earlier versions (see the server's boards/versions.ts): where they are read, and (`onRestore`, for
+   * people who can edit) how one is brought back: the description becomes that text again, as a change like any
+   * other. Left out: no Versions here (a visitor with the public link). `busy`: why none can be brought back just now.
+   */
+  versions?: { boardId: string; taskId: string; onRestore?: (text: string, said: string) => void; busy?: string }
 }) {
   const scroller = useRef<HTMLDivElement>(null)
   const column = useRef<HTMLDivElement>(null)
   const editor = useRef<EditorHandle>(null)
-  const shown = writing ? typing : value
+  // Looking at earlier versions: the list (asked for when it opens), the one picked, and its text once it has come.
+  const [looking, setPast] = useState<{ list: DescriptionVersion[] | null; picked?: DescriptionVersion; text?: string } | null>(null)
+  // (Writing isn't done over an old version: while writing, they aren't shown.)
+  const past = writing ? null : looking
+  const at = versions && `/boards/${encodeURIComponent(versions.boardId)}/tasks/${encodeURIComponent(versions.taskId)}/versions`
+  const openPast = () => {
+    setPast({ list: null })
+    api<{ versions: DescriptionVersion[] }>('GET', at!).then(
+      (r) => setPast((p) => p && { ...p, list: r.versions }),
+      () => setPast((p) => p && { ...p, list: [] }),
+    )
+  }
+  const pick = (v: DescriptionVersion | undefined) => {
+    setPast((p) => p && { list: p.list, picked: v })
+    if (v)
+      api<{ version: { text: string } }>('GET', `${at}/${v.id}`).then(
+        (r) => setPast((p) => (p?.picked?.id === v.id ? { ...p, text: r.version.text } : p)),
+        () => setPast((p) => (p?.picked?.id === v.id ? { list: p.list } : p)),
+      )
+  }
+  const old = past?.picked && past.text !== undefined ? past.text : null
+  const shown = writing ? typing : (old ?? value)
   const headings = useMemo(() => headingsOf(shown), [shown])
   const words = useMemo(() => countWords(shown), [shown])
 
   /** Writing starts where you were reading: at the top of what's in view (a short text: at its end). */
   const edit = () => {
+    setPast(null)
     const view = scroller.current
     const text = column.current
     if (!view || !text || view.scrollHeight <= view.clientHeight + 8) return onEdit()
@@ -108,8 +154,20 @@ export function DescriptionReader({
               <span className="tabular-nums max-sm:hidden">
                 {words.toLocaleString()} {words === 1 ? 'word' : 'words'}
               </span>
-              <SaveSign dirty={dirty} />
+              {status}
             </div>
+          )}
+          {versions && !writing && (
+            <Button
+              size="sm"
+              variant={past ? 'secondary' : 'ghost'}
+              className={cn('gap-1.5', !past && 'text-muted-foreground')}
+              aria-pressed={!!past}
+              title="How this text read before"
+              onClick={() => (past ? setPast(null) : openPast())}
+            >
+              <ClockCounterClockwise /> <span className="max-sm:sr-only">Versions</span>
+            </Button>
           )}
           {link && !writing && (
             <Button
@@ -134,7 +192,13 @@ export function DescriptionReader({
             ))}
         </header>
         <div className="flex min-h-0 flex-1">
-          {headings.length > 1 && (
+          {past && (
+            <nav aria-label="Versions" className="hidden w-60 shrink-0 overflow-y-auto border-r bg-muted/30 px-3 py-6 lg:block">
+              <p className="mb-2 px-2 text-xs font-medium text-muted-foreground">Versions</p>
+              <VersionList past={past} onPick={pick} />
+            </nav>
+          )}
+          {!past && headings.length > 1 && (
             <nav aria-label="Contents" className="hidden w-60 shrink-0 overflow-y-auto border-r bg-muted/30 px-3 py-6 lg:block">
               <p className="mb-2 px-2 text-xs font-medium text-muted-foreground">Contents</p>
               <ul className="space-y-0.5">
@@ -160,12 +224,44 @@ export function DescriptionReader({
           )}
           <div ref={scroller} className="min-h-0 flex-1 overflow-y-auto">
             <div ref={column} className="mx-auto max-w-[72ch] px-5 py-8 sm:px-8 sm:py-10">
-              {writing ? (
+              {/* (A narrow screen has no side for the list: it is above the text.) */}
+              {past && (
+                <div className="mb-6 rounded-lg border bg-muted/30 p-2 lg:hidden">
+                  <VersionList past={past} onPick={pick} />
+                </div>
+              )}
+              {past?.picked && (
+                <div className="mb-6 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm">
+                  <span className="min-w-0 flex-1">
+                    As it was saved on <span className="font-medium">{formatMoment(past.picked.at)}</span>
+                    {past.picked.by ? `, by ${past.picked.by.name}` : ''}
+                    {past.picked.via ? ` (through ${past.picked.via})` : ''}.
+                  </span>
+                  {versions?.onRestore && old !== null && old !== value && (
+                    <Button
+                      size="sm"
+                      className="gap-1.5"
+                      onClick={() => {
+                        versions.onRestore!(old, `Brought back the text of ${formatMoment(past.picked!.at)}`)
+                        setPast(null)
+                      }}
+                    >
+                      <ArrowCounterClockwise /> Bring this version back
+                    </Button>
+                  )}
+                  {old !== null && old === value && <span className="text-xs text-muted-foreground">This is how it reads now.</span>}
+                  {old !== null && old !== value && versions?.busy && <span className="w-full text-xs text-muted-foreground">{versions.busy}</span>}
+                </div>
+              )}
+              {note && !writing && !past && <p className="mb-4 text-xs text-muted-foreground">{note}</p>}
+              {writing && opening ? null : writing ? (
                 <Suspense fallback={null}>
                   <Editor
+                    key={editorKey}
                     look="page"
                     handle={editor}
                     value={start.text}
+                    shared={shared}
                     caret={start.caret}
                     onChange={onTyped}
                     onEscape={onFinish}
@@ -183,24 +279,74 @@ export function DescriptionReader({
                     className="md-reader min-h-[50vh]"
                   />
                 </Suspense>
-              ) : value ? (
+              ) : past?.picked && old === null ? (
+                <p className="text-muted-foreground">Fetching that version…</p>
+              ) : shown ? (
                 <Markdown
-                  text={value}
+                  text={shown}
                   files={cardFiles.files}
                   mentions={people}
                   cards={cardRefs}
                   headingIds
-                  onToggleTask={onTick}
+                  onToggleTask={old === null ? onTick : undefined}
                   pictures
                   className="md-reader"
                 />
               ) : (
-                <p className="text-muted-foreground">No description yet.</p>
+                <p className="text-muted-foreground">{old !== null ? 'The description was empty then.' : 'No description yet.'}</p>
               )}
             </div>
           </div>
         </div>
       </DialogContent>
     </Dialog>
+  )
+}
+
+/**
+ * The text's versions, newest first, under "Now" (the text as it is): each says when it was saved and by whom. A
+ * person's saves within a few minutes are one version.
+ */
+function VersionList({
+  past,
+  onPick,
+}: {
+  past: { list: DescriptionVersion[] | null; picked?: DescriptionVersion }
+  onPick: (v: DescriptionVersion | undefined) => void
+}) {
+  const row = 'block w-full rounded px-2 py-1.5 text-left text-sm hover:bg-accent hover:text-foreground'
+  if (!past.list) return <p className="px-2 text-sm text-muted-foreground">Fetching…</p>
+  return (
+    <ul className="space-y-0.5">
+      <li>
+        <button
+          type="button"
+          aria-current={!past.picked}
+          onClick={() => onPick(undefined)}
+          className={cn(row, !past.picked ? 'bg-accent font-medium' : 'text-muted-foreground')}
+        >
+          Now
+        </button>
+      </li>
+      {past.list.map((v) => (
+        <li key={v.id}>
+          <button
+            type="button"
+            aria-current={past.picked?.id === v.id}
+            onClick={() => onPick(v)}
+            className={cn(row, past.picked?.id === v.id ? 'bg-accent font-medium' : 'text-muted-foreground')}
+          >
+            <span className="block tabular-nums">{formatMoment(v.at)}</span>
+            <span className="block truncate text-xs font-normal text-muted-foreground">
+              {v.by?.name ?? 'Before versions were kept'}
+              {v.via ? ` · through ${v.via}` : ''}
+            </span>
+          </button>
+        </li>
+      ))}
+      {past.list.length === 0 && (
+        <li className="px-2 pt-1 text-xs text-muted-foreground">No earlier versions yet. They are kept from the first time this text changes.</li>
+      )}
+    </ul>
   )
 }

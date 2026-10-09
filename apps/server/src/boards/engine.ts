@@ -16,6 +16,7 @@ import {
   boardFieldRows,
   boards,
   comments,
+  descriptionVersions,
   notifications,
   taskFollowers,
   taskMoves,
@@ -28,6 +29,7 @@ import { ACTIVITY_DAYS, logLine } from './activityLog'
 import { checkLinks, followMoved, gainedLinks, withoutLinks } from './links'
 import { numberBoard } from './numbering'
 import { loadBoard, writeChanges } from './store'
+import { SITTING_MS } from './versions'
 
 export interface MutationResult {
   seq: number
@@ -40,6 +42,13 @@ const CACHE_RECORDS = 200_000
 const REMEMBERED_MUTATIONS = 500
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+/** Why a card's description can't be changed just now: the people writing it. */
+function beingWritten(people: { name: string }[], title: string) {
+  const [first, second] = people.map((p) => p.name)
+  const who = people.length === 1 ? first : people.length === 2 ? `${first} and ${second}` : `${first} and ${people.length - 1} others`
+  return `${who} ${people.length === 1 ? 'is' : 'are'} writing the description of “${title}” right now, so it wasn’t changed. Try again when they have finished, or open the card and write with them.`
+}
 
 const sizeOf = (d: BoardData) =>
   Object.keys(d.tasks).length + Object.keys(d.archived ?? {}).length + d.columns.length + d.labels.length + d.members.length + d.fields.length + 1
@@ -61,7 +70,10 @@ export class BoardEngine {
   private readonly db: Db
   private readonly hub: LiveHub
 
-  /** Told after each command that changed something (webhooks). `items`: the change in words, every line of it. */
+  /**
+   * Told after each command that changed something (webhooks). `items`: the change in words, every line of it.
+   * `autosave`: it is a description being written, saved as it goes (see `docs`): there's another every few seconds.
+   */
   onChanged:
     | ((
         boardId: string,
@@ -73,9 +85,22 @@ export class BoardEngine {
           changes: Change[]
           items: ActivityItem[]
           mutationId?: string
+          autosave?: boolean
         },
       ) => void)
     | null = null
+
+  /**
+   * The descriptions people are writing together just now (boards/liveDocs.ts). `blocks`: who is writing a card's,
+   * when a change to it from anywhere else has to wait for them. `sessionId`: the session a card's is written in.
+   */
+  docs: {
+    blocks: (boardId: string, taskId: string, session?: string) => { id: string; name: string }[] | null
+    sessionId: (boardId: string, taskId: string) => string | null
+    took: (boardId: string, taskId: string) => string[]
+  } | null = null
+  /** When each person's writing of a card's description was last put in the activity log (see `firstOfSitting`). */
+  private sittings = new Map<string, number>()
 
   /**
    * Run after each command that changed something, before its answer goes back (the board's rules, following cards
@@ -83,7 +108,27 @@ export class BoardEngine {
    * after the change; `before`: as it was (a rule asks which cards arrived or left between the two).
    */
   afterChange:
-    ((boardId: string, e: { userId: string; command: string; changes: Change[]; data: BoardData; before: BoardData }) => Promise<void>) | null = null
+    | ((
+        boardId: string,
+        e: {
+          userId: string
+          command: string
+          changes: Change[]
+          data: BoardData
+          before: BoardData
+          via?: string
+          /** The session the command says it is saving for (a description written together). */
+          session?: string
+          /** It is such a save, and not the first of anyone's sitting: what was said then isn't said again. */
+          again?: boolean
+          /**
+           * Who such a save is put down to, when not the person whose browser made it: they wrote the text, and
+           * left before their own browser saved it.
+           */
+          by?: string
+        },
+      ) => Promise<void>)
+    | null = null
 
   /**
    * Run for each of the two boards after a card moved from one to the other, which is no command (`transfer`): the
@@ -177,7 +222,31 @@ export class BoardEngine {
         throw Object.assign(new HttpError(422, 'That change couldn’t be applied to this board.'), { cause: e })
       }
       if ('error' in r) throw new HttpError(422, r.error)
-      if (!r.changes.length && !healed) return { seq: row.seq, changes: [], data, before: data, stripped: false, said: [] }
+      // A description people are writing together just now is theirs to save: a change to it from anywhere else
+      // (another window, an assistant, an undo) would be written over by their next save without anyone seeing.
+      const session = command.type === 'task.update' ? command.session : undefined
+      for (const c of r.changes) {
+        if (c.entity !== 'task' || !c.before || !c.after || (c.before.description ?? '') === (c.after.description ?? '')) continue
+        const people = this.docs?.blocks(boardId, c.id, session)
+        if (people) throw new HttpError(422, beingWritten(people, c.after.title), 'being-written')
+        // Writing saved from a session that is over (its browser was away while the others finished, or the server
+        // started again): the text may have been written on since, by people it never heard from. It isn't put over
+        // theirs: its browser keeps it as a draft and joins the session there is now.
+        if (session && this.docs && this.docs.sessionId(boardId, c.id) !== session)
+          throw new HttpError(
+            422,
+            'That writing was going on in a session that is over, and the text may have changed since: it wasn’t saved over it.',
+            'being-written',
+          )
+      }
+      // Such writing, saved as it goes: nothing but the description, from the session the card's is written in.
+      const autosave =
+        command.type === 'task.update' &&
+        !!session &&
+        this.docs?.sessionId(boardId, command.id) === session &&
+        Object.keys(command.fields).every((k) => k === 'description')
+      const nothing = { seq: row.seq, changes: [], data, before: data, stripped: false, said: [], autosave, again: false, by: userId }
+      if (!r.changes.length && !healed) return nothing
       // Links to cards on other boards: what this board can't check by itself (see links.ts). A new link that fails
       // is refused. An undo that would bring one back goes through without it: the rest of it is still wanted.
       let changes = r.changes
@@ -223,14 +292,26 @@ export class BoardEngine {
       // The activity log: what this change did, in words (reordering alone isn't logged).
       const said = describeAllChanges(data, changes, command)
       const items = cutItems(said)
+      // Writing saved as it goes is one text, saved for everyone by the browser of whoever stopped typing first: the
+      // line is each writer's (the people who wrote since it was last saved, still on the board), and one for a
+      // sitting, not one every few seconds.
+      const cardId = command.type === 'task.update' ? command.id : ''
+      const wrote = autosave ? this.docs!.took(boardId, cardId).filter((id) => id === userId || data.members.some((m) => m.id === id)) : []
+      const authors = wrote.length ? wrote : [userId]
+      const lines = autosave ? authors.filter((id) => this.firstOfSitting(`${boardId}:${cardId}:${id}`)) : authors
+      const again = autosave && !lines.length
       if (items.length)
-        await tx.insert(boardActivity).values({ id: newId(), boardId, actorId: userId, command: command.type, items, via: via ?? null })
+        for (const actorId of lines)
+          await tx
+            .insert(boardActivity)
+            .values({ id: newId(), boardId, actorId, command: command.type, items, via: actorId === userId ? (via ?? null) : null })
+      const by = authors.includes(userId) ? userId : authors[0]
       const seq = row.seq + 1
       await tx
         .update(boards)
         .set({ seq, activityAt: new Date(), ...(numbered.next !== row.nextNumber && { nextNumber: numbered.next }) })
         .where(eq(boards.id, boardId))
-      return { seq, changes, data: applyChanges(data, changes), before: data, stripped, said }
+      return { seq, changes, data: applyChanges(data, changes), before: data, stripped, said, autosave, again, by }
     })
 
     this.remember(boardId, { seq: result.seq, data: result.data })
@@ -244,10 +325,42 @@ export class BoardEngine {
       // (What was written isn't quite what the person's own copy did: it fetches the board again.)
       if (result.stripped) this.hub.broadcast(boardId, { type: 'reload' })
       const board = { id: boardId, name: result.data.board.name }
-      this.onChanged?.(boardId, { board, userId, command: command.type, seq: out.seq, changes: out.changes, items: result.said, mutationId })
-      await this.afterChange?.(boardId, { userId, command: command.type, changes: out.changes, data: result.data, before: result.before })
+      this.onChanged?.(boardId, {
+        board,
+        userId,
+        command: command.type,
+        seq: out.seq,
+        changes: out.changes,
+        items: result.said,
+        mutationId,
+        autosave: result.autosave,
+      })
+      await this.afterChange?.(boardId, {
+        userId,
+        command: command.type,
+        changes: out.changes,
+        data: result.data,
+        before: result.before,
+        via,
+        session: command.type === 'task.update' ? command.session : undefined,
+        again: result.again,
+        ...(result.by !== userId && { by: result.by }),
+      })
     }
     return out
+  }
+
+  /**
+   * Whether this is the first save of a person's sitting at a card's description (true once, then not again for
+   * `SITTING_MS`). Kept in memory: after a restart the next save is a first one again, which is one line more.
+   */
+  private firstOfSitting(key: string) {
+    const now = Date.now()
+    const last = this.sittings.get(key)
+    if (last && now - last < SITTING_MS) return false
+    if (this.sittings.size > 5000) for (const [k, at] of this.sittings) if (now - at >= SITTING_MS) this.sittings.delete(k)
+    this.sittings.set(key, now)
+    return true
   }
 
   /**
@@ -422,8 +535,11 @@ export class BoardEngine {
 
       // Its comments, files, mentions, followers and logged time follow it (files stay where they're stored, and count where they did).
       for (const [oldId, id] of plan.ids) {
-        const at = (t: typeof comments | typeof attachments | typeof notifications) => and(eq(t.boardId, fromId), eq(t.taskId, oldId))
+        const at = (t: typeof comments | typeof attachments | typeof notifications | typeof descriptionVersions) =>
+          and(eq(t.boardId, fromId), eq(t.taskId, oldId))
         await tx.update(comments).set({ boardId: toId, taskId: id }).where(at(comments))
+        // (So do the earlier versions of its description.)
+        await tx.update(descriptionVersions).set({ boardId: toId, taskId: id }).where(at(descriptionVersions))
         await tx.update(attachments).set({ boardId: toId, taskId: id }).where(at(attachments))
         // (What a rule of the board it leaves told people stays there: it was about that board's lists.)
         await tx

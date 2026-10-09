@@ -234,7 +234,7 @@ export const CommandSchema = z.discriminatedUnion('type', [
     fields: taskFields.extend({ title: text(500) }),
     rankAfter: id.optional(),
   }),
-  z.object({ type: z.literal('task.update'), id, fields: taskFields }),
+  z.object({ type: z.literal('task.update'), id, fields: taskFields, session: z.string().max(64).optional() }),
   z.object({
     type: z.literal('task.move'),
     id,

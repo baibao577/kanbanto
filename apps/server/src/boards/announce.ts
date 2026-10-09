@@ -2,7 +2,7 @@ import { eq } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import type { Tx } from '../db'
 import { boards, users } from '../db/schema'
-import { accessOf, openBoards } from './access'
+import { accessOf, mayEdit, openBoards } from './access'
 
 /**
  * People, visibility or invites changed: every cached and open copy of the board is refreshed (so new people
@@ -20,6 +20,8 @@ export async function announceSharingChange(app: FastifyInstance, boardId: strin
     const access = await accessOf(app.db, board, userId ?? undefined)
     return access && (access.via === 'public' ? 'public' : 'member')
   })
+  // (Someone who may no longer edit is out of the descriptions being written together: see liveDocs.ts.)
+  await app.docs.recheck(boardId, (userId) => mayEdit(app.db, boardId, userId))
 }
 
 /** A workspace's people (or name) changed: its boards are refreshed, and anyone who lost access is disconnected. */

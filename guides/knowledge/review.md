@@ -28,8 +28,9 @@ Open the card and click **Expand** to read the article full page. Write what you
 
 Open it and edit it. It doesn't have to go back to Drafting for a small fix.
 
-The card's **History** tab says who edited the description and when. For a change that matters, say what changed in
-a comment: everyone who follows the article is told.
+The card's **History** tab says who edited the description and when, and **Versions** on the full page keeps the
+text as it was, to read or to bring back (see [write together](/knowledge/together#versions)). For a change that
+matters, say what changed in a comment: everyone who follows the article is told.
 
 To hear about changes to an article you rely on, open it and click **Follow**. See
 [notifications](/people/notifications).
@@ -64,8 +65,8 @@ archived article can still be found and read in Search cards, and brought back.
 
 ## Good to know
 
-- If two people edit the same article at the same moment, the one who finishes last replaces the other's version.
-  Agree who is writing. The card's assignee is the simplest way to say so.
+- Two people can edit the same article at the same moment: both are in the same text, and it is saved as they
+  write. See [write together](/knowledge/together).
 - Moving a card between lists isn't an edit: History keeps the two apart.
 - A [limit](/views/limits) on **In review** ("at most 5") keeps reviews from piling up.
 

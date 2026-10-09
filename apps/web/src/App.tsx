@@ -548,6 +548,7 @@ function Workspace({ store }: { store: Store }) {
     logTime: readOnly ? undefined : logTime,
     links,
     canBeLinked: store.canBeLinked,
+    writing: store.docLink ? { link: store.docLink, writers: store.writers, save: store.saveWriting } : undefined,
   }
 
   const newTask = useCallback(() => createTask(undefined, { title: 'New task' }, { open: true }), [createTask])

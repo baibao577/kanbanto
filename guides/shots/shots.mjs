@@ -695,7 +695,10 @@ await shot('desc-2-sign', async () => {
   )
 })
 await shot('desc-3-draft', async () => {
-  // (Left without saving: the page reloads, and the card offers the writing back.)
+  // (A description saves as it is written, a few seconds behind the keys. More is typed, and the page reloads before
+  // it is saved: the card offers the writing back.)
+  await page.keyboard.type(' And where the visitors come from.')
+  await page.waitForTimeout(600)
   await page.reload()
   const card = page.getByRole('dialog').first()
   await card.getByRole('button', { name: 'Continue writing' }).waitFor()
@@ -2603,6 +2606,107 @@ await shot('km-5-search', async () => {
   await page.waitForTimeout(500)
   return { clip: { x: 0, y: 0, width: 1360, height: 640 } }
 })
+
+// ── Writing a description with other people at once ─────────────────────────────────────────────────────
+
+await page.setViewportSize({ width: 1360, height: 860 })
+/** Other people's windows on the handbook, each signed in as them and writing (closed again by `alone`). */
+const theirs = []
+const alone = async () => {
+  for (const p of theirs.splice(0)) {
+    await p.keyboard.press('Escape').catch(() => {})
+    await p.waitForTimeout(300)
+    await p.close()
+  }
+}
+/**
+ * Someone else opens a card of the handbook in a window of their own, starts writing its description, puts the
+ * cursor at the end of the line that starts with `after`, and types.
+ */
+const writesToo = async (who, id, card, after, words) => {
+  const p = await who.newPage()
+  theirs.push(p)
+  await p.setViewportSize({ width: 1200, height: 800 })
+  await p.goto(`${SITE}/#/b/${id}/outline?task=${card}`)
+  // (A click in the text starts the writing there.)
+  await p.getByRole('dialog').first().locator('.md').first().getByText(after).click()
+  const text = p.getByRole('textbox', { name: 'Description' })
+  await text.waitFor()
+  await p.waitForTimeout(400)
+  await text.getByText(after).click()
+  await p.keyboard.press('End')
+  await p.keyboard.type(words, { delay: 10 })
+}
+let cleoCtx = null
+/** A third person on the handbook. */
+const cleo = async (id) => {
+  if (cleoCtx) return cleoCtx
+  cleoCtx = await browser.newContext()
+  await api(cleoCtx, 'POST', '/auth/signup', { name: 'Cleo Marsh', email: `cleo.marsh+${stamp}@example.com`, password: 'correct horse' })
+  const invite = (await api(ann, 'PUT', `/boards/${id}/invites/link`, { role: 'editor' })).link
+  await api(cleoCtx, 'POST', '/join', { invite: invite.token })
+  await ann.request.delete(`${SITE}/api/boards/${id}/invites/link`)
+  return cleoCtx
+}
+await shot('desc-5-writing', async () => {
+  const { id } = await theHandbook()
+  await writesToo(benCtx, id, 'handover', 'A call to walk through the site', ' Record it.')
+  await page.goto(`${SITE}/#/b/${id}/outline?task=handover`)
+  await page.reload()
+  const card = page.getByRole('dialog').first()
+  await card.getByText(/is writing this now/).waitFor()
+  await page.waitForTimeout(600)
+  await ring(card.getByText(/is writing this now/))
+  return around(
+    [card.getByText('Description', { exact: true }), card.getByRole('button', { name: 'Expand', exact: true }), card.locator('.md').first()],
+    28,
+  )
+})
+await shot('km-6-together', async () => {
+  await alone()
+  const { id } = await theHandbook()
+  await page.goto(`${SITE}/#/b/${id}/outline?task=refunds`)
+  await page.reload()
+  const card = page.getByRole('dialog').first()
+  await card.locator('.md').first().getByText('Open questions').click()
+  const text = page.getByRole('textbox', { name: 'Description' })
+  await text.waitFor()
+  await writesToo(benCtx, id, 'refunds', 'A retainer month that', ' We say so on every invoice.')
+  await writesToo(await cleo(id), id, 'refunds', 'What about a month that is half used?', ' Pro rata, by the day.')
+  await text.getByText('Open questions').click()
+  // (Saved by itself, a few seconds after the last key.)
+  await card.getByRole('status').filter({ hasText: 'Saved' }).waitFor()
+  await page.waitForTimeout(500)
+  return around([card.getByText('Description', { exact: true }), text, card.getByRole('button', { name: 'Write full page' })], 28)
+})
+await shot('km-7-versions', async () => {
+  await alone()
+  const { id } = await theHandbook()
+  // (Ann leaves the text too, if she was in it.)
+  await page.goto(`${SITE}/#/b/${id}/outline`)
+  await page.waitForTimeout(800)
+  // (Its versions, if the picture before this one wasn't taken: Ben changes the text, then Ann does.)
+  const text = (await api(ann, 'GET', `/boards/${id}`)).data.tasks.refunds.description
+  if (!(await api(ann, 'GET', `/boards/${id}/tasks/refunds/versions`)).versions.length) {
+    const change = (who, description) =>
+      api(who, 'POST', `/boards/${id}/mutations`, {
+        mutationId: `v${stamp}-${description.length}`,
+        command: { type: 'task.update', id: 'refunds', fields: { description } },
+      })
+    await change(benCtx, `${text}\n- Who agrees to an exception?`)
+    await change(ann, `${text}\n- Who agrees to an exception? Ann.`)
+  }
+  await page.goto(`${SITE}/#/b/${id}/outline?task=refunds&full=1`)
+  await page.reload()
+  await page.getByRole('button', { name: 'Versions' }).click()
+  const list = page.getByRole('navigation', { name: 'Versions' })
+  await list.getByRole('button').nth(1).waitFor()
+  await list.getByRole('button').nth(2).click()
+  await page.getByRole('button', { name: 'Bring this version back' }).waitFor()
+  await page.waitForTimeout(500)
+  return { clip: { x: 0, y: 0, width: 1360, height: 560 } }
+})
+await alone()
 
 await browser.close()
 console.log(`made ${made.length}: ${made.join(', ')}`)

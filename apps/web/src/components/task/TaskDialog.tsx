@@ -4,6 +4,7 @@ import { changedAt } from '@kanbanto/model/table'
 import { useMediaQuery } from '@/lib/useMediaQuery'
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { BoardContext, useBoard } from '@/app/board-context'
+import { useAuth } from '@/app/use-auth'
 import { hrefFor, setFullPage, wantsFullPage } from '@/app/router'
 import { ProgressBar, StatusDot, StatusPill } from '@/components/common/bits'
 import { QuickAdd } from '@/components/board/QuickAdd'
@@ -100,7 +101,8 @@ function ArchivedCard({ id, onClose }: { id: string; onClose: () => void }) {
  * screens, its comments. Narrower, the comments come last in the one column.
  */
 function TaskDetail({ id, onClose }: { id: string; onClose: () => void }) {
-  const { data, idx, run, openTask, createTask, readOnly, onActivity, logTime } = useBoard()
+  const { data, idx, run, openTask, createTask, readOnly, onActivity, logTime, access, writing } = useBoard()
+  const { user } = useAuth()
   // Wide enough for the comments to have their own column.
   const wide = useMediaQuery('(min-width: 1280px)')
   // The card has scrolled under the header (wide screens, where the header stays put).
@@ -150,11 +152,28 @@ function TaskDetail({ id, onClose }: { id: string; onClose: () => void }) {
             people={data.members}
             draftId={`${data.board.id}:${id}`}
             onSave={(description) => patch({ description })}
+            // (Written with whoever else opens it to write, on a board that is open live.)
+            live={
+              writing && user && !readOnly
+                ? { link: writing.link, taskId: id, me: { id: user.id, name: user.name }, save: (text, session) => writing.save(id, text, session) }
+                : undefined
+            }
+            writers={writing?.writers[id]}
             full={{
               start: wantsFullPage(id),
               set: (open) => setFullPage(id, open),
               link: `${location.origin}${location.pathname}${hrefFor({ page: 'board', id: data.board.id, task: id, full: true })}`,
             }}
+            // (Earlier versions are the board's people's to read, like a card's History; bringing one back is an edit.)
+            versions={
+              access.via === 'public'
+                ? undefined
+                : {
+                    boardId: data.board.id,
+                    taskId: id,
+                    onRestore: readOnly ? undefined : (description, said) => run({ type: 'task.update', id, fields: { description } }, said),
+                  }
+            }
           />
 
           <Section

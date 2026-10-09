@@ -7,6 +7,11 @@ export interface Draft {
   text: string
   /** When it was last typed in (ms). */
   at: number
+  /**
+   * The saved text it was a change of. A draft is carried on with only while the saved text is still that one: once
+   * someone else has changed it, the draft is there to copy from. (None: written before this was kept.)
+   */
+  base?: string
 }
 
 const PREFIX = 'kankan:draft:'
@@ -17,15 +22,16 @@ export function readDraft(id: string): Draft | null {
   try {
     const raw = localStorage.getItem(PREFIX + id)
     const d = raw ? (JSON.parse(raw) as Partial<Draft>) : null
-    return d && typeof d.text === 'string' && typeof d.at === 'number' ? { text: d.text, at: d.at } : null
+    if (!d || typeof d.text !== 'string' || typeof d.at !== 'number') return null
+    return { text: d.text, at: d.at, ...(typeof d.base === 'string' && { base: d.base }) }
   } catch {
     return null
   }
 }
 
-export function writeDraft(id: string, text: string, now = Date.now()) {
+export function writeDraft(id: string, text: string, base?: string, now = Date.now()) {
   try {
-    localStorage.setItem(PREFIX + id, JSON.stringify({ text, at: now } satisfies Draft))
+    localStorage.setItem(PREFIX + id, JSON.stringify({ text, at: now, ...(base !== undefined && { base }) } satisfies Draft))
   } catch {
     // No room, or storage is off: the text is only as safe as the open page, as before.
   }

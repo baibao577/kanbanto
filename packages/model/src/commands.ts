@@ -13,7 +13,16 @@ import type { ColorName } from './colors'
  */
 export type Command =
   | { type: 'task.create'; id?: string; parentId: string | null; fields: TaskFields & { title: string }; rankAfter?: string }
-  | { type: 'task.update'; id: string; fields: TaskFields }
+  | {
+      type: 'task.update'
+      id: string
+      fields: TaskFields
+      /**
+       * The description is being written by several people at once, and this is that writing being saved: the id of
+       * the session it comes from (see the server's boards/liveDocs.ts). The change itself is the same with or without.
+       */
+      session?: string
+    }
   | {
       type: 'task.move'
       id: string

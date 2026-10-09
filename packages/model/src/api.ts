@@ -889,6 +889,25 @@ export interface CardHistoryEntry {
   lines: { text: string; date?: string }[]
 }
 
+/**
+ * An earlier version of a card's description: the whole text as it was saved at a moment (see the server's
+ * boards/versions.ts). A person's saves within a few minutes are one version, the last of them.
+ */
+export interface DescriptionVersion {
+  id: string
+  at: string
+  /** Who saved it. Null: their account is gone, or it is the text there was before versions were kept. */
+  by: { id: string; name: string; picture?: string | null } | null
+  /** The app it was saved through ("Claude"); null: the website. */
+  via: string | null
+  /** How long the text is, in characters. */
+  length: number
+}
+/** GET /api/boards/:id/tasks/:taskId/versions: newest first. (One of them with its text: …/versions/:versionId.) */
+export interface DescriptionVersions {
+  versions: DescriptionVersion[]
+}
+
 /** What the server sends over a board's live connection. */
 export type LiveMessage =
   /** Sent on connect: the board's change counter, so the client knows if it missed anything. */
@@ -909,6 +928,44 @@ export type LiveMessage =
   | { type: 'attachment'; taskId: string; action: 'added' | 'deleted'; attachmentId: string; attachment?: AttachmentView }
   /** Time was logged, changed or removed on a card: its new total (minutes). */
   | { type: 'time'; taskId: string; total: number }
+  /** Who is writing a card's description at this moment (nobody: an empty list). See `DocMessage`. */
+  | { type: 'writing'; taskId: string; people: { id: string; name: string }[] }
+  | DocMessage
+
+/**
+ * A description being written by several people at once: what the server sends a browser that has it open (see the
+ * server's boards/liveDocs.ts). The text while it is written is a Yjs document; `state`, `vector`, `data` and
+ * `awareness` are parts of it, as base64.
+ */
+export type DocMessage =
+  /**
+   * The answer to "join": the session's id, its document so far, and what the server has of it (`vector`). `same`:
+   * the browser was in this very session before (its document goes on, and what it wrote meanwhile is sent back);
+   * otherwise it starts a new document from `state`. `seed`: it is the one to load the saved text into it.
+   */
+  | { type: 'doc'; op: 'joined'; taskId: string; session: string; same: boolean; seed: boolean; state: string; vector: string; awareness: string }
+  /** A change someone made, or where their cursors are. */
+  | { type: 'doc'; op: 'update' | 'awareness'; taskId: string; data: string }
+  /**
+   * seed: load the saved text after all (whoever was asked left first). reset: this browser isn't in the card's
+   * session (it ended, the text was changed from somewhere else, or the server started again): join again.
+   * ended: the card is gone (deleted, archived, moved to another board).
+   */
+  | { type: 'doc'; op: 'seed' | 'reset' | 'ended'; taskId: string }
+  /** It can't join (it may only read), with why. */
+  | { type: 'doc'; op: 'refused'; taskId: string; error: string }
+
+/** What a browser sends over a board's live connection: only this, about a description it has open for writing. */
+export type DocRequest =
+  /**
+   * `session`: the session it was in before, when it is coming back after losing its connection. `client`: the id
+   * its document writes under. `seeder`: it loaded the saved text into its document itself (if that never reached
+   * the server and someone else has loaded it since, its document can't go on: the text would be there twice).
+   */
+  | { type: 'doc'; op: 'join'; taskId: string; session?: string; client?: number; seeder?: boolean }
+  | { type: 'doc'; op: 'update'; taskId: string; session: string; data: string }
+  | { type: 'doc'; op: 'awareness'; taskId: string; data: string }
+  | { type: 'doc'; op: 'leave'; taskId: string }
 
 // ── Integrations ──────────────────────────────────────────────────────────────
 

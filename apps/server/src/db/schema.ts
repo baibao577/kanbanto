@@ -750,6 +750,34 @@ export const commentReactions = pgTable(
 )
 
 /**
+ * A card's description as it was saved before: what a text read like at an earlier moment, to look at and to bring
+ * back (see boards/versions.ts). One row is the whole text after someone's changes; a person's saves within a few
+ * minutes are one row (the last of them), and a card keeps its newest rows only. Like comments, the card is only
+ * named: rows stay when a card is deleted (and are there again on undo), and follow it to another board.
+ */
+export const descriptionVersions = pgTable(
+  'description_versions',
+  {
+    id: uuid('id').primaryKey(),
+    boardId: text('board_id')
+      .notNull()
+      .references(() => boards.id, { onDelete: 'cascade' }),
+    taskId: text('task_id').notNull(),
+    /** The description, whole ('' when it was emptied). */
+    text: text('text').notNull(),
+    /** Who saved it (null: their account is gone, or it is the text there was before versions were kept). */
+    by: uuid('by').references(() => users.id, { onDelete: 'set null' }),
+    /** The app it was saved through ("Claude"); null: the website. */
+    via: text('via'),
+    /** When it was saved (the last time, of the saves it stands for). */
+    at: at('at').notNull().defaultNow(),
+    /** When the first of those saves was: a person's saves go on being this version for a while from then. */
+    since: at('since').notNull().defaultNow(),
+  },
+  (t) => [index('description_versions_task_idx').on(t.boardId, t.taskId, t.at)],
+)
+
+/**
  * Time someone logged on a card. Like comments, the card is only named (no foreign key): an entry stays when its card
  * is deleted (and is back with it on undo), but only entries on cards that exist count.
  */

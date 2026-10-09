@@ -75,8 +75,10 @@ It does not need to remember: the board does.
   Agents see that it is blocked.
 - **Watch it live.** Cards move on your screen as the agent works.
 - **It cannot delete or share.** A mistaken agent can move, edit or archive cards. Moved and archived cards are easy
-  to put back. A description it rewrote is not: there is no history of earlier versions. Tell it to write its results
-  as comments, as in the instruction above, and to leave descriptions alone unless you ask.
+  to put back. A description it rewrote can be put back too: open it full page and click **Versions**. Still, tell
+  it to write its results as comments, as in the instruction above, and to leave descriptions alone unless you ask.
+- **It waits for people.** While someone is writing a card's description, an agent's change to that description is
+  refused, and it is told who is writing.
 - **Read-only is an option.** If you only want answers, connect the assistant with **Only read**.
 
 ## Next

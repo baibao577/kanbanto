@@ -102,6 +102,7 @@ export function CardPeek({
     memberName: (id) => (id ? (idx.members.get(id)?.name ?? '') : ''),
     links,
     canBeLinked: store.canBeLinked,
+    writing: store.docLink ? { link: store.docLink, writers: store.writers, save: store.saveWriting } : undefined,
     // (Card templates are a board's own, used on its own page.)
     templates: [],
     addFromTemplate: () => null,

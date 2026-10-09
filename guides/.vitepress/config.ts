@@ -63,6 +63,7 @@ export default defineConfig({
           { text: 'A knowledge base on a board', link: '/knowledge/overview' },
           { text: 'Set up the board', link: '/knowledge/set-up' },
           { text: 'Write an article', link: '/knowledge/write' },
+          { text: 'Write together', link: '/knowledge/together' },
           { text: 'Pages inside pages, and finding things', link: '/knowledge/organise' },
           { text: 'Review and keep it current', link: '/knowledge/review' },
           { text: 'Samples to copy', link: '/knowledge/samples' },

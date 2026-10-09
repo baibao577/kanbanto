@@ -87,22 +87,39 @@ A few things to know:
 
 ## Saving
 
-Most things in Kanbanto save as you go. A description is the exception, because it is written over several minutes:
-it is saved when you finish.
+A description saves as you write: a few seconds after you stop typing, and every so often while you keep going.
+The small sign at the right of the toolbar says **Saving…**, then **Saved**.
+
+![The toolbar, with the sign that says whether it is saved ringed](/images/desc-2-sign.webp)
+
+You finish writing when you
 
 - click anywhere outside the description,
 - press <kbd>Esc</kbd>, or
 - press <kbd>⌘Enter</kbd> (<kbd>Ctrl+Enter</kbd>).
 
-<kbd>⌘S</kbd> saves and lets you keep writing. The small sign at the right of the toolbar says **Saved** or **Not
-saved yet**.
+<kbd>⌘S</kbd> saves at once and lets you keep writing.
 
-![The toolbar, with the "Not saved yet" sign ringed](/images/desc-2-sign.webp)
-
-Until it is saved, your writing is kept as a draft in your browser. If the page reloads or you close the tab by
-accident, the card shows "You were writing here…" with **Continue writing** and **Discard**.
+If the page reloads, or the tab is closed, before your last words were saved, they are kept in your browser. The
+card shows "You were writing here…" with **Continue writing** and **Discard**.
 
 ![A card offering unsaved writing back](/images/desc-3-draft.webp)
+
+With no connection the sign says **Offline**. Keep writing: it is saved when you are back.
+
+## Write with others
+
+If someone else opens the same description to write, you are both in the same text. You see their cursor, with
+their name, and their words as they type them. See [write together](/knowledge/together) for all of it.
+
+While someone is writing, the card says so to everyone who has it open.
+
+![A card saying who is writing its description at this moment](/images/desc-5-writing.webp)
+
+## Earlier versions
+
+Open the description full page (**Expand**) and click **Versions** to read the text as it was before, and to
+bring a version back. See [versions](/knowledge/together#versions).
 
 ## Long descriptions
 
@@ -123,7 +140,7 @@ description opens full page.
   they were.
 - From a finished description it opens to read. Click **Edit** to write; the cursor starts at what you were reading.
 - **Contents** on the left lists your headings and follows them as you add more. Click one to jump there.
-- The top right shows the word count and whether it is saved.
+- The top right shows the word count, who else is writing, and whether it is saved.
 - <kbd>Esc</kbd> or **Done** finishes writing. <kbd>Esc</kbd> again closes the page.
 - **Copy link** copies a link that opens the card with its description full page. The address in your browser says
   the same while the page is open. Send it when you want someone to read, not to land on the card.
@@ -133,10 +150,11 @@ A board whose cards are mostly long descriptions can be a handbook. See
 
 ## Good to know
 
-- A draft lives in the browser you wrote it in. It does not follow you to another computer.
-- Other people see your description when it is saved, not while you type.
-- If two people edit the same description at the same time, the one who finishes last replaces the other's
-  version. There is no history of earlier versions, so agree who is writing.
+- Unsaved words that are offered back live in the browser you wrote them in. They do not follow you to another
+  computer.
+- People who have the description open to write see your words as you type. People who are only reading see them
+  each time it is saved.
+- Words typed into a card that someone archived or deleted a moment before are offered back the same way.
 - The `##` and `- [ ]` marks are called Markdown: a plain way of writing formatting that AI assistants read and
   write well. You never have to type them; the toolbar and the "/" menu do the same.
 

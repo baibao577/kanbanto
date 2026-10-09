@@ -241,8 +241,8 @@ describe('writing', () => {
 describe('drafts', () => {
   it('are kept per card, cleared when saved, and dropped when nobody comes back', () => {
     const now = Date.now()
-    writeDraft('b1:t1', 'half a thought', now)
-    writeDraft('b1:t2', 'another', now - 40 * 86_400_000)
+    writeDraft('b1:t1', 'half a thought', undefined, now)
+    writeDraft('b1:t2', 'another', undefined, now - 40 * 86_400_000)
     expect(readDraft('b1:t1')).toEqual({ text: 'half a thought', at: now })
     expect(readDraft('b1:nope')).toBeNull()
     pruneDrafts(now)

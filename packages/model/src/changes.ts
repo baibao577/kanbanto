@@ -1,6 +1,6 @@
 import { comparePositions } from './position'
 import type { Change, Entity, Records } from './records'
-import type { BoardData, TaskMap } from './types'
+import type { BoardData, Task, TaskMap } from './types'
 
 /** Applies a list of changes to board data, copying only what changed. */
 export function applyChanges(data: BoardData, changes: Change[]): BoardData {
@@ -87,6 +87,14 @@ export function invertChanges(data: BoardData, changes: Change[], now: string): 
   return [...changes].reverse().map((c) => {
     const now_ = current(data, c.entity, c.id)
     const after = c.before ? { ...c.before, version: (now_?.version ?? c.before.version) + 1, updatedAt: now } : null
+    // A card's description is put back only by undoing a change that changed it. A description may be written by
+    // several people while the card is open, and saved as they go without a step in anyone's undo: undoing something
+    // older about the card (its list, its date) mustn't bring the text of that moment back over theirs.
+    if (c.entity === 'task' && c.before && c.after && after && now_ && (c.before.description ?? '') === (c.after.description ?? '')) {
+      const text = (now_ as Task).description
+      if (text === undefined) delete (after as Task).description
+      else (after as Task).description = text
+    }
     return { entity: c.entity, id: c.id, before: now_, after } as Change
   })
 }

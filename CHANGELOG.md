@@ -5,6 +5,34 @@ then `git pull` (or download the new release) and `docker compose up -d --build`
 
 ## Unreleased
 
+- **Write a description together.** Several people can write the same description at the same moment. Open the
+  card and click **Edit**: if someone is already writing, you are in the same text, with their cursor and name
+  where they are and their words as they type them. The card says who is writing to everyone who has it open. It
+  works in the card and full page, and on a phone.
+
+  A description now **saves as you write**, a few seconds after you stop typing, where it used to be saved when
+  you finished. The sign in the toolbar says **Saving…**, then **Saved**. With no connection it says **Offline**:
+  keep writing, and your words join the others' when you are back. If that can't be (you were away so long that
+  they had finished), what you wrote is offered back on the card to copy.
+
+  While people are writing a description, it isn't changed from anywhere else: an assistant, an app or an undo
+  that would replace it is told who is writing. It goes through once nobody has typed for two minutes. A box in a
+  checklist can't be ticked from outside the editor meanwhile, either.
+
+  **Earlier versions** of every description are kept from now on, whoever or whatever changed it. Open it full
+  page and click **Versions** to read the text as it was and to bring a version back. A person's saves within ten
+  minutes are one version, and a card keeps its newest 100.
+
+  Also: undoing an older change to a card (its list, its date) no longer puts the description back to what it
+  was at that moment. The card's History has one "edited the description" line for each writer about every ten
+  minutes of writing, and followers are told once, not at every save.
+
+  For apps: a command that would change a description being written is refused with 422 and
+  `code: "being-written"`; `GET /api/boards/:id/tasks/:taskId/versions` lists a description's earlier versions;
+  a webhook gets the saves of one stretch of writing as one `board.changed`. Upgrading adds one table.
+
+  The guides: a new page, **Write together**, in the knowledge base group.
+
 - **Pictures in a description, and a link to the full page.** A picture dropped or pasted into a description is
   now shown in the text, on a line of its own, while you read and while you write. The text still holds its name
   (📎steps.png), so moving that line moves the picture; named inside a sentence, a picture stays a small link. The

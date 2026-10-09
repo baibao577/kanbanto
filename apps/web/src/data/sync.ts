@@ -1,4 +1,4 @@
-import type { BoardAccess, BoardSnapshot, LiveMessage, MutationResult, TaskCounts } from '@kanbanto/model/api'
+import type { BoardAccess, BoardSnapshot, DocRequest, LiveMessage, MutationResult, TaskCounts } from '@kanbanto/model/api'
 import { applyChanges } from '@kanbanto/model/changes'
 import { execute, type Command } from '@kanbanto/model/commands'
 import { newId } from '@kanbanto/model/ids'
@@ -6,6 +6,8 @@ import { indexFor } from '@kanbanto/model/indexer'
 import type { Change } from '@kanbanto/model/records'
 import type { BoardData, Task } from '@kanbanto/model/types'
 import { api, ApiError } from '@/api/client'
+import { writeDraft } from './drafts'
+import type { DocEvent } from './liveDoc'
 import { LinkStore } from './links'
 
 export type Connection = 'connecting' | 'live' | 'offline'
@@ -34,6 +36,8 @@ export interface SyncState {
   connection: Connection
   /** Changes made here that the server hasn't confirmed yet. */
   unsaved: number
+  /** Who is writing which card's description at this moment (cards nobody is writing aren't in it). */
+  writers: Record<string, { id: string; name: string }[]>
 }
 
 interface Pending {
@@ -106,6 +110,12 @@ export class BoardSync {
   private eventListeners = new Set<(e: SyncEvent) => void>()
   private activityListeners = new Set<(m: TaskActivity) => void>()
   private templateListeners = new Set<() => void>()
+  private docListeners = new Set<(e: DocEvent) => void>()
+  /** The live connection is up and the board is in step (see `DocEvent`'s "up"). */
+  private up = false
+  /** The next try at the live connection, after it was lost. */
+  private retry: ReturnType<typeof setTimeout> | undefined
+  private unwatch: () => void = () => {}
 
   constructor(boardId: string, snap: BoardSnapshot) {
     this.boardId = boardId
@@ -122,6 +132,7 @@ export class BoardSync {
       canBeLinked: !!snap.canBeLinked,
       connection: 'connecting',
       unsaved: 0,
+      writers: {},
     }
     // Changes made before a sign-out in this tab: replayed on the current board and sent now.
     this.pending = takeSavedPending(boardId)
@@ -130,6 +141,7 @@ export class BoardSync {
       void this.flush()
     }
     this.connect()
+    this.unwatch = this.watchNetwork()
   }
 
   getState = () => this.state
@@ -149,6 +161,38 @@ export class BoardSync {
   onEvent(l: (e: SyncEvent) => void) {
     this.eventListeners.add(l)
     return () => void this.eventListeners.delete(l)
+  }
+
+  // ── Descriptions written with others (see liveDoc.ts) ────────────────────
+
+  /** Listens to what concerns descriptions being written together. */
+  onDoc = (l: (e: DocEvent) => void) => {
+    this.docListeners.add(l)
+    return () => void this.docListeners.delete(l)
+  }
+  /** Says something about one over the board's live connection. False: there's no connection just now. */
+  sendDoc = (m: DocRequest): boolean => {
+    if (!this.up || this.socket?.readyState !== WebSocket.OPEN) return false
+    this.socket.send(JSON.stringify(m))
+    return true
+  }
+  /** The connection is up and the board is in step: a description can be joined. */
+  isUp = () => this.up && this.socket?.readyState === WebSocket.OPEN
+  private tellDocs(e: DocEvent) {
+    this.docListeners.forEach((l) => l(e))
+  }
+  private goneDown() {
+    if (!this.up) return
+    this.up = false
+    this.tellDocs({ type: 'down' })
+  }
+  /** After "hello": once the board is as the server has it and what waited to be saved has gone (or a moment has passed). */
+  private async comeUp(ws: WebSocket, stale: boolean) {
+    if (stale) await this.resync()
+    for (let waited = 0; this.pending.length && waited < 3000 && this.socket === ws; waited += 50) await sleep(50)
+    if (this.socket !== ws || ws.readyState !== WebSocket.OPEN || this.closed) return
+    this.up = true
+    this.tellDocs({ type: 'up' })
   }
 
   /** Runs a command: shown at once, saved in the background. Returns its changes, or why it isn't allowed. */
@@ -185,6 +229,9 @@ export class BoardSync {
 
   close() {
     this.closed = true
+    this.goneDown()
+    clearTimeout(this.retry)
+    this.unwatch()
     this.socket?.close()
     this.socket = null
   }
@@ -216,7 +263,7 @@ export class BoardSync {
             savePending(this.boardId, this.pending)
             this.emit({ type: 'signed-out' })
           } else if (status >= 400 && status < 500 && status !== 408 && status !== 429) {
-            this.drop(p, (e as Error).message)
+            this.drop(p, (e as Error).message, e instanceof ApiError ? e.code : undefined)
             // Rights may have changed (or the board is gone): get the current state.
             if (status === 403 || status === 404) void this.resync()
           } else if (status >= 500 && ++this.serverErrors >= SERVER_TRIES) {
@@ -236,10 +283,25 @@ export class BoardSync {
   }
 
   /** Gives up on a change: it's taken off what you see, and you're told why. */
-  private drop(p: Pending, message: string) {
+  private drop(p: Pending, message: string, code?: string) {
     this.pending = this.pending.filter((x) => x !== p)
     this.serverErrors = 0
     this.replay()
+    const c = p.command
+    const text = c.type === 'task.update' ? c.fields.description : undefined
+    // A description that wasn't saved.
+    if (c.type === 'task.update' && text !== undefined) {
+      // Refused because the card's description is being written by others, in a session this save isn't part of:
+      // the text is kept as a draft, to offer back.
+      const taken = code === 'being-written'
+      if (taken) writeDraft(`${this.boardId}:${c.id}`, text)
+      // Whoever has the description open is told (see Description.tsx: the text is still in its editor, and is
+      // saved again, or it shows the draft).
+      this.tellDocs({ type: 'unsaved', taskId: c.id })
+      // Writing saved as it goes, from a session that is over: its browser joins the one there is now, quietly.
+      if (taken && c.session) return
+      if (taken) return this.emit({ type: 'refused', message: `${message} What you wrote is kept: it’s offered back on the card.` })
+    }
     this.emit({ type: 'refused', message })
   }
 
@@ -303,27 +365,69 @@ export class BoardSync {
   }
 
   private connect() {
-    if (this.closed) return
+    clearTimeout(this.retry)
+    if (this.closed || this.socket) return
     const url = `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/api/boards/${encodeURIComponent(this.boardId)}/live`
     const ws = new WebSocket(url)
     this.socket = ws
-    ws.onmessage = (e) => this.onMessage(JSON.parse(String(e.data)) as LiveMessage)
+    ws.onmessage = (e) => this.socket === ws && this.onMessage(JSON.parse(String(e.data)) as LiveMessage, ws)
     ws.onclose = (e) => {
       if (this.socket !== ws || this.closed) return
       this.socket = null
-      if (e.code === 4403 || e.code === 4404) return // told why in a message just before
-      this.set({ connection: 'offline' })
-      setTimeout(() => this.connect(), backoff(this.attempts++))
+      // (Told why in a message just before: the board is gone, or closed to this person.)
+      this.lost(e.code !== 4403 && e.code !== 4404)
     }
   }
 
-  private onMessage(m: LiveMessage) {
+  /** The live connection is gone. `again`: it is tried again, after a moment that grows with each try. */
+  private lost(again: boolean) {
+    this.goneDown()
+    // (Who was writing what is told again when the connection is back.)
+    if (Object.keys(this.state.writers).length) this.set({ writers: {} })
+    if (!again) return
+    this.set({ connection: 'offline' })
+    clearTimeout(this.retry)
+    this.retry = setTimeout(() => this.connect(), backoff(this.attempts++))
+  }
+
+  /**
+   * The browser says the network is gone, or back. A connection that is only open in name tells nobody for a long
+   * while (what is typed into a shared description would go nowhere, unnoticed): it is let go at once, and made
+   * again the moment the network is back.
+   */
+  private watchNetwork() {
+    if (typeof window === 'undefined') return () => {}
+    const gone = () => {
+      const ws = this.socket
+      if (!ws || this.closed) return
+      this.socket = null
+      ws.close()
+      this.lost(true)
+    }
+    const back = () => this.connect()
+    window.addEventListener('offline', gone)
+    window.addEventListener('online', back)
+    return () => {
+      window.removeEventListener('offline', gone)
+      window.removeEventListener('online', back)
+    }
+  }
+
+  private onMessage(m: LiveMessage, ws: WebSocket) {
     switch (m.type) {
       case 'hello':
         this.attempts = 0
-        this.set({ connection: 'live' })
-        if (m.seq !== this.seq) void this.resync()
+        this.set({ connection: 'live', writers: {} })
         if (this.pending.length) void this.flush()
+        void this.comeUp(ws, m.seq !== this.seq)
+        break
+      case 'writing': {
+        const { [m.taskId]: _was, ...others } = this.state.writers
+        this.set({ writers: m.people.length ? { ...others, [m.taskId]: m.people } : others })
+        break
+      }
+      case 'doc':
+        this.tellDocs(m)
         break
       case 'changes':
         this.receive(m.seq, m.changes, m.mutationId)

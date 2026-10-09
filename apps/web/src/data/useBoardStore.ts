@@ -10,6 +10,7 @@ import type { PrefsStore } from './prefsStore'
 import { BoardSync, type SyncEvent, type SyncState, type TaskActivity } from './sync'
 
 const NO_COUNTS = { comments: {}, attachments: {}, lastComment: {}, time: {} }
+const NO_WRITERS: SyncState['writers'] = {}
 
 const HISTORY = 200
 
@@ -167,6 +168,20 @@ export function useBoardStore(boardId: string, prefsStore: PrefsStore, onEvent: 
     onActivity: useCallback((l: (m: TaskActivity) => void) => sync?.onActivity(l) ?? (() => {}), [sync]),
     /** The board's card templates changing (live). */
     onTemplates: useCallback((l: () => void) => sync?.onTemplates(l) ?? (() => {}), [sync]),
+    /** The board's live connection, for descriptions written with other people at once (see liveDoc.ts). */
+    docLink: sync,
+    /** Who is writing which card's description at this moment. */
+    writers: state?.writers ?? NO_WRITERS,
+    /**
+     * Saves a description as its writing goes (`session`: the session it is written in, see liveDoc.ts). Not a step
+     * in Undo: there would be one every few seconds, and the text has its own (the editor's, and its versions).
+     * False when it isn't allowed.
+     */
+    saveWriting: useCallback(
+      (taskId: string, description: string, session: string) =>
+        !!sync && !('error' in sync.run({ type: 'task.update', id: taskId, fields: { description }, session })),
+      [sync],
+    ),
     connection: state?.connection ?? 'connecting',
     unsaved: state?.unsaved ?? 0,
     /** Couldn't open the board (401: sign in; 404: gone or no access). */

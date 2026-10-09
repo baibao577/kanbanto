@@ -2,6 +2,7 @@ import fastifyCookie from '@fastify/cookie'
 import fastifyRateLimit from '@fastify/rate-limit'
 import fastifyStatic from '@fastify/static'
 import fastifyWebsocket from '@fastify/websocket'
+import type { Change } from '@kanbanto/model/records'
 import Fastify, { LogController, type FastifyInstance, type FastifyServerOptions } from 'fastify'
 import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
@@ -9,9 +10,13 @@ import path from 'node:path'
 import pretty from 'pino-pretty'
 import { TOKEN_ROUTES, userForApiToken, type TokenAccess } from './auth/apiTokens'
 import { SESSION_COOKIE, userForToken, type SessionUser } from './auth/sessions'
+import type { WebSocket } from 'ws'
 import { BoardEngine } from './boards/engine'
 import { afterBoardChange } from './boards/follows'
 import { tellByRules } from './boards/tell'
+import { HeldSaves, type Changed } from './boards/heldSaves'
+import { LiveDocs } from './boards/liveDocs'
+import { keepVersions } from './boards/versions'
 import type { Db } from './db'
 import { env } from './env'
 import { dbErrorCode, loggable } from './errors'
@@ -42,6 +47,7 @@ import { boardRoutes } from './routes/boards'
 import { cardRoutes } from './cards'
 import { inboxRoutes } from './routes/inbox'
 import { commentRoutes } from './routes/comments'
+import { versionRoutes } from './routes/versions'
 import { timeRoutes } from './routes/time'
 import { emailRoutes } from './routes/email'
 import { coverRoutes } from './routes/covers'
@@ -70,6 +76,7 @@ declare module 'fastify' {
     db: Db
     engine: BoardEngine
     hub: LiveHub
+    docs: LiveDocs
     mail: Mailer
     webhooks: Webhooks
     push: Push
@@ -146,9 +153,35 @@ export async function buildApp(
   const engine = new BoardEngine(db, hub)
   const webhooks = new Webhooks(db, () => mail.siteUrl ?? env.appUrl ?? null)
   const calendar = new CalendarSync(db, engine, opts.google ?? google, () => mail.siteUrl ?? env.appUrl ?? null)
-  engine.onChanged = (boardId, e) => {
+  const toWebhooks = (boardId: string, e: Changed) =>
     webhooks.later(webhooks.boardChanged(boardId, e).catch((err) => app.log.error({ err: loggable(err) }, 'queueing webhooks')))
+  // (A description being written together is saved every few seconds: those saves go out as one change. See HeldSaves.)
+  const held = new HeldSaves(toWebhooks)
+  engine.onChanged = (boardId, e) => {
+    if (e.autosave) held.hold(boardId, e)
+    else {
+      held.flush(boardId)
+      toWebhooks(boardId, e)
+    }
     calendar.kick()
+  }
+  // Descriptions being written by several people at once (see boards/liveDocs.ts).
+  const docs = new LiveDocs(
+    (socket, m) => hub.send(socket as WebSocket, m),
+    (boardId, m) => hub.broadcast(boardId, m, true),
+  )
+  app.decorate('docs', docs)
+  engine.docs = docs
+  /** What a change means for the people writing a description just now. */
+  const tellWriters = (boardId: string, changes: Change[], session?: string) => {
+    for (const c of changes) {
+      if (c.entity !== 'task' || !c.before) continue
+      // The card is gone (deleted, archived, on another board now): so is its session.
+      if (!c.after || c.after.archivedAt) docs.end(boardId, c.id)
+      // Its description was changed from outside the session (which had gone quiet): they start again from the new text.
+      else if ((c.before.description ?? '') !== (c.after.description ?? '') && docs.sessionId(boardId, c.id) !== (session ?? null))
+        docs.restart(boardId, c.id)
+    }
   }
   // (Telling people never undoes the change it's about.)
   // The board's rules go first: whoever a rule tells that a card arrived isn't told again as its follower.
@@ -158,10 +191,19 @@ export async function buildApp(
       return undefined
     })
   engine.afterChange = async (boardId, e) => {
+    // (After the change itself has gone out to open boards: a browser told to start again reads the new text.)
+    tellWriters(boardId, e.changes, e.session)
+    // (What a description read like before is kept first: whatever else goes wrong after a change, that is safe.)
+    // (`by`: writing saved for its writer by someone else's browser is the writer's, to the versions and to followers.)
+    const theirs = e.by ? { ...e, userId: e.by } : e
+    await keepVersions(db, boardId, theirs).catch((err) => app.log.error({ err: loggable(err) }, 'keeping a description’s earlier version'))
     const told = await rules(boardId, e)
-    await afterBoardChange(app, boardId, e, told).catch((err) => app.log.error({ err: loggable(err) }, 'telling followers'))
+    await afterBoardChange(app, boardId, theirs, told).catch((err) => app.log.error({ err: loggable(err) }, 'telling followers'))
   }
-  engine.afterMove = async (boardId, e) => void (await rules(boardId, e))
+  engine.afterMove = async (boardId, e) => {
+    tellWriters(boardId, e.changes)
+    await rules(boardId, e)
+  }
   app.decorate('engine', engine)
   app.decorate('mail', mail)
   app.decorate('webhooks', webhooks)
@@ -182,11 +224,15 @@ export async function buildApp(
     webhooks.stop()
     calendar.stop()
     telegram.stop()
+    held.flush()
+    docs.stop()
   })
 
   await app.register(fastifyCookie)
   await app.register(fastifyRateLimit, { global: false })
-  await app.register(fastifyWebsocket, { options: { maxPayload: 64 * 1024 } })
+  // (The most a browser sends at once is a whole description going into a shared document: 50,000 characters, three
+  // bytes each at the most, and a third more for how it is written down.)
+  await app.register(fastifyWebsocket, { options: { maxPayload: 1024 * 1024 } })
 
   app.decorateRequest('user', null)
   app.decorateRequest('sessionToken', null)
@@ -312,6 +358,7 @@ export async function buildApp(
   await app.register(adminRoutes, { prefix: '/api/admin' })
   await app.register(emailRoutes, { prefix: '/api' })
   await app.register(commentRoutes, { prefix: '/api' })
+  await app.register(versionRoutes, { prefix: '/api' })
   await app.register(timeRoutes, { prefix: '/api' })
   await app.register(fileRoutes, { prefix: '/api' })
   await app.register(pictureRoutes, { prefix: '/api' })

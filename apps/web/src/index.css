@@ -320,6 +320,31 @@ html.dragging * {
     @apply text-muted-foreground line-through decoration-muted-foreground/50;
   }
 
+  /* A text written by several people at once (see data/liveDoc.ts): where each of the others is, as a thin bar in
+   their colour with their name above it, and what they have selected. */
+  .md .collaboration-carets__caret {
+    position: relative;
+    margin-inline: -1px;
+    border-inline: 1px solid;
+    pointer-events: none;
+    word-break: normal;
+  }
+  .md .collaboration-carets__label {
+    position: absolute;
+    top: -1.35em;
+    left: -1px;
+    padding: 0.05rem 0.3rem;
+    border-radius: 3px 3px 3px 0;
+    color: #fff;
+    font-size: 10px;
+    font-style: normal;
+    font-weight: 600;
+    line-height: 1.3;
+    opacity: 0.92;
+    white-space: nowrap;
+    user-select: none;
+  }
+
   /* A picture in the text (a description names one of the card's pictures on a line of its own). */
   .md .md-picture {
     @apply mx-0 mb-0;
