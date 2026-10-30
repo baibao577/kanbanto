@@ -31,7 +31,7 @@
     "postgres": "^3.4.9",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
-    "undici": "^8.11.2",
+    "undici": "^8.12.2",
     "web-push": "3.6.7",
     "y-protocols": "^1.0.7",
     "yjs": "^13.6.33",
